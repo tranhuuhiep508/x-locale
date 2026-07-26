@@ -24,6 +24,25 @@ $env:Path = "$env:ProgramFiles\nodejs;$env:LOCALAPPDATA\Programs\Python\Python31
 Write-Host "Using Python: $python" -ForegroundColor Cyan
 Write-Host "Using Node:   $node" -ForegroundColor Cyan
 
+function Stop-DevServerOnPort {
+    param([int]$Port, [string]$Pattern)
+    $pids = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.OwningProcess } |
+        Sort-Object -Unique)
+    foreach ($procId in $pids) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
+        if ($proc -and $proc.CommandLine -match $Pattern) {
+            Write-Host "Stopping existing dev server on port $Port (PID $procId)..." -ForegroundColor Yellow
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Avoid duplicate dev servers — a second Vite instance can bind only to ::1 and break /api proxy on localhost.
+Stop-DevServerOnPort -Port 8000 -Pattern "uvicorn"
+Stop-DevServerOnPort -Port 5173 -Pattern "vite"
+Start-Sleep -Seconds 1
+
 # Backend setup
 Write-Host "`n[1/4] Installing backend dependencies..." -ForegroundColor Yellow
 Set-Location "$Root\backend"

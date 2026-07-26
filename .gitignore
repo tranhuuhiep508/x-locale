@@ -9,3 +9,5 @@ dist/
 *.egg-info/
 .pytest_cache/
 *.db
+.vite/
+*.tsbuildinfo

@@ -117,6 +117,12 @@ export async function translateString(
 export async function discoverProjectId(): Promise<string> {
   const response = await fetch(`${API_URL}/bootstrap/project?api_key=${encodeURIComponent(API_KEY)}`);
   if (!response.ok) throw new Error("Could not discover project");
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      "Backend API not reachable. Make sure the backend is running on port 8000 and only one frontend dev server is active."
+    );
+  }
   const data = await response.json();
   setProjectId(data.id);
   return data.id;
