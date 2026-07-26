@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./tms.db"
     aws_region: str = "us-east-1"
     aws_bearer_token_bedrock: str = ""
-    bedrock_model_id: str = "deepseek.v3.2"
+    bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     tms_secret: str = "dev-secret-change-me"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
