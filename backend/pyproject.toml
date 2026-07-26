@@ -1,0 +1,18 @@
+[project]
+name = "tms-backend"
+version = "0.1.0"
+description = "TMS FastAPI backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116",
+  "uvicorn[standard]==0.34.0",
+  "sqlalchemy==2.0.36",
+  "psycopg[binary]==3.2.3",
+  "pydantic==2.10.3",
+  "pydantic-settings==2.6.1",
+  "boto3==1.35.99",
+  "python-multipart==0.0.20",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
