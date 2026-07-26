@@ -1,0 +1,20 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "auth": {
+    "sign_in": "Sign in",
+    "sign_up": "Create account",
+    "email": "Email address",
+    "password": "Password"
+  },
+  "homepage": {
+    "welcome": "Welcome to our app!",
+    "subtitle": "Manage translations with ease."
+  },
+  "errors": {
+    "not_found": "Page not found"
+  }
+}
