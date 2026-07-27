@@ -41,15 +41,18 @@ docker compose up --build
 
 ### 3. Install CLI
 
-```bash
-cd cli
-pip install -e .
+```powershell
+# Windows
+.\scripts\install-cli.ps1
+
+# macOS / Linux
+./scripts/install-cli.sh
 ```
 
 ### 4. Sync with a project
 
 ```bash
-# In your app repo
+# In your app repo (not the TMS repo)
 tms init -k demo-api-key-change-me -u http://localhost:8000 -o ./locales
 tms push ./locales/en.json
 tms pull ./locales/
@@ -89,10 +92,57 @@ tms/
 
 ## Go-live (production)
 
+### Server
+
 1. Deploy `docker compose` to a VPS or Railway/Fly.io
 2. Set strong `TMS_SECRET`, `TMS_DEMO_API_KEY`, and Bedrock settings (`AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, `BEDROCK_MODEL_ID`)
 3. Point a domain at the frontend; set `CORS_ORIGINS` and `VITE_API_URL`
 4. Use HTTPS (Caddy or platform TLS)
+
+### CLI on every developer machine
+
+Each person who syncs translations needs the `tms` command once per machine. Point it at your production API URL.
+
+| Platform | One-time install |
+|----------|------------------|
+| Windows | `pip install tms-cli` then `python -m tms_cli.windows` |
+| macOS / Linux | `pipx install tms-cli` |
+| From this repo | `.\scripts\install-cli.ps1` (Windows) or `./scripts/install-cli.sh` (macOS/Linux) |
+
+The extra Windows step replaces pip's unsigned `tms.exe` with `tms.cmd` so Smart App Control does not block the command.
+
+**From PyPI** (after you publish `tms-cli`):
+
+```bash
+pipx install tms-cli          # macOS / Linux (recommended)
+pip install tms-cli           # any OS
+python -m tms_cli.windows     # Windows only, once after pip install
+```
+
+**From Git** (before PyPI, or private fork):
+
+```bash
+pipx install "git+https://github.com/YOUR_ORG/tms.git#subdirectory=cli"
+```
+
+**In each app repository** (once per repo):
+
+```bash
+tms init -k <production-api-key> -u https://api.yourdomain.com -o ./locales
+tms push ./locales/en.json    # upload source strings
+tms pull ./locales/           # download all locales
+```
+
+The `.tms/config.yaml` file is created in the app repo and can be committed so the team shares the same `api_url` and `output_dir` (keep API keys in CI secrets, not git).
+
+**CI/CD** (GitHub Actions, etc.):
+
+```yaml
+- run: pip install tms-cli
+- run: |
+    tms init -k ${{ secrets.TMS_API_KEY }} -u https://api.yourdomain.com -o ./locales
+    tms pull ./locales/
+```
 
 ## What's next (post-MVP)
 

@@ -53,10 +53,9 @@ Write-Host "[2/4] Installing frontend dependencies..." -ForegroundColor Yellow
 Set-Location "$Root\frontend"
 npm install --silent
 
-# CLI setup
+# CLI setup (tms.cmd shim — avoids Smart App Control blocking pip's unsigned tms.exe)
 Write-Host "[3/4] Installing CLI..." -ForegroundColor Yellow
-Set-Location "$Root\cli"
-& $python -m pip install -q -e .
+& "$Root\scripts\install-cli.ps1" -ErrorAction Stop
 
 # Start servers
 Write-Host "[4/4] Starting backend (8000) and frontend (5173)..." -ForegroundColor Yellow
