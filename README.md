@@ -4,21 +4,45 @@ Self-hosted translation management with dashboard CRUD, AI auto-translate, and C
 
 ## Prerequisites
 
-- **Option A (easiest on Windows):** Python 3.14+ and Node.js 20+ — run `.\scripts\start-local.ps1`
+- **Option A (local dev):** [uv](https://docs.astral.sh/uv/), Python 3.14+, and Node.js 20+
 - **Option B (production-like):** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+Install uv once:
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+winget install astral-sh.uv
+```
 
 ## Quick start (local, no Docker)
 
+Install runtimes once (Windows example with winget):
+
 ```powershell
-# Install runtime (once) — or use winget:
 winget install Python.Python.3.14
 winget install OpenJS.NodeJS.LTS
+winget install astral-sh.uv
+```
 
-# Set env vars in your PowerShell profile (once) — see .env.example for names
-# e.g. $env:AWS_BEARER_TOKEN_BEDROCK = "your-bedrock-api-key"
+Set env vars in your shell (see `.env.example` for names), e.g. `$env:AWS_BEARER_TOKEN_BEDROCK = "your-bedrock-api-key"`.
 
-# Start everything
-.\scripts\start-local.ps1
+**Terminal 1 — backend:**
+
+```bash
+cd backend
+uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 2 — frontend:**
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 Uses SQLite (`backend/tms.db`) by default — no Postgres required for local dev. Environment variables from your shell are used directly; no `.env` file is required.
@@ -56,12 +80,10 @@ Same origin — no separate frontend container and no `CORS_ORIGINS`.
 
 ### 3. Install CLI
 
-```powershell
-# Windows
-.\scripts\install-cli.ps1
-
-# macOS / Linux
-./scripts/install-cli.sh
+```bash
+# From this repo (recommended for development)
+uv tool install -e ./cli
+python -m tms_cli.windows     # Windows only, once per machine
 ```
 
 ### 4. Sync with a project
@@ -122,24 +144,22 @@ Each person who syncs translations needs the `tms` command once per machine. Poi
 
 | Platform | One-time install |
 |----------|------------------|
-| Windows | `pip install tms-cli` then `python -m tms_cli.windows` |
-| macOS / Linux | `pipx install tms-cli` |
-| From this repo | `.\scripts\install-cli.ps1` (Windows) or `./scripts/install-cli.sh` (macOS/Linux) |
+| Any OS | `uv tool install tms-cli` then `python -m tms_cli.windows` on Windows |
+| From this repo | `uv tool install -e ./cli` |
 
-The extra Windows step replaces pip's unsigned `tms.exe` with `tms.cmd` so Smart App Control does not block the command.
+The extra Windows step replaces the unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the command.
 
 **From PyPI** (after you publish `tms-cli`):
 
 ```bash
-pipx install tms-cli          # macOS / Linux (recommended)
-pip install tms-cli           # any OS
-python -m tms_cli.windows     # Windows only, once after pip install
+uv tool install tms-cli
+python -m tms_cli.windows     # Windows only, once per machine
 ```
 
 **From Git** (before PyPI, or private fork):
 
 ```bash
-pipx install "git+https://github.com/YOUR_ORG/tms.git#subdirectory=cli"
+uv tool install "git+https://github.com/YOUR_ORG/tms.git#subdirectory=cli"
 ```
 
 **In each app repository** (once per repo):
@@ -155,7 +175,8 @@ The `.tms/config.yaml` file is created in the app repo and can be committed so t
 **CI/CD** (GitHub Actions, etc.):
 
 ```yaml
-- run: pip install tms-cli
+- uses: astral-sh/setup-uv@v5
+- run: uv tool install tms-cli
 - run: |
     tms init -k ${{ secrets.TMS_API_KEY }} -u https://api.yourdomain.com -o ./locales
     tms pull ./locales/

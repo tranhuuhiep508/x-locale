@@ -1,4 +1,4 @@
-"""Windows shim installer — use after `pip install tms-cli` on Smart App Control systems."""
+"""Windows shim installer — use after `uv tool install tms-cli` on Smart App Control systems."""
 
 from __future__ import annotations
 
