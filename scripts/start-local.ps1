@@ -3,10 +3,11 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 
 $python = @(
-    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
     "python"
-) | Where-Object { Test-Path $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+) | Where-Object { if ($_ -eq "python") { $true } else { Test-Path $_ } } | Select-Object -First 1
 
 $nodeDir = "$env:ProgramFiles\nodejs"
 $node = @(
@@ -15,11 +16,11 @@ $node = @(
 ) | Where-Object { if ($_ -eq "node") { $true } else { Test-Path $_ } } | Select-Object -First 1
 $npm = "$nodeDir\npm.cmd"
 
-if (-not $python) { throw "Python not found. Install Python 3.12+ first." }
+if (-not $python) { throw "Python not found. Install Python 3.14+ first." }
 if (-not (Test-Path $node)) { throw "Node.js not found. Install Node LTS first." }
 if (-not (Test-Path $npm)) { throw "npm not found at $npm. Reinstall Node.js LTS." }
 
-$env:Path = "$env:ProgramFiles\nodejs;$env:LOCALAPPDATA\Programs\Python\Python312;$env:LOCALAPPDATA\Programs\Python\Python312\Scripts;$env:Path"
+$env:Path = "$env:ProgramFiles\nodejs;$env:LOCALAPPDATA\Programs\Python\Python314;$env:LOCALAPPDATA\Programs\Python\Python314\Scripts;$env:LOCALAPPDATA\Programs\Python\Python312;$env:LOCALAPPDATA\Programs\Python\Python312\Scripts;$env:Path"
 
 Write-Host "Using Python: $python" -ForegroundColor Cyan
 Write-Host "Using Node:   $node" -ForegroundColor Cyan

@@ -1,3 +1,4 @@
+# Production: single backend serves API + built frontend (no separate frontend container, no CORS).
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,8 +6,6 @@ services:
       POSTGRES_USER: tms
       POSTGRES_PASSWORD: tms
       POSTGRES_DB: tms
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,7 +15,11 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.prod
+      args:
+        VITE_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
     ports:
       - "8000:8000"
     environment:
@@ -29,25 +32,10 @@ services:
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
       TMS_SECRET: ${TMS_SECRET:-dev-secret-change-me}
       TMS_DEMO_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
+      STATIC_DIR: static
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    environment:
-      VITE_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
-    depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0
 
 volumes:
   postgres_data:

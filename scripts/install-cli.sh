@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLI_DIR="$ROOT/cli"
 
 if ! command -v python3 &>/dev/null; then
-  echo "Python 3 not found. Install Python 3.10+ first." >&2
+  echo "Python 3 not found. Install Python 3.14+ first." >&2
   exit 1
 fi
 

@@ -2,16 +2,16 @@
 name = "tms-backend"
 version = "0.1.0"
 description = "TMS FastAPI backend"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-  "fastapi>=0.116",
-  "uvicorn[standard]==0.34.0",
-  "sqlalchemy==2.0.36",
-  "psycopg[binary]==3.2.3",
-  "pydantic==2.10.3",
-  "pydantic-settings==2.6.1",
-  "boto3==1.35.99",
-  "python-multipart==0.0.20",
+  "fastapi>=0.140",
+  "uvicorn[standard]>=0.51.0",
+  "sqlalchemy>=2.0.51",
+  "psycopg[binary]>=3.3.4",
+  "pydantic>=2.13.4",
+  "pydantic-settings>=2.14.2",
+  "boto3>=1.43.57",
+  "python-multipart>=0.0.32",
 ]
 
 [tool.fastapi]

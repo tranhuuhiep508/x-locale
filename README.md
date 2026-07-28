@@ -4,14 +4,14 @@ Self-hosted translation management with dashboard CRUD, AI auto-translate, and C
 
 ## Prerequisites
 
-- **Option A (easiest on Windows):** Python 3.12+ and Node.js 20+ — run `.\scripts\start-local.ps1`
+- **Option A (easiest on Windows):** Python 3.14+ and Node.js 20+ — run `.\scripts\start-local.ps1`
 - **Option B (production-like):** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ## Quick start (local, no Docker)
 
 ```powershell
 # Install runtime (once) — or use winget:
-winget install Python.Python.3.12
+winget install Python.Python.3.14
 winget install OpenJS.NodeJS.LTS
 
 # Set env vars in your PowerShell profile (once) — see .env.example for names
@@ -23,7 +23,7 @@ winget install OpenJS.NodeJS.LTS
 
 Uses SQLite (`backend/tms.db`) by default — no Postgres required for local dev. Environment variables from your shell are used directly; no `.env` file is required.
 
-## Quick start (Docker)
+## Quick start (Docker, local dev with HMR)
 
 ### 1. Configure environment
 
@@ -35,9 +35,24 @@ Set variables in your PowerShell profile (or export them in your shell before `d
 docker compose up --build
 ```
 
-- Dashboard: http://localhost:5173
+- Dashboard: http://localhost:5173 (Vite dev server, proxies `/api` → backend)
 - API docs: http://localhost:8000/docs
 - Demo API key: `demo-api-key-change-me` (default; override with `TMS_DEMO_API_KEY`)
+
+No CORS configuration is needed in dev: the Vite proxy keeps the browser on one origin.
+
+## Quick start (Docker, production)
+
+Build the frontend into the backend image and serve everything from Python on port 8000:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build
+```
+
+- Dashboard + API: http://localhost:8000
+- API docs: http://localhost:8000/docs
+
+Same origin — no separate frontend container and no `CORS_ORIGINS`.
 
 ### 3. Install CLI
 
@@ -94,10 +109,12 @@ tms/
 
 ### Server
 
-1. Deploy `docker compose` to a VPS or Railway/Fly.io
+1. Deploy with `docker compose -f docker-compose.prod.yml up --build` (or equivalent using `backend/Dockerfile.prod`)
 2. Set strong `TMS_SECRET`, `TMS_DEMO_API_KEY`, and Bedrock settings (`AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, `BEDROCK_MODEL_ID`)
-3. Point a domain at the frontend; set `CORS_ORIGINS` and `VITE_API_URL`
+3. Point a domain at port 8000 — FastAPI serves both the API and the built React dashboard
 4. Use HTTPS (Caddy or platform TLS)
+
+The production image bakes `VITE_API_KEY` at build time (`TMS_DEMO_API_KEY` build arg). The dashboard and API share the same origin, so CORS is not required.
 
 ### CLI on every developer machine
 

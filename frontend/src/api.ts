@@ -24,8 +24,8 @@ export interface Project {
   string_count: number;
 }
 
-// In dev, use Vite proxy (/api → backend) to avoid CORS. Override with VITE_API_URL for production.
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+// Dev: Vite proxies /api → backend. Prod: same origin, API routes at /.
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "/api" : "");
 const API_KEY = import.meta.env.VITE_API_KEY || "demo-api-key-change-me";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
