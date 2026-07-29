@@ -45,6 +45,40 @@ def locale_json_from_strings(strings: dict[str, str]) -> dict[str, str]:
     return dict(sorted(strings.items()))
 
 
+def default_source_file(config: dict[str, Any]) -> Path:
+    output_dir = Path(config.get("output_dir", "./locales"))
+    base_language = config.get("base_language", "en")
+    return output_dir / f"{base_language}.json"
+
+
+def resolve_push_source(config: dict[str, Any], source_file: Path | None) -> Path:
+    """Resolve and validate the source file for push."""
+    base_language = config.get("base_language", "en")
+    default_path = default_source_file(config)
+    path = default_path if source_file is None else source_file
+
+    if path.is_dir():
+        raise typer.Exit(
+            f"Expected a JSON file, got directory '{path}'. "
+            f"Run `tms push` without arguments to push {default_path}"
+        )
+
+    if path.suffix.lower() != ".json":
+        raise typer.Exit(f"Expected a JSON file, got '{path}'")
+
+    if path.stem != base_language:
+        raise typer.Exit(
+            f"Cannot push translation file '{path.name}'. "
+            f"Push only accepts the base language file ({base_language}.json). "
+            f"Run `tms push` without arguments to use {default_path}"
+        )
+
+    if not path.exists():
+        raise typer.Exit(f"File not found: {path}")
+
+    return path
+
+
 def api_client(config: dict[str, Any]) -> httpx.Client:
     return httpx.Client(
         base_url=config["api_url"].rstrip("/"),
@@ -85,14 +119,16 @@ def init(
 
 @app.command()
 def push(
-    source_file: Path = typer.Argument(..., help="Path to base language JSON file"),
+    source_file: Path | None = typer.Argument(
+        None,
+        help="Path to base language JSON file (defaults to output_dir/base_language.json)",
+    ),
 ) -> None:
     """Push local source strings to TMS."""
     config = load_config()
-    if not source_file.exists():
-        raise typer.Exit(f"File not found: {source_file}")
+    source_path = resolve_push_source(config, source_file)
 
-    with source_file.open("r", encoding="utf-8") as f:
+    with source_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     if not isinstance(data, dict):
@@ -114,7 +150,7 @@ def push(
         response.raise_for_status()
         result = response.json()
 
-    table = Table(title="Push result")
+    table = Table(title=f"Push result ({source_path})")
     table.add_column("Metric")
     table.add_column("Count")
     table.add_row("Created", str(result["created"]))

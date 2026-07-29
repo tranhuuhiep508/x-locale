@@ -13,7 +13,7 @@ Locale files use **flat** JSON with dot-notation keys:
 
 ```bash
 tms init -k YOUR_API_KEY -u https://tms.example.com -o ./locales
-tms push ./locales/en.json
+tms push
 tms pull ./locales/
 ```
 

@@ -89,7 +89,7 @@ uv tool install -e ./cli
 ```bash
 # In your app repo (not the TMS repo)
 tms init -k demo-api-key-change-me -u http://localhost:8000 -o ./locales
-tms push ./locales/en.json
+tms push
 tms pull ./locales/
 ```
 
@@ -98,7 +98,7 @@ tms pull ./locales/
 1. Open http://localhost:5173 — see 10 seeded strings (EN/VI/JA)
 2. Edit a Vietnamese value inline → save on blur
 3. Run `tms pull ./locales/` → check updated `vi.json`
-4. Add a key to `en.json` → `tms push ./locales/en.json` → refresh dashboard
+4. Add a key to `en.json` → `tms push` → refresh dashboard
 5. Click **Translate missing** (requires `AWS_BEARER_TOKEN_BEDROCK`) → `tms pull` again
 
 ## Project structure
@@ -162,7 +162,7 @@ uv tool install "git+https://github.com/YOUR_ORG/tms.git#subdirectory=cli"
 
 ```bash
 tms init -k <production-api-key> -u https://api.yourdomain.com -o ./locales
-tms push ./locales/en.json    # upload source strings
+tms push                      # upload source strings (defaults to locales/en.json)
 tms pull ./locales/           # download all locales
 ```
 
