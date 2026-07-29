@@ -108,7 +108,8 @@ tms/
 ├── backend/     FastAPI + Postgres
 ├── frontend/    React dashboard
 ├── cli/         tms init | push | pull
-└── docker-compose.yml
+├── docker-compose.yml       # default: local dev (HMR)
+└── docker-compose.prod.yml  # production-like single image
 ```
 
 ## API endpoints
