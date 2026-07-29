@@ -5,29 +5,28 @@ Self-hosted translation management with dashboard CRUD, AI auto-translate, and C
 ## Prerequisites
 
 - **Option A (local dev):** [uv](https://docs.astral.sh/uv/), Python 3.14+, and Node.js 20+
-- **Option B (production-like):** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- **Option B (production-like):** [Docker](https://docs.docker.com/get-docker/)
 
 Install uv once:
 
 ```bash
-# macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-# Windows
-winget install astral-sh.uv
+Install Node.js 20+ if needed (macOS example):
+
+```bash
+brew install node
 ```
 
 ## Quick start (local, no Docker)
 
-Install runtimes once (Windows example with winget):
+Set env vars in your shell (see `.env.example` for names):
 
-```powershell
-winget install Python.Python.3.14
-winget install OpenJS.NodeJS.LTS
-winget install astral-sh.uv
+```bash
+export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
+export BEDROCK_MODEL_ID="us.amazon.nova-2-lite-v1:0"
 ```
-
-Set env vars in your shell (see `.env.example` for names), e.g. `$env:AWS_BEARER_TOKEN_BEDROCK = "your-bedrock-api-key"`.
 
 **Terminal 1 — backend:**
 
@@ -51,7 +50,7 @@ Uses SQLite (`backend/tms.db`) by default — no Postgres required for local dev
 
 ### 1. Configure environment
 
-Set variables in your PowerShell profile (or export them in your shell before `docker compose up`). See `.env.example` for names and defaults — at minimum set `AWS_BEARER_TOKEN_BEDROCK` and `BEDROCK_MODEL_ID` for AI translate.
+Export variables in your shell before `docker compose up` (or add them to your shell profile). See `.env.example` for names and defaults — at minimum set `AWS_BEARER_TOKEN_BEDROCK` and `BEDROCK_MODEL_ID` for AI translate.
 
 ### 2. Start services
 
@@ -83,7 +82,6 @@ Same origin — no separate frontend container and no `CORS_ORIGINS`.
 ```bash
 # From this repo (recommended for development)
 uv tool install -e ./cli
-python -m tms_cli.windows     # Windows only, once per machine
 ```
 
 ### 4. Sync with a project
@@ -142,18 +140,15 @@ The production image bakes `VITE_API_KEY` at build time (`TMS_DEMO_API_KEY` buil
 
 Each person who syncs translations needs the `tms` command once per machine. Point it at your production API URL.
 
-| Platform | One-time install |
-|----------|------------------|
-| Any OS | `uv tool install tms-cli` then `python -m tms_cli.windows` on Windows |
-| From this repo | `uv tool install -e ./cli` |
-
-The extra Windows step replaces the unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the command.
+| Source | Install |
+|--------|---------|
+| PyPI | `uv tool install tms-cli` |
+| This repo | `uv tool install -e ./cli` |
 
 **From PyPI** (after you publish `tms-cli`):
 
 ```bash
 uv tool install tms-cli
-python -m tms_cli.windows     # Windows only, once per machine
 ```
 
 **From Git** (before PyPI, or private fork):
@@ -181,6 +176,8 @@ The `.tms/config.yaml` file is created in the app repo and can be committed so t
     tms init -k ${{ secrets.TMS_API_KEY }} -u https://api.yourdomain.com -o ./locales
     tms pull ./locales/
 ```
+
+**Windows note:** After `uv tool install`, run `python -m tms_cli.windows` once. That replaces the unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the command.
 
 ## What's next (post-MVP)
 

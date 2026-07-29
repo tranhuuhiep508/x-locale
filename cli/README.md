@@ -26,22 +26,19 @@ tms pull ./locales/ --format flat
 Install [uv](https://docs.astral.sh/uv/) first if you do not have it:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
-winget install astral-sh.uv                         # Windows
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **From PyPI**
 
 ```bash
 uv tool install tms-cli
-python -m tms_cli.windows   # Windows only, once per machine
 ```
 
 **From this repo**
 
 ```bash
 uv tool install -e ./cli
-python -m tms_cli.windows   # Windows only, once per machine
 ```
 
-On Windows, run `python -m tms_cli.windows` once after install. It replaces the unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the command.
+**Windows:** After install, run `python -m tms_cli.windows` once. It replaces the unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the command.
