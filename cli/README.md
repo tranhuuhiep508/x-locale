@@ -2,23 +2,19 @@
 
 Sync locale files with a [TMS](https://github.com/your-org/tms) server.
 
+Locale files use **flat** JSON with dot-notation keys:
+
+```json
+{
+  "greeting.hello": "Hello",
+  "auth.sign_in": "Sign in"
+}
+```
+
 ```bash
 tms init -k YOUR_API_KEY -u https://tms.example.com -o ./locales
 tms push ./locales/en.json
 tms pull ./locales/
-```
-
-### JSON format
-
-By default, locale files use **nested** JSON (`{"greeting": {"hello": "Hello"}}`). Use **flat** JSON with dot-notation keys (`{"greeting.hello": "Hello"}`) instead:
-
-```bash
-# Set default format for this repo
-tms init -k YOUR_API_KEY --format flat
-
-# Or override per command
-tms push ./locales/en.json --format flat
-tms pull ./locales/ --format flat
 ```
 
 ## Install

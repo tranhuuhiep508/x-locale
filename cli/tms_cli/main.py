@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +12,6 @@ from rich.table import Table
 
 app = typer.Typer(help="TMS CLI — sync translations with your code")
 console = Console()
-
-
-class JsonFormat(str, Enum):
-    nested = "nested"
-    flat = "flat"
 
 CONFIG_DIR = Path(".tms")
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
@@ -36,52 +30,19 @@ def save_config(config: dict[str, Any]) -> None:
         yaml.safe_dump(config, f, sort_keys=False)
 
 
-def flatten_json(data: dict[str, Any], prefix: str = "") -> dict[str, str]:
-    result: dict[str, str] = {}
+def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
+    strings: dict[str, str] = {}
     for key, value in data.items():
-        full_key = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, dict):
-            result.update(flatten_json(value, full_key))
-        elif isinstance(value, str):
-            result[full_key] = value
-    return result
+        if not isinstance(value, str):
+            raise typer.Exit(
+                f"Locale JSON requires string values; got {type(value).__name__} for key {key!r}"
+            )
+        strings[key] = value
+    return strings
 
 
-def unflatten_json(flat: dict[str, str]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in sorted(flat.items()):
-        parts = key.split(".")
-        node = result
-        for part in parts[:-1]:
-            node = node.setdefault(part, {})
-        node[parts[-1]] = value
-    return result
-
-
-def resolve_json_format(explicit: JsonFormat | None, config: dict[str, Any]) -> JsonFormat:
-    if explicit is not None:
-        return explicit
-    stored = config.get("json_format")
-    if stored:
-        return JsonFormat(stored)
-    return JsonFormat.nested
-
-
-def strings_from_json(data: dict[str, Any], fmt: JsonFormat) -> dict[str, str]:
-    if fmt == JsonFormat.flat:
-        for key, value in data.items():
-            if not isinstance(value, str):
-                raise typer.Exit(
-                    f"Flat JSON requires string values; got {type(value).__name__} for key {key!r}"
-                )
-        return data
-    return flatten_json(data)
-
-
-def json_from_strings(flat_strings: dict[str, str], fmt: JsonFormat) -> dict[str, Any]:
-    if fmt == JsonFormat.flat:
-        return dict(sorted(flat_strings.items()))
-    return unflatten_json(flat_strings)
+def locale_json_from_strings(strings: dict[str, str]) -> dict[str, str]:
+    return dict(sorted(strings.items()))
 
 
 def api_client(config: dict[str, Any]) -> httpx.Client:
@@ -104,13 +65,6 @@ def init(
     api_url: str = typer.Option("http://localhost:8000", "-u", "--api-url", help="TMS API URL"),
     output_dir: str = typer.Option("./locales", "-o", "--output-dir", help="Directory for locale JSON files"),
     base_language: str = typer.Option("en", help="Base/source language code"),
-    json_format: JsonFormat = typer.Option(
-        JsonFormat.nested,
-        "--format",
-        "-f",
-        help="Locale JSON format: nested objects or flat dot-notation keys",
-        case_sensitive=False,
-    ),
 ) -> None:
     """Initialize TMS config for this repository."""
     config = {
@@ -118,7 +72,6 @@ def init(
         "api_key": api_key,
         "output_dir": output_dir,
         "base_language": base_language,
-        "json_format": json_format.value,
     }
 
     with api_client(config) as client:
@@ -133,17 +86,9 @@ def init(
 @app.command()
 def push(
     source_file: Path = typer.Argument(..., help="Path to base language JSON file"),
-    json_format: JsonFormat | None = typer.Option(
-        None,
-        "--format",
-        "-f",
-        help="Locale JSON format: nested objects or flat dot-notation keys",
-        case_sensitive=False,
-    ),
 ) -> None:
     """Push local source strings to TMS."""
     config = load_config()
-    fmt = resolve_json_format(json_format, config)
     if not source_file.exists():
         raise typer.Exit(f"File not found: {source_file}")
 
@@ -153,7 +98,7 @@ def push(
     if not isinstance(data, dict):
         raise typer.Exit("Locale JSON must be a top-level object")
 
-    strings = strings_from_json(data, fmt)
+    strings = parse_locale_json(data)
     project_id = config.get("project_id")
     if not project_id:
         with api_client(config) as client:
@@ -181,17 +126,9 @@ def push(
 @app.command()
 def pull(
     output_dir: Path | None = typer.Argument(None, help="Override output directory"),
-    json_format: JsonFormat | None = typer.Option(
-        None,
-        "--format",
-        "-f",
-        help="Locale JSON format: nested objects or flat dot-notation keys",
-        case_sensitive=False,
-    ),
 ) -> None:
     """Pull all translations from TMS to local JSON files."""
     config = load_config()
-    fmt = resolve_json_format(json_format, config)
     out = Path(output_dir or config.get("output_dir", "./locales"))
     out.mkdir(parents=True, exist_ok=True)
 
@@ -207,13 +144,13 @@ def pull(
         response.raise_for_status()
         translations = response.json()
 
-    for locale, flat_strings in translations.items():
-        payload = json_from_strings(flat_strings, fmt)
+    for locale, strings in translations.items():
+        payload = locale_json_from_strings(strings)
         target = out / f"{locale}.json"
         with target.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
             f.write("\n")
-        console.print(f"[green]Wrote[/green] {target} ({len(flat_strings)} keys)")
+        console.print(f"[green]Wrote[/green] {target} ({len(strings)} keys)")
 
 
 if __name__ == "__main__":
