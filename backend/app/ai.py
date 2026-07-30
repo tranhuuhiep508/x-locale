@@ -1,5 +1,4 @@
 import json
-import os
 import urllib.error
 import urllib.request
 
@@ -10,7 +9,7 @@ from app.config import settings
 
 
 def _bearer_token() -> str:
-    return settings.aws_bearer_token_bedrock or os.environ.get("AWS_BEARER_TOKEN_BEDROCK", "")
+    return settings.aws_bearer_token_bedrock
 
 
 def _ensure_bedrock_auth() -> None:

@@ -1,9 +1,8 @@
-import os
-
+from app.config import settings
 from app.database import SessionLocal
 from app.models import Project, StringEntry, Translation, TranslationStatus
 
-DEMO_API_KEY = os.environ.get("TMS_DEMO_API_KEY", "demo-api-key-change-me")
+DEMO_API_KEY = settings.tms_demo_api_key
 
 DEMO_STRINGS = [
     ("common.save", "Save", "Primary action button"),

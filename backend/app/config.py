@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     aws_bearer_token_bedrock: str = ""
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     tms_secret: str = "dev-secret-change-me"
+    tms_demo_api_key: str = "demo-api-key-change-me"
     # Optional. Set only when the frontend runs on a different origin (not needed with Vite /api proxy).
     cors_origins: str = ""
     # Built frontend directory (e.g. static/). When present, FastAPI serves the SPA from the same origin.

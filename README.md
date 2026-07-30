@@ -21,11 +21,10 @@ brew install node
 
 ## Quick start (local, no Docker)
 
-Set env vars in your shell (see `.env.example` for names):
+Copy and edit the env file:
 
 ```bash
-export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
-export BEDROCK_MODEL_ID="us.amazon.nova-2-lite-v1:0"
+cp .env.example .env
 ```
 
 **Terminal 1 — backend:**
@@ -44,7 +43,7 @@ npm install
 npm run dev
 ```
 
-Uses SQLite (`backend/tms.db`) by default — no Postgres required for local dev. Environment variables from your shell are used directly; no `.env` file is required.
+Uses SQLite (`backend/tms.db`) by default — no Postgres required for local dev. Configuration is loaded from `.env` at the project root (see `.env.example`).
 
 ## Quick start (Docker, local dev with HMR)
 
