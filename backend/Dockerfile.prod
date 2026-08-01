@@ -8,9 +8,6 @@ RUN npm ci
 
 COPY frontend/ .
 
-ARG VITE_API_KEY=demo-api-key-change-me
-ENV VITE_API_KEY=$VITE_API_KEY
-
 RUN npm run build
 
 FROM python:3.14-slim AS builder
@@ -45,4 +42,4 @@ ENV STATIC_DIR=static
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && python -m app.cli seed-demo && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
