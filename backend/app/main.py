@@ -10,6 +10,7 @@ from app.routers import (
     activities,
     auth,
     batch,
+    bootstrap,
     jobs,
     languages,
     modules,
@@ -48,6 +49,7 @@ api = FastAPI(title="TMS API", version="0.2.0")
 # Simpler: include all with prefix="/api"
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(bootstrap.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(languages.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")

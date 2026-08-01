@@ -311,8 +311,14 @@ def import_strings_compat(
     payload: ImportPayload,
     project: Project = Depends(project_access),
     db: Session = Depends(get_db),
+    dry_run: bool = Query(default=False),
 ) -> ImportResult:
-    """Back-compat endpoint for CLI push."""
+    """JSON-body import used by the CLI push command.
+
+    Accepts ``{"strings": {"key": "source text"}}`` and returns a diff that
+    includes orphaned remote keys.  Pass ``?dry_run=true`` to preview without
+    applying changes.
+    """
     batch_id = uuid.uuid4()
     existing = db.info.get("activity") or {}
     db.info["activity"] = {
@@ -322,7 +328,8 @@ def import_strings_compat(
     }
     if not payload.strings:
         raise HTTPException(status_code=400, detail="strings required")
-    result = _import_flat_strings(db, project, payload.strings, dry_run=False)
-    db.commit()
+    result = _import_flat_strings(db, project, payload.strings, dry_run=dry_run)
+    if not dry_run:
+        db.commit()
     result.batch_id = batch_id
     return result
