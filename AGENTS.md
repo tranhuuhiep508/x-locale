@@ -7,6 +7,11 @@ context for working in this repo.
 
 ## Cursor Cloud specific instructions
 
+> Scope: this reflects the app's **current MVP state**, not a finished product.
+> The run/test/config facts below are stable, but the feature-behavior notes
+> (API-key-only auth, the seeded Demo App, the worst-status logic, save-on-blur)
+> describe current behavior — update this file as those features are built out.
+
 Dependencies are already installed by the environment update script on VM startup
 (backend + CLI via `uv sync`, frontend via `npm install`). You normally only need
 to start the services and run tests — do not re-run installs unless something is
