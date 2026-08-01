@@ -1,26 +1,37 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from starlette.middleware.sessions import SessionMiddleware
 
-from app.auth import get_project_by_api_key
 from app.config import settings
-from app.database import Base, engine, get_db
-from app.models import Project
-from app.routers import strings, sync
-from app.schemas import ProjectOut
-from app.seed import seed_demo_data
+from app.database import register_activity_listener
+from app.routers import (
+    activities,
+    auth,
+    batch,
+    jobs,
+    languages,
+    modules,
+    projects,
+    snapshots,
+    strings,
+    sync,
+    tags,
+    translate,
+)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    seed_demo_data()
+    register_activity_listener()
     yield
 
 
-app = FastAPI(title="TMS API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="TMS API", version="0.2.0", lifespan=lifespan)
+
+# SessionMiddleware required by Authlib OIDC authorize_redirect
+app.add_middleware(SessionMiddleware, secret_key=settings.tms_secret)
 
 if settings.cors_origin_list:
     app.add_middleware(
@@ -31,8 +42,23 @@ if settings.cors_origin_list:
         allow_headers=["*"],
     )
 
-app.include_router(strings.router)
-app.include_router(sync.router)
+api = FastAPI(title="TMS API", version="0.2.0")
+# Mount routers under /api via a sub-app OR include with prefix.
+# Using include_router with prefix keeps OpenAPI under /api/openapi.json too if we want.
+# Simpler: include all with prefix="/api"
+
+app.include_router(auth.router, prefix="/api")
+app.include_router(projects.router, prefix="/api")
+app.include_router(languages.router, prefix="/api")
+app.include_router(modules.router, prefix="/api")
+app.include_router(tags.router, prefix="/api")
+app.include_router(strings.router, prefix="/api")
+app.include_router(batch.router, prefix="/api")
+app.include_router(translate.router, prefix="/api")
+app.include_router(jobs.router, prefix="/api")
+app.include_router(activities.router, prefix="/api")
+app.include_router(snapshots.router, prefix="/api")
+app.include_router(sync.router, prefix="/api")
 
 
 @app.get("/health")
@@ -40,21 +66,9 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/bootstrap/project", response_model=ProjectOut)
-def bootstrap_project(
-    project: Project = Depends(get_project_by_api_key),
-    db: Session = Depends(get_db),
-) -> ProjectOut:
-    from app.models import StringEntry
-
-    count = db.query(StringEntry).filter(StringEntry.project_id == project.id).count()
-    return ProjectOut(
-        id=project.id,
-        name=project.name,
-        base_language=project.base_language,
-        target_languages=project.target_languages,
-        string_count=count,
-    )
+@app.get("/api/health")
+def api_health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 static_directory = settings.static_directory
