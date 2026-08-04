@@ -11,14 +11,22 @@ import {
   Button,
   Input,
   Textarea,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
   DialogFooter,
   ConfirmDialog,
   EmptyState,
   Badge,
+  Card,
+  CardContent,
+  Spinner,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
 import { formatDate } from '../../../lib/utils'
@@ -105,12 +113,12 @@ function VersionsPage() {
   return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-          <Camera className="h-5 w-5 text-brand-500" />
+        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <Camera className="h-5 w-5 text-primary" />
           Snapshots
         </h1>
         <Button size="sm" onClick={() => { resetForm(); setShowCreate(true) }}>
-          <Plus className="h-4 w-4" />
+          <Plus data-icon="inline-start" />
           Take snapshot
         </Button>
       </div>
@@ -122,93 +130,117 @@ function VersionsPage() {
           description="Snapshots let you save and restore the state of all translations."
           action={
             <Button onClick={() => { resetForm(); setShowCreate(true) }}>
-              <Plus className="h-4 w-4" />
+              <Plus data-icon="inline-start" />
               Take snapshot
             </Button>
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {snapshots.map((s) => (
-            <div key={s.id} className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-medium text-slate-900">{s.name}</h3>
-                    <Badge variant={s.kind === 'auto' ? 'default' : 'brand'} className="text-[10px]">
-                      {s.kind}
-                    </Badge>
+            <Card key={s.id}>
+              <CardContent>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-medium text-foreground">{s.name}</h3>
+                      <Badge
+                        variant={s.kind === 'auto' ? 'secondary' : 'default'}
+                        className="text-[10px]"
+                      >
+                        {s.kind}
+                      </Badge>
+                    </div>
+                    {s.description && (
+                      <p className="text-sm text-muted-foreground mb-2">{s.description}</p>
+                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{s.string_count} strings</span>
+                      <span>·</span>
+                      <span>{formatDate(s.created_at)}</span>
+                      <span>·</span>
+                      <code className="font-mono">{s.content_hash.slice(0, 8)}</code>
+                    </div>
                   </div>
-                  {s.description && (
-                    <p className="text-sm text-slate-500 mb-2">{s.description}</p>
-                  )}
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span>{s.string_count} strings</span>
-                    <span>·</span>
-                    <span>{formatDate(s.created_at)}</span>
-                    <span>·</span>
-                    <code className="font-mono">{s.content_hash.slice(0, 8)}</code>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRestoreTarget(s)}
+                    >
+                      <RotateCcw data-icon="inline-start" />
+                      Restore
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteTarget(s)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRestoreTarget(s)}
-                    className="text-brand-700"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Restore
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-slate-400 hover:text-red-500"
-                    onClick={() => setDeleteTarget(s)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
 
       <Dialog
         open={showCreate}
-        onClose={() => { setShowCreate(false); resetForm() }}
-        title="Take snapshot"
-        description="Capture the current state of all translations."
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowCreate(false)
+            resetForm()
+          }
+        }}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField>
-            <Label>Name</Label>
-            <Input
-              placeholder="v1.2.0 release"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              error={errors.name}
-            />
-            <FormError message={errors.name} />
-          </FormField>
-          <FormField>
-            <Label>Description (optional)</Label>
-            <Textarea
-              placeholder="Pre-release snapshot"
-              value={form.description ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
-          </FormField>
-          <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); resetForm() }}>
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={createMut.isPending}>
-              Take snapshot
-            </Button>
-          </DialogFooter>
-        </form>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Take snapshot</DialogTitle>
+            <DialogDescription>
+              Capture the current state of all translations.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <FieldGroup>
+              <Field data-invalid={errors.name ? 'true' : undefined}>
+                <FieldLabel htmlFor="snapshot_name">Name</FieldLabel>
+                <Input
+                  id="snapshot_name"
+                  placeholder="v1.2.0 release"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  aria-invalid={errors.name ? true : undefined}
+                />
+                <FieldError>{errors.name}</FieldError>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="snapshot_description">Description (optional)</FieldLabel>
+                <Textarea
+                  id="snapshot_description"
+                  placeholder="Pre-release snapshot"
+                  value={form.description ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                />
+              </Field>
+              <DialogFooter className="mt-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => { setShowCreate(false); resetForm() }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMut.isPending}>
+                  {createMut.isPending && <Spinner data-icon="inline-start" />}
+                  Take snapshot
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          </form>
+        </DialogContent>
       </Dialog>
 
       <ConfirmDialog

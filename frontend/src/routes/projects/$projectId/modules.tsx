@@ -11,10 +11,14 @@ import {
   Button,
   Input,
   Textarea,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogFooter,
   ConfirmDialog,
   EmptyState,
@@ -25,6 +29,7 @@ import {
   TableHead,
   TableCell,
   Badge,
+  Spinner,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
 
@@ -112,9 +117,9 @@ function ModulesPage() {
   return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Modules</h1>
+        <h1 className="text-xl font-semibold text-foreground">Modules</h1>
         <Button size="sm" onClick={() => { resetForm(); setShowCreate(true) }}>
-          <Plus className="h-4 w-4" />
+          <Plus data-icon="inline-start" />
           New module
         </Button>
       </div>
@@ -126,7 +131,7 @@ function ModulesPage() {
           description="Modules group related strings together."
           action={
             <Button onClick={() => { resetForm(); setShowCreate(true) }}>
-              <Plus className="h-4 w-4" />
+              <Plus data-icon="inline-start" />
               Create module
             </Button>
           }
@@ -146,12 +151,12 @@ function ModulesPage() {
             {modules.map((m) => (
               <TableRow key={m.id}>
                 <TableCell>
-                  <code className="text-xs text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                  <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                     {m.slug}
                   </code>
                 </TableCell>
                 <TableCell className="font-medium">{m.name}</TableCell>
-                <TableCell className="text-slate-500 text-sm max-w-xs truncate">
+                <TableCell className="text-muted-foreground text-sm max-w-xs truncate">
                   {m.description ?? '—'}
                 </TableCell>
                 <TableCell>
@@ -173,7 +178,7 @@ function ModulesPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-slate-400 hover:text-red-500"
+                      className="text-muted-foreground hover:text-destructive"
                       onClick={() => setDeleteTarget(m)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -189,49 +194,71 @@ function ModulesPage() {
       {/* Create / Edit dialog */}
       <Dialog
         open={showCreate || editTarget !== null}
-        onClose={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
-        title={editTarget ? 'Edit module' : 'New module'}
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowCreate(false)
+            setEditTarget(null)
+            resetForm()
+          }
+        }}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField>
-            <Label>Slug</Label>
-            <Input
-              className="font-mono"
-              placeholder="common"
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              error={errors.slug}
-              disabled={!!editTarget}
-            />
-            <FormError message={errors.slug} />
-          </FormField>
-          <FormField>
-            <Label>Name</Label>
-            <Input
-              placeholder="Common strings"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              error={errors.name}
-            />
-            <FormError message={errors.name} />
-          </FormField>
-          <FormField>
-            <Label>Description (optional)</Label>
-            <Textarea
-              placeholder="Shared UI strings used across pages"
-              value={form.description ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
-          </FormField>
-          <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}>
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={createMut.isPending || updateMut.isPending}>
-              {editTarget ? 'Save' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </form>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editTarget ? 'Edit module' : 'New module'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <FieldGroup>
+              <Field data-invalid={errors.slug ? 'true' : undefined}>
+                <FieldLabel htmlFor="module_slug">Slug</FieldLabel>
+                <Input
+                  id="module_slug"
+                  className="font-mono"
+                  placeholder="common"
+                  value={form.slug}
+                  onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+                  aria-invalid={errors.slug ? true : undefined}
+                  disabled={!!editTarget}
+                />
+                <FieldError>{errors.slug}</FieldError>
+              </Field>
+              <Field data-invalid={errors.name ? 'true' : undefined}>
+                <FieldLabel htmlFor="module_name">Name</FieldLabel>
+                <Input
+                  id="module_name"
+                  placeholder="Common strings"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  aria-invalid={errors.name ? true : undefined}
+                />
+                <FieldError>{errors.name}</FieldError>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="module_description">Description (optional)</FieldLabel>
+                <Textarea
+                  id="module_description"
+                  placeholder="Shared UI strings used across pages"
+                  value={form.description ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                />
+              </Field>
+              <DialogFooter className="mt-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+                  {(createMut.isPending || updateMut.isPending) && (
+                    <Spinner data-icon="inline-start" />
+                  )}
+                  {editTarget ? 'Save' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          </form>
+        </DialogContent>
       </Dialog>
 
       <ConfirmDialog

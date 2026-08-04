@@ -1,18 +1,31 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useState, useRef, lazy, Suspense } from 'react'
+import { useState, useRef } from 'react'
 import { Download, Upload, FileText, FileSpreadsheet, ArrowUpDown } from 'lucide-react'
 import { api } from '../../../lib/api/client'
 import type { Project, ImportResult } from '../../../lib/api/types'
 import { queryKeys } from '../../../lib/query-keys'
 import {
   Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
   Select,
-  Label,
-  FormField,
-  Badge,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
   DialogFooter,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
   Spinner,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
@@ -112,190 +125,247 @@ function ImportExportPage() {
     : []
 
   return (
-    <div className="p-6 max-w-2xl space-y-8">
-      <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-        <ArrowUpDown className="h-5 w-5 text-brand-500" />
+    <div className="p-6 max-w-2xl flex flex-col gap-8">
+      <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+        <ArrowUpDown className="h-5 w-5 text-primary" />
         Import / Export
       </h1>
 
       {/* Export */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="text-base font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Download className="h-4 w-4 text-brand-500" />
-          Export
-        </h2>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-4 w-4 text-primary" />
+            Export
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="export_format">Format</FieldLabel>
+              <Select
+                value={exportFormat}
+                onValueChange={(v) => setExportFormat(v as 'json' | 'xlsx')}
+              >
+                <SelectTrigger id="export_format" className="w-full">
+                  <SelectValue placeholder="Format" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="json">JSON</SelectItem>
+                    <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
 
-        <div className="grid grid-cols-2 gap-4 mb-5">
-          <FormField>
-            <Label>Format</Label>
-            <Select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as 'json' | 'xlsx')}>
-              <option value="json">JSON</option>
-              <option value="xlsx">Excel (.xlsx)</option>
-            </Select>
-          </FormField>
+            <Field>
+              <FieldLabel htmlFor="export_layout">Layout</FieldLabel>
+              <Select
+                value={exportLayout}
+                onValueChange={(v) => setExportLayout(v as 'flat' | 'modular')}
+              >
+                <SelectTrigger id="export_layout" className="w-full">
+                  <SelectValue placeholder="Layout" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="flat">Flat</SelectItem>
+                    <SelectItem value="modular">Modular</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <FormField>
-            <Label>Layout</Label>
-            <Select
-              value={exportLayout}
-              onChange={(e) => setExportLayout(e.target.value as 'flat' | 'modular')}
-            >
-              <option value="flat">Flat</option>
-              <option value="modular">Modular</option>
-            </Select>
-          </FormField>
+            <Field>
+              <FieldLabel htmlFor="export_stage">Stage</FieldLabel>
+              <Select
+                value={exportStage}
+                onValueChange={(v) => setExportStage(v as 'all' | 'public')}
+              >
+                <SelectTrigger id="export_stage" className="w-full">
+                  <SelectValue placeholder="Stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">All strings</SelectItem>
+                    <SelectItem value="public">Public only</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <FormField>
-            <Label>Stage</Label>
-            <Select
-              value={exportStage}
-              onChange={(e) => setExportStage(e.target.value as 'all' | 'public')}
-            >
-              <option value="all">All strings</option>
-              <option value="public">Public only</option>
-            </Select>
-          </FormField>
+            <Field>
+              <FieldLabel htmlFor="export_locale">Locale</FieldLabel>
+              <Select value={exportLocale} onValueChange={setExportLocale}>
+                <SelectTrigger id="export_locale" className="w-full">
+                  <SelectValue placeholder="Locale" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">All locales</SelectItem>
+                    {locales.map((l) => (
+                      <SelectItem key={l} value={l}>
+                        {l}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
 
-          <FormField>
-            <Label>Locale</Label>
-            <Select
-              value={exportLocale}
-              onChange={(e) => setExportLocale(e.target.value)}
-            >
-              <option value="all">All locales</option>
-              {locales.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        </div>
-
-        <Button onClick={handleExport}>
-          {exportFormat === 'xlsx' ? (
-            <FileSpreadsheet className="h-4 w-4" />
-          ) : (
-            <FileText className="h-4 w-4" />
-          )}
-          Download {exportFormat.toUpperCase()}
-        </Button>
-      </section>
+          <div>
+            <Button onClick={handleExport}>
+              {exportFormat === 'xlsx' ? (
+                <FileSpreadsheet data-icon="inline-start" />
+              ) : (
+                <FileText data-icon="inline-start" />
+              )}
+              Download {exportFormat.toUpperCase()}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Import */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6">
-        <h2 className="text-base font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Upload className="h-4 w-4 text-brand-500" />
-          Import
-        </h2>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-4 w-4 text-primary" />
+            Import
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <FieldLabel htmlFor="import_locale">Target locale</FieldLabel>
+              <Select value={importLocale} onValueChange={setImportLocale}>
+                <SelectTrigger id="import_locale" className="w-full">
+                  <SelectValue placeholder="Target locale" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {locales.map((l) => (
+                      <SelectItem key={l} value={l}>
+                        {l}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
 
-        <div className="grid grid-cols-2 gap-4 mb-5">
-          <FormField>
-            <Label>Target locale</Label>
-            <Select
-              value={importLocale}
-              onChange={(e) => setImportLocale(e.target.value)}
+            <Field>
+              <FieldLabel htmlFor="import_mode">Mode</FieldLabel>
+              <Select
+                value={dryRun ? 'dry' : 'apply'}
+                onValueChange={(v) => setDryRun(v === 'dry')}
+              >
+                <SelectTrigger id="import_mode" className="w-full">
+                  <SelectValue placeholder="Mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="dry">Dry run (preview)</SelectItem>
+                    <SelectItem value="apply">Apply immediately</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,.xlsx"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          <div>
+            <Button
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+              disabled={importMut.isPending}
             >
-              {locales.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+              {importMut.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
+            </Button>
 
-          <FormField>
-            <Label>Mode</Label>
-            <Select
-              value={dryRun ? 'dry' : 'apply'}
-              onChange={(e) => setDryRun(e.target.value === 'dry')}
-            >
-              <option value="dry">Dry run (preview)</option>
-              <option value="apply">Apply immediately</option>
-            </Select>
-          </FormField>
-        </div>
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json,.xlsx"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-
-        <Button
-          variant="outline"
-          onClick={() => fileRef.current?.click()}
-          isLoading={importMut.isPending}
-        >
-          <Upload className="h-4 w-4" />
-          {importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
-        </Button>
-
-        <p className="text-xs text-slate-400 mt-2">
-          Accepted formats: .json, .xlsx — max 10 MB
-        </p>
-      </section>
+            <p className="text-xs text-muted-foreground mt-2">
+              Accepted formats: .json, .xlsx — max 10 MB
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Preview dialog */}
-      <Dialog
-        open={showPreview}
-        onClose={() => setShowPreview(false)}
-        title="Import preview (dry run)"
-        description="Review changes before applying."
-        className="max-w-lg"
-      >
-        {previewResult?.diff && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-emerald-50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-emerald-700">
-                  {previewResult.diff.create_count}
-                </p>
-                <p className="text-xs text-emerald-600">New strings</p>
-              </div>
-              <div className="bg-brand-50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-brand-700">
-                  {previewResult.diff.update_count}
-                </p>
-                <p className="text-xs text-brand-600">Updated</p>
-              </div>
-              <div className="bg-amber-50 rounded-lg p-3">
-                <p className="text-2xl font-bold text-amber-700">
-                  {previewResult.diff.orphan_count}
-                </p>
-                <p className="text-xs text-amber-600">Orphaned</p>
-              </div>
-            </div>
-
-            {previewResult.diff.create.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-slate-600 mb-1">New keys:</p>
-                <div className="max-h-28 overflow-y-auto space-y-0.5">
-                  {previewResult.diff.create.slice(0, 10).map((k) => (
-                    <code key={k} className="block text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                      + {k}
-                    </code>
-                  ))}
-                  {previewResult.diff.create.length > 10 && (
-                    <p className="text-xs text-slate-400">
-                      and {previewResult.diff.create.length - 10} more…
-                    </p>
-                  )}
+      <Dialog open={showPreview} onOpenChange={(o) => !o && setShowPreview(false)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import preview (dry run)</DialogTitle>
+            <DialogDescription>Review changes before applying.</DialogDescription>
+          </DialogHeader>
+          {previewResult?.diff && (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-2xl font-bold text-foreground">
+                    {previewResult.diff.create_count}
+                  </p>
+                  <p className="text-xs text-muted-foreground">New strings</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-2xl font-bold text-foreground">
+                    {previewResult.diff.update_count}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Updated</p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-2xl font-bold text-foreground">
+                    {previewResult.diff.orphan_count}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Orphaned</p>
                 </div>
               </div>
-            )}
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setShowPreview(false)}>
-            Cancel
-          </Button>
-          <Button onClick={confirmImport} isLoading={importMut.isPending}>
-            Apply import
-          </Button>
-        </DialogFooter>
+
+              {previewResult.diff.create.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">New keys:</p>
+                  <div className="max-h-28 overflow-y-auto flex flex-col gap-0.5">
+                    {previewResult.diff.create.slice(0, 10).map((k) => (
+                      <code
+                        key={k}
+                        className="block text-xs text-foreground bg-muted px-2 py-0.5 rounded"
+                      >
+                        + {k}
+                      </code>
+                    ))}
+                    {previewResult.diff.create.length > 10 && (
+                      <p className="text-xs text-muted-foreground">
+                        and {previewResult.diff.create.length - 10} more…
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreview(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmImport} disabled={importMut.isPending}>
+              {importMut.isPending && <Spinner data-icon="inline-start" />}
+              Apply import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   )

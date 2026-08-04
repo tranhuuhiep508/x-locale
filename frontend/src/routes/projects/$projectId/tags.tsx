@@ -10,10 +10,14 @@ import type { TagCreateForm } from '../../../lib/schemas'
 import {
   Button,
   Input,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogFooter,
   ConfirmDialog,
   EmptyState,
@@ -24,6 +28,7 @@ import {
   TableHead,
   TableCell,
   Badge,
+  Spinner,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
 
@@ -122,9 +127,9 @@ function TagsPage() {
   return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Tags</h1>
+        <h1 className="text-xl font-semibold text-foreground">Tags</h1>
         <Button size="sm" onClick={() => { resetForm(); setShowCreate(true) }}>
-          <Plus className="h-4 w-4" />
+          <Plus data-icon="inline-start" />
           New tag
         </Button>
       </div>
@@ -136,7 +141,7 @@ function TagsPage() {
           description="Tags help categorize and filter strings."
           action={
             <Button onClick={() => { resetForm(); setShowCreate(true) }}>
-              <Plus className="h-4 w-4" />
+              <Plus data-icon="inline-start" />
               Create tag
             </Button>
           }
@@ -181,7 +186,7 @@ function TagsPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-slate-400 hover:text-red-500"
+                      className="text-muted-foreground hover:text-destructive"
                       onClick={() => setDeleteTarget(t)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -196,61 +201,84 @@ function TagsPage() {
 
       <Dialog
         open={showCreate || editTarget !== null}
-        onClose={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
-        title={editTarget ? 'Edit tag' : 'New tag'}
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowCreate(false)
+            setEditTarget(null)
+            resetForm()
+          }
+        }}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField>
-            <Label>Name</Label>
-            <Input
-              placeholder="ios"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              error={errors.name}
-            />
-            <FormError message={errors.name} />
-          </FormField>
-          <FormField>
-            <Label>Color</Label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={form.color}
-                onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                className="h-9 w-9 rounded border border-slate-300 p-0.5 cursor-pointer"
-              />
-              <div className="flex flex-wrap gap-1">
-                {PRESET_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, color: c }))}
-                    className="h-6 w-6 rounded-full border-2 transition-transform hover:scale-110"
-                    style={{
-                      backgroundColor: c,
-                      borderColor: form.color === c ? '#0d9488' : 'transparent',
-                    }}
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editTarget ? 'Edit tag' : 'New tag'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <FieldGroup>
+              <Field data-invalid={errors.name ? 'true' : undefined}>
+                <FieldLabel htmlFor="tag_name">Name</FieldLabel>
+                <Input
+                  id="tag_name"
+                  placeholder="ios"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  aria-invalid={errors.name ? true : undefined}
+                />
+                <FieldError>{errors.name}</FieldError>
+              </Field>
+              <Field>
+                <FieldLabel>Color</FieldLabel>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={form.color}
+                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                    className="h-9 w-9 rounded border border-input p-0.5 cursor-pointer"
                   />
-                ))}
-              </div>
-            </div>
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium w-fit mt-1"
-              style={{ backgroundColor: form.color + '22', color: form.color }}
-            >
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: form.color }} />
-              {form.name || 'Preview'}
-            </div>
-          </FormField>
-          <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}>
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={createMut.isPending || updateMut.isPending}>
-              {editTarget ? 'Save' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </form>
+                  <div className="flex flex-wrap gap-1">
+                    {PRESET_COLORS.map((c) => (
+                      <Button
+                        key={c}
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => setForm((f) => ({ ...f, color: c }))}
+                        className="size-6 rounded-full border-2 p-0 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: c,
+                          borderColor: form.color === c ? 'var(--primary)' : 'transparent',
+                        }}
+                        aria-label={`Select color ${c}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium w-fit mt-1"
+                  style={{ backgroundColor: form.color + '22', color: form.color }}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: form.color }} />
+                  {form.name || 'Preview'}
+                </div>
+              </Field>
+              <DialogFooter className="mt-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+                  {(createMut.isPending || updateMut.isPending) && (
+                    <Spinner data-icon="inline-start" />
+                  )}
+                  {editTarget ? 'Save' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          </form>
+        </DialogContent>
       </Dialog>
 
       <ConfirmDialog

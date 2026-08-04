@@ -7,10 +7,19 @@ import { AppShell } from '../../components/layout/AppShell'
 import {
   Button,
   Input,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
   Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  Card,
+  CardContent,
+  Spinner,
 } from '../../components/ui'
 import { api } from '../../lib/api/client'
 import type { Language, Project } from '../../lib/api/types'
@@ -103,135 +112,156 @@ function NewProjectPage() {
   return (
     <AppShell>
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-8">
-        <Link to="/" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-6">
+        <Link
+          to="/"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to projects
         </Link>
 
-        <h1 className="text-xl font-semibold text-slate-900 mb-6">New project</h1>
+        <h1 className="text-xl font-semibold text-foreground mb-6">New project</h1>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
-          <FormField>
-            <Label htmlFor="name">Project name</Label>
-            <Input
-              id="name"
-              value={form.name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="My App"
-              error={errors.name}
-            />
-            <FormError message={errors.name} />
-          </FormField>
+        <Card>
+          <CardContent>
+            <form onSubmit={handleSubmit}>
+              <FieldGroup>
+                <Field data-invalid={errors.name ? 'true' : undefined}>
+                  <FieldLabel htmlFor="name">Project name</FieldLabel>
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="My App"
+                    aria-invalid={errors.name ? true : undefined}
+                  />
+                  <FieldError>{errors.name}</FieldError>
+                </Field>
 
-          <FormField>
-            <Label htmlFor="slug">Slug (optional)</Label>
-            <Input
-              id="slug"
-              value={form.slug}
-              onChange={(e) => {
-                setSlugTouched(true)
-                setForm((f) => ({ ...f, slug: e.target.value }))
-              }}
-              placeholder="my-app"
-              className="font-mono"
-              error={errors.slug}
-            />
-            <FormError message={errors.slug} />
-          </FormField>
+                <Field data-invalid={errors.slug ? 'true' : undefined}>
+                  <FieldLabel htmlFor="slug">Slug (optional)</FieldLabel>
+                  <Input
+                    id="slug"
+                    value={form.slug}
+                    onChange={(e) => {
+                      setSlugTouched(true)
+                      setForm((f) => ({ ...f, slug: e.target.value }))
+                    }}
+                    placeholder="my-app"
+                    className="font-mono"
+                    aria-invalid={errors.slug ? true : undefined}
+                  />
+                  <FieldError>{errors.slug}</FieldError>
+                </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <FormField>
-              <Label htmlFor="base_language">Base language</Label>
-              <Select
-                id="base_language"
-                value={form.base_language}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    base_language: e.target.value,
-                    target_languages: f.target_languages.filter((l) => l !== e.target.value),
-                  }))
-                }
-              >
-                {languages.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.name} ({l.code})
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-
-            <FormField>
-              <Label htmlFor="layout">Layout</Label>
-              <Select
-                id="layout"
-                value={form.layout}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, layout: e.target.value as 'flat' | 'modular' }))
-                }
-              >
-                <option value="flat">Flat</option>
-                <option value="modular">Modular</option>
-              </Select>
-            </FormField>
-          </div>
-
-          <FormField>
-            <Label>Target languages</Label>
-            {errors.target_languages && <FormError message={errors.target_languages} />}
-
-            {form.target_languages.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {form.target_languages.map((code) => {
-                  const lang = languages.find((l) => l.code === code)
-                  return (
-                    <button
-                      key={code}
-                      type="button"
-                      onClick={() => toggleTargetLang(code)}
-                      className="flex items-center gap-1 px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 rounded-full text-xs hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                <div className="grid grid-cols-2 gap-4">
+                  <Field>
+                    <FieldLabel htmlFor="base_language">Base language</FieldLabel>
+                    <Select
+                      value={form.base_language}
+                      onValueChange={(v) =>
+                        setForm((f) => ({
+                          ...f,
+                          base_language: v,
+                          target_languages: f.target_languages.filter((l) => l !== v),
+                        }))
+                      }
                     >
-                      {lang?.name ?? code}
-                      <X className="h-3 w-3" />
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+                      <SelectTrigger id="base_language" className="w-full">
+                        <SelectValue placeholder="Base language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {languages.map((l) => (
+                            <SelectItem key={l.code} value={l.code}>
+                              {l.name} ({l.code})
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
 
-            <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-md p-2">
-              {targetLangs.map((l) => {
-                const selected = form.target_languages.includes(l.code)
-                return (
-                  <button
-                    key={l.code}
-                    type="button"
-                    onClick={() => toggleTargetLang(l.code)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs text-left transition-colors ${
-                      selected
-                        ? 'bg-brand-50 text-brand-700 border border-brand-200'
-                        : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="font-mono text-[10px] text-slate-400 w-5">{l.code}</span>
-                    {l.name}
-                  </button>
-                )
-              })}
-            </div>
-          </FormField>
+                  <Field>
+                    <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                    <Select
+                      value={form.layout}
+                      onValueChange={(v) =>
+                        setForm((f) => ({ ...f, layout: v as 'flat' | 'modular' }))
+                      }
+                    >
+                      <SelectTrigger id="layout" className="w-full">
+                        <SelectValue placeholder="Layout" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="flat">Flat</SelectItem>
+                          <SelectItem value="modular">Modular</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Link to="/">
-              <Button variant="outline" type="button">
-                Cancel
-              </Button>
-            </Link>
-            <Button type="submit" isLoading={createMut.isPending}>
-              Create project
-            </Button>
-          </div>
-        </form>
+                <Field data-invalid={errors.target_languages ? 'true' : undefined}>
+                  <FieldLabel>Target languages</FieldLabel>
+                  <FieldError>{errors.target_languages}</FieldError>
+
+                  {form.target_languages.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.target_languages.map((code) => {
+                        const lang = languages.find((l) => l.code === code)
+                        return (
+                          <Button
+                            key={code}
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => toggleTargetLang(code)}
+                          >
+                            {lang?.name ?? code}
+                            <X data-icon="inline-end" />
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+                    {targetLangs.map((l) => {
+                      const selected = form.target_languages.includes(l.code)
+                      return (
+                        <Button
+                          key={l.code}
+                          type="button"
+                          variant={selected ? 'secondary' : 'ghost'}
+                          size="sm"
+                          className="justify-start"
+                          onClick={() => toggleTargetLang(l.code)}
+                        >
+                          <span className="font-mono text-[10px] text-muted-foreground w-5">
+                            {l.code}
+                          </span>
+                          {l.name}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </Field>
+
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" type="button" asChild>
+                    <Link to="/">Cancel</Link>
+                  </Button>
+                  <Button type="submit" disabled={createMut.isPending}>
+                    {createMut.isPending && <Spinner data-icon="inline-start" />}
+                    Create project
+                  </Button>
+                </div>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   )

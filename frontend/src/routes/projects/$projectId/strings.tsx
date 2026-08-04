@@ -3,7 +3,6 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
-  useIsMutating,
 } from '@tanstack/react-query'
 import {
   useState,
@@ -24,7 +23,6 @@ import {
   MoveRight,
   Tag as TagIcon,
   Wand2,
-  ChevronDown,
   X,
 } from 'lucide-react'
 import { api } from '../../../lib/api/client'
@@ -46,14 +44,28 @@ import {
   Badge,
   Input,
   Select,
-  Pagination,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Checkbox,
+  Textarea,
+  DataPagination,
   EmptyState,
   Dialog,
+  DialogContent,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
   ConfirmDialog,
   Spinner,
-  Label,
-  FormField,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
 import { cn } from '../../../lib/utils'
@@ -107,11 +119,10 @@ function TranslationCell({
   }, [value, saveMut])
 
   return (
-    <textarea
+    <Textarea
       className={cn(
-        'w-full resize-none text-sm border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand-400 min-h-[42px]',
-        saveMut.isPending ? 'border-brand-300 bg-brand-50/30' : 'border-transparent hover:border-slate-300 bg-transparent',
-        value === '' && 'placeholder-slate-300',
+        'min-h-[42px] resize-none text-sm',
+        saveMut.isPending && 'border-primary/40 bg-primary/5',
       )}
       value={value}
       onChange={(e) => setValue(e.target.value)}
@@ -138,30 +149,37 @@ function BatchMoveDialog({
   isLoading: boolean
 }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Move to module">
-      <div className="space-y-2 max-h-64 overflow-y-auto">
-        <button
-          className="w-full text-left px-3 py-2 text-sm rounded hover:bg-slate-50 text-slate-500 italic"
-          onClick={() => onSelect(null)}
-        >
-          — No module —
-        </button>
-        {modules.map((m) => (
-          <button
-            key={m.id}
-            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-brand-50 hover:text-brand-700"
-            onClick={() => onSelect(m.id)}
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !isLoading) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Move to module</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground italic"
+            onClick={() => onSelect(null)}
           >
-            <span className="font-mono text-xs text-slate-400 mr-2">{m.slug}</span>
-            {m.name}
-          </button>
-        ))}
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={isLoading}>
-          Cancel
-        </Button>
-      </DialogFooter>
+            — No module —
+          </Button>
+          {modules.map((m) => (
+            <Button
+              key={m.id}
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={() => onSelect(m.id)}
+            >
+              <span className="font-mono text-xs text-muted-foreground mr-2">{m.slug}</span>
+              {m.name}
+            </Button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -184,43 +202,43 @@ function BatchTagDialog({
   const [selected, setSelected] = useState<string[]>([])
 
   return (
-    <Dialog open={open} onClose={onClose} title="Add tags">
-      <div className="space-y-1 max-h-64 overflow-y-auto mb-2">
-        {tags.map((t) => (
-          <label
-            key={t.id}
-            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              className="rounded border-slate-300"
-              checked={selected.includes(t.id)}
-              onChange={(e) =>
-                setSelected((prev) =>
-                  e.target.checked ? [...prev, t.id] : prev.filter((id) => id !== t.id),
-                )
-              }
-            />
-            <span
-              className="h-3 w-3 rounded-full shrink-0"
-              style={{ backgroundColor: t.color }}
-            />
-            <span className="text-sm">{t.name}</span>
-          </label>
-        ))}
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={isLoading}>
-          Cancel
-        </Button>
-        <Button
-          onClick={() => onApply(selected)}
-          disabled={selected.length === 0}
-          isLoading={isLoading}
-        >
-          Add tags
-        </Button>
-      </DialogFooter>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !isLoading) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add tags</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+          {tags.map((t) => (
+            <label
+              key={t.id}
+              className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted cursor-pointer"
+            >
+              <Checkbox
+                checked={selected.includes(t.id)}
+                onCheckedChange={(checked) =>
+                  setSelected((prev) =>
+                    checked ? [...prev, t.id] : prev.filter((id) => id !== t.id),
+                  )
+                }
+              />
+              <span
+                className="h-3 w-3 rounded-full shrink-0"
+                style={{ backgroundColor: t.color }}
+              />
+              <span className="text-sm">{t.name}</span>
+            </label>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button onClick={() => onApply(selected)} disabled={selected.length === 0 || isLoading}>
+            {isLoading && <Spinner data-icon="inline-start" />}
+            Add tags
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -338,11 +356,11 @@ function StringsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Filters bar */}
-      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3">
+      <div className="sticky top-0 z-10 bg-background border-b px-4 py-3">
         <div className="flex flex-wrap gap-2 items-center">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               className="pl-8 w-56"
               placeholder="Search strings…"
@@ -354,61 +372,85 @@ function StringsPage() {
           {/* Module filter */}
           {modules.length > 0 && (
             <Select
-              className="w-36"
-              value={search.module ?? ''}
-              onChange={(e) => setFilter({ module: e.target.value || undefined })}
+              value={search.module ?? 'all'}
+              onValueChange={(v) => setFilter({ module: v === 'all' ? undefined : v })}
             >
-              <option value="">All modules</option>
-              {modules.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="All modules" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">All modules</SelectItem>
+                  {modules.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
           )}
 
           {/* Tag filter */}
           {tags.length > 0 && (
             <Select
-              className="w-36"
-              value={search.tag ?? ''}
-              onChange={(e) => setFilter({ tag: e.target.value || undefined })}
+              value={search.tag ?? 'all'}
+              onValueChange={(v) => setFilter({ tag: v === 'all' ? undefined : v })}
             >
-              <option value="">All tags</option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="All tags" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">All tags</SelectItem>
+                  {tags.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
           )}
 
           {/* Status filter */}
           <Select
-            className="w-32"
-            value={search.status ?? ''}
-            onChange={(e) =>
-              setFilter({ status: (e.target.value as StringsSearch['status']) || undefined })
+            value={search.status ?? 'all'}
+            onValueChange={(v) =>
+              setFilter({ status: v === 'all' ? undefined : (v as StringsSearch['status']) })
             }
           >
-            <option value="">Any status</option>
-            <option value="draft">Draft</option>
-            <option value="public">Public</option>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Any status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">Any status</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="public">Public</SelectItem>
+              </SelectGroup>
+            </SelectContent>
           </Select>
 
           {/* Missing locale filter */}
           {targetLocales.length > 0 && (
             <Select
-              className="w-40"
-              value={search.missing_locale ?? ''}
-              onChange={(e) => setFilter({ missing_locale: e.target.value || undefined })}
+              value={search.missing_locale ?? 'all'}
+              onValueChange={(v) => setFilter({ missing_locale: v === 'all' ? undefined : v })}
             >
-              <option value="">All locales</option>
-              {targetLocales.map((l) => (
-                <option key={l} value={l}>
-                  Missing: {l}
-                </option>
-              ))}
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All locales" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">All locales</SelectItem>
+                  {targetLocales.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      Missing: {l}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
             </Select>
           )}
 
@@ -422,9 +464,9 @@ function StringsPage() {
                   search: { page: 1, page_size: search.page_size },
                 })
               }
-              className="text-slate-500"
+              className="text-muted-foreground"
             >
-              <X className="h-3.5 w-3.5" />
+              <X data-icon="inline-start" />
               Clear
             </Button>
           )}
@@ -437,14 +479,14 @@ function StringsPage() {
             onClick={() =>
               translateMut.mutate({ scope: 'missing', locales: targetLocales })
             }
-            isLoading={translateMut.isPending}
+            disabled={translateMut.isPending}
           >
-            <Wand2 className="h-3.5 w-3.5" />
+            {translateMut.isPending ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
             Translate missing
           </Button>
 
           <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" />
             Add string
           </Button>
         </div>
@@ -452,7 +494,7 @@ function StringsPage() {
         {/* Active filter pills */}
         {(search.q || search.module || search.tag || search.status || search.missing_locale) && (
           <div className="flex flex-wrap gap-1.5 mt-2">
-            <Filter className="h-3.5 w-3.5 text-slate-400 mt-0.5" />
+            <Filter className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
             {search.q && (
               <FilterPill label={`"${search.q}"`} onRemove={() => setFilter({ q: undefined })} />
             )}
@@ -474,61 +516,56 @@ function StringsPage() {
 
       {/* Batch action bar */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-[57px] z-10 bg-brand-600 text-white px-4 py-2 flex items-center gap-3">
+        <div className="sticky top-[57px] z-10 bg-primary text-primary-foreground px-4 py-2 flex items-center gap-3">
           <span className="text-sm font-medium">
             {selectedIds.size} selected
           </span>
           <div className="flex gap-1.5">
-            <button
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-brand-700 hover:bg-brand-800 rounded"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 batchMut.mutate({ action: 'publish', string_ids: selectedList })
               }
             >
-              <CheckCircle className="h-3.5 w-3.5" />
+              <CheckCircle data-icon="inline-start" />
               Publish
-            </button>
-            <button
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-brand-700 hover:bg-brand-800 rounded"
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() =>
                 batchMut.mutate({ action: 'unpublish', string_ids: selectedList })
               }
             >
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircle data-icon="inline-start" />
               Unpublish
-            </button>
+            </Button>
             {modules.length > 0 && (
-              <button
-                className="flex items-center gap-1 px-3 py-1 text-xs bg-brand-700 hover:bg-brand-800 rounded"
-                onClick={() => setShowMoveModule(true)}
-              >
-                <MoveRight className="h-3.5 w-3.5" />
+              <Button variant="secondary" size="sm" onClick={() => setShowMoveModule(true)}>
+                <MoveRight data-icon="inline-start" />
                 Move module
-              </button>
+              </Button>
             )}
             {tags.length > 0 && (
-              <button
-                className="flex items-center gap-1 px-3 py-1 text-xs bg-brand-700 hover:bg-brand-800 rounded"
-                onClick={() => setShowAddTags(true)}
-              >
-                <TagIcon className="h-3.5 w-3.5" />
+              <Button variant="secondary" size="sm" onClick={() => setShowAddTags(true)}>
+                <TagIcon data-icon="inline-start" />
                 Add tags
-              </button>
+              </Button>
             )}
-            <button
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 rounded ml-1"
-              onClick={() => setDeleteConfirm(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
+            <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm(true)}>
+              <Trash2 data-icon="inline-start" />
               Delete
-            </button>
+            </Button>
           </div>
-          <button
-            className="ml-auto text-brand-200 hover:text-white"
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
             onClick={() => setSelectedIds(new Set())}
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </div>
       )}
 
@@ -553,45 +590,35 @@ function StringsPage() {
               !search.status &&
               !search.missing_locale ? (
                 <Button onClick={() => setShowCreate(true)}>
-                  <Plus className="h-4 w-4" />
+                  <Plus data-icon="inline-start" />
                   Add string
                 </Button>
               ) : undefined
             }
           />
         ) : (
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
-              <tr>
-                <th className="w-8 px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    className="rounded border-slate-300"
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">
+                  <Checkbox
                     checked={allSelected}
-                    onChange={toggleAll}
+                    onCheckedChange={() => toggleAll()}
+                    aria-label="Select all"
                   />
-                </th>
-                <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide w-40">
-                  Key
-                </th>
-                <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide w-52">
-                  Source
-                </th>
+                </TableHead>
+                <TableHead className="w-40">Key</TableHead>
+                <TableHead className="w-52">Source</TableHead>
                 {targetLocales.map((l) => (
-                  <th
-                    key={l}
-                    className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide min-w-[180px]"
-                  >
+                  <TableHead key={l} className="min-w-[180px]">
                     {l}
-                  </th>
+                  </TableHead>
                 ))}
-                <th className="px-3 py-2.5 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
-                  Tags / Module
-                </th>
-                <th className="px-3 py-2.5 w-10" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+                <TableHead>Tags / Module</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {strings.map((s) => (
                 <StringRow
                   key={s.id}
@@ -610,15 +637,15 @@ function StringsPage() {
                   }
                 />
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 
       {/* Pagination */}
       {total > search.page_size && (
-        <div className="border-t border-slate-200 px-4">
-          <Pagination
+        <div className="border-t px-4">
+          <DataPagination
             page={search.page}
             pageSize={search.page_size}
             total={total}
@@ -690,12 +717,19 @@ function StringsPage() {
 
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs">
+    <Badge variant="secondary" className="gap-1">
       {label}
-      <button onClick={onRemove} className="hover:text-red-500">
-        <X className="h-3 w-3" />
-      </button>
-    </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        onClick={onRemove}
+        className="size-4 text-muted-foreground hover:text-destructive"
+        aria-label={`Remove ${label} filter`}
+      >
+        <X />
+      </Button>
+    </Badge>
   )
 }
 
@@ -740,25 +774,14 @@ function StringRow({
   const allFilled = targetLocales.every((l) => (translationsByLocale[l]?.value ?? '') !== '')
 
   return (
-    <tr
-      className={cn(
-        'transition-colors hover:bg-slate-50/60',
-        selected && 'bg-brand-50/40',
-      )}
-      data-selected={selected}
-    >
-      <td className="px-3 py-2">
-        <input
-          type="checkbox"
-          className="rounded border-slate-300"
-          checked={selected}
-          onChange={onToggle}
-        />
-      </td>
-      <td className="px-3 py-2 align-top">
-        <span className="font-mono text-xs text-slate-700 break-all">{entry.key}</span>
+    <TableRow data-state={selected ? 'selected' : undefined}>
+      <TableCell className="align-top">
+        <Checkbox checked={selected} onCheckedChange={() => onToggle()} aria-label="Select row" />
+      </TableCell>
+      <TableCell className="align-top whitespace-normal">
+        <span className="font-mono text-xs text-foreground break-all">{entry.key}</span>
         {entry.module_slug && (
-          <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{entry.module_slug}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">{entry.module_slug}</p>
         )}
         <div className="flex flex-wrap gap-1 mt-1">
           {entry.tags.map((t) => (
@@ -772,20 +795,20 @@ function StringRow({
           ))}
         </div>
         <Badge
-          variant={allFilled ? 'public' : 'draft'}
+          variant={allFilled ? 'default' : 'secondary'}
           className="mt-1 text-[10px]"
         >
           {allFilled ? 'public' : 'draft'}
         </Badge>
-      </td>
-      <td className="px-3 py-2 align-top max-w-[220px]">
-        <p className="text-sm text-slate-800 leading-relaxed line-clamp-3">{entry.source_text}</p>
+      </TableCell>
+      <TableCell className="align-top max-w-[220px] whitespace-normal">
+        <p className="text-sm text-foreground leading-relaxed line-clamp-3">{entry.source_text}</p>
         {entry.description && (
-          <p className="text-xs text-slate-400 mt-1 italic">{entry.description}</p>
+          <p className="text-xs text-muted-foreground mt-1 italic">{entry.description}</p>
         )}
-      </td>
+      </TableCell>
       {targetLocales.map((locale) => (
-        <td key={locale} className="px-3 py-2 align-top min-w-[180px]">
+        <TableCell key={locale} className="align-top min-w-[180px] whitespace-normal">
           <TranslationCell
             stringId={entry.id}
             projectId={projectId}
@@ -795,34 +818,31 @@ function StringRow({
               qc.invalidateQueries({ queryKey: queryKeys.project(projectId) })
             }}
           />
-        </td>
+        </TableCell>
       ))}
-      <td className="px-3 py-2 align-top">
+      <TableCell className="align-top">
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon-sm"
             title="AI Translate"
             onClick={() => onTranslate(entry.id)}
-            className="text-slate-400 hover:text-brand-600"
+            className="text-muted-foreground hover:text-primary"
           >
-            <Wand2 className="h-3.5 w-3.5" />
+            <Wand2 />
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
             title="Delete"
             onClick={() => deleteMut.mutate()}
-            isLoading={deleteMut.isPending}
-            className="text-slate-400 hover:text-red-500"
+            disabled={deleteMut.isPending}
+            className="text-muted-foreground hover:text-destructive"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            {deleteMut.isPending ? <Spinner /> : <Trash2 />}
           </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }
-
-// suppress unused import warning
-const _useIsMutating = useIsMutating

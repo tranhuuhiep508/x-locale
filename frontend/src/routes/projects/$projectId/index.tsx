@@ -5,7 +5,7 @@ import { AlignLeft, Boxes, Tags, Globe2, Clock } from 'lucide-react'
 import { api } from '../../../lib/api/client'
 import type { Project, Module, Tag, ActivityListResponse } from '../../../lib/api/types'
 import { queryKeys } from '../../../lib/query-keys'
-import { Badge } from '../../../components/ui'
+import { Badge, Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
 import { formatDate } from '../../../lib/utils'
 
 export const Route = createFileRoute('/projects/$projectId/')({
@@ -24,17 +24,18 @@ function StatCard({
   href: string
 }) {
   return (
-    <Link
-      to={href}
-      className="flex items-start gap-4 bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 hover:shadow-sm transition-all group"
-    >
-      <div className="p-2 rounded-lg bg-brand-50 text-brand-600 group-hover:bg-brand-100">
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-slate-900">{value}</p>
-        <p className="text-sm text-slate-500">{label}</p>
-      </div>
+    <Link to={href} className="group">
+      <Card className="h-full transition-all hover:ring-primary/30 hover:shadow-sm">
+        <CardContent className="flex items-start gap-4">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/15">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-foreground">{value}</p>
+            <p className="text-sm text-muted-foreground">{label}</p>
+          </div>
+        </CardContent>
+      </Card>
     </Link>
   )
 }
@@ -71,8 +72,8 @@ function ProjectOverviewPage() {
   return (
     <div className="p-6 max-w-4xl">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">{project.name}</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-foreground">{project.name}</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           {project.layout} layout · base:{' '}
           <span className="font-mono font-medium">{project.base_language}</span>
         </p>
@@ -100,61 +101,67 @@ function ProjectOverviewPage() {
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-4">
-            <Globe2 className="h-4 w-4 text-brand-500" />
-            Languages
-          </h2>
-          <div className="space-y-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Globe2 className="h-4 w-4 text-primary" />
+              Languages
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
-                <Badge variant="brand">base</Badge>
+                <Badge>base</Badge>
                 <span className="font-mono">{project.base_language}</span>
               </div>
-              <span className="text-slate-400">{project.string_count} strings</span>
+              <span className="text-muted-foreground">{project.string_count} strings</span>
             </div>
             {project.target_languages.map((locale) => (
               <div key={locale} className="flex items-center justify-between text-sm">
-                <span className="font-mono text-slate-700">{locale}</span>
+                <span className="font-mono text-foreground">{locale}</span>
                 <Link
                   to="/projects/$projectId/strings"
                   params={{ projectId }}
                   search={{ missing_locale: locale }}
-                  className="text-xs text-brand-600 hover:underline"
+                  className="text-xs text-primary hover:underline"
                 >
                   View missing
                 </Link>
               </div>
             ))}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-4">
-            <Clock className="h-4 w-4 text-brand-500" />
-            Recent activity
-          </h2>
-          {activityData?.items?.length ? (
-            <div className="space-y-2">
-              {activityData.items.map((a) => (
-                <div key={a.id} className="text-sm">
-                  <p className="text-slate-700">{a.summary}</p>
-                  <p className="text-xs text-slate-400">{formatDate(a.created_at)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">No activity yet</p>
-          )}
-          <Link
-            to="/projects/$projectId/activity"
-            params={{ projectId }}
-            search={{}}
-            className="text-xs text-brand-600 hover:underline mt-3 inline-block"
-          >
-            View all activity →
-          </Link>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" />
+              Recent activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {activityData?.items?.length ? (
+              <div className="flex flex-col gap-2">
+                {activityData.items.map((a) => (
+                  <div key={a.id} className="text-sm">
+                    <p className="text-foreground">{a.summary}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(a.created_at)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No activity yet</p>
+            )}
+            <Link
+              to="/projects/$projectId/activity"
+              params={{ projectId }}
+              search={{}}
+              className="text-xs text-primary hover:underline mt-1 inline-block"
+            >
+              View all activity →
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

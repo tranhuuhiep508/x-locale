@@ -1,67 +1,19 @@
-import * as React from 'react'
-import { cn } from '../../lib/utils'
+import * as React from "react"
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  error?: string
-}
+import { cn } from "@/lib/utils"
 
-const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, ...props }, ref) => (
+function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+  return (
     <input
-      ref={ref}
+      type={type}
+      data-slot="input"
       className={cn(
-        'flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50',
-        error && 'border-red-500 focus:ring-red-500',
-        className,
+        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        className
       )}
       {...props}
     />
-  ),
-)
-
-Input.displayName = 'Input'
-
-export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
-  error?: string
+  )
 }
 
-const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, error, ...props }, ref) => (
-    <textarea
-      ref={ref}
-      className={cn(
-        'flex min-h-[64px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 resize-none',
-        error && 'border-red-500 focus:ring-red-500',
-        className,
-      )}
-      {...props}
-    />
-  ),
-)
-
-Textarea.displayName = 'Textarea'
-
-export interface LabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {}
-
-const Label = React.forwardRef<HTMLLabelElement, LabelProps>(
-  ({ className, ...props }, ref) => (
-    <label
-      ref={ref}
-      className={cn('text-sm font-medium text-slate-700 leading-none', className)}
-      {...props}
-    />
-  ),
-)
-
-Label.displayName = 'Label'
-
-function FormField({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('flex flex-col gap-1.5', className)}>{children}</div>
-}
-
-function FormError({ message }: { message?: string }) {
-  if (!message) return null
-  return <p className="text-xs text-red-500">{message}</p>
-}
-
-export { Input, Textarea, Label, FormField, FormError }
+export { Input }

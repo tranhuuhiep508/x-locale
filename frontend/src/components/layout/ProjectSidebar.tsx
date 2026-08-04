@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { Project } from '../../lib/api/types'
+import { Separator } from '../ui'
 
 function useSideLink(suffix: string, projectId: string, exact = false) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -26,8 +27,8 @@ const linkCls = (isActive: boolean) =>
   cn(
     'flex items-center gap-2.5 px-4 py-2 text-sm transition-colors',
     isActive
-      ? 'text-brand-700 bg-brand-50 border-r-2 border-brand-500 font-medium'
-      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50',
+      ? 'text-primary bg-primary/10 border-r-2 border-primary font-medium'
+      : 'text-muted-foreground hover:text-foreground hover:bg-muted',
   )
 
 interface ProjectSidebarProps {
@@ -46,23 +47,24 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
   const versionsLink = useSideLink('/versions', id)
 
   return (
-    <aside className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col">
-      <div className="px-4 py-4 border-b border-slate-100">
+    <aside className="w-56 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <div className="px-4 py-4">
         <Link
           to="/"
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 mb-3"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           All projects
         </Link>
         <div>
-          <p className="text-xs text-slate-400 uppercase font-medium tracking-wide">Project</p>
-          <h2 className="text-sm font-semibold text-slate-900 mt-0.5 truncate" title={project.name}>
+          <p className="text-xs text-muted-foreground uppercase font-medium tracking-wide">Project</p>
+          <h2 className="text-sm font-semibold text-foreground mt-0.5 truncate" title={project.name}>
             {project.name}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5 font-mono">{project.slug}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 font-mono">{project.slug}</p>
         </div>
       </div>
+      <Separator />
       <nav className="flex-1 py-2">
         <Link
           to="/projects/$projectId"
@@ -131,8 +133,9 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
           Versions
         </Link>
       </nav>
-      <div className="px-4 py-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400">
+      <Separator />
+      <div className="px-4 py-3">
+        <p className="text-xs text-muted-foreground">
           {project.string_count} string{project.string_count !== 1 ? 's' : ''}
         </p>
       </div>

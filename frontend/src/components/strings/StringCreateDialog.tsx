@@ -6,14 +6,26 @@ import { stringCreateSchema } from '../../lib/schemas'
 import type { StringCreateForm } from '../../lib/schemas'
 import {
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogFooter,
   Button,
   Input,
   Textarea,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
   Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  ToggleGroup,
+  ToggleGroupItem,
+  Spinner,
 } from '../ui'
 import { useToast } from '../../store'
 
@@ -26,6 +38,8 @@ interface Props {
 }
 
 type FormErrors = Partial<Record<keyof StringCreateForm, string>>
+
+const NONE_MODULE = '__none__'
 
 export default function StringCreateDialog({
   projectId,
@@ -77,103 +91,109 @@ export default function StringCreateDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} title="Add string" className="max-w-lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <FormField>
-          <Label htmlFor="key">Key</Label>
-          <Input
-            id="key"
-            className="font-mono"
-            placeholder="common.submit_button"
-            value={form.key}
-            onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
-            error={errors.key}
-          />
-          <FormError message={errors.key} />
-        </FormField>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add string</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <FieldGroup>
+            <Field data-invalid={errors.key ? 'true' : undefined}>
+              <FieldLabel htmlFor="key">Key</FieldLabel>
+              <Input
+                id="key"
+                className="font-mono"
+                placeholder="common.submit_button"
+                value={form.key}
+                onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+                aria-invalid={errors.key ? true : undefined}
+              />
+              <FieldError>{errors.key}</FieldError>
+            </Field>
 
-        <FormField>
-          <Label htmlFor="source_text">Source text</Label>
-          <Textarea
-            id="source_text"
-            placeholder="Submit"
-            value={form.source_text}
-            onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
-            error={errors.source_text}
-          />
-          <FormError message={errors.source_text} />
-        </FormField>
+            <Field data-invalid={errors.source_text ? 'true' : undefined}>
+              <FieldLabel htmlFor="source_text">Source text</FieldLabel>
+              <Textarea
+                id="source_text"
+                placeholder="Submit"
+                value={form.source_text}
+                onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
+                aria-invalid={errors.source_text ? true : undefined}
+              />
+              <FieldError>{errors.source_text}</FieldError>
+            </Field>
 
-        <FormField>
-          <Label htmlFor="description">Description (optional)</Label>
-          <Input
-            id="description"
-            placeholder="Context for translators"
-            value={form.description ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-          />
-        </FormField>
+            <Field>
+              <FieldLabel htmlFor="description">Description (optional)</FieldLabel>
+              <Input
+                id="description"
+                placeholder="Context for translators"
+                value={form.description ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </Field>
 
-        {modules.length > 0 && (
-          <FormField>
-            <Label htmlFor="module_id">Module (optional)</Label>
-            <Select
-              id="module_id"
-              value={form.module_id ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, module_id: e.target.value }))}
-            >
-              <option value="">— None —</option>
-              {modules.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        )}
+            {modules.length > 0 && (
+              <Field>
+                <FieldLabel htmlFor="module_id">Module (optional)</FieldLabel>
+                <Select
+                  value={form.module_id || NONE_MODULE}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, module_id: v === NONE_MODULE ? '' : v }))
+                  }
+                >
+                  <SelectTrigger id="module_id" className="w-full">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NONE_MODULE}>— None —</SelectItem>
+                      {modules.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
-        {tags.length > 0 && (
-          <FormField>
-            <Label>Tags (optional)</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => {
-                const selected = form.tag_ids?.includes(t.id)
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        tag_ids: selected
-                          ? (f.tag_ids ?? []).filter((id) => id !== t.id)
-                          : [...(f.tag_ids ?? []), t.id],
-                      }))
-                    }
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
-                      selected
-                        ? 'bg-brand-50 text-brand-700 border-brand-300'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
-                    {t.name}
-                  </button>
-                )
-              })}
-            </div>
-          </FormField>
-        )}
+            {tags.length > 0 && (
+              <Field>
+                <FieldLabel>Tags (optional)</FieldLabel>
+                <ToggleGroup
+                  type="multiple"
+                  variant="outline"
+                  className="flex flex-wrap justify-start"
+                  value={form.tag_ids ?? []}
+                  onValueChange={(ids) => setForm((f) => ({ ...f, tag_ids: ids }))}
+                >
+                  {tags.map((t) => (
+                    <ToggleGroupItem key={t.id} value={t.id} size="sm">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      {t.name}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </Field>
+            )}
+          </FieldGroup>
 
-        <DialogFooter>
-          <Button variant="outline" type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" isLoading={createMut.isPending}>
-            Create string
-          </Button>
-        </DialogFooter>
-      </form>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" type="button" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createMut.isPending}>
+              {createMut.isPending && <Spinner data-icon="inline-start" />}
+              Create string
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   )
 }

@@ -1,27 +1,39 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Plus, Trash2, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, Copy, Check } from 'lucide-react'
 import { api } from '../../../lib/api/client'
 import type { Project, Language, ApiKey, ApiKeyCreated } from '../../../lib/api/types'
 import { queryKeys } from '../../../lib/query-keys'
 import {
   Button,
   Input,
-  Label,
-  FormField,
-  FormError,
+  Field,
+  FieldGroup,
+  FieldLabel,
   Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
   DialogFooter,
   ConfirmDialog,
   Badge,
+  Card,
+  CardContent,
   Table,
   TableHeader,
   TableBody,
   TableRow,
   TableHead,
   TableCell,
+  Spinner,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
 import { formatDate } from '../../../lib/utils'
@@ -129,109 +141,128 @@ function SettingsPage() {
   const isDirty = saveForm !== null
 
   return (
-    <div className="p-6 max-w-2xl space-y-10">
+    <div className="p-6 max-w-2xl flex flex-col gap-10">
       {/* Project settings */}
       <section>
-        <h1 className="text-xl font-semibold text-slate-900 mb-5">Project settings</h1>
+        <h1 className="text-xl font-semibold text-foreground mb-5">Project settings</h1>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
-          <FormField>
-            <Label>Project name</Label>
-            <Input
-              value={form.name}
-              onChange={(e) =>
-                setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))
-              }
-            />
-          </FormField>
+        <Card>
+          <CardContent>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="project_name">Project name</FieldLabel>
+                <Input
+                  id="project_name"
+                  value={form.name}
+                  onChange={(e) =>
+                    setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))
+                  }
+                />
+              </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <FormField>
-              <Label>Base language</Label>
-              <Select
-                value={form.base_language}
-                onChange={(e) =>
-                  setSaveForm((f) => ({
-                    ...(f ?? form),
-                    base_language: e.target.value,
-                    target_languages: (f ?? form).target_languages.filter(
-                      (l) => l !== e.target.value,
-                    ),
-                  }))
-                }
-              >
-                {languages.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.name} ({l.code})
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-
-            <FormField>
-              <Label>Layout</Label>
-              <Select
-                value={form.layout}
-                onChange={(e) =>
-                  setSaveForm((f) => ({
-                    ...(f ?? form),
-                    layout: e.target.value as 'flat' | 'modular',
-                  }))
-                }
-              >
-                <option value="flat">Flat</option>
-                <option value="modular">Modular</option>
-              </Select>
-            </FormField>
-          </div>
-
-          <FormField>
-            <Label>Target languages</Label>
-            <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-md p-2">
-              {targetLangs.map((l) => {
-                const selected = form.target_languages.includes(l.code)
-                return (
-                  <button
-                    key={l.code}
-                    type="button"
-                    onClick={() => toggleTargetLang(l.code)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs text-left transition-colors ${
-                      selected
-                        ? 'bg-brand-50 text-brand-700 border border-brand-200'
-                        : 'text-slate-600 hover:bg-slate-50'
-                    }`}
+              <div className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel htmlFor="base_language">Base language</FieldLabel>
+                  <Select
+                    value={form.base_language}
+                    onValueChange={(v) =>
+                      setSaveForm((f) => ({
+                        ...(f ?? form),
+                        base_language: v,
+                        target_languages: (f ?? form).target_languages.filter(
+                          (l) => l !== v,
+                        ),
+                      }))
+                    }
                   >
-                    <span className="font-mono text-[10px] text-slate-400 w-5">{l.code}</span>
-                    {l.name}
-                  </button>
-                )
-              })}
-            </div>
-          </FormField>
+                    <SelectTrigger id="base_language" className="w-full">
+                      <SelectValue placeholder="Base language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {languages.map((l) => (
+                          <SelectItem key={l.code} value={l.code}>
+                            {l.name} ({l.code})
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
 
-          <div className="flex justify-end">
-            <Button
-              onClick={() => updateMut.mutate(form)}
-              isLoading={updateMut.isPending}
-              disabled={!isDirty}
-            >
-              Save changes
-            </Button>
-          </div>
-        </div>
+                <Field>
+                  <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                  <Select
+                    value={form.layout}
+                    onValueChange={(v) =>
+                      setSaveForm((f) => ({
+                        ...(f ?? form),
+                        layout: v as 'flat' | 'modular',
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="layout" className="w-full">
+                      <SelectValue placeholder="Layout" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="flat">Flat</SelectItem>
+                        <SelectItem value="modular">Modular</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <Field>
+                <FieldLabel>Target languages</FieldLabel>
+                <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+                  {targetLangs.map((l) => {
+                    const selected = form.target_languages.includes(l.code)
+                    return (
+                      <Button
+                        key={l.code}
+                        type="button"
+                        variant={selected ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => toggleTargetLang(l.code)}
+                      >
+                        <span className="font-mono text-[10px] text-muted-foreground w-5">
+                          {l.code}
+                        </span>
+                        {l.name}
+                      </Button>
+                    )
+                  })}
+                </div>
+              </Field>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => updateMut.mutate(form)}
+                  disabled={!isDirty || updateMut.isPending}
+                >
+                  {updateMut.isPending && <Spinner data-icon="inline-start" />}
+                  Save changes
+                </Button>
+              </div>
+            </FieldGroup>
+          </CardContent>
+        </Card>
       </section>
 
       {/* API Keys */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">API Keys</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-foreground">API Keys</h2>
+            <p className="text-sm text-muted-foreground">
               Use API keys to authenticate CLI sync and integrations.
             </p>
           </div>
           <Button size="sm" onClick={() => setShowNewKey(true)}>
-            <Plus className="h-4 w-4" />
+            <Plus data-icon="inline-start" />
             New key
           </Button>
         </div>
@@ -253,21 +284,21 @@ function SettingsPage() {
                 <TableRow key={k.id}>
                   <TableCell className="font-medium">{k.name}</TableCell>
                   <TableCell>
-                    <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded">
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
                       {k.key_prefix}…
                     </code>
                   </TableCell>
-                  <TableCell className="text-slate-500 text-xs">
+                  <TableCell className="text-muted-foreground text-xs">
                     {formatDate(k.created_at)}
                   </TableCell>
-                  <TableCell className="text-slate-500 text-xs">
+                  <TableCell className="text-muted-foreground text-xs">
                     {k.last_used_at ? formatDate(k.last_used_at) : '—'}
                   </TableCell>
                   <TableCell>
                     {k.revoked_at ? (
                       <Badge variant="destructive">Revoked</Badge>
                     ) : (
-                      <Badge variant="success">Active</Badge>
+                      <Badge variant="default">Active</Badge>
                     )}
                   </TableCell>
                   <TableCell>
@@ -275,7 +306,7 @@ function SettingsPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="text-slate-400 hover:text-red-500"
+                        className="text-muted-foreground hover:text-destructive"
                         onClick={() => setDeleteKeyTarget(k)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -287,60 +318,84 @@ function SettingsPage() {
             </TableBody>
           </Table>
         ) : (
-          <p className="text-sm text-slate-400 py-4">No API keys yet.</p>
+          <p className="text-sm text-muted-foreground py-4">No API keys yet.</p>
         )}
       </section>
 
       {/* Create key dialog */}
       <Dialog
         open={showNewKey}
-        onClose={() => { setShowNewKey(false); setNewKeyName('') }}
-        title="Create API key"
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowNewKey(false)
+            setNewKeyName('')
+          }
+        }}
       >
-        <FormField>
-          <Label>Key name</Label>
-          <Input
-            placeholder="CI/CD pipeline"
-            value={newKeyName}
-            onChange={(e) => setNewKeyName(e.target.value)}
-          />
-        </FormField>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { setShowNewKey(false); setNewKeyName('') }}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => newKeyName && createKeyMut.mutate(newKeyName)}
-            isLoading={createKeyMut.isPending}
-            disabled={!newKeyName}
-          >
-            Create
-          </Button>
-        </DialogFooter>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create API key</DialogTitle>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="key_name">Key name</FieldLabel>
+              <Input
+                id="key_name"
+                placeholder="CI/CD pipeline"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNewKey(false)
+                setNewKeyName('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => newKeyName && createKeyMut.mutate(newKeyName)}
+              disabled={!newKeyName || createKeyMut.isPending}
+            >
+              {createKeyMut.isPending && <Spinner data-icon="inline-start" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {/* Show raw key (once only) */}
       <Dialog
         open={createdKey !== null}
-        onClose={() => setCreatedKey(null)}
-        title="API key created"
-        description="Copy this key now — it won't be shown again."
+        onOpenChange={(o) => !o && setCreatedKey(null)}
       >
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-md p-3">
-          <code className="flex-1 text-xs font-mono text-slate-800 break-all">
-            {createdKey?.key}
-          </code>
-          <Button variant="ghost" size="icon-sm" onClick={copyKey}>
-            {copied ? (
-              <Check className="h-4 w-4 text-emerald-500" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        <DialogFooter>
-          <Button onClick={() => setCreatedKey(null)}>Done</Button>
-        </DialogFooter>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>API key created</DialogTitle>
+            <DialogDescription>
+              Copy this key now — it won't be shown again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 bg-muted border border-border rounded-md p-3">
+            <code className="flex-1 text-xs font-mono text-foreground break-all">
+              {createdKey?.key}
+            </code>
+            <Button variant="ghost" size="icon-sm" onClick={copyKey}>
+              {copied ? (
+                <Check className="h-4 w-4 text-primary" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setCreatedKey(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       <ConfirmDialog

@@ -9,7 +9,7 @@ import { activitySearchSchema } from '../../../lib/schemas'
 import {
   Badge,
   Button,
-  Pagination,
+  DataPagination,
   EmptyState,
   Spinner,
   ConfirmDialog,
@@ -55,16 +55,16 @@ function ActivityPage() {
   const items = data?.items ?? []
   const total = data?.total ?? 0
 
-  const actionColor: Record<string, string> = {
-    create: 'success',
-    update: 'brand',
+  const actionColor: Record<string, 'default' | 'secondary' | 'destructive'> = {
+    create: 'default',
+    update: 'secondary',
     delete: 'destructive',
   }
 
   return (
     <div className="p-6 max-w-3xl">
-      <h1 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
-        <Clock className="h-5 w-5 text-brand-500" />
+      <h1 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+        <Clock className="h-5 w-5 text-primary" />
         Activity feed
       </h1>
 
@@ -75,20 +75,20 @@ function ActivityPage() {
       ) : items.length === 0 ? (
         <EmptyState title="No activity yet" description="Changes will appear here." />
       ) : (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           {items.map((a) => (
             <div
               key={a.id}
-              className="flex items-start gap-3 py-3 px-4 rounded-lg hover:bg-slate-50 transition-colors"
+              className="flex items-start gap-3 py-3 px-4 rounded-lg hover:bg-muted/50 transition-colors"
             >
               <div className="mt-0.5 shrink-0">
-                <Badge variant={(actionColor[a.action] as 'success' | 'brand' | 'destructive') ?? 'default'}>
+                <Badge variant={actionColor[a.action] ?? 'default'}>
                   {a.action}
                 </Badge>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-800">{a.summary}</p>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                <p className="text-sm text-foreground">{a.summary}</p>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                   <span>{a.actor_label}</span>
                   <span>·</span>
                   <span>{formatDate(a.created_at)}</span>
@@ -104,22 +104,22 @@ function ActivityPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-slate-400 hover:text-brand-600 shrink-0"
+                  className="text-muted-foreground hover:text-primary shrink-0"
                   onClick={() => setRevertTarget(a.id)}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw data-icon="inline-start" />
                   Revert
                 </Button>
               )}
               {a.reverted_by_id && (
-                <span className="text-xs text-slate-400 shrink-0 italic">reverted</span>
+                <span className="text-xs text-muted-foreground shrink-0 italic">reverted</span>
               )}
             </div>
           ))}
         </div>
       )}
 
-      <Pagination
+      <DataPagination
         page={search.page}
         pageSize={search.page_size}
         total={total}
