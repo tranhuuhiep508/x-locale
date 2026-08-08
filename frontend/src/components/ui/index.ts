@@ -117,3 +117,4 @@ export {
 } from './dropdown-menu'
 export { Avatar, AvatarFallback, AvatarImage } from './avatar'
 export { ScrollArea, ScrollBar } from './scroll-area'
+export { Switch } from './switch'

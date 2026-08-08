@@ -10,8 +10,8 @@ import {
   useTransition,
   lazy,
   Suspense,
-  useRef,
   useEffect,
+  useEffectEvent,
 } from 'react'
 import {
   Search,
@@ -24,6 +24,7 @@ import {
   Tag as TagIcon,
   Wand2,
   X,
+  Pencil,
 } from 'lucide-react'
 import { api } from '../../../lib/api/client'
 import type {
@@ -56,7 +57,6 @@ import {
   TableHeader,
   TableRow,
   Checkbox,
-  Textarea,
   DataPagination,
   EmptyState,
   Dialog,
@@ -66,72 +66,18 @@ import {
   DialogTitle,
   ConfirmDialog,
   Spinner,
+  Switch,
 } from '../../../components/ui'
 import { useToast } from '../../../store'
-import { cn } from '../../../lib/utils'
+import { getRecordStatus } from '../../../lib/utils'
 
 const StringCreateDialog = lazy(() => import('../../../components/strings/StringCreateDialog'))
+const StringEditDialog = lazy(() => import('../../../components/strings/StringEditDialog'))
 
 export const Route = createFileRoute('/projects/$projectId/strings')({
   validateSearch: (s: Record<string, unknown>) => stringsSearchSchema.parse(s),
   component: StringsPage,
 })
-
-// ─── Inline translation cell ─────────────────────────────────────────────────
-
-interface TranslationCellProps {
-  stringId: string
-  projectId: string
-  locale: string
-  translation?: Translation
-  onSaved: () => void
-}
-
-function TranslationCell({
-  stringId,
-  projectId,
-  locale,
-  translation,
-  onSaved,
-}: TranslationCellProps) {
-  const [value, setValue] = useState(translation?.value ?? '')
-  const originalRef = useRef(translation?.value ?? '')
-  const toast = useToast()
-
-  useEffect(() => {
-    const v = translation?.value ?? ''
-    setValue(v)
-    originalRef.current = v
-  }, [translation?.value])
-
-  const saveMut = useMutation({
-    mutationFn: (val: string) =>
-      api.put(`/projects/${projectId}/strings/${stringId}/translations/${locale}`, { value: val }),
-    onSuccess: () => onSaved(),
-    onError: () => toast.error('Failed to save translation'),
-  })
-
-  const handleBlur = useCallback(() => {
-    if (value !== originalRef.current) {
-      originalRef.current = value
-      saveMut.mutate(value)
-    }
-  }, [value, saveMut])
-
-  return (
-    <Textarea
-      className={cn(
-        'min-h-[42px] resize-none text-sm',
-        saveMut.isPending && 'border-primary/40 bg-primary/5',
-      )}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={handleBlur}
-      rows={2}
-      placeholder={`${locale}…`}
-    />
-  )
-}
 
 // ─── Batch move module dialog ─────────────────────────────────────────────────
 
@@ -256,16 +202,47 @@ function StringsPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
+  const [editingEntry, setEditingEntry] = useState<StringEntry | null>(null)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [searchInput, setSearchInput] = useState(search.q ?? '')
+
+  // Keep local search box in sync when URL filters change externally
+  useEffect(() => {
+    setSearchInput(search.q ?? '')
+  }, [search.q])
+
+  const applySearchQ = useEffectEvent((value: string) => {
+    startTransition(() => {
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          q: value || undefined,
+          page: 1,
+        }),
+      })
+    })
+  })
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const next = searchInput.trim()
+      const current = (search.q ?? '').trim()
+      if (next !== current) {
+        applySearchQ(next)
+      }
+    }, 300)
+    return () => window.clearTimeout(handle)
+  }, [searchInput, search.q])
 
   const stringsQuery = useQuery<StringListResponse>({
     queryKey: queryKeys.strings(projectId, search),
     queryFn: () =>
       api.get<StringListResponse>(`/projects/${projectId}/strings`, {
-        module_id: search.module,
-        tag_id: search.tag,
+        // Backend query params are `module` / `tag` (not module_id / tag_id)
+        module: search.module,
+        tag: search.tag,
         q: search.q,
         missing_locale: search.missing_locale,
         status: search.status,
@@ -291,9 +268,9 @@ function StringsPage() {
   })
 
   const invalidateStrings = useCallback(() => {
-    qc.invalidateQueries({ queryKey: queryKeys.strings(projectId, search) })
+    qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
     qc.invalidateQueries({ queryKey: queryKeys.project(projectId) })
-  }, [qc, projectId, search])
+  }, [qc, projectId])
 
   const batchMut = useMutation({
     mutationFn: (req: BatchRequest) =>
@@ -331,6 +308,12 @@ function StringsPage() {
   const strings = stringsQuery.data?.items ?? []
   const total = stringsQuery.data?.total ?? 0
   const targetLocales = project?.target_languages ?? []
+  const hasActiveFilters = Boolean(
+    search.q || search.module || search.tag || search.status || search.missing_locale,
+  )
+
+  const moduleById = new Map(modules.map((m) => [m.id, m]))
+  const tagById = new Map(tags.map((t) => [t.id, t]))
 
   const allSelected = strings.length > 0 && strings.every((s) => selectedIds.has(s.id))
 
@@ -356,26 +339,25 @@ function StringsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Filters bar */}
-      <div className="sticky top-0 z-10 bg-background border-b px-4 py-3">
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80 border-b px-4 py-3">
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               className="pl-8 w-56"
               placeholder="Search strings…"
-              value={search.q ?? ''}
-              onChange={(e) => setFilter({ q: e.target.value || undefined })}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              aria-label="Search strings"
             />
           </div>
 
-          {/* Module filter */}
           {modules.length > 0 && (
             <Select
               value={search.module ?? 'all'}
               onValueChange={(v) => setFilter({ module: v === 'all' ? undefined : v })}
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-40">
                 <SelectValue placeholder="All modules" />
               </SelectTrigger>
               <SelectContent>
@@ -391,7 +373,6 @@ function StringsPage() {
             </Select>
           )}
 
-          {/* Tag filter */}
           {tags.length > 0 && (
             <Select
               value={search.tag ?? 'all'}
@@ -413,14 +394,13 @@ function StringsPage() {
             </Select>
           )}
 
-          {/* Status filter */}
           <Select
             value={search.status ?? 'all'}
             onValueChange={(v) =>
               setFilter({ status: v === 'all' ? undefined : (v as StringsSearch['status']) })
             }
           >
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-36">
               <SelectValue placeholder="Any status" />
             </SelectTrigger>
             <SelectContent>
@@ -432,7 +412,6 @@ function StringsPage() {
             </SelectContent>
           </Select>
 
-          {/* Missing locale filter */}
           {targetLocales.length > 0 && (
             <Select
               value={search.missing_locale ?? 'all'}
@@ -454,16 +433,16 @@ function StringsPage() {
             </Select>
           )}
 
-          {/* Clear filters */}
-          {(search.q || search.module || search.tag || search.status || search.missing_locale) && (
+          {hasActiveFilters && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
+              onClick={() => {
+                setSearchInput('')
                 navigate({
                   search: { page: 1, page_size: search.page_size },
                 })
-              }
+              }}
               className="text-muted-foreground"
             >
               <X data-icon="inline-start" />
@@ -491,12 +470,26 @@ function StringsPage() {
           </Button>
         </div>
 
-        {/* Active filter pills */}
-        {(search.q || search.module || search.tag || search.status || search.missing_locale) && (
+        {hasActiveFilters && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             <Filter className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
             {search.q && (
-              <FilterPill label={`"${search.q}"`} onRemove={() => setFilter({ q: undefined })} />
+              <FilterPill label={`"${search.q}"`} onRemove={() => {
+                setSearchInput('')
+                setFilter({ q: undefined })
+              }} />
+            )}
+            {search.module && (
+              <FilterPill
+                label={`module: ${moduleById.get(search.module)?.name ?? search.module}`}
+                onRemove={() => setFilter({ module: undefined })}
+              />
+            )}
+            {search.tag && (
+              <FilterPill
+                label={`tag: ${tagById.get(search.tag)?.name ?? search.tag}`}
+                onRemove={() => setFilter({ tag: undefined })}
+              />
             )}
             {search.status && (
               <FilterPill
@@ -579,16 +572,12 @@ function StringsPage() {
           <EmptyState
             title="No strings found"
             description={
-              search.q || search.module || search.tag || search.status || search.missing_locale
+              hasActiveFilters
                 ? 'Try adjusting your filters.'
                 : 'Add your first string to get started.'
             }
             action={
-              !search.q &&
-              !search.module &&
-              !search.tag &&
-              !search.status &&
-              !search.missing_locale ? (
+              !hasActiveFilters ? (
                 <Button onClick={() => setShowCreate(true)}>
                   <Plus data-icon="inline-start" />
                   Add string
@@ -599,23 +588,24 @@ function StringsPage() {
         ) : (
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-8">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={() => toggleAll()}
                     aria-label="Select all"
                   />
                 </TableHead>
-                <TableHead className="w-40">Key</TableHead>
-                <TableHead className="w-52">Source</TableHead>
+                <TableHead className="min-w-[160px]">Key</TableHead>
+                <TableHead className="min-w-[200px]">Source</TableHead>
                 {targetLocales.map((l) => (
-                  <TableHead key={l} className="min-w-[180px]">
+                  <TableHead key={l} className="min-w-[160px] uppercase text-xs tracking-wide">
                     {l}
                   </TableHead>
                 ))}
-                <TableHead>Tags / Module</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className="w-28">Published</TableHead>
+                <TableHead className="min-w-[120px]">Tags</TableHead>
+                <TableHead className="w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -627,6 +617,7 @@ function StringsPage() {
                   targetLocales={targetLocales}
                   selected={selectedIds.has(s.id)}
                   onToggle={() => toggleRow(s.id)}
+                  onEdit={() => setEditingEntry(s)}
                   onRefresh={invalidateStrings}
                   onTranslate={(id) =>
                     translateMut.mutate({
@@ -642,7 +633,6 @@ function StringsPage() {
         )}
       </div>
 
-      {/* Pagination */}
       {total > search.page_size && (
         <div className="border-t px-4">
           <DataPagination
@@ -654,7 +644,6 @@ function StringsPage() {
         </div>
       )}
 
-      {/* Dialogs */}
       {showCreate && (
         <Suspense fallback={null}>
           <StringCreateDialog
@@ -664,6 +653,23 @@ function StringsPage() {
             onClose={() => setShowCreate(false)}
             onSuccess={() => {
               setShowCreate(false)
+              invalidateStrings()
+            }}
+          />
+        </Suspense>
+      )}
+
+      {editingEntry && (
+        <Suspense fallback={null}>
+          <StringEditDialog
+            projectId={projectId}
+            entry={editingEntry}
+            modules={modules}
+            tags={tags}
+            targetLocales={targetLocales}
+            onClose={() => setEditingEntry(null)}
+            onSuccess={() => {
+              setEditingEntry(null)
               invalidateStrings()
             }}
           />
@@ -733,6 +739,24 @@ function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }
   )
 }
 
+// ─── Readonly translation preview ─────────────────────────────────────────────
+
+function TranslationPreview({ translation }: { translation?: Translation }) {
+  const value = translation?.value?.trim() ?? ''
+
+  if (!value) {
+    return (
+      <span className="text-muted-foreground/70 italic text-sm">Missing</span>
+    )
+  }
+
+  return (
+    <p className="text-sm leading-snug line-clamp-2 whitespace-normal wrap-break-word">
+      {value}
+    </p>
+  )
+}
+
 // ─── String row ───────────────────────────────────────────────────────────────
 
 interface StringRowProps {
@@ -741,6 +765,7 @@ interface StringRowProps {
   targetLocales: string[]
   selected: boolean
   onToggle: () => void
+  onEdit: () => void
   onRefresh: () => void
   onTranslate: (id: string) => void
 }
@@ -751,11 +776,11 @@ function StringRow({
   targetLocales,
   selected,
   onToggle,
+  onEdit,
   onRefresh,
   onTranslate,
 }: StringRowProps) {
   const toast = useToast()
-  const qc = useQueryClient()
 
   const deleteMut = useMutation({
     mutationFn: () => api.delete(`/projects/${projectId}/strings/${entry.id}`),
@@ -766,62 +791,103 @@ function StringRow({
     onError: () => toast.error('Failed to delete string'),
   })
 
+  const publishMut = useMutation({
+    mutationFn: (publish: boolean) =>
+      api.post(`/projects/${projectId}/strings/batch`, {
+        action: publish ? 'publish' : 'unpublish',
+        string_ids: [entry.id],
+      } satisfies BatchRequest),
+    onSuccess: (_data, publish) => {
+      onRefresh()
+      toast.success(publish ? 'Published' : 'Moved to draft')
+    },
+    onError: () => toast.error('Failed to update status'),
+  })
+
   const translationsByLocale: Record<string, Translation | undefined> = {}
   for (const t of entry.translations) {
     translationsByLocale[t.locale] = t
   }
 
-  const allFilled = targetLocales.every((l) => (translationsByLocale[l]?.value ?? '') !== '')
+  const recordStatus = getRecordStatus(entry.translations, targetLocales)
+  const isPublic = recordStatus === 'public'
 
   return (
-    <TableRow data-state={selected ? 'selected' : undefined}>
-      <TableCell className="align-top">
+    <TableRow
+      data-state={selected ? 'selected' : undefined}
+      className="cursor-pointer group"
+      onClick={(e) => {
+        const target = e.target as HTMLElement
+        if (target.closest('button, input, [role="checkbox"], [role="switch"], a')) return
+        onEdit()
+      }}
+    >
+      <TableCell className="align-middle" onClick={(e) => e.stopPropagation()}>
         <Checkbox checked={selected} onCheckedChange={() => onToggle()} aria-label="Select row" />
       </TableCell>
-      <TableCell className="align-top whitespace-normal">
-        <span className="font-mono text-xs text-foreground break-all">{entry.key}</span>
-        {entry.module_slug && (
-          <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">{entry.module_slug}</p>
-        )}
-        <div className="flex flex-wrap gap-1 mt-1">
-          {entry.tags.map((t) => (
-            <span
-              key={t.id}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
-              style={{ backgroundColor: t.color + '22', color: t.color }}
-            >
-              {t.name}
-            </span>
-          ))}
+      <TableCell className="align-middle whitespace-normal max-w-[220px]">
+        <div className="space-y-1">
+          <span className="font-mono text-xs text-foreground break-all leading-relaxed">
+            {entry.key}
+          </span>
+          {entry.module_slug && (
+            <p className="text-[11px] text-muted-foreground font-mono">{entry.module_slug}</p>
+          )}
         </div>
-        <Badge
-          variant={allFilled ? 'default' : 'secondary'}
-          className="mt-1 text-[10px]"
-        >
-          {allFilled ? 'public' : 'draft'}
-        </Badge>
       </TableCell>
-      <TableCell className="align-top max-w-[220px] whitespace-normal">
-        <p className="text-sm text-foreground leading-relaxed line-clamp-3">{entry.source_text}</p>
-        {entry.description && (
-          <p className="text-xs text-muted-foreground mt-1 italic">{entry.description}</p>
-        )}
+      <TableCell className="align-middle max-w-[260px] whitespace-normal">
+        <p className="text-sm text-foreground leading-relaxed line-clamp-2">{entry.source_text}</p>
+        {entry.description ? (
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{entry.description}</p>
+        ) : null}
       </TableCell>
       {targetLocales.map((locale) => (
-        <TableCell key={locale} className="align-top min-w-[180px] whitespace-normal">
-          <TranslationCell
-            stringId={entry.id}
-            projectId={projectId}
-            locale={locale}
-            translation={translationsByLocale[locale]}
-            onSaved={() => {
-              qc.invalidateQueries({ queryKey: queryKeys.project(projectId) })
-            }}
-          />
+        <TableCell key={locale} className="align-middle min-w-[160px] whitespace-normal">
+          <TranslationPreview translation={translationsByLocale[locale]} />
         </TableCell>
       ))}
-      <TableCell className="align-top">
-        <div className="flex items-center gap-1">
+      <TableCell className="align-middle" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <Switch
+            size="sm"
+            checked={isPublic}
+            disabled={publishMut.isPending}
+            onCheckedChange={(checked) => publishMut.mutate(checked)}
+            aria-label={isPublic ? 'Published' : 'Draft'}
+          />
+          <span className="text-xs text-muted-foreground">
+            {publishMut.isPending ? '…' : isPublic ? 'Public' : 'Draft'}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="align-middle whitespace-normal">
+        {entry.tags.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {entry.tags.map((t) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                style={{ backgroundColor: t.color + '22', color: t.color }}
+              >
+                {t.name}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="align-middle text-right" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5 opacity-70 group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Edit"
+            onClick={onEdit}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Pencil />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"

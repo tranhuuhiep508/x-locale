@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Sequence
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -123,7 +123,17 @@ def string_query(
         )
         query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
     if status is not None:
-        query = query.join(StringEntry.translations).filter(Translation.status == status)
+        # Record-level status: public only when every translation row is public.
+        has_draft = exists().where(
+            and_(
+                Translation.string_id == StringEntry.id,
+                Translation.status == TranslationStatus.draft,
+            )
+        )
+        if status == TranslationStatus.public:
+            query = query.filter(~has_draft).filter(StringEntry.translations.any())
+        else:
+            query = query.filter(has_draft)
     return query.distinct()
 
 

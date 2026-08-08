@@ -1,8 +1,24 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { Translation, TranslationStatus } from './api/types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+/** Record-level status: public only when every locale translation is public. */
+export function getRecordStatus(
+  translations: Pick<Translation, 'locale' | 'status'>[],
+  locales?: string[],
+): TranslationStatus {
+  const relevant = locales?.length
+    ? locales.map((locale) => {
+        const found = translations.find((t) => t.locale === locale)
+        return found ?? { locale, status: 'draft' as const }
+      })
+    : translations
+  if (relevant.length === 0) return 'draft'
+  return relevant.every((t) => t.status === 'public') ? 'public' : 'draft'
 }
 
 export function formatDate(dateStr: string | null | undefined): string {

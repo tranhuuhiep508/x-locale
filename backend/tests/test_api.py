@@ -168,3 +168,79 @@ def test_snapshot_restore(client):
 
     r = client.get(f"/api/projects/{pid}/strings/{sid}")
     assert r.json()["source_text"] == "Xin chào"
+
+
+def test_list_strings_filters(client):
+    r = client.post(
+        "/api/projects",
+        json={
+            "name": "Filter App",
+            "target_languages": ["en"],
+            "layout": "modular",
+        },
+    )
+    pid = r.json()["id"]
+
+    m1 = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    ).json()
+    m2 = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "home", "name": "Home"},
+    ).json()
+
+    tag = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "priority", "color": "#f00"},
+    ).json()
+
+    s1 = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "login",
+            "source_text": "Đăng nhập",
+            "module_id": m1["id"],
+            "tag_ids": [tag["id"]],
+        },
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "welcome", "source_text": "Chào mừng", "module_id": m2["id"]},
+    )
+
+    client.put(
+        f"/api/projects/{pid}/strings/{s1['id']}/translations/en",
+        json={"value": "Log in", "status": "public"},
+    )
+
+    # module filter uses `module` query param
+    r = client.get(f"/api/projects/{pid}/strings", params={"module": m1["id"]})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "login"
+
+    # tag filter uses `tag` query param
+    r = client.get(f"/api/projects/{pid}/strings", params={"tag": tag["id"]})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "login"
+
+    # status=public finds fully published records
+    r = client.get(f"/api/projects/{pid}/strings", params={"status": "public"})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "login"
+
+    # status=draft finds records that still have draft translations
+    r = client.get(f"/api/projects/{pid}/strings", params={"status": "draft"})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "welcome"
+
+    # missing locale filter
+    r = client.get(f"/api/projects/{pid}/strings", params={"missing_locale": "en"})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "welcome"
+

@@ -138,12 +138,10 @@ def update_string(
         entry.key = payload.key
     if payload.source_text is not None:
         entry.source_text = payload.source_text
-    if payload.description is not None:
-        entry.description = payload.description
-    if payload.module_id is not None or (payload.model_fields_set & {"module_id"}):
-        # Allow explicitly setting module_id to null via JSON null — only if provided
-        if "module_id" in payload.model_fields_set:
-            entry.module_id = payload.module_id
+    if "description" in payload.model_fields_set:
+        entry.description = payload.description or None
+    if "module_id" in payload.model_fields_set:
+        entry.module_id = payload.module_id
     if payload.tag_ids is not None:
         tags = (
             db.query(Tag)
