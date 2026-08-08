@@ -111,7 +111,7 @@ function VersionsPage() {
   const snapshots = data?.items ?? []
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="container py-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
           <Camera className="h-5 w-5 text-primary" />

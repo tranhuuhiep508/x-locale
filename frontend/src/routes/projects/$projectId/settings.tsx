@@ -141,7 +141,7 @@ function SettingsPage() {
   const isDirty = saveForm !== null
 
   return (
-    <div className="p-6 max-w-2xl flex flex-col gap-10">
+    <div className="container flex flex-col gap-10 py-6">
       {/* Project settings */}
       <section>
         <h1 className="text-xl font-semibold text-foreground mb-5">Project settings</h1>

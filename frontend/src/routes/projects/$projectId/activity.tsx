@@ -62,7 +62,7 @@ function ActivityPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl">
+    <div className="container py-6">
       <h1 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
         <Clock className="h-5 w-5 text-primary" />
         Activity feed

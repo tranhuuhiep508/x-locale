@@ -125,7 +125,7 @@ function ImportExportPage() {
     : []
 
   return (
-    <div className="p-6 max-w-2xl flex flex-col gap-8">
+    <div className="container flex flex-col gap-8 py-6">
       <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
         <ArrowUpDown className="h-5 w-5 text-primary" />
         Import / Export
