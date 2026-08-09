@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { Download, Upload, FileText, FileSpreadsheet, ArrowUpDown } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { Project, ImportResult } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
+import { api } from '@/lib/api/client'
+import type { Project, ImportResult } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
 import {
   Button,
   Field,
@@ -27,8 +27,8 @@ import {
   CardHeader,
   CardTitle,
   Spinner,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
+} from '@/components/ui'
+import { useToast } from '@/store'
 
 export const Route = createFileRoute('/projects/$projectId/import-export')({
   component: ImportExportPage,

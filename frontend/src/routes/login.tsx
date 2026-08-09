@@ -7,7 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '../components/ui'
+} from '@/components/ui'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,

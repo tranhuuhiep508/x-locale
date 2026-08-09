@@ -2,11 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, RotateCcw, Trash2, Camera } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { SnapshotListResponse, Snapshot } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
-import { snapshotCreateSchema } from '../../../lib/schemas'
-import type { SnapshotCreateForm } from '../../../lib/schemas'
+import { api } from '@/lib/api/client'
+import type { SnapshotListResponse, Snapshot } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { snapshotCreateSchema } from '@/lib/schemas'
+import type { SnapshotCreateForm } from '@/lib/schemas'
 import {
   Button,
   Input,
@@ -27,9 +27,9 @@ import {
   Card,
   CardContent,
   Spinner,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
-import { formatDate } from '../../../lib/utils'
+} from '@/components/ui'
+import { useToast } from '@/store'
+import { formatDate } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/$projectId/versions')({
   component: VersionsPage,

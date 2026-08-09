@@ -10,9 +10,9 @@ import {
   Camera,
   ArrowLeft,
 } from 'lucide-react'
-import { cn } from '../../lib/utils'
-import type { Project } from '../../lib/api/types'
-import { Separator } from '../ui'
+import { cn } from '@/lib/utils'
+import type { Project } from '@/lib/api/types'
+import { Separator } from '@/components/ui'
 
 function useSideLink(suffix: string, projectId: string, exact = false) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })

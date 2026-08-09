@@ -26,7 +26,7 @@ import {
   X,
   Pencil,
 } from 'lucide-react'
-import { api } from '../../../lib/api/client'
+import { api } from '@/lib/api/client'
 import type {
   StringEntry,
   StringListResponse,
@@ -36,10 +36,10 @@ import type {
   BatchRequest,
   TranslateRequest,
   TranslateResult,
-} from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
-import { stringsSearchSchema, resolveStringsSearch } from '../../../lib/schemas'
-import type { StringsSearch } from '../../../lib/schemas'
+} from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { stringsSearchSchema, resolveStringsSearch } from '@/lib/schemas'
+import type { StringsSearch } from '@/lib/schemas'
 import {
   Button,
   Badge,
@@ -67,12 +67,12 @@ import {
   ConfirmDialog,
   Spinner,
   Switch,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
-import { getRecordStatus } from '../../../lib/utils'
+} from '@/components/ui'
+import { useToast } from '@/store'
+import { getRecordStatus } from '@/lib/utils'
 
-const StringCreateDialog = lazy(() => import('../../../components/strings/StringCreateDialog'))
-const StringEditDialog = lazy(() => import('../../../components/strings/StringEditDialog'))
+const StringCreateDialog = lazy(() => import('@/components/strings/StringCreateDialog'))
+const StringEditDialog = lazy(() => import('@/components/strings/StringEditDialog'))
 
 export const Route = createFileRoute('/projects/$projectId/strings')({
   validateSearch: (s: Record<string, unknown>) => stringsSearchSchema.parse(s),

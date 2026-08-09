@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { AppShell } from '../../components/layout/AppShell'
+import { AppShell } from '@/components/layout/AppShell'
 import {
   Button,
   Input,
@@ -20,14 +20,14 @@ import {
   Card,
   CardContent,
   Spinner,
-} from '../../components/ui'
-import { api } from '../../lib/api/client'
-import type { Language, Project } from '../../lib/api/types'
-import { queryKeys } from '../../lib/query-keys'
-import { useToast } from '../../store'
-import { projectCreateSchema } from '../../lib/schemas'
-import type { ProjectCreateForm } from '../../lib/schemas'
-import { slugify } from '../../lib/utils'
+} from '@/components/ui'
+import { api } from '@/lib/api/client'
+import type { Language, Project } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { useToast } from '@/store'
+import { projectCreateSchema } from '@/lib/schemas'
+import type { ProjectCreateForm } from '@/lib/schemas'
+import { slugify } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/new')({
   loader: ({ context }) =>

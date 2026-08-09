@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { api } from '../../lib/api/client'
+import { api } from '@/lib/api/client'
 import type {
   Module,
   StringEntry,
   Tag,
   TranslationStatus,
-} from '../../lib/api/types'
+} from '@/lib/api/types'
 import {
   Dialog,
   DialogContent,
@@ -32,9 +32,9 @@ import {
   ToggleGroupItem,
   Switch,
   Spinner,
-} from '../ui'
-import { useToast } from '../../store'
-import { cn, getRecordStatus } from '../../lib/utils'
+} from '@/components/ui'
+import { useToast } from '@/store'
+import { cn, getRecordStatus } from '@/lib/utils'
 
 interface Props {
   projectId: string

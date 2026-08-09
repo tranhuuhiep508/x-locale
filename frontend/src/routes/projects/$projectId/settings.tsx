@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, Trash2, Copy, Check } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { Project, Language, ApiKey, ApiKeyCreated } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
+import { api } from '@/lib/api/client'
+import type { Project, Language, ApiKey, ApiKeyCreated } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
 import {
   Button,
   Input,
@@ -34,9 +34,9 @@ import {
   TableHead,
   TableCell,
   Spinner,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
-import { formatDate } from '../../../lib/utils'
+} from '@/components/ui'
+import { useToast } from '@/store'
+import { formatDate } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/$projectId/settings')({
   component: SettingsPage,

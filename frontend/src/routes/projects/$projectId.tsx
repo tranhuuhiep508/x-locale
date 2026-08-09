@@ -1,10 +1,10 @@
 import { createFileRoute, Outlet, notFound } from '@tanstack/react-router'
-import { AppShell } from '../../components/layout/AppShell'
-import { ProjectSidebar } from '../../components/layout/ProjectSidebar'
-import { api } from '../../lib/api/client'
-import { ApiError } from '../../lib/api/client'
-import type { Project } from '../../lib/api/types'
-import { queryKeys } from '../../lib/query-keys'
+import { AppShell } from '@/components/layout/AppShell'
+import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
+import { api } from '@/lib/api/client'
+import { ApiError } from '@/lib/api/client'
+import type { Project } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
 import { useQuery } from '@tanstack/react-query'
 
 export const Route = createFileRoute('/projects/$projectId')({

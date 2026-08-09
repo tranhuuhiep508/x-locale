@@ -2,11 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Boxes } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { Module } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
-import { moduleCreateSchema } from '../../../lib/schemas'
-import type { ModuleCreateForm } from '../../../lib/schemas'
+import { api } from '@/lib/api/client'
+import type { Module } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { moduleCreateSchema } from '@/lib/schemas'
+import type { ModuleCreateForm } from '@/lib/schemas'
 import {
   Button,
   Input,
@@ -30,8 +30,8 @@ import {
   TableCell,
   Badge,
   Spinner,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
+} from '@/components/ui'
+import { useToast } from '@/store'
 
 export const Route = createFileRoute('/projects/$projectId/modules')({
   component: ModulesPage,

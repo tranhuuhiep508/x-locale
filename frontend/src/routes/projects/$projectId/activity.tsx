@@ -2,10 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, lazy, Suspense } from 'react'
 import { RotateCcw, Clock } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { ActivityListResponse } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
-import { activitySearchSchema } from '../../../lib/schemas'
+import { api } from '@/lib/api/client'
+import type { ActivityListResponse } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { activitySearchSchema } from '@/lib/schemas'
 import {
   Badge,
   Button,
@@ -13,9 +13,9 @@ import {
   EmptyState,
   Spinner,
   ConfirmDialog,
-} from '../../../components/ui'
-import { useToast } from '../../../store'
-import { formatDate } from '../../../lib/utils'
+} from '@/components/ui'
+import { useToast } from '@/store'
+import { formatDate } from '@/lib/utils'
 import { useNavigate } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/projects/$projectId/activity')({

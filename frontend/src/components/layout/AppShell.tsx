@@ -1,11 +1,11 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { LogOut, ChevronDown, Layers } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../lib/api/client'
-import type { User } from '../../lib/api/types'
-import { queryKeys } from '../../lib/query-keys'
-import { useToast } from '../../store'
-import { Button } from '../ui/button'
+import { api } from '@/lib/api/client'
+import type { User } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { useToast } from '@/store'
+import { Button } from '@/components/ui/button'
 import {
   Avatar,
   AvatarFallback,
@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Spinner,
-} from '../ui'
+} from '@/components/ui'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: user } = useQuery<User>({

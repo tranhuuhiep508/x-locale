@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { api } from '../../lib/api/client'
-import type { Module, Tag } from '../../lib/api/types'
-import { stringCreateSchema } from '../../lib/schemas'
-import type { StringCreateForm } from '../../lib/schemas'
+import { api } from '@/lib/api/client'
+import type { Module, Tag } from '@/lib/api/types'
+import { stringCreateSchema } from '@/lib/schemas'
+import type { StringCreateForm } from '@/lib/schemas'
 import {
   Dialog,
   DialogContent,
@@ -26,8 +26,8 @@ import {
   ToggleGroup,
   ToggleGroupItem,
   Spinner,
-} from '../ui'
-import { useToast } from '../../store'
+} from '@/components/ui'
+import { useToast } from '@/store'
 
 interface Props {
   projectId: string

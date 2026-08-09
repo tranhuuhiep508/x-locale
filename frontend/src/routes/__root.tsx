@@ -1,10 +1,10 @@
 import { createRootRouteWithContext, Outlet, redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
-import { Toaster } from '../components/ui'
-import { api } from '../lib/api/client'
-import { ApiError } from '../lib/api/client'
-import type { User } from '../lib/api/types'
-import { queryKeys } from '../lib/query-keys'
+import { Toaster } from '@/components/ui'
+import { api } from '@/lib/api/client'
+import { ApiError } from '@/lib/api/client'
+import type { User } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
 
 interface RouterContext {
   queryClient: QueryClient

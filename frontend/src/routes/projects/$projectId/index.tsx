@@ -2,11 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlignLeft, Boxes, Tags, Globe2, Clock } from 'lucide-react'
-import { api } from '../../../lib/api/client'
-import type { Project, Module, Tag, ActivityListResponse } from '../../../lib/api/types'
-import { queryKeys } from '../../../lib/query-keys'
-import { Badge, Card, CardContent, CardHeader, CardTitle } from '../../../components/ui'
-import { formatDate } from '../../../lib/utils'
+import { api } from '@/lib/api/client'
+import type { Project, Module, Tag, ActivityListResponse } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
+import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
+import { formatDate } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/$projectId/')({
   component: ProjectOverviewPage,
