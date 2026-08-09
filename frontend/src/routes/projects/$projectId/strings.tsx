@@ -269,7 +269,6 @@ function StringsPage() {
 
   const invalidateStrings = useCallback(() => {
     qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
-    qc.invalidateQueries({ queryKey: queryKeys.project(projectId) })
   }, [qc, projectId])
 
   const batchMut = useMutation({

@@ -133,12 +133,6 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
           Versions
         </Link>
       </nav>
-      <Separator />
-      <div className="px-4 py-3">
-        <p className="text-xs text-muted-foreground">
-          {project.string_count} string{project.string_count !== 1 ? 's' : ''}
-        </p>
-      </div>
     </aside>
   )
 }
