@@ -29,12 +29,14 @@ def _translation_value(
     if locale == project.base_language:
         return entry.source_text
 
+    if stage == "public" and entry.status != TranslationStatus.public:
+        return None
+
     translation = next((t for t in entry.translations if t.locale == locale), None)
     if stage == "public":
-        if translation and translation.value.strip() and translation.status == TranslationStatus.public:
+        if translation:
             return translation.value
-        # Fallback to source so production never renders a raw key
-        return entry.source_text
+        return ""
     # draft stage: latest value
     if translation and translation.value.strip():
         return translation.value
@@ -47,6 +49,8 @@ def build_flat_export(
     locales = [project.base_language, *project.target_languages]
     result: dict[str, dict[str, str]] = {loc: {} for loc in locales}
     for entry in entries:
+        if stage == "public" and entry.status != TranslationStatus.public:
+            continue
         key = export_key(entry, "flat")
         for locale in locales:
             val = _translation_value(entry, locale, project, stage)
@@ -65,6 +69,8 @@ def build_modular_export(
     unassigned: dict[str, dict[str, str]] = {loc: {} for loc in locales}
 
     for entry in entries:
+        if stage == "public" and entry.status != TranslationStatus.public:
+            continue
         bucket_key = entry.module.slug if entry.module else None
         if bucket_key:
             if bucket_key not in modules:
@@ -217,7 +223,6 @@ def _import_flat_strings(
                             string_id=entry.id,
                             locale=locale,
                             value="",
-                            status=TranslationStatus.draft,
                         )
                     )
 

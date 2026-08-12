@@ -149,6 +149,8 @@ def update_string(
             .all()
         )
         entry.tags = tags
+    if payload.status is not None:
+        entry.status = payload.status
     db.commit()
     return serialize_string(_get_string(db, project.id, string_id))
 
@@ -175,13 +177,10 @@ def upsert_translation(
             string_id=entry.id,
             locale=locale,
             value=payload.value,
-            status=payload.status or TranslationStatus.draft,
         )
         db.add(translation)
     else:
         translation.value = payload.value
-        if payload.status is not None:
-            translation.status = payload.status
     db.commit()
     return serialize_string(_get_string(db, project.id, string_id))
 

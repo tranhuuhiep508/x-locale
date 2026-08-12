@@ -142,6 +142,10 @@ def _current_matches_after(db: Session, activity: Activity) -> bool:
         for field in ("key", "source_text", "description"):
             if field in after and getattr(entry, field) != after[field]:
                 return False
+        if "status" in after:
+            current = entry.status.value if hasattr(entry.status, "value") else entry.status
+            if current != after["status"]:
+                return False
         if "module_id" in after:
             current = str(entry.module_id) if entry.module_id else None
             if current != after["module_id"]:
@@ -159,10 +163,6 @@ def _current_matches_after(db: Session, activity: Activity) -> bool:
             return True
         for field in ("value", "locale"):
             if field in after and getattr(t, field) != after[field]:
-                return False
-        if "status" in after:
-            status = t.status.value if hasattr(t.status, "value") else t.status
-            if status != after["status"]:
                 return False
         return True
     return False
@@ -182,6 +182,8 @@ def _apply_revert(db: Session, activity: Activity) -> None:
             entry.key = before.get("key", entry.key)
             entry.source_text = before.get("source_text", entry.source_text)
             entry.description = before.get("description")
+            if "status" in before:
+                entry.status = TranslationStatus(before["status"])
             mid = before.get("module_id")
             if mid:
                 # If module was deleted, SET NULL
@@ -211,18 +213,17 @@ def _apply_revert(db: Session, activity: Activity) -> None:
                 key=before["key"],
                 source_text=before["source_text"],
                 description=before.get("description"),
+                status=TranslationStatus(before.get("status", "draft")),
             )
             db.add(entry)
             db.flush()
             for tdata in before.get("translations") or []:
-                status = tdata.get("status", "draft")
                 db.add(
                     Translation(
                         id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
                         string_id=entry.id,
                         locale=tdata["locale"],
                         value=tdata.get("value", ""),
-                        status=TranslationStatus(status),
                     )
                 )
 
@@ -232,8 +233,6 @@ def _apply_revert(db: Session, activity: Activity) -> None:
             if not t:
                 raise HTTPException(status_code=404, detail="Translation no longer exists")
             t.value = before.get("value", t.value)
-            if "status" in before:
-                t.status = TranslationStatus(before["status"])
         elif action == "create":
             t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
             if t:
@@ -244,7 +243,6 @@ def _apply_revert(db: Session, activity: Activity) -> None:
                 string_id=uuid.UUID(before["string_id"]),
                 locale=before["locale"],
                 value=before.get("value", ""),
-                status=TranslationStatus(before.get("status", "draft")),
             )
             db.add(t)
 

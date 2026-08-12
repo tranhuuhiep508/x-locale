@@ -61,6 +61,8 @@ def _write_sheet(
     headers = ["key", "description", "tags", *locales]
     ws.append(headers)
     for entry in sorted(entries, key=lambda e: e.key):
+        if stage == "public" and entry.status != TranslationStatus.public:
+            continue
         tags = ",".join(t.name for t in (entry.tags or []))
         row: list[Any] = [entry.key, entry.description or "", tags]
         for locale in locales:
@@ -69,10 +71,7 @@ def _write_sheet(
             else:
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if stage == "public":
-                    if t and t.status == TranslationStatus.public and t.value.strip():
-                        row.append(t.value)
-                    else:
-                        row.append("")
+                    row.append(t.value if t else "")
                 else:
                     row.append(t.value if t else "")
         ws.append(row)
@@ -194,6 +193,7 @@ def import_workbook(
                         key=key,
                         source_text=source_text,
                         description=description,
+                        status=status,
                     )
                     db.add(entry)
                     db.flush()
@@ -201,6 +201,9 @@ def import_workbook(
 
             if dry_run or entry is None:
                 continue
+
+            if not dry_run:
+                entry.status = status
 
             # Tags
             if tag_names:
@@ -233,14 +236,11 @@ def import_workbook(
                         string_id=entry.id,
                         locale=locale,
                         value=value,
-                        status=status if value.strip() else TranslationStatus.draft,
                     )
                     db.add(t)
                 else:
                     if value != t.value:
                         t.value = value
-                        if value.strip():
-                            t.status = status
 
     diff = ImportDiff(
         create=create_keys,

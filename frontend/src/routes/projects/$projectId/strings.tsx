@@ -69,7 +69,6 @@ import {
   Switch,
 } from '@/components/ui'
 import { useToast } from '@/store'
-import { getRecordStatus } from '@/lib/utils'
 
 const StringCreateDialog = lazy(() => import('@/components/strings/StringCreateDialog'))
 const StringEditDialog = lazy(() => import('@/components/strings/StringEditDialog'))
@@ -808,8 +807,7 @@ function StringRow({
     translationsByLocale[t.locale] = t
   }
 
-  const recordStatus = getRecordStatus(entry.translations, targetLocales)
-  const isPublic = recordStatus === 'public'
+  const isPublic = entry.status === 'public'
 
   return (
     <TableRow

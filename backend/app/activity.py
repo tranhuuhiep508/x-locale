@@ -26,11 +26,12 @@ REVERTIBLE_ENTITY = {
     Translation: EntityType.translation,
 }
 
-STRING_FIELDS = ("key", "source_text", "description", "module_id")
-TRANSLATION_FIELDS = ("locale", "value", "status")
+STRING_FIELDS = ("key", "source_text", "description", "module_id", "status")
+TRANSLATION_FIELDS = ("locale", "value")
 
 
 def _serialize_string(obj: StringEntry) -> dict[str, Any]:
+    status = obj.status.value if isinstance(obj.status, TranslationStatus) else obj.status
     return {
         "id": str(obj.id),
         "project_id": str(obj.project_id),
@@ -38,17 +39,16 @@ def _serialize_string(obj: StringEntry) -> dict[str, Any]:
         "key": obj.key,
         "source_text": obj.source_text,
         "description": obj.description,
+        "status": status,
     }
 
 
 def _serialize_translation(obj: Translation) -> dict[str, Any]:
-    status = obj.status.value if isinstance(obj.status, TranslationStatus) else obj.status
     return {
         "id": str(obj.id),
         "string_id": str(obj.string_id),
         "locale": obj.locale,
         "value": obj.value,
-        "status": status,
     }
 
 

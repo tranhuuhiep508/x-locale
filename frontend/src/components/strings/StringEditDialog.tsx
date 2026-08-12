@@ -34,7 +34,7 @@ import {
   Spinner,
 } from '@/components/ui'
 import { useToast } from '@/store'
-import { cn, getRecordStatus } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface Props {
   projectId: string
@@ -65,9 +65,7 @@ export default function StringEditDialog({
   const [description, setDescription] = useState(entry.description ?? '')
   const [moduleId, setModuleId] = useState(entry.module_id ?? '')
   const [tagId, setTagId] = useState(entry.tags[0]?.id ?? '')
-  const [status, setStatus] = useState<TranslationStatus>(() =>
-    getRecordStatus(entry.translations, targetLocales),
-  )
+  const [status, setStatus] = useState<TranslationStatus>(() => entry.status)
   const [translations, setTranslations] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
     for (const locale of targetLocales) {
@@ -86,6 +84,7 @@ export default function StringEditDialog({
         description,
         module_id: moduleId || null,
         tag_ids: tagId ? [tagId] : [],
+        status,
       })
 
       const originalByLocale = Object.fromEntries(
@@ -96,15 +95,12 @@ export default function StringEditDialog({
         targetLocales.map(async (locale) => {
           const nextValue = translations[locale] ?? ''
           const prev = originalByLocale[locale]
-          if (
-            nextValue === (prev?.value ?? '') &&
-            status === (prev?.status ?? 'draft')
-          ) {
+          if (nextValue === (prev?.value ?? '')) {
             return
           }
           await api.put(
             `/projects/${projectId}/strings/${entry.id}/translations/${locale}`,
-            { value: nextValue, status },
+            { value: nextValue },
           )
         }),
       )

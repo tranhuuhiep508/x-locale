@@ -30,8 +30,8 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 
 ### Non-obvious behavior
 
-- Translation status is `draft` \| `public` (not `live`). AI translate always writes `draft`.
-- Row completeness in the UI is client-side; export `stage=public` falls back to source text for missing public translations.
+- Translation status is `draft` \| `public` on each **string** (not per locale). AI translate never auto-publishes.
+- Export `stage=public` includes only public strings; missing target locales export as empty (no source fallback).
 - Translation inputs save on **blur**.
 - Content writes are audited via `before_flush` → `activities`. Batch/import/translate/restore set `batch_id` for grouped revert.
 - Snapshot restore auto-creates a `kind=auto` safety snapshot first.

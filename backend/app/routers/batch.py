@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.auth import project_access, set_activity_context, AuthContext
 from app.database import get_db
 from app.helpers import resolve_string_ids
-from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import Project, StringEntry, Tag, TranslationStatus
 from app.schemas import BatchRequest, BatchResult
 
 router = APIRouter(tags=["batch"])
@@ -48,16 +48,14 @@ def batch_strings(
 
     if action == "publish":
         for entry in entries:
-            for t in entry.translations:
-                if t.value.strip() and t.status != TranslationStatus.public:
-                    t.status = TranslationStatus.public
-                    affected += 1
+            if entry.status != TranslationStatus.public:
+                entry.status = TranslationStatus.public
+                affected += 1
     elif action == "unpublish":
         for entry in entries:
-            for t in entry.translations:
-                if t.status != TranslationStatus.draft:
-                    t.status = TranslationStatus.draft
-                    affected += 1
+            if entry.status != TranslationStatus.draft:
+                entry.status = TranslationStatus.draft
+                affected += 1
     elif action == "delete":
         for entry in entries:
             db.delete(entry)

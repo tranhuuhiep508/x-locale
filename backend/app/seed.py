@@ -12,7 +12,6 @@ from app.models import (
     ProjectLayout,
     StringEntry,
     Translation,
-    TranslationStatus,
 )
 
 DEMO_MODULES = [
@@ -102,7 +101,6 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
                         string_id=entry.id,
                         locale=locale,
                         value="",
-                        status=TranslationStatus.draft,
                     )
                 )
 

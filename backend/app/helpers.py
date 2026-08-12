@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Sequence
 
-from sqlalchemy import and_, exists, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -46,6 +46,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
         key=entry.key,
         source_text=entry.source_text,
         description=entry.description,
+        status=entry.status,
         module_id=entry.module_id,
         module_slug=entry.module.slug if entry.module else None,
         tags=[
@@ -57,7 +58,6 @@ def serialize_string(entry: StringEntry) -> StringOut:
                 id=t.id,
                 locale=t.locale,
                 value=t.value,
-                status=t.status,
                 updated_at=t.updated_at,
             )
             for t in (entry.translations or [])
@@ -74,7 +74,6 @@ def ensure_translation_rows(db: Session, entry: StringEntry, project: Project) -
                     string_id=entry.id,
                     locale=locale,
                     value="",
-                    status=TranslationStatus.draft,
                 )
             )
 
@@ -123,17 +122,7 @@ def string_query(
         )
         query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
     if status is not None:
-        # Record-level status: public only when every translation row is public.
-        has_draft = exists().where(
-            and_(
-                Translation.string_id == StringEntry.id,
-                Translation.status == TranslationStatus.draft,
-            )
-        )
-        if status == TranslationStatus.public:
-            query = query.filter(~has_draft).filter(StringEntry.translations.any())
-        else:
-            query = query.filter(has_draft)
+        query = query.filter(StringEntry.status == status)
     return query.distinct()
 
 

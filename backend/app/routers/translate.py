@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.ai import translate_text
 from app.auth import project_access
 from app.database import SessionLocal, get_db
-from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation
 from app.schemas import TranslateRequest, TranslateResult
 
 router = APIRouter(tags=["translate"])
@@ -88,7 +88,6 @@ def _run_translate(
                         string_id=entry.id,
                         locale=locale,
                         value="",
-                        status=TranslationStatus.draft,
                     )
                     db.add(translation)
                     entry.translations.append(translation)
@@ -103,7 +102,6 @@ def _run_translate(
                         locale,
                         entry.description,
                     )
-                    translation.status = TranslationStatus.draft
                     translated += 1
                 except Exception as exc:
                     if job_id:
@@ -183,7 +181,6 @@ def translate(
                     string_id=entry.id,
                     locale=locale,
                     value="",
-                    status=TranslationStatus.draft,
                 )
                 db.add(translation)
                 entry.translations.append(translation)
@@ -198,7 +195,6 @@ def translate(
                     locale,
                     entry.description,
                 )
-                translation.status = TranslationStatus.draft
                 translated += 1
             except ValueError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -107,7 +107,6 @@ export interface Translation {
   id: string | null
   locale: string
   value: string
-  status: TranslationStatus
   updated_at: string | null
 }
 
@@ -116,6 +115,7 @@ export interface StringEntry {
   key: string
   source_text: string
   description: string | null
+  status: TranslationStatus
   module_id: string | null
   module_slug: string | null
   tags: Tag[]
@@ -137,11 +137,11 @@ export interface StringUpdate {
   description?: string
   module_id?: string | null
   tag_ids?: string[]
+  status?: TranslationStatus
 }
 
 export interface TranslationUpdate {
   value: string
-  status?: TranslationStatus
 }
 
 export interface StringListResponse {

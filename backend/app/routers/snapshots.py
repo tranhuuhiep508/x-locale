@@ -41,11 +41,11 @@ def serialize_project_content(db: Session, project: Project) -> dict:
                 "module_id": str(e.module_id) if e.module_id else None,
                 "source_text": e.source_text,
                 "description": e.description,
+                "status": e.status.value if hasattr(e.status, "value") else e.status,
                 "translations": [
                     {
                         "locale": t.locale,
                         "value": t.value,
-                        "status": t.status.value if hasattr(t.status, "value") else t.status,
                     }
                     for t in e.translations
                 ],
@@ -149,6 +149,8 @@ def restore_content(db: Session, project: Project, content: dict) -> None:
             entry.source_text = sdata["source_text"]
             entry.description = sdata.get("description")
             entry.module_id = module_id
+            if "status" in sdata:
+                entry.status = TranslationStatus(sdata["status"])
         else:
             entry = StringEntry(
                 id=sid,
@@ -157,6 +159,7 @@ def restore_content(db: Session, project: Project, content: dict) -> None:
                 key=sdata["key"],
                 source_text=sdata["source_text"],
                 description=sdata.get("description"),
+                status=TranslationStatus(sdata.get("status", "draft")),
             )
             db.add(entry)
             db.flush()
@@ -172,18 +175,15 @@ def restore_content(db: Session, project: Project, content: dict) -> None:
         keep_locales = set()
         for tdata in sdata.get("translations", []):
             keep_locales.add(tdata["locale"])
-            status = TranslationStatus(tdata.get("status", "draft"))
             if tdata["locale"] in existing_locales:
                 t = existing_locales[tdata["locale"]]
                 t.value = tdata.get("value", "")
-                t.status = status
             else:
                 db.add(
                     Translation(
                         string_id=entry.id,
                         locale=tdata["locale"],
                         value=tdata.get("value", ""),
-                        status=status,
                     )
                 )
         for locale, t in existing_locales.items():

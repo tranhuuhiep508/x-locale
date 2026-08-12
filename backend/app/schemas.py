@@ -136,7 +136,6 @@ class TranslationOut(BaseModel):
     id: UUID | None = None
     locale: str
     value: str
-    status: TranslationStatus
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -147,6 +146,7 @@ class StringOut(BaseModel):
     key: str
     source_text: str
     description: str | None
+    status: TranslationStatus
     module_id: UUID | None = None
     module_slug: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
@@ -170,11 +170,11 @@ class StringUpdate(BaseModel):
     description: str | None = None
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
+    status: TranslationStatus | None = None
 
 
 class TranslationUpdate(BaseModel):
     value: str
-    status: TranslationStatus | None = None
 
 
 class StringListOut(BaseModel):

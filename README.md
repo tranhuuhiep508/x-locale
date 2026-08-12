@@ -82,7 +82,7 @@ keys under **Project → Settings**.
 ## Concepts
 
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export shape; modules are always stored.
-- **Status** is per translation: `draft` or `public`. Export `stage=public` returns only published values (falling back to source text).
+- **Status** is per string: `draft` or `public`. Export `stage=public` includes only public strings; untranslated locales export as empty.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
 - **Activity log** records content changes; revert undoes one change (or a whole batch). **Snapshots** capture the full project for one-click restore (auto pre-restore backup included).
 

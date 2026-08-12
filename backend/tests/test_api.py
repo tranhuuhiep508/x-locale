@@ -52,18 +52,26 @@ def test_create_project_and_string(client):
     assert r.status_code == 201, r.text
     string = r.json()
     assert string["key"] == "save"
+    assert string["status"] == "draft"
     assert len(string["translations"]) == 1
     assert string["translations"][0]["locale"] == "en"
-    assert string["translations"][0]["status"] == "draft"
 
-    # Upsert translation
+    # Upsert translation (value only; does not change string status)
     r = client.put(
         f"/api/projects/{pid}/strings/{string['id']}/translations/en",
-        json={"value": "Save", "status": "public"},
+        json={"value": "Save"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["translations"][0]["value"] == "Save"
-    assert r.json()["translations"][0]["status"] == "public"
+    assert r.json()["status"] == "draft"
+
+    # Publish string
+    r = client.patch(
+        f"/api/projects/{pid}/strings/{string['id']}",
+        json={"status": "public"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "public"
 
     # List strings
     r = client.get(f"/api/projects/{pid}/strings")
@@ -127,11 +135,38 @@ def test_batch_publish(client):
         json={"action": "publish", "string_ids": [sid]},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["affected"] >= 1
+    assert r.json()["affected"] == 1
 
     r = client.get(f"/api/projects/{pid}/strings/{sid}")
-    statuses = {t["locale"]: t["status"] for t in r.json()["translations"]}
-    assert statuses["en"] == "public"
+    assert r.json()["status"] == "public"
+
+
+def test_public_export_empty_missing_locale(client):
+    r = client.post(
+        "/api/projects",
+        json={"name": "Empty Locale", "target_languages": ["en", "fr"]},
+    )
+    pid = r.json()["id"]
+    r = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "greet", "source_text": "Xin chào"},
+    )
+    sid = r.json()["id"]
+    client.put(
+        f"/api/projects/{pid}/strings/{sid}/translations/en",
+        json={"value": "Hello"},
+    )
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+
+    r = client.get(f"/api/projects/{pid}/export?layout=flat&stage=public")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["en"]["greet"] == "Hello"
+    assert data["fr"]["greet"] == ""
+    assert data["vi"]["greet"] == "Xin chào"
 
 
 def test_snapshot_restore(client):
@@ -209,9 +244,13 @@ def test_list_strings_filters(client):
         json={"key": "welcome", "source_text": "Chào mừng", "module_id": m2["id"]},
     )
 
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [s1["id"]]},
+    )
     client.put(
         f"/api/projects/{pid}/strings/{s1['id']}/translations/en",
-        json={"value": "Log in", "status": "public"},
+        json={"value": "Log in"},
     )
 
     # module filter uses `module` query param
@@ -226,13 +265,13 @@ def test_list_strings_filters(client):
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "login"
 
-    # status=public finds fully published records
+    # status=public finds published strings
     r = client.get(f"/api/projects/{pid}/strings", params={"status": "public"})
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "login"
 
-    # status=draft finds records that still have draft translations
+    # status=draft finds draft strings
     r = client.get(f"/api/projects/{pid}/strings", params={"status": "draft"})
     assert r.status_code == 200
     assert r.json()["total"] == 1
@@ -243,4 +282,3 @@ def test_list_strings_filters(client):
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "welcome"
-
