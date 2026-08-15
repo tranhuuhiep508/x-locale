@@ -59,7 +59,7 @@ function ProjectOverviewPage() {
   })
 
   const { data: activityData } = useQuery<ActivityListResponse>({
-    queryKey: queryKeys.activities(projectId, 1),
+    queryKey: queryKeys.activities(projectId, 1, 5),
     queryFn: () =>
       api.get<ActivityListResponse>(`/projects/${projectId}/activities`, {
         page: 1,

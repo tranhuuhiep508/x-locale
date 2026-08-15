@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import project_access
 from app.database import get_db
@@ -15,8 +15,10 @@ from app.models import (
     Activity,
     ActivityAction,
     EntityType,
+    Module,
     Project,
     StringEntry,
+    Tag,
     Translation,
     TranslationStatus,
 )
@@ -82,7 +84,7 @@ def list_activities(
         q = q.filter(Activity.created_at <= until)
     total = q.count()
     items = (
-        q.order_by(Activity.created_at.desc())
+        q.order_by(Activity.created_at.desc(), Activity.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -112,7 +114,7 @@ def string_activities(
     )
     total = q.count()
     items = (
-        q.order_by(Activity.created_at.desc())
+        q.order_by(Activity.created_at.desc(), Activity.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -125,6 +127,44 @@ def string_activities(
     )
 
 
+def _translations_from_snapshot(raw: Any) -> dict[str, str]:
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        out: dict[str, str] = {}
+        for locale, value in raw.items():
+            if isinstance(value, dict):
+                out[str(locale)] = value.get("value", "") or ""
+            else:
+                out[str(locale)] = value or ""
+        return out
+    if isinstance(raw, list):
+        return {
+            item.get("locale"): item.get("value", "") or ""
+            for item in raw
+            if isinstance(item, dict) and item.get("locale")
+        }
+    return {}
+
+
+def _set_entry_tags(db: Session, entry: StringEntry, tag_ids: list[str] | None) -> None:
+    if tag_ids is None:
+        return
+    ids = [uuid.UUID(tid) for tid in tag_ids]
+    tags = db.query(Tag).filter(Tag.id.in_(ids)).all() if ids else []
+    entry.tags = tags
+
+
+def _set_entry_translations(db: Session, entry: StringEntry, translations: dict[str, str]) -> None:
+    by_locale = {t.locale: t for t in list(entry.translations or [])}
+    for locale, value in translations.items():
+        existing = by_locale.get(locale)
+        if existing is None:
+            db.add(Translation(string_id=entry.id, locale=locale, value=value))
+        else:
+            existing.value = value
+
+
 def _current_matches_after(db: Session, activity: Activity) -> bool:
     """Conflict guard: current row must still match activity.after."""
     after = activity.after or {}
@@ -133,7 +173,12 @@ def _current_matches_after(db: Session, activity: Activity) -> bool:
             # After delete, entity should be gone
             entry = db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
             return entry is None
-        entry = db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+        entry = (
+            db.query(StringEntry)
+            .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+            .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+            .first()
+        )
         if entry is None:
             return False
         if activity.action == ActivityAction.create or activity.action == "create":
@@ -150,6 +195,17 @@ def _current_matches_after(db: Session, activity: Activity) -> bool:
             current = str(entry.module_id) if entry.module_id else None
             if current != after["module_id"]:
                 return False
+        if "tag_ids" in after:
+            current_tags = sorted(str(t.id) for t in (entry.tags or []))
+            expected_tags = sorted(after.get("tag_ids") or [])
+            if current_tags != expected_tags:
+                return False
+        if "translations" in after:
+            expected = _translations_from_snapshot(after.get("translations"))
+            current_map = {t.locale: t.value or "" for t in (entry.translations or [])}
+            for locale, value in expected.items():
+                if current_map.get(locale, "") != value:
+                    return False
         return True
 
     if activity.entity_type == EntityType.translation or activity.entity_type == "translation":
@@ -166,6 +222,87 @@ def _current_matches_after(db: Session, activity: Activity) -> bool:
                 return False
         return True
     return False
+
+
+def _enum_val(val: Any) -> str:
+    return val.value if hasattr(val, "value") else str(val or "")
+
+
+def _original_activity(db: Session, activity: Activity) -> Activity:
+    current = activity
+    seen: set[uuid.UUID] = set()
+    while current.revert_of_id:
+        if current.id in seen:
+            break
+        seen.add(current.id)
+        parent = db.get(Activity, current.revert_of_id)
+        if parent is None:
+            break
+        current = parent
+    return current
+
+
+def _revert_depth(db: Session, activity: Activity) -> int:
+    depth = 0
+    current = activity
+    seen: set[uuid.UUID] = set()
+    while current.revert_of_id:
+        if current.id in seen:
+            break
+        seen.add(current.id)
+        parent = db.get(Activity, current.revert_of_id)
+        if parent is None:
+            break
+        current = parent
+        depth += 1
+    return depth
+
+
+def _entity_label(activity: Activity) -> str:
+    snap = activity.after or activity.before or {}
+    key = snap.get("key") if isinstance(snap, dict) else None
+    if key:
+        return f"'{key}'"
+    if activity.locale:
+        return str(activity.locale)
+    return "item"
+
+
+def _revert_summary(db: Session, activity: Activity) -> str:
+    original = _original_activity(db, activity)
+    action = _enum_val(original.action)
+    label = _entity_label(original)
+    # Reverting a revert (odd depth) redoes the original change.
+    verb = "Redid" if _revert_depth(db, activity) % 2 == 1 else "Reverted"
+    return f"{verb} {action} of {label}"
+
+
+def _make_revert_marker(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    activity: Activity,
+    existing: dict[str, Any],
+    batch_id: uuid.UUID,
+) -> Activity:
+    return Activity(
+        project_id=project_id,
+        actor_type=existing.get("actor_type", "user"),
+        actor_id=existing.get("actor_id"),
+        actor_label=existing.get("actor_label", "user"),
+        action=ActivityAction.update,
+        entity_type=activity.entity_type,
+        entity_id=activity.entity_id,
+        string_id=activity.string_id,
+        locale=activity.locale,
+        before=activity.after,
+        after=activity.before,
+        summary=_revert_summary(db, activity),
+        batch_id=batch_id,
+        batch_kind="revert",
+        revert_of_id=activity.id,
+        is_revertible=True,
+    )
 
 
 def _apply_revert(db: Session, activity: Activity) -> None:
@@ -186,13 +323,16 @@ def _apply_revert(db: Session, activity: Activity) -> None:
                 entry.status = TranslationStatus(before["status"])
             mid = before.get("module_id")
             if mid:
-                # If module was deleted, SET NULL
-                from app.models import Module
-
                 module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
                 entry.module_id = module.id if module else None
             else:
                 entry.module_id = None
+            if "tag_ids" in before:
+                _set_entry_tags(db, entry, before.get("tag_ids") or [])
+            if "translations" in before or "translations" in after:
+                _set_entry_translations(
+                    db, entry, _translations_from_snapshot(before.get("translations"))
+                )
         elif action == "create":
             entry = db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
             if entry:
@@ -202,8 +342,6 @@ def _apply_revert(db: Session, activity: Activity) -> None:
             mid = before.get("module_id")
             module_id = None
             if mid:
-                from app.models import Module
-
                 module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
                 module_id = module.id if module else None
             entry = StringEntry(
@@ -217,15 +355,20 @@ def _apply_revert(db: Session, activity: Activity) -> None:
             )
             db.add(entry)
             db.flush()
-            for tdata in before.get("translations") or []:
-                db.add(
-                    Translation(
-                        id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
-                        string_id=entry.id,
-                        locale=tdata["locale"],
-                        value=tdata.get("value", ""),
+            _set_entry_tags(db, entry, before.get("tag_ids") or [])
+            trans_raw = before.get("translations")
+            if isinstance(trans_raw, list):
+                for tdata in trans_raw:
+                    db.add(
+                        Translation(
+                            id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
+                            string_id=entry.id,
+                            locale=tdata["locale"],
+                            value=tdata.get("value", ""),
+                        )
                     )
-                )
+            else:
+                _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))
 
     elif etype == "translation":
         if action == "update":
@@ -284,24 +427,12 @@ def revert_activity(
     _apply_revert(db, activity)
     db.flush()
 
-    # Stamp original
-    revert_marker = Activity(
+    revert_marker = _make_revert_marker(
+        db,
         project_id=project.id,
-        actor_type=existing.get("actor_type", "user"),
-        actor_id=existing.get("actor_id"),
-        actor_label=existing.get("actor_label", "user"),
-        action=ActivityAction.update,
-        entity_type=activity.entity_type,
-        entity_id=activity.entity_id,
-        string_id=activity.string_id,
-        locale=activity.locale,
-        before=activity.after,
-        after=activity.before,
-        summary=f"Reverted: {activity.summary}",
+        activity=activity,
+        existing=existing,
         batch_id=batch_id,
-        batch_kind="revert",
-        revert_of_id=activity.id,
-        is_revertible=True,
     )
     db.add(revert_marker)
     db.flush()
@@ -353,23 +484,12 @@ def revert_batch(
             )
         _apply_revert(db, activity)
         db.flush()
-        marker = Activity(
+        marker = _make_revert_marker(
+            db,
             project_id=project.id,
-            actor_type=existing.get("actor_type", "user"),
-            actor_id=existing.get("actor_id"),
-            actor_label=existing.get("actor_label", "user"),
-            action=ActivityAction.update,
-            entity_type=activity.entity_type,
-            entity_id=activity.entity_id,
-            string_id=activity.string_id,
-            locale=activity.locale,
-            before=activity.after,
-            after=activity.before,
-            summary=f"Reverted: {activity.summary}",
+            activity=activity,
+            existing=existing,
             batch_id=new_batch,
-            batch_kind="revert",
-            revert_of_id=activity.id,
-            is_revertible=True,
         )
         db.add(marker)
         db.flush()

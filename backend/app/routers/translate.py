@@ -12,7 +12,12 @@ from app.ai import translate_text
 from app.auth import project_access
 from app.database import SessionLocal, get_db
 from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation
-from app.schemas import TranslateRequest, TranslateResult
+from app.schemas import (
+    TranslatePreviewRequest,
+    TranslatePreviewResult,
+    TranslateRequest,
+    TranslateResult,
+)
 
 router = APIRouter(tags=["translate"])
 
@@ -203,3 +208,32 @@ def translate(
 
     db.commit()
     return TranslateResult(translated_count=translated, locales=locales)
+
+
+@router.post("/projects/{project_id}/translate/preview", response_model=TranslatePreviewResult)
+def translate_preview(
+    project_id: uuid.UUID,
+    payload: TranslatePreviewRequest,
+    project: Project = Depends(project_access),
+) -> TranslatePreviewResult:
+    locales = payload.locales or list(project.target_languages)
+    allowed = set(project.target_languages)
+    allowed.add(project.base_language)
+    for locale in locales:
+        if locale not in allowed:
+            raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
+
+    translations: dict[str, str] = {}
+    for locale in locales:
+        try:
+            translations[locale] = translate_text(
+                payload.source_text,
+                project.base_language,
+                locale,
+                payload.description,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
+    return TranslatePreviewResult(translations=translations)

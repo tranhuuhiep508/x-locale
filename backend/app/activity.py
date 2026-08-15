@@ -16,64 +16,13 @@ from app.models import (
     EntityType,
     Snapshot,
     StringEntry,
+    StringTag,
+    Tag,
     Translation,
     TranslationStatus,
 )
 
-CONTENT_TYPES = {StringEntry, Translation}
-REVERTIBLE_ENTITY = {
-    StringEntry: EntityType.string,
-    Translation: EntityType.translation,
-}
-
 STRING_FIELDS = ("key", "source_text", "description", "module_id", "status")
-TRANSLATION_FIELDS = ("locale", "value")
-
-
-def _serialize_string(obj: StringEntry) -> dict[str, Any]:
-    status = obj.status.value if isinstance(obj.status, TranslationStatus) else obj.status
-    return {
-        "id": str(obj.id),
-        "project_id": str(obj.project_id),
-        "module_id": str(obj.module_id) if obj.module_id else None,
-        "key": obj.key,
-        "source_text": obj.source_text,
-        "description": obj.description,
-        "status": status,
-    }
-
-
-def _serialize_translation(obj: Translation) -> dict[str, Any]:
-    return {
-        "id": str(obj.id),
-        "string_id": str(obj.string_id),
-        "locale": obj.locale,
-        "value": obj.value,
-    }
-
-
-def _history_before_after(obj: Any, fields: tuple[str, ...]) -> tuple[dict, dict] | None:
-    state = sa_inspect(obj)
-    before: dict[str, Any] = {}
-    after: dict[str, Any] = {}
-    changed = False
-    for field in fields:
-        attr = state.attrs[field]
-        hist = attr.history
-        if hist.has_changes():
-            changed = True
-            before[field] = _jsonify(hist.deleted[0] if hist.deleted else None)
-            after[field] = _jsonify(hist.added[0] if hist.added else getattr(obj, field))
-        else:
-            val = _jsonify(getattr(obj, field))
-            before[field] = val
-            after[field] = val
-    if not changed:
-        return None
-    # Include identity fields
-    before["id"] = str(obj.id)
-    after["id"] = str(obj.id)
-    return before, after
 
 
 def _jsonify(val: Any) -> Any:
@@ -83,12 +32,28 @@ def _jsonify(val: Any) -> Any:
         return str(val)
     if isinstance(val, TranslationStatus):
         return val.value
-    if hasattr(val, "value") and isinstance(val, (TranslationStatus,)):
-        return val.value
     return val
 
 
-def _actor_from_session(session: Session) -> tuple[ActorType, str | None, str, uuid.UUID | None, BatchKind | None]:
+def _ensure_string_identity(obj: StringEntry) -> None:
+    if obj.id is None:
+        obj.id = uuid.uuid4()
+    if obj.status is None:
+        obj.status = TranslationStatus.draft
+
+
+def _status_value(obj: StringEntry) -> str:
+    status = obj.status
+    if status is None:
+        return TranslationStatus.draft.value
+    if isinstance(status, TranslationStatus):
+        return status.value
+    return str(status)
+
+
+def _actor_from_session(
+    session: Session,
+) -> tuple[ActorType, str | None, str, uuid.UUID | None, BatchKind | None]:
     info = session.info.get("activity") or {}
     actor_type_raw = info.get("actor_type", "system")
     try:
@@ -103,7 +68,6 @@ def _actor_from_session(session: Session) -> tuple[ActorType, str | None, str, u
     batch_kind = None
     if batch_kind_raw:
         try:
-            # Map "import" to import_
             if batch_kind_raw == "import":
                 batch_kind = BatchKind.import_
             else:
@@ -113,206 +77,325 @@ def _actor_from_session(session: Session) -> tuple[ActorType, str | None, str, u
     return actor_type, actor_id, actor_label, batch_id, batch_kind
 
 
-def _is_empty_auto_translation(obj: Translation, action: ActivityAction) -> bool:
-    """Skip noise from auto-created empty translation rows."""
-    if action != ActivityAction.create:
+def _rel_loaded(obj: Any, name: str) -> bool:
+    try:
+        return name not in sa_inspect(obj).unloaded
+    except Exception:
         return False
-    return not (obj.value or "").strip()
+
+
+def _tag_ids_before_after(session: Session, obj: StringEntry) -> tuple[list[str], list[str], bool]:
+    if _rel_loaded(obj, "tags"):
+        current = list(obj.tags or [])
+        after = sorted(str(t.id) for t in current)
+        try:
+            hist = sa_inspect(obj).attrs.tags.history
+        except Exception:
+            return after, after, False
+        if not hist.has_changes():
+            return after, after, False
+        before_ids = {str(t.id) for t in current}
+        for tag in hist.added or []:
+            before_ids.discard(str(tag.id))
+        for tag in hist.deleted or []:
+            before_ids.add(str(tag.id))
+        return sorted(before_ids), after, True
+
+    rows = (
+        session.query(Tag.id)
+        .join(StringTag, StringTag.tag_id == Tag.id)
+        .filter(StringTag.string_id == obj.id)
+        .all()
+    )
+    ids = sorted(str(row[0]) for row in rows)
+    return ids, ids, False
+
+
+def _string_fields_changed(obj: StringEntry) -> bool:
+    try:
+        state = sa_inspect(obj)
+    except Exception:
+        return False
+    for field in STRING_FIELDS:
+        if state.attrs[field].history.has_changes():
+            return True
+    return False
+
+
+def _field_value(obj: StringEntry, field: str, *, before: bool) -> Any:
+    current = getattr(obj, field)
+    if not before:
+        return _jsonify(current)
+    try:
+        hist = sa_inspect(obj).attrs[field].history
+    except Exception:
+        return _jsonify(current)
+    if hist.has_changes() and hist.deleted:
+        return _jsonify(hist.deleted[0])
+    return _jsonify(current)
+
+
+def _translation_maps(
+    session: Session, string_id: uuid.UUID, entry: StringEntry | None
+) -> tuple[dict[str, str], dict[str, str], bool]:
+    before: dict[str, str] = {}
+    after: dict[str, str] = {}
+    changed = False
+
+    if entry is not None and _rel_loaded(entry, "translations"):
+        for translation in list(entry.translations or []):
+            if translation in session.deleted:
+                continue
+            after[translation.locale] = translation.value or ""
+            before[translation.locale] = translation.value or ""
+    elif entry is not None and entry.id:
+        for translation in (
+            session.query(Translation).filter(Translation.string_id == string_id).all()
+        ):
+            if translation in session.deleted:
+                continue
+            after[translation.locale] = translation.value or ""
+            before[translation.locale] = translation.value or ""
+
+    for obj in list(session.new):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            after[obj.locale] = obj.value or ""
+            before.setdefault(obj.locale, "")
+            changed = True
+
+    for obj in list(session.dirty):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            after[obj.locale] = obj.value or ""
+            try:
+                hist = sa_inspect(obj).attrs.value.history
+            except Exception:
+                before[obj.locale] = obj.value or ""
+                continue
+            if hist.has_changes():
+                changed = True
+                before[obj.locale] = (hist.deleted[0] if hist.deleted else "") or ""
+            else:
+                before.setdefault(obj.locale, obj.value or "")
+
+    for obj in list(session.deleted):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            before[obj.locale] = obj.value or ""
+            after.pop(obj.locale, None)
+            changed = True
+
+    return before, after, changed
+
+
+def _only_empty_new_translations(session: Session, string_id: uuid.UUID) -> bool:
+    saw_empty_create = False
+    for obj in list(session.new):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            if (obj.value or "").strip():
+                return False
+            saw_empty_create = True
+    for obj in list(session.dirty):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            try:
+                if sa_inspect(obj).attrs.value.history.has_changes():
+                    return False
+            except Exception:
+                return False
+    for obj in list(session.deleted):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            return False
+    return saw_empty_create
+
+
+def _snapshot(
+    session: Session,
+    obj: StringEntry,
+    *,
+    before: bool,
+    trans_before: dict[str, str],
+    trans_after: dict[str, str],
+    tags_before: list[str],
+    tags_after: list[str],
+) -> dict[str, Any]:
+    _ensure_string_identity(obj)
+    return {
+        "id": str(obj.id),
+        "project_id": str(obj.project_id),
+        "key": _field_value(obj, "key", before=before),
+        "source_text": _field_value(obj, "source_text", before=before),
+        "description": _field_value(obj, "description", before=before),
+        "status": _field_value(obj, "status", before=before) or _status_value(obj),
+        "module_id": _field_value(obj, "module_id", before=before),
+        "tag_ids": tags_before if before else tags_after,
+        "translations": trans_before if before else trans_after,
+    }
+
+
+def _load_entry(session: Session, string_id: uuid.UUID) -> StringEntry | None:
+    return session.get(StringEntry, string_id)
 
 
 def capture_activities(session: Session, flush_context: Any, instances: Any = None) -> None:
-    """SQLAlchemy before_flush listener — records content changes as Activity rows."""
-    del flush_context, instances  # unused
+    """SQLAlchemy before_flush listener — one string snapshot per flushed string."""
+    del flush_context, instances
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(session)
-    activities: list[Activity] = []
+    # Revert routes write an explicit marker; do not also log the restored mutation.
+    if batch_kind == BatchKind.revert:
+        return
+
+    new_strings: dict[uuid.UUID, StringEntry] = {}
+    dirty_strings: dict[uuid.UUID, StringEntry] = {}
+    deleted_strings: dict[uuid.UUID, StringEntry] = {}
+    string_ids: set[uuid.UUID] = set()
 
     for obj in list(session.new):
         if isinstance(obj, (Activity, Snapshot)):
             continue
         if isinstance(obj, StringEntry):
-            after = _serialize_string(obj)
-            activities.append(
-                _make_activity(
-                    project_id=obj.project_id,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    actor_label=actor_label,
-                    action=ActivityAction.create,
-                    entity_type=EntityType.string,
-                    entity_id=str(obj.id),
-                    string_id=obj.id,
-                    before=None,
-                    after=after,
-                    summary=f"Created string '{obj.key}'",
-                    batch_id=batch_id,
-                    batch_kind=batch_kind,
-                    is_revertible=True,
-                )
-            )
-        elif isinstance(obj, Translation):
-            if _is_empty_auto_translation(obj, ActivityAction.create):
-                continue
-            # Need project_id via string_entry if loaded
-            project_id = _project_id_for_translation(session, obj)
-            if project_id is None:
-                continue
-            after = _serialize_translation(obj)
-            activities.append(
-                _make_activity(
-                    project_id=project_id,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    actor_label=actor_label,
-                    action=ActivityAction.create,
-                    entity_type=EntityType.translation,
-                    entity_id=str(obj.id),
-                    string_id=obj.string_id,
-                    locale=obj.locale,
-                    before=None,
-                    after=after,
-                    summary=f"Created translation {obj.locale}",
-                    batch_id=batch_id,
-                    batch_kind=batch_kind,
-                    is_revertible=True,
-                )
-            )
+            _ensure_string_identity(obj)
+            new_strings[obj.id] = obj
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
 
     for obj in list(session.dirty):
         if isinstance(obj, (Activity, Snapshot)):
             continue
         if isinstance(obj, StringEntry):
-            result = _history_before_after(obj, STRING_FIELDS)
-            if result is None:
-                continue
-            before, after = result
-            # Enrich with full serialize for revert
-            before = {**_serialize_string(obj), **before}
-            after = {**_serialize_string(obj), **after}
-            # Fix before values from history
-            state = sa_inspect(obj)
-            for field in STRING_FIELDS:
-                hist = state.attrs[field].history
-                if hist.has_changes() and hist.deleted:
-                    before[field] = _jsonify(hist.deleted[0])
-            activities.append(
-                _make_activity(
-                    project_id=obj.project_id,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    actor_label=actor_label,
-                    action=ActivityAction.update,
-                    entity_type=EntityType.string,
-                    entity_id=str(obj.id),
-                    string_id=obj.id,
-                    before=before,
-                    after=after,
-                    summary=f"Updated string '{obj.key}'",
-                    batch_id=batch_id,
-                    batch_kind=batch_kind,
-                    is_revertible=True,
-                )
-            )
-        elif isinstance(obj, Translation):
-            result = _history_before_after(obj, TRANSLATION_FIELDS)
-            if result is None:
-                continue
-            before, after = result
-            state = sa_inspect(obj)
-            full_before = _serialize_translation(obj)
-            full_after = _serialize_translation(obj)
-            for field in TRANSLATION_FIELDS:
-                hist = state.attrs[field].history
-                if hist.has_changes() and hist.deleted:
-                    full_before[field] = _jsonify(hist.deleted[0])
-                full_after[field] = _jsonify(getattr(obj, field))
-            project_id = _project_id_for_translation(session, obj)
-            if project_id is None:
-                continue
-            activities.append(
-                _make_activity(
-                    project_id=project_id,
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    actor_label=actor_label,
-                    action=ActivityAction.update,
-                    entity_type=EntityType.translation,
-                    entity_id=str(obj.id),
-                    string_id=obj.string_id,
-                    locale=obj.locale,
-                    before=full_before,
-                    after=full_after,
-                    summary=f"Updated translation {obj.locale}",
-                    batch_id=batch_id,
-                    batch_kind=batch_kind,
-                    is_revertible=True,
-                )
-            )
+            dirty_strings[obj.id] = obj
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
 
     for obj in list(session.deleted):
         if isinstance(obj, (Activity, Snapshot)):
             continue
         if isinstance(obj, StringEntry):
-            before = _serialize_string(obj)
-            # Include child translations for restore
-            translations = []
-            for t in list(obj.translations) if obj.translations is not None else []:
-                translations.append(_serialize_translation(t))
-            before["translations"] = translations
+            deleted_strings[obj.id] = obj
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
+
+    activities: list[Activity] = []
+    for string_id in string_ids:
+        if string_id in deleted_strings:
+            entry = deleted_strings[string_id]
+            tags_before, tags_after, _ = _tag_ids_before_after(session, entry)
+            trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
+            before = _snapshot(
+                session,
+                entry,
+                before=True,
+                trans_before=trans_before,
+                trans_after=trans_after,
+                tags_before=tags_before,
+                tags_after=tags_after,
+            )
             activities.append(
                 _make_activity(
-                    project_id=obj.project_id,
+                    project_id=entry.project_id,
                     actor_type=actor_type,
                     actor_id=actor_id,
                     actor_label=actor_label,
                     action=ActivityAction.delete,
                     entity_type=EntityType.string,
-                    entity_id=str(obj.id),
-                    string_id=obj.id,
+                    entity_id=str(entry.id),
+                    string_id=entry.id,
                     before=before,
                     after=None,
-                    summary=f"Deleted string '{obj.key}'",
+                    summary=f"Deleted string '{entry.key}'",
                     batch_id=batch_id,
                     batch_kind=batch_kind,
                     is_revertible=True,
                 )
             )
-        elif isinstance(obj, Translation):
-            project_id = _project_id_for_translation(session, obj)
-            if project_id is None:
-                continue
-            before = _serialize_translation(obj)
+            continue
+
+        if string_id in new_strings:
+            entry = new_strings[string_id]
+            tags_before, tags_after, _ = _tag_ids_before_after(session, entry)
+            trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
+            after = _snapshot(
+                session,
+                entry,
+                before=False,
+                trans_before=trans_before,
+                trans_after=trans_after,
+                tags_before=tags_before,
+                tags_after=tags_after,
+            )
             activities.append(
                 _make_activity(
-                    project_id=project_id,
+                    project_id=entry.project_id,
                     actor_type=actor_type,
                     actor_id=actor_id,
                     actor_label=actor_label,
-                    action=ActivityAction.delete,
-                    entity_type=EntityType.translation,
-                    entity_id=str(obj.id),
-                    string_id=obj.string_id,
-                    locale=obj.locale,
-                    before=before,
-                    after=None,
-                    summary=f"Deleted translation {obj.locale}",
+                    action=ActivityAction.create,
+                    entity_type=EntityType.string,
+                    entity_id=str(entry.id),
+                    string_id=entry.id,
+                    before=None,
+                    after=after,
+                    summary=f"Created string '{entry.key}'",
                     batch_id=batch_id,
                     batch_kind=batch_kind,
                     is_revertible=True,
                 )
             )
+            continue
+
+        entry = dirty_strings.get(string_id) or _load_entry(session, string_id)
+        if entry is None:
+            continue
+
+        field_changed = string_id in dirty_strings and _string_fields_changed(entry)
+        tags_before, tags_after, tags_changed = _tag_ids_before_after(session, entry)
+        trans_before, trans_after, trans_changed = _translation_maps(session, string_id, entry)
+        if not field_changed and not tags_changed:
+            if not trans_changed or _only_empty_new_translations(session, string_id):
+                continue
+
+        before = _snapshot(
+            session,
+            entry,
+            before=True,
+            trans_before=trans_before,
+            trans_after=trans_after,
+            tags_before=tags_before,
+            tags_after=tags_after,
+        )
+        after = _snapshot(
+            session,
+            entry,
+            before=False,
+            trans_before=trans_before,
+            trans_after=trans_after,
+            tags_before=tags_before,
+            tags_after=tags_after,
+        )
+        if before == after:
+            continue
+
+        activities.append(
+            _make_activity(
+                project_id=entry.project_id,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                actor_label=actor_label,
+                action=ActivityAction.update,
+                entity_type=EntityType.string,
+                entity_id=str(entry.id),
+                string_id=entry.id,
+                before=before,
+                after=after,
+                summary=f"Updated string '{entry.key}'",
+                batch_id=batch_id,
+                batch_kind=batch_kind,
+                is_revertible=True,
+            )
+        )
 
     for activity in activities:
         session.add(activity)
-
-
-def _project_id_for_translation(session: Session, obj: Translation) -> uuid.UUID | None:
-    if obj.string_entry is not None:
-        return obj.string_entry.project_id
-    # Try identity map / query
-    entry = session.get(StringEntry, obj.string_id)
-    if entry:
-        return entry.project_id
-    return None
 
 
 def _make_activity(

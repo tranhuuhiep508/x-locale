@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import project_access
 from app.database import get_db
-from app.helpers import ensure_translation_rows, serialize_string, string_query
+from app.helpers import (
+    apply_translation_values,
+    ensure_translation_rows,
+    serialize_string,
+    string_query,
+)
 from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
     StringCreate,
@@ -20,6 +25,16 @@ from app.schemas import (
 )
 
 router = APIRouter(tags=["strings"])
+
+
+def _validate_locales(project: Project, translations: dict[str, str] | None) -> None:
+    if not translations:
+        return
+    allowed = set(project.target_languages)
+    allowed.add(project.base_language)
+    for locale in translations:
+        if locale not in allowed:
+            raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
 
 def _get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> StringEntry:
@@ -94,15 +109,18 @@ def create_string(
     if existing:
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
 
+    _validate_locales(project, payload.translations)
+
     entry = StringEntry(
+        id=uuid.uuid4(),
         project_id=project.id,
         module_id=payload.module_id,
         key=payload.key,
         source_text=payload.source_text,
         description=payload.description,
+        status=payload.status,
     )
     db.add(entry)
-    db.flush()
     if payload.tag_ids:
         tags = (
             db.query(Tag)
@@ -111,6 +129,8 @@ def create_string(
         )
         entry.tags = tags
     ensure_translation_rows(db, entry, project)
+    if payload.translations:
+        apply_translation_values(db, entry, payload.translations)
     db.commit()
     return serialize_string(_get_string(db, project.id, entry.id))
 
@@ -151,6 +171,10 @@ def update_string(
         entry.tags = tags
     if payload.status is not None:
         entry.status = payload.status
+    if payload.translations is not None:
+        _validate_locales(project, payload.translations)
+        ensure_translation_rows(db, entry, project)
+        apply_translation_values(db, entry, payload.translations)
     db.commit()
     return serialize_string(_get_string(db, project.id, string_id))
 

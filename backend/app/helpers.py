@@ -69,13 +69,34 @@ def ensure_translation_rows(db: Session, entry: StringEntry, project: Project) -
     existing = {t.locale for t in entry.translations}
     for locale in project.target_languages:
         if locale not in existing:
-            db.add(
-                Translation(
-                    string_id=entry.id,
-                    locale=locale,
-                    value="",
-                )
+            translation = Translation(
+                string_id=entry.id,
+                locale=locale,
+                value="",
             )
+            db.add(translation)
+            entry.translations.append(translation)
+
+
+def apply_translation_values(
+    db: Session,
+    entry: StringEntry,
+    translations: dict[str, str],
+) -> None:
+    """Upsert locale values on an entry. Caller must validate locales."""
+    by_locale = {t.locale: t for t in entry.translations}
+    for locale, value in translations.items():
+        existing = by_locale.get(locale)
+        if existing is None:
+            translation = Translation(
+                string_id=entry.id,
+                locale=locale,
+                value=value,
+            )
+            db.add(translation)
+            entry.translations.append(translation)
+        else:
+            existing.value = value
 
 
 def string_query(

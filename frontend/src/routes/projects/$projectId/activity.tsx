@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, lazy, Suspense } from 'react'
-import { RotateCcw, Clock } from 'lucide-react'
+import { useState } from 'react'
+import { RotateCcw, RotateCw, Clock } from 'lucide-react'
 import { api } from '@/lib/api/client'
-import type { ActivityListResponse } from '@/lib/api/types'
+import type { Activity, ActivityListResponse } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { activitySearchSchema } from '@/lib/schemas'
 import {
@@ -23,6 +23,57 @@ export const Route = createFileRoute('/projects/$projectId/activity')({
   component: ActivityPage,
 })
 
+const ACTION_COLOR: Record<string, 'default' | 'secondary' | 'destructive'> = {
+  create: 'default',
+  update: 'secondary',
+  delete: 'destructive',
+  revert: 'secondary',
+  redo: 'secondary',
+}
+
+function stackedRevertDepth(summary: string) {
+  const prefix = /^(?:Reverted:\s+)+/.exec(summary)
+  if (!prefix) return 0
+  return prefix[0].match(/Reverted:/g)?.length ?? 0
+}
+
+function isRedoEntry(a: Activity) {
+  if (a.batch_kind !== 'revert') return false
+  if (a.summary.startsWith('Redid ')) return true
+  const depth = stackedRevertDepth(a.summary)
+  return depth > 0 && depth % 2 === 0
+}
+
+function isRevertEntry(a: Activity) {
+  return a.batch_kind === 'revert' && !isRedoEntry(a)
+}
+
+function activityLabel(a: Activity) {
+  if (isRedoEntry(a)) return 'redo'
+  if (isRevertEntry(a)) return 'revert'
+  return a.action
+}
+
+function feedActionLabel(a: Activity) {
+  return isRevertEntry(a) ? 'Redo' : 'Revert'
+}
+
+const LEGACY_ACTION: Record<string, string> = {
+  Created: 'create',
+  Updated: 'update',
+  Deleted: 'delete',
+}
+
+function displaySummary(summary: string) {
+  const depth = stackedRevertDepth(summary)
+  if (depth === 0) return summary
+  const rest = summary.replace(/^(?:Reverted:\s+)+/, '')
+  const parsed = /^(Created|Updated|Deleted) string '([^']+)'/.exec(rest)
+  const verb = depth % 2 === 1 ? 'Reverted' : 'Redid'
+  if (parsed) return `${verb} ${LEGACY_ACTION[parsed[1]]} of '${parsed[2]}'`
+  return `${verb} ${rest}`
+}
+
 function ActivityPage() {
   const { projectId } = Route.useParams()
   const rawSearch = Route.useSearch()
@@ -30,10 +81,10 @@ function ActivityPage() {
   const navigate = useNavigate({ from: Route.fullPath })
   const qc = useQueryClient()
   const toast = useToast()
-  const [revertTarget, setRevertTarget] = useState<string | null>(null)
+  const [revertTarget, setRevertTarget] = useState<Activity | null>(null)
 
   const { data, isLoading } = useQuery<ActivityListResponse>({
-    queryKey: queryKeys.activities(projectId, search.page),
+    queryKey: queryKeys.activities(projectId, search.page, search.page_size),
     queryFn: () =>
       api.get<ActivityListResponse>(`/projects/${projectId}/activities`, {
         page: search.page,
@@ -45,8 +96,9 @@ function ActivityPage() {
     mutationFn: (activityId: string) =>
       api.post(`/projects/${projectId}/activities/${activityId}/revert`),
     onSuccess: () => {
-      toast.success('Reverted successfully')
-      qc.invalidateQueries({ queryKey: queryKeys.activities(projectId, search.page) })
+      toast.success(revertTarget && isRevertEntry(revertTarget) ? 'Redone successfully' : 'Reverted successfully')
+      qc.invalidateQueries({ queryKey: ['projects', projectId, 'activities'] })
+      qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
       setRevertTarget(null)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Revert failed'),
@@ -54,12 +106,6 @@ function ActivityPage() {
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
-
-  const actionColor: Record<string, 'default' | 'secondary' | 'destructive'> = {
-    create: 'default',
-    update: 'secondary',
-    delete: 'destructive',
-  }
 
   return (
     <div className="container py-6">
@@ -82,12 +128,12 @@ function ActivityPage() {
               className="flex items-start gap-3 py-3 px-4 rounded-lg hover:bg-muted/50 transition-colors"
             >
               <div className="mt-0.5 shrink-0">
-                <Badge variant={actionColor[a.action] ?? 'default'}>
-                  {a.action}
+                <Badge variant={ACTION_COLOR[activityLabel(a)] ?? 'default'}>
+                  {activityLabel(a)}
                 </Badge>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-foreground">{a.summary}</p>
+                <p className="text-sm text-foreground">{displaySummary(a.summary)}</p>
                 <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                   <span>{a.actor_label}</span>
                   <span>·</span>
@@ -99,16 +145,21 @@ function ActivityPage() {
                     </>
                   )}
                 </div>
+                <ActivityFieldDiffs activity={a} />
               </div>
               {a.is_revertible && !a.reverted_by_id && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="text-muted-foreground hover:text-primary shrink-0"
-                  onClick={() => setRevertTarget(a.id)}
+                  onClick={() => setRevertTarget(a)}
                 >
-                  <RotateCcw data-icon="inline-start" />
-                  Revert
+                  {isRevertEntry(a) ? (
+                    <RotateCw data-icon="inline-start" />
+                  ) : (
+                    <RotateCcw data-icon="inline-start" />
+                  )}
+                  {feedActionLabel(a)}
                 </Button>
               )}
               {a.reverted_by_id && (
@@ -129,13 +180,97 @@ function ActivityPage() {
       <ConfirmDialog
         open={revertTarget !== null}
         onClose={() => setRevertTarget(null)}
-        onConfirm={() => revertTarget && revertMut.mutate(revertTarget)}
-        title="Revert this change?"
-        description="This will undo the recorded action. The undo itself will appear in the activity log."
-        confirmLabel="Revert"
+        onConfirm={() => revertTarget && revertMut.mutate(revertTarget.id)}
+        title={
+          revertTarget && isRevertEntry(revertTarget)
+            ? 'Redo this change?'
+            : 'Revert this change?'
+        }
+        description={
+          revertTarget && isRevertEntry(revertTarget)
+            ? 'This will redo the original change. A new activity will be logged.'
+            : 'This will revert the recorded change. A new activity will be logged.'
+        }
+        confirmLabel={revertTarget ? feedActionLabel(revertTarget) : 'Revert'}
         variant="default"
         isLoading={revertMut.isPending}
       />
+    </div>
+  )
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  key: 'Key',
+  source_text: 'Source text',
+  description: 'Description',
+  status: 'Status',
+  module_id: 'Module',
+  tags: 'Tags',
+}
+
+function formatSnapshotValue(value: unknown): string {
+  if (value == null || value === '') return '—'
+  if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : '—'
+  return String(value)
+}
+
+function flattenSnapshot(snap: Record<string, unknown> | null): Record<string, string> {
+  if (!snap) return {}
+  const out: Record<string, string> = {}
+  for (const key of ['key', 'source_text', 'description', 'status', 'module_id'] as const) {
+    if (key in snap) out[key] = formatSnapshotValue(snap[key])
+  }
+  if ('tag_ids' in snap) out.tags = formatSnapshotValue(snap.tag_ids)
+  const trans = snap.translations
+  if (trans && typeof trans === 'object' && !Array.isArray(trans)) {
+    for (const [locale, value] of Object.entries(trans as Record<string, unknown>)) {
+      out[`locale:${locale}`] = formatSnapshotValue(value)
+    }
+  } else if (Array.isArray(trans)) {
+    for (const item of trans) {
+      if (item && typeof item === 'object' && 'locale' in item) {
+        const row = item as { locale: string; value?: unknown }
+        out[`locale:${row.locale}`] = formatSnapshotValue(row.value)
+      }
+    }
+  }
+  return out
+}
+
+function fieldLabel(key: string): string {
+  if (key.startsWith('locale:')) return key.slice('locale:'.length)
+  return FIELD_LABELS[key] ?? key
+}
+
+function ActivityFieldDiffs({ activity }: { activity: Activity }) {
+  const before = flattenSnapshot(activity.before)
+  const after = flattenSnapshot(activity.after)
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+  const rows = keys.flatMap((key) => {
+    const from = before[key]
+    const to = after[key]
+    if (activity.action === 'update' && from === to) return []
+    if (activity.action === 'create' && (to == null || to === '—')) return []
+    return [{ key, from, to }]
+  })
+  if (rows.length === 0) return null
+
+  return (
+    <div className="mt-2 flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {rows.map((row) => (
+        <div key={row.key} className="flex min-w-0 gap-2">
+          <span className="shrink-0 font-medium text-foreground/80">{fieldLabel(row.key)}</span>
+          {activity.action === 'create' ? (
+            <span className="min-w-0 truncate">{row.to}</span>
+          ) : activity.action === 'delete' ? (
+            <span className="min-w-0 truncate">{row.from}</span>
+          ) : (
+            <span className="min-w-0 truncate">
+              {row.from} → {row.to}
+            </span>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

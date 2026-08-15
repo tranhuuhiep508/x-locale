@@ -66,6 +66,8 @@ export const stringCreateSchema = z.object({
   description: z.string().optional(),
   module_id: z.string().optional(),
   tag_ids: z.array(z.string()).default([]),
+  status: z.enum(['draft', 'public']).default('draft'),
+  translations: z.record(z.string()).default({}),
 })
 
 export type StringCreateForm = z.infer<typeof stringCreateSchema>

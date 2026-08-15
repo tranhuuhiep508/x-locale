@@ -70,8 +70,7 @@ import {
 } from '@/components/ui'
 import { useToast } from '@/store'
 
-const StringCreateDialog = lazy(() => import('@/components/strings/StringCreateDialog'))
-const StringEditDialog = lazy(() => import('@/components/strings/StringEditDialog'))
+const StringFormDialog = lazy(() => import('@/components/strings/StringFormDialog'))
 
 export const Route = createFileRoute('/projects/$projectId/strings')({
   validateSearch: (s: Record<string, unknown>) => stringsSearchSchema.parse(s),
@@ -200,8 +199,8 @@ function StringsPage() {
   const toast = useToast()
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [showCreate, setShowCreate] = useState(false)
-  const [editingEntry, setEditingEntry] = useState<StringEntry | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -268,6 +267,7 @@ function StringsPage() {
 
   const invalidateStrings = useCallback(() => {
     qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
+    qc.invalidateQueries({ queryKey: ['projects', projectId, 'activities'] })
   }, [qc, projectId])
 
   const batchMut = useMutation({
@@ -462,7 +462,13 @@ function StringsPage() {
             Translate missing
           </Button>
 
-          <Button size="sm" onClick={() => setShowCreate(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setDialogEntry(null)
+              setDialogOpen(true)
+            }}
+          >
             <Plus data-icon="inline-start" />
             Add string
           </Button>
@@ -576,7 +582,12 @@ function StringsPage() {
             }
             action={
               !hasActiveFilters ? (
-                <Button onClick={() => setShowCreate(true)}>
+                <Button
+                  onClick={() => {
+                    setDialogEntry(null)
+                    setDialogOpen(true)
+                  }}
+                >
                   <Plus data-icon="inline-start" />
                   Add string
                 </Button>
@@ -615,7 +626,10 @@ function StringsPage() {
                   targetLocales={targetLocales}
                   selected={selectedIds.has(s.id)}
                   onToggle={() => toggleRow(s.id)}
-                  onEdit={() => setEditingEntry(s)}
+                  onEdit={() => {
+                    setDialogEntry(s)
+                    setDialogOpen(true)
+                  }}
                   onRefresh={invalidateStrings}
                   onTranslate={(id) =>
                     translateMut.mutate({
@@ -642,32 +656,22 @@ function StringsPage() {
         </div>
       )}
 
-      {showCreate && (
+      {dialogOpen && (
         <Suspense fallback={null}>
-          <StringCreateDialog
+          <StringFormDialog
+            key={dialogEntry?.id ?? 'new'}
             projectId={projectId}
-            modules={modules}
-            tags={tags}
-            onClose={() => setShowCreate(false)}
-            onSuccess={() => {
-              setShowCreate(false)
-              invalidateStrings()
-            }}
-          />
-        </Suspense>
-      )}
-
-      {editingEntry && (
-        <Suspense fallback={null}>
-          <StringEditDialog
-            projectId={projectId}
-            entry={editingEntry}
+            entry={dialogEntry}
             modules={modules}
             tags={tags}
             targetLocales={targetLocales}
-            onClose={() => setEditingEntry(null)}
+            onClose={() => {
+              setDialogOpen(false)
+              setDialogEntry(null)
+            }}
             onSuccess={() => {
-              setEditingEntry(null)
+              setDialogOpen(false)
+              setDialogEntry(null)
               invalidateStrings()
             }}
           />

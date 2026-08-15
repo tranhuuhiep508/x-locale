@@ -162,6 +162,8 @@ class StringCreate(BaseModel):
     description: str | None = None
     module_id: UUID | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
+    status: TranslationStatus = TranslationStatus.draft
+    translations: dict[str, str] = Field(default_factory=dict)
 
 
 class StringUpdate(BaseModel):
@@ -171,6 +173,7 @@ class StringUpdate(BaseModel):
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
+    translations: dict[str, str] | None = None
 
 
 class TranslationUpdate(BaseModel):
@@ -223,6 +226,16 @@ class TranslateResult(BaseModel):
     translated_count: int
     locales: list[str]
     job_id: UUID | None = None
+
+
+class TranslatePreviewRequest(BaseModel):
+    source_text: str = Field(min_length=1)
+    description: str | None = None
+    locales: list[str] | None = None
+
+
+class TranslatePreviewResult(BaseModel):
+    translations: dict[str, str]
 
 
 class JobOut(BaseModel):

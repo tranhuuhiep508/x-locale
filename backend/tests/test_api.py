@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 
 def test_health(client):
     r = client.get("/health")
@@ -282,3 +284,253 @@ def test_list_strings_filters(client):
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "welcome"
+
+
+def _make_project(client, name="Act", targets=None):
+    r = client.post(
+        "/api/projects",
+        json={
+            "name": name,
+            "base_language": "vi",
+            "target_languages": targets or ["en"],
+            "layout": "modular",
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_string_create_activity_snapshot(client):
+    project = _make_project(client, "Create Snap")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "common", "name": "Common"},
+    ).json()
+    tag = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "ui", "color": "#111"},
+    ).json()
+
+    r = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "save",
+            "source_text": "Lưu",
+            "description": "Primary action",
+            "module_id": module["id"],
+            "tag_ids": [tag["id"]],
+            "status": "public",
+            "translations": {"en": "Save"},
+        },
+    )
+    assert r.status_code == 201, r.text
+    string = r.json()
+    assert string["status"] == "public"
+    assert string["translations"][0]["value"] == "Save"
+
+    r = client.get(f"/api/projects/{pid}/activities")
+    creates = [
+        a
+        for a in r.json()["items"]
+        if a["action"] == "create" and a["entity_type"] == "string"
+    ]
+    assert len(creates) == 1
+    after = creates[0]["after"]
+    uuid.UUID(after["id"])
+    assert after["status"] == "public"
+    assert after["key"] == "save"
+    assert after["tag_ids"] == [tag["id"]]
+    assert after["translations"]["en"] == "Save"
+
+
+def test_string_patch_one_activity_with_translation(client):
+    project = _make_project(client, "Patch Snap")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}},
+    ).json()
+
+    r = client.patch(
+        f"/api/projects/{pid}/strings/{created['id']}",
+        json={"key": "save_v2", "translations": {"en": "Saved"}},
+    )
+    assert r.status_code == 200, r.text
+
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    updates = [a for a in items if a["action"] == "update" and a["entity_type"] == "string"]
+    assert len(updates) == 1
+    assert updates[0]["before"]["key"] == "save"
+    assert updates[0]["after"]["key"] == "save_v2"
+    assert updates[0]["before"]["translations"]["en"] == "Save"
+    assert updates[0]["after"]["translations"]["en"] == "Saved"
+    assert all(a["entity_type"] != "translation" for a in items)
+
+
+def test_string_delete_activity_and_revert(client):
+    project = _make_project(client, "Delete Snap")
+    pid = project["id"]
+    tag = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "keep", "color": "#222"},
+    ).json()
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "cancel",
+            "source_text": "Hủy",
+            "tag_ids": [tag["id"]],
+            "translations": {"en": "Cancel"},
+        },
+    ).json()
+    sid = created["id"]
+
+    r = client.delete(f"/api/projects/{pid}/strings/{sid}")
+    assert r.status_code == 204
+
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    deletes = [a for a in items if a["action"] == "delete" and a["entity_type"] == "string"]
+    assert len(deletes) == 1
+    before = deletes[0]["before"]
+    assert before["key"] == "cancel"
+    assert before["tag_ids"] == [tag["id"]]
+    assert before["translations"]["en"] == "Cancel"
+
+    r = client.post(f"/api/projects/{pid}/activities/{deletes[0]['id']}/revert")
+    assert r.status_code == 200, r.text
+    restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert restored["key"] == "cancel"
+    assert restored["tags"][0]["id"] == tag["id"]
+    assert restored["translations"][0]["value"] == "Cancel"
+
+    after_revert = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    new_rows = [a for a in after_revert if a["id"] not in {x["id"] for x in items}]
+    assert len(new_rows) == 1
+    assert new_rows[0]["batch_kind"] == "revert"
+    assert new_rows[0]["summary"] == "Reverted delete of 'cancel'"
+    assert new_rows[0]["revert_of_id"] == deletes[0]["id"]
+
+
+def test_revert_create_and_update_tags_translations(client):
+    project = _make_project(client, "Revert Snap")
+    pid = project["id"]
+    tag_a = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "a", "color": "#aaa"},
+    ).json()
+    tag_b = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "b", "color": "#bbb"},
+    ).json()
+
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "ok",
+            "source_text": "OK",
+            "tag_ids": [tag_a["id"]],
+            "translations": {"en": "OK"},
+        },
+    ).json()
+    sid = created["id"]
+
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"tag_ids": [tag_b["id"]], "translations": {"en": "Okay"}},
+    )
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    update = next(a for a in items if a["action"] == "update" and a["entity_type"] == "string")
+    r = client.post(f"/api/projects/{pid}/activities/{update['id']}/revert")
+    assert r.status_code == 200, r.text
+    restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert restored["tags"][0]["id"] == tag_a["id"]
+    assert restored["translations"][0]["value"] == "OK"
+
+    after_revert = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    new_rows = [a for a in after_revert if a["id"] not in {x["id"] for x in items}]
+    assert len(new_rows) == 1
+    assert new_rows[0]["batch_kind"] == "revert"
+    assert new_rows[0]["summary"] == "Reverted update of 'ok'"
+    assert not any("Reverted:" in a["summary"] for a in new_rows)
+
+    creates = [
+        a
+        for a in client.get(f"/api/projects/{pid}/activities").json()["items"]
+        if a["action"] == "create" and a["entity_type"] == "string" and a["string_id"] == sid
+    ]
+    r = client.post(f"/api/projects/{pid}/activities/{creates[0]['id']}/revert")
+    assert r.status_code == 200, r.text
+    r = client.get(f"/api/projects/{pid}/strings/{sid}")
+    assert r.status_code == 404
+
+
+def test_revert_redo_summaries_do_not_stack(client):
+    project = _make_project(client, "Revert Ping")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "cancel", "source_text": "Hủy", "status": "public"},
+    ).json()
+    sid = created["id"]
+    client.patch(f"/api/projects/{pid}/strings/{sid}", json={"status": "draft"})
+
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    update = next(
+        a
+        for a in items
+        if a["action"] == "update" and a["entity_type"] == "string" and a["string_id"] == sid
+    )
+
+    summaries = []
+    current_id = update["id"]
+    for expected in (
+        "Reverted update of 'cancel'",
+        "Redid update of 'cancel'",
+        "Reverted update of 'cancel'",
+    ):
+        r = client.post(f"/api/projects/{pid}/activities/{current_id}/revert")
+        assert r.status_code == 200, r.text
+        latest = next(
+            a
+            for a in client.get(f"/api/projects/{pid}/activities").json()["items"]
+            if a["revert_of_id"] == current_id
+        )
+        assert latest["summary"] == expected
+        assert "Reverted:" not in latest["summary"]
+        summaries.append(latest["summary"])
+        current_id = latest["id"]
+
+    assert summaries == [
+        "Reverted update of 'cancel'",
+        "Redid update of 'cancel'",
+        "Reverted update of 'cancel'",
+    ]
+
+
+def test_translate_preview_does_not_persist(client, monkeypatch):
+    project = _make_project(client, "Preview", targets=["en", "ja"])
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    )
+
+    def fake_translate(source_text, source_locale, target_locale, context=None):
+        return f"{target_locale}:{source_text}"
+
+    monkeypatch.setattr("app.routers.translate.translate_text", fake_translate)
+
+    before = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    r = client.post(
+        f"/api/projects/{pid}/translate/preview",
+        json={"source_text": "Xin chào", "locales": ["en", "ja"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["translations"]["en"] == "en:Xin chào"
+    assert r.json()["translations"]["ja"] == "ja:Xin chào"
+
+    after = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    assert after == before
+    string = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert all(t["value"] == "" for t in string["translations"])

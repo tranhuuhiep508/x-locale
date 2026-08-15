@@ -126,18 +126,21 @@ export interface StringEntry {
 export interface StringCreate {
   key: string
   source_text: string
-  description?: string
-  module_id?: string
+  description?: string | null
+  module_id?: string | null
   tag_ids?: string[]
+  status?: TranslationStatus
+  translations?: Record<string, string>
 }
 
 export interface StringUpdate {
   key?: string
   source_text?: string
-  description?: string
+  description?: string | null
   module_id?: string | null
   tag_ids?: string[]
   status?: TranslationStatus
+  translations?: Record<string, string>
 }
 
 export interface TranslationUpdate {
@@ -194,6 +197,16 @@ export interface TranslateResult {
   translated_count: number
   locales: string[]
   job_id: string | null
+}
+
+export interface TranslatePreviewRequest {
+  source_text: string
+  description?: string
+  locales?: string[]
+}
+
+export interface TranslatePreviewResult {
+  translations: Record<string, string>
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────
