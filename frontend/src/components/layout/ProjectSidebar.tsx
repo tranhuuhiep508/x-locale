@@ -7,7 +7,6 @@ import {
   Settings,
   ArrowUpDown,
   Activity,
-  Camera,
   ArrowLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -44,7 +43,6 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
   const settingsLink = useSideLink('/settings', id)
   const ieLink = useSideLink('/import-export', id)
   const activityLink = useSideLink('/activity', id)
-  const versionsLink = useSideLink('/versions', id)
 
   return (
     <aside className="w-56 shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -123,14 +121,6 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
         >
           <Activity className="h-4 w-4 shrink-0" />
           Activity
-        </Link>
-        <Link
-          to="/projects/$projectId/versions"
-          params={{ projectId: id }}
-          className={linkCls(versionsLink.isActive)}
-        >
-          <Camera className="h-4 w-4 shrink-0" />
-          Versions
         </Link>
       </nav>
     </aside>

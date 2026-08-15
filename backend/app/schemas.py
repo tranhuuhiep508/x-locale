@@ -307,29 +307,3 @@ class ActivityListOut(BaseModel):
     total: int
     page: int
     page_size: int
-
-
-# ── Snapshots ─────────────────────────────────────────────────────────
-
-
-class SnapshotCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    description: str | None = None
-
-
-class SnapshotOut(BaseModel):
-    id: UUID
-    name: str
-    description: str | None
-    kind: str
-    string_count: int
-    content_hash: str
-    created_at: datetime | None
-    content: dict[str, Any] | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class SnapshotListOut(BaseModel):
-    items: list[SnapshotOut]
-    total: int

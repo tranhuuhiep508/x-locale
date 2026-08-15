@@ -15,7 +15,6 @@ from app.routers import (
     languages,
     modules,
     projects,
-    snapshots,
     strings,
     sync,
     tags,
@@ -59,7 +58,6 @@ app.include_router(batch.router, prefix="/api")
 app.include_router(translate.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(activities.router, prefix="/api")
-app.include_router(snapshots.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
 
 

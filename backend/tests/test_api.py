@@ -171,42 +171,6 @@ def test_public_export_empty_missing_locale(client):
     assert data["vi"]["greet"] == "Xin chào"
 
 
-def test_snapshot_restore(client):
-    r = client.post(
-        "/api/projects",
-        json={"name": "Snap", "target_languages": ["en"]},
-    )
-    pid = r.json()["id"]
-    r = client.post(
-        f"/api/projects/{pid}/strings",
-        json={"key": "hello", "source_text": "Xin chào"},
-    )
-    sid = r.json()["id"]
-
-    r = client.post(
-        f"/api/projects/{pid}/snapshots",
-        json={"name": "v1", "description": "first"},
-    )
-    assert r.status_code == 201, r.text
-    snap_id = r.json()["id"]
-
-    # Mutate
-    client.put(
-        f"/api/projects/{pid}/strings/{sid}/translations/en",
-        json={"value": "Hello"},
-    )
-    client.patch(
-        f"/api/projects/{pid}/strings/{sid}",
-        json={"source_text": "CHANGED"},
-    )
-
-    r = client.post(f"/api/projects/{pid}/snapshots/{snap_id}/restore")
-    assert r.status_code == 200, r.text
-
-    r = client.get(f"/api/projects/{pid}/strings/{sid}")
-    assert r.json()["source_text"] == "Xin chào"
-
-
 def test_list_strings_filters(client):
     r = client.post(
         "/api/projects",

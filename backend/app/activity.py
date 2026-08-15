@@ -14,7 +14,6 @@ from app.models import (
     ActorType,
     BatchKind,
     EntityType,
-    Snapshot,
     StringEntry,
     StringTag,
     Tag,
@@ -248,7 +247,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
     string_ids: set[uuid.UUID] = set()
 
     for obj in list(session.new):
-        if isinstance(obj, (Activity, Snapshot)):
+        if isinstance(obj, Activity):
             continue
         if isinstance(obj, StringEntry):
             _ensure_string_identity(obj)
@@ -258,7 +257,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             string_ids.add(obj.string_id)
 
     for obj in list(session.dirty):
-        if isinstance(obj, (Activity, Snapshot)):
+        if isinstance(obj, Activity):
             continue
         if isinstance(obj, StringEntry):
             dirty_strings[obj.id] = obj
@@ -267,7 +266,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             string_ids.add(obj.string_id)
 
     for obj in list(session.deleted):
-        if isinstance(obj, (Activity, Snapshot)):
+        if isinstance(obj, Activity):
             continue
         if isinstance(obj, StringEntry):
             deleted_strings[obj.id] = obj

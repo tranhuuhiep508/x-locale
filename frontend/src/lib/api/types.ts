@@ -249,28 +249,6 @@ export interface ActivityListResponse {
   page_size: number
 }
 
-// ── Snapshots ──────────────────────────────────────────────────────────
-export interface Snapshot {
-  id: string
-  name: string
-  description: string | null
-  kind: string
-  string_count: number
-  content_hash: string
-  created_at: string | null
-  content: Record<string, unknown> | null
-}
-
-export interface SnapshotCreate {
-  name: string
-  description?: string
-}
-
-export interface SnapshotListResponse {
-  items: Snapshot[]
-  total: number
-}
-
 // ── Import / Export ────────────────────────────────────────────────────
 export interface ImportDiff {
   create: string[]

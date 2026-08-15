@@ -20,7 +20,6 @@ import { Route as ProjectsProjectIdModulesRouteImport } from './routes/projects/
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdStringsRouteImport } from './routes/projects/$projectId/strings'
 import { Route as ProjectsProjectIdTagsRouteImport } from './routes/projects/$projectId/tags'
-import { Route as ProjectsProjectIdVersionsRouteImport } from './routes/projects/$projectId/versions'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,12 +81,6 @@ const ProjectsProjectIdTagsRoute = ProjectsProjectIdTagsRouteImport.update({
   path: '/tags',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
-const ProjectsProjectIdVersionsRoute =
-  ProjectsProjectIdVersionsRouteImport.update({
-    id: '/versions',
-    path: '/versions',
-    getParentRoute: () => ProjectsProjectIdRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -100,7 +93,6 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
   '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId/versions': typeof ProjectsProjectIdVersionsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -113,7 +105,6 @@ export interface FileRoutesByTo {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
   '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId/versions': typeof ProjectsProjectIdVersionsRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesById {
@@ -128,7 +119,6 @@ export interface FileRoutesById {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
   '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId/versions': typeof ProjectsProjectIdVersionsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -144,7 +134,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/strings'
     | '/projects/$projectId/tags'
-    | '/projects/$projectId/versions'
     | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -157,7 +146,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/strings'
     | '/projects/$projectId/tags'
-    | '/projects/$projectId/versions'
     | '/projects/$projectId'
   id:
     | '__root__'
@@ -171,7 +159,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/strings'
     | '/projects/$projectId/tags'
-    | '/projects/$projectId/versions'
     | '/projects/$projectId/'
   fileRoutesById: FileRoutesById
 }
@@ -261,13 +248,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdTagsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
-    '/projects/$projectId/versions': {
-      id: '/projects/$projectId/versions'
-      path: '/versions'
-      fullPath: '/projects/$projectId/versions'
-      preLoaderRoute: typeof ProjectsProjectIdVersionsRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
-    }
   }
 }
 
@@ -278,7 +258,6 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdStringsRoute: typeof ProjectsProjectIdStringsRoute
   ProjectsProjectIdTagsRoute: typeof ProjectsProjectIdTagsRoute
-  ProjectsProjectIdVersionsRoute: typeof ProjectsProjectIdVersionsRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
 }
 
@@ -289,7 +268,6 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdStringsRoute: ProjectsProjectIdStringsRoute,
   ProjectsProjectIdTagsRoute: ProjectsProjectIdTagsRoute,
-  ProjectsProjectIdVersionsRoute: ProjectsProjectIdVersionsRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
 }
 

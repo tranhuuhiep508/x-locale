@@ -33,8 +33,7 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 - Translation status is `draft` \| `public` on each **string** (not per locale). AI translate never auto-publishes.
 - Export `stage=public` includes only public strings; missing target locales export as empty (no source fallback).
 - Translation inputs save on **blur**.
-- Content writes are audited via `before_flush` → `activities`. Batch/import/translate/restore set `batch_id` for grouped revert.
-- Snapshot restore auto-creates a `kind=auto` safety snapshot first.
+- Content writes are audited via `before_flush` → `activities`. Batch/import/translate set `batch_id` for grouped revert.
 - Modules are always stored; project `layout` only affects export/CLI pull shape.
 - Flat export prefixes keys as `{module_slug}.{key}`.
 

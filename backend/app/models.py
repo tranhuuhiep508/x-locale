@@ -60,11 +60,6 @@ class BatchKind(str, enum.Enum):
     snapshot_restore = "snapshot_restore"
 
 
-class SnapshotKind(str, enum.Enum):
-    manual = "manual"
-    auto = "auto"
-
-
 class JobStatus(str, enum.Enum):
     pending = "pending"
     running = "running"
@@ -118,9 +113,6 @@ class Project(Base):
         back_populates="project", cascade="all, delete-orphan"
     )
     activities: Mapped[list["Activity"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
-    )
-    snapshots: Mapped[list["Snapshot"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
 
@@ -291,29 +283,6 @@ class Activity(Base):
     )
 
     project: Mapped["Project"] = relationship(back_populates="activities")
-
-
-class Snapshot(Base):
-    __tablename__ = "snapshots"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    kind: Mapped[SnapshotKind] = mapped_column(
-        Enum(SnapshotKind, native_enum=False), nullable=False, default=SnapshotKind.manual
-    )
-    content: Mapped[dict] = mapped_column(JSON, nullable=False)
-    string_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    project: Mapped["Project"] = relationship(back_populates="snapshots")
 
 
 class Job(Base):

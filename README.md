@@ -1,7 +1,7 @@
 # TMS — Translation Management System
 
 Self-hosted translation management with multi-project dashboard, modules/tags,
-activity log + snapshots, AI auto-translate, Excel round-trip, and CLI sync.
+activity log, AI auto-translate, Excel round-trip, and CLI sync.
 
 ## Prerequisites
 

@@ -10,8 +10,7 @@ users ──< api_keys >── projects ──< modules
                           ├──< strings >── string_tags
                           │       │
                           │       └──< translations
-                          ├──< activities
-                          └──< snapshots
+                          └──< activities
 ```
 
 ## Key constraints
@@ -21,7 +20,6 @@ users ──< api_keys >── projects ──< modules
 - Translation status: `draft` \| `public` on each **string** (not per locale).
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column.
 - `activities` is append-only. Content entities (`string`, `translation`) are revertible; structural ones (`module`, `tag`, `project`, `api_key`) are audit-only.
-- `snapshots.content` stores a full JSON document of strings + translations. Fine for MVP size; revisit with a child table if projects grow large.
 
 ## Flat vs modular export
 
@@ -41,7 +39,4 @@ Project setting chooses the default; export query param overrides.
 
 ## Version control
 
-1. **Level 1 — Activity feed:** every content write emits `activities` rows (via SQLAlchemy `before_flush`). Revert one row or a whole `batch_id` (import, translate, batch ops, snapshot restore).
-2. **Level 2 — Snapshots:** named whole-project checkpoints. Restore auto-creates a safety snapshot first, then overwrites content in one transaction (`batch_kind=snapshot_restore`).
-
-Optional `ACTIVITY_RETENTION_DAYS` can prune old rows; snapshots are kept until deleted.
+Every content write emits `activities` rows (via SQLAlchemy `before_flush`). Revert one row or a whole `batch_id` (import, translate, batch ops). Optional `ACTIVITY_RETENTION_DAYS` can prune old rows.

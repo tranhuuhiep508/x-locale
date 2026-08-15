@@ -53,13 +53,6 @@ export const tagCreateSchema = z.object({
 
 export type TagCreateForm = z.infer<typeof tagCreateSchema>
 
-export const snapshotCreateSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255),
-  description: z.string().optional(),
-})
-
-export type SnapshotCreateForm = z.infer<typeof snapshotCreateSchema>
-
 export const stringCreateSchema = z.object({
   key: z.string().min(1, 'Key is required').max(512),
   source_text: z.string().min(1, 'Source text is required'),
