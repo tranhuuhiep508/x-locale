@@ -1,4 +1,4 @@
-"""Fix translate router — remove broken get_job (lives in jobs.py)."""
+"""AI translate: one Bedrock tool call per string chunk, all requested locales."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from app.ai import translate_text
+from app.ai import TranslateItem, translate_batch
 from app.auth import project_access
 from app.database import SessionLocal, get_db
 from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation
@@ -41,14 +41,79 @@ def _select_entries(
     return query.all()
 
 
-def _count_work(entries: list[StringEntry], locales: list[str], overwrite: bool) -> int:
-    count = 0
+def _needed_locales(entry: StringEntry, locales: list[str], overwrite: bool) -> list[str]:
+    by_locale = {t.locale: t for t in entry.translations}
+    needed: list[str] = []
+    for locale in locales:
+        translation = by_locale.get(locale)
+        if translation is None or overwrite or not translation.value.strip():
+            needed.append(locale)
+    return needed
+
+
+def _work_items(
+    entries: list[StringEntry],
+    locales: list[str],
+    overwrite: bool,
+) -> list[TranslateItem]:
+    items: list[TranslateItem] = []
     for entry in entries:
-        for locale in locales:
-            t = next((x for x in entry.translations if x.locale == locale), None)
-            if t is None or (overwrite or not t.value.strip()):
-                count += 1
-    return count
+        needed = _needed_locales(entry, locales, overwrite)
+        if not needed:
+            continue
+        items.append(
+            TranslateItem(
+                id=str(entry.id),
+                source_text=entry.source_text,
+                locales=tuple(needed),
+                context=entry.description,
+            )
+        )
+    return items
+
+
+def _count_work(entries: list[StringEntry], locales: list[str], overwrite: bool) -> int:
+    return len(_work_items(entries, locales, overwrite))
+
+
+def _ensure_translation(db: Session, entry: StringEntry, locale: str) -> Translation:
+    translation = next((t for t in entry.translations if t.locale == locale), None)
+    if translation is None:
+        translation = Translation(string_id=entry.id, locale=locale, value="")
+        db.add(translation)
+        entry.translations.append(translation)
+    return translation
+
+
+def _apply_translations(
+    db: Session,
+    project: Project,
+    entries: list[StringEntry],
+    locales: list[str],
+    overwrite: bool,
+) -> int:
+    items = _work_items(entries, locales, overwrite)
+    if not items:
+        return 0
+
+    results = translate_batch(project.base_language, items)
+    by_id = {str(entry.id): entry for entry in entries}
+    translated = 0
+    for item in items:
+        entry = by_id.get(item.id)
+        if entry is None:
+            continue
+        locale_map = results.get(item.id) or {}
+        for locale in item.locales:
+            translation = _ensure_translation(db, entry, locale)
+            if translation.value.strip() and not overwrite:
+                continue
+            value = locale_map.get(locale)
+            if not value or not value.strip():
+                continue
+            translation.value = value
+            translated += 1
+    return translated
 
 
 def _run_translate(
@@ -84,39 +149,7 @@ def _run_translate(
             .filter(StringEntry.id.in_(entry_ids))
             .all()
         )
-        translated = 0
-        for entry in entries:
-            for locale in locales:
-                translation = next((t for t in entry.translations if t.locale == locale), None)
-                if translation is None:
-                    translation = Translation(
-                        string_id=entry.id,
-                        locale=locale,
-                        value="",
-                    )
-                    db.add(translation)
-                    entry.translations.append(translation)
-
-                if translation.value.strip() and not overwrite:
-                    continue
-
-                try:
-                    translation.value = translate_text(
-                        entry.source_text,
-                        project.base_language,
-                        locale,
-                        entry.description,
-                    )
-                    translated += 1
-                except Exception as exc:
-                    if job_id:
-                        job = db.query(Job).filter(Job.id == job_id).first()
-                        if job:
-                            job.status = JobStatus.failed
-                            job.error = str(exc)
-                            job.completed_at = datetime.now(UTC)
-                        db.commit()
-                    raise
+        translated = _apply_translations(db, project, entries, locales, overwrite)
 
         if job_id:
             job = db.query(Job).filter(Job.id == job_id).first()
@@ -127,8 +160,19 @@ def _run_translate(
 
         db.commit()
         return translated
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        if job_id:
+            failed = SessionLocal()
+            try:
+                job = failed.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    job.status = JobStatus.failed
+                    job.error = str(exc)
+                    job.completed_at = datetime.now(UTC)
+                    failed.commit()
+            finally:
+                failed.close()
         raise
     finally:
         db.close()
@@ -177,34 +221,12 @@ def translate(
     existing = db.info.get("activity") or {}
     db.info["activity"] = {**existing, "batch_id": str(batch_id), "batch_kind": "translate"}
 
-    translated = 0
-    for entry in entries:
-        for locale in locales:
-            translation = next((t for t in entry.translations if t.locale == locale), None)
-            if translation is None:
-                translation = Translation(
-                    string_id=entry.id,
-                    locale=locale,
-                    value="",
-                )
-                db.add(translation)
-                entry.translations.append(translation)
-
-            if translation.value.strip() and not payload.overwrite:
-                continue
-
-            try:
-                translation.value = translate_text(
-                    entry.source_text,
-                    project.base_language,
-                    locale,
-                    entry.description,
-                )
-                translated += 1
-            except ValueError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
+    try:
+        translated = _apply_translations(db, project, entries, locales, payload.overwrite)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
 
     db.commit()
     return TranslateResult(translated_count=translated, locales=locales)
@@ -223,17 +245,20 @@ def translate_preview(
         if locale not in allowed:
             raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
-    translations: dict[str, str] = {}
-    for locale in locales:
-        try:
-            translations[locale] = translate_text(
-                payload.source_text,
-                project.base_language,
-                locale,
-                payload.description,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
-    return TranslatePreviewResult(translations=translations)
+    try:
+        result = translate_batch(
+            project.base_language,
+            [
+                TranslateItem(
+                    id="preview",
+                    source_text=payload.source_text,
+                    locales=tuple(locales),
+                    context=payload.description,
+                )
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
+    return TranslatePreviewResult(translations=result.get("preview") or {})

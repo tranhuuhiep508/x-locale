@@ -480,10 +480,11 @@ def test_translate_preview_does_not_persist(client, monkeypatch):
         json={"key": "hi", "source_text": "Xin chào"},
     )
 
-    def fake_translate(source_text, source_locale, target_locale, context=None):
-        return f"{target_locale}:{source_text}"
+    def fake_batch(source_locale, items):
+        item = items[0]
+        return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
 
-    monkeypatch.setattr("app.routers.translate.translate_text", fake_translate)
+    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
 
     before = client.get(f"/api/projects/{pid}/activities").json()["total"]
     r = client.post(
@@ -498,3 +499,75 @@ def test_translate_preview_does_not_persist(client, monkeypatch):
     assert after == before
     string = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
     assert all(t["value"] == "" for t in string["translations"])
+
+
+def test_translate_fills_all_locales_in_one_batch(client, monkeypatch):
+    project = _make_project(client, "Batch Translate", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    calls: list = []
+
+    def fake_batch(source_locale, items):
+        calls.append(items)
+        item = items[0]
+        assert item.locales == ("en", "ja")
+        return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
+
+    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate",
+        json={
+            "scope": "strings",
+            "string_ids": [string["id"]],
+            "locales": ["en", "ja"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["translated_count"] == 2
+    assert len(calls) == 1
+
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "en:Xin chào"
+    assert by_locale["ja"] == "ja:Xin chào"
+
+
+def test_translate_skips_filled_locale_unless_overwrite(client, monkeypatch):
+    project = _make_project(client, "Skip Filled", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "translations": {"en": "Hello"},
+        },
+    ).json()
+
+    def fake_batch(source_locale, items):
+        assert len(items) == 1
+        assert items[0].locales == ("ja",)
+        return {items[0].id: {"ja": "こんにちは"}}
+
+    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate",
+        json={
+            "scope": "strings",
+            "string_ids": [string["id"]],
+            "locales": ["en", "ja"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["translated_count"] == 1
+
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "Hello"
+    assert by_locale["ja"] == "こんにちは"
