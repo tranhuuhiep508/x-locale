@@ -30,19 +30,28 @@ services:
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
       TMS_SECRET: ${TMS_SECRET:-dev-secret-change-me}
       TMS_DEMO_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
+      DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
+      AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-true}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.cli seed-demo &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
     build: ./frontend
     ports:
       - "5173:5173"
     environment:
-      VITE_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
       VITE_API_PROXY_TARGET: http://backend:8000
     depends_on:
       - backend

@@ -1,0 +1,7 @@
+{
+  "name": "tms-mvp",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh"
+  }
+}

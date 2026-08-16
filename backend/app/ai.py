@@ -1,19 +1,69 @@
+from __future__ import annotations
+
 import json
-import urllib.error
-import urllib.request
+import os
+from dataclasses import dataclass
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from app.config import settings
 
+BATCH_SIZE = 20
+MAX_TOKENS = 4096
+TEMPERATURE = 0.2
+TOOL_NAME = "submit_translations"
 
-def _bearer_token() -> str:
-    return settings.aws_bearer_token_bedrock
+SUBMIT_TRANSLATIONS_TOOL = {
+    "toolSpec": {
+        "name": TOOL_NAME,
+        "description": (
+            "Submit translations for every source string. "
+            "Copy each item id exactly. Include every requested locale."
+        ),
+        "inputSchema": {
+            "json": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "translations": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "locale": {"type": "string"},
+                                            "text": {"type": "string"},
+                                        },
+                                        "required": ["locale", "text"],
+                                    },
+                                },
+                            },
+                            "required": ["id", "translations"],
+                        },
+                    }
+                },
+                "required": ["items"],
+            }
+        },
+    }
+}
+
+
+@dataclass(frozen=True)
+class TranslateItem:
+    id: str
+    source_text: str
+    locales: tuple[str, ...]
+    context: str | None = None
 
 
 def _ensure_bedrock_auth() -> None:
-    if _bearer_token():
+    if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
         return
 
     if boto3.Session().get_credentials() is not None:
@@ -25,76 +75,165 @@ def _ensure_bedrock_auth() -> None:
     )
 
 
-def _extract_text(response: dict) -> str:
-    content = response.get("output", {}).get("message", {}).get("content", [])
-    if not content:
-        return ""
-    return (content[0].get("text") or "").strip()
-
-
-def _converse_with_bearer_token(prompt: str) -> str:
-    token = _bearer_token()
-    url = (
-        f"https://bedrock-runtime.{settings.aws_region}.amazonaws.com"
-        f"/model/{settings.bedrock_model_id}/converse"
-    )
-    payload = {
-        "messages": [{"role": "user", "content": [{"text": prompt}]}],
-        "inferenceConfig": {"temperature": 0.2, "maxTokens": 1024},
+def _item_payload(item: TranslateItem) -> dict:
+    payload: dict[str, object] = {
+        "id": item.id,
+        "source": item.source_text,
+        "locales": list(item.locales),
     }
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-        method="POST",
+    if item.context and item.context.strip():
+        payload["context"] = item.context
+    return payload
+
+
+def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
+    payload = json.dumps([_item_payload(item) for item in items], ensure_ascii=False)
+    return (
+        "You are a professional UI translator.\n"
+        f"Translate each source string from {source_locale} into the locales "
+        "listed on that item.\n\n"
+        "Rules:\n"
+        "- Preserve placeholders exactly: {name}, {count}, %s, %d, HTML tags, ICU plural/select.\n"
+        "- Keep UI tone: concise, natural, same intent. Do not add or drop meaning.\n"
+        "- Do not translate brand names, product names, or code identifiers.\n"
+        '- Copy each item "id" exactly.\n'
+        f"- Call {TOOL_NAME} with every item and every requested locale. "
+        "Do not reply with free text.\n\n"
+        f"Items:\n{payload}"
     )
 
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            body = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Bedrock request failed ({exc.code}): {error_body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Bedrock request failed: {exc.reason}") from exc
 
-    return _extract_text(body)
-
-
-def _converse_with_boto3(prompt: str) -> str:
+def _converse_tool(prompt: str) -> dict:
     client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
-    response = client.converse(
-        modelId=settings.bedrock_model_id,
-        messages=[{"role": "user", "content": [{"text": prompt}]}],
-        inferenceConfig={"temperature": 0.2, "maxTokens": 1024},
-    )
-    return _extract_text(response)
-
-
-def translate_text(source_text: str, source_locale: str, target_locale: str, context: str | None = None) -> str:
-    if not settings.bedrock_model_id:
-        raise ValueError("BEDROCK_MODEL_ID is not configured")
-
-    _ensure_bedrock_auth()
-
-    context_line = f"\nContext: {context}" if context else ""
-    prompt = (
-        f"Translate the following UI string from {source_locale} to {target_locale}. "
-        f"Preserve placeholders like {{name}} or {{count}} exactly.{context_line}\n\n"
-        f"Source: {source_text}\n\n"
-        f"Return only the translated text, no quotes or explanation."
-    )
-
     try:
-        if _bearer_token():
-            return _converse_with_bearer_token(prompt)
-        return _converse_with_boto3(prompt)
+        return client.converse(
+            modelId=settings.bedrock_model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": TEMPERATURE, "maxTokens": MAX_TOKENS},
+            toolConfig={
+                "tools": [SUBMIT_TRANSLATIONS_TOOL],
+                "toolChoice": {"tool": {"name": TOOL_NAME}},
+            },
+        )
     except NoCredentialsError as exc:
         raise ValueError(
             "AWS Bedrock auth is not configured. Set AWS_BEARER_TOKEN_BEDROCK in your environment."
         ) from exc
     except (BotoCoreError, ClientError) as exc:
         raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+
+
+def _parse_tool_input(response: dict) -> dict[str, dict[str, str]]:
+    content = response.get("output", {}).get("message", {}).get("content") or []
+    tool_use = None
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        candidate = block.get("toolUse")
+        if isinstance(candidate, dict) and candidate.get("name") == TOOL_NAME:
+            tool_use = candidate
+            break
+
+    if tool_use is None:
+        raise RuntimeError("Bedrock did not call submit_translations")
+
+    raw_input = tool_use.get("input")
+    if isinstance(raw_input, str):
+        try:
+            raw_input = json.loads(raw_input)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Bedrock tool input is not valid JSON") from exc
+    if not isinstance(raw_input, dict):
+        raise RuntimeError("Bedrock tool input is missing items")
+
+    rows = raw_input.get("items")
+    if not isinstance(rows, list):
+        raise RuntimeError("Bedrock tool input is missing items")
+
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("id") or "").strip()
+        if not item_id:
+            continue
+        translations = row.get("translations")
+        if not isinstance(translations, list):
+            continue
+        dest = result.setdefault(item_id, {})
+        for cell in translations:
+            if not isinstance(cell, dict):
+                continue
+            locale = str(cell.get("locale") or "").strip()
+            text = cell.get("text")
+            if not locale or not isinstance(text, str) or not text.strip():
+                continue
+            dest[locale] = text
+    return result
+
+
+def _filter_chunk_result(
+    items: list[TranslateItem], parsed: dict[str, dict[str, str]]
+) -> dict[str, dict[str, str]]:
+    allowed = {item.id: set(item.locales) for item in items}
+    filtered: dict[str, dict[str, str]] = {}
+    for item_id, locales in parsed.items():
+        wanted = allowed.get(item_id)
+        if wanted is None:
+            continue
+        kept = {locale: text for locale, text in locales.items() if locale in wanted}
+        if kept:
+            filtered[item_id] = kept
+    return filtered
+
+
+def _translate_chunk(source_locale: str, items: list[TranslateItem]) -> dict[str, dict[str, str]]:
+    response = _converse_tool(_build_prompt(source_locale, items))
+    return _filter_chunk_result(items, _parse_tool_input(response))
+
+
+def _merge_results(into: dict[str, dict[str, str]], extra: dict[str, dict[str, str]]) -> None:
+    for item_id, locales in extra.items():
+        dest = into.setdefault(item_id, {})
+        for locale, text in locales.items():
+            if text.strip():
+                dest[locale] = text
+
+
+def _missing_items(
+    items: list[TranslateItem], results: dict[str, dict[str, str]]
+) -> list[TranslateItem]:
+    missing: list[TranslateItem] = []
+    for item in items:
+        filled = results.get(item.id) or {}
+        needed = tuple(locale for locale in item.locales if not (filled.get(locale) or "").strip())
+        if needed:
+            missing.append(
+                TranslateItem(
+                    id=item.id,
+                    source_text=item.source_text,
+                    locales=needed,
+                    context=item.context,
+                )
+            )
+    return missing
+
+
+def translate_batch(source_locale: str, items: list[TranslateItem]) -> dict[str, dict[str, str]]:
+    """Return {item_id: {locale: translated_text}} for every filled cell."""
+    if not items:
+        return {}
+    if not settings.bedrock_model_id:
+        raise ValueError("BEDROCK_MODEL_ID is not configured")
+
+    _ensure_bedrock_auth()
+
+    merged: dict[str, dict[str, str]] = {}
+    for index in range(0, len(items), BATCH_SIZE):
+        chunk = items[index : index + BATCH_SIZE]
+        _merge_results(merged, _translate_chunk(source_locale, chunk))
+
+    missing = _missing_items(items, merged)
+    if missing:
+        _merge_results(merged, _translate_chunk(source_locale, missing))
+    return merged

@@ -1,238 +1,221 @@
-from uuid import UUID
+"""Strings CRUD with filtering, pagination, and translation upsert."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
-from app.ai import translate_text
-from app.auth import get_project_by_api_key
+from app.auth import project_access
 from app.database import get_db
-from app.models import Project, StringEntry, Translation, TranslationStatus
+from app.helpers import (
+    apply_translation_values,
+    ensure_translation_rows,
+    serialize_string,
+    string_query,
+)
+from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
-    ProjectOut,
     StringCreate,
+    StringListOut,
     StringOut,
     StringUpdate,
-    TranslateMissingResult,
-    TranslationOut,
     TranslationUpdate,
 )
 
-router = APIRouter(prefix="/projects", tags=["strings"])
+router = APIRouter(tags=["strings"])
 
 
-def _serialize_string(entry: StringEntry) -> StringOut:
-    return StringOut(
-        id=entry.id,
-        key=entry.key,
-        source_text=entry.source_text,
-        description=entry.description,
-        updated_at=entry.updated_at,
-        translations=[
-            TranslationOut(
-                locale=t.locale,
-                value=t.value,
-                status=t.status,
-                updated_at=t.updated_at,
-            )
-            for t in entry.translations
-        ],
-    )
+def _validate_locales(project: Project, translations: dict[str, str] | None) -> None:
+    if not translations:
+        return
+    allowed = set(project.target_languages)
+    allowed.add(project.base_language)
+    for locale in translations:
+        if locale not in allowed:
+            raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
 
-def _get_string_or_404(db: Session, project_id: UUID, key: str) -> StringEntry:
+def _get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> StringEntry:
     entry = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.translations))
-        .filter(StringEntry.project_id == project_id, StringEntry.key == key)
+        .options(
+            joinedload(StringEntry.translations),
+            joinedload(StringEntry.tags),
+            joinedload(StringEntry.module),
+        )
+        .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
         .first()
     )
     if not entry:
-        raise HTTPException(status_code=404, detail=f"String '{key}' not found")
+        raise HTTPException(status_code=404, detail="String not found")
     return entry
 
 
-def _ensure_translation_rows(db: Session, entry: StringEntry, project: Project) -> None:
-    existing = {t.locale for t in entry.translations}
-    for locale in project.target_languages:
-        if locale not in existing:
-            db.add(
-                Translation(
-                    string_id=entry.id,
-                    locale=locale,
-                    value="",
-                    status=TranslationStatus.draft,
-                )
-            )
-
-
-@router.get("/{project_id}", response_model=ProjectOut)
-def get_project(
-    project_id: UUID,
-    project: Project = Depends(get_project_by_api_key),
-    db: Session = Depends(get_db),
-) -> ProjectOut:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
-    count = db.query(StringEntry).filter(StringEntry.project_id == project.id).count()
-    return ProjectOut(
-        id=project.id,
-        name=project.name,
-        base_language=project.base_language,
-        target_languages=project.target_languages,
-        string_count=count,
-    )
-
-
-@router.get("/{project_id}/strings", response_model=list[StringOut])
+@router.get("/projects/{project_id}/strings", response_model=StringListOut)
 def list_strings(
-    project_id: UUID,
-    project: Project = Depends(get_project_by_api_key),
+    project_id: uuid.UUID,
+    project: Project = Depends(project_access),
     db: Session = Depends(get_db),
-) -> list[StringOut]:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    module: uuid.UUID | None = Query(default=None, alias="module"),
+    tag: uuid.UUID | None = Query(default=None),
+    q: str | None = Query(default=None),
+    missing_locale: str | None = Query(default=None),
+    status: TranslationStatus | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> StringListOut:
+    query = string_query(
+        db,
+        project.id,
+        module_id=module,
+        tag_id=tag,
+        q=q,
+        missing_locale=missing_locale,
+        status=status,
+    )
+    total = query.count()
     entries = (
-        db.query(StringEntry)
-        .options(joinedload(StringEntry.translations))
-        .filter(StringEntry.project_id == project.id)
-        .order_by(StringEntry.key)
+        query.order_by(StringEntry.key)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
-    return [_serialize_string(entry) for entry in entries]
+    return StringListOut(
+        items=[serialize_string(e) for e in entries],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
-@router.post("/{project_id}/strings", response_model=StringOut, status_code=201)
+@router.post("/projects/{project_id}/strings", response_model=StringOut, status_code=201)
 def create_string(
-    project_id: UUID,
+    project_id: uuid.UUID,
     payload: StringCreate,
-    project: Project = Depends(get_project_by_api_key),
+    project: Project = Depends(project_access),
     db: Session = Depends(get_db),
 ) -> StringOut:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
-
     existing = (
         db.query(StringEntry)
-        .filter(StringEntry.project_id == project.id, StringEntry.key == payload.key)
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.module_id == payload.module_id,
+            StringEntry.key == payload.key,
+        )
         .first()
     )
     if existing:
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
 
+    _validate_locales(project, payload.translations)
+
     entry = StringEntry(
+        id=uuid.uuid4(),
         project_id=project.id,
+        module_id=payload.module_id,
         key=payload.key,
         source_text=payload.source_text,
         description=payload.description,
+        status=payload.status,
     )
     db.add(entry)
-    db.flush()
-    _ensure_translation_rows(db, entry, project)
+    if payload.tag_ids:
+        tags = (
+            db.query(Tag)
+            .filter(Tag.project_id == project.id, Tag.id.in_(payload.tag_ids))
+            .all()
+        )
+        entry.tags = tags
+    ensure_translation_rows(db, entry, project)
+    if payload.translations:
+        apply_translation_values(db, entry, payload.translations)
     db.commit()
-    db.refresh(entry)
-    entry = _get_string_or_404(db, project.id, entry.key)
-    return _serialize_string(entry)
+    return serialize_string(_get_string(db, project.id, entry.id))
 
 
-@router.patch("/{project_id}/strings/{key}", response_model=StringOut)
-def update_string(
-    project_id: UUID,
-    key: str,
-    payload: StringUpdate,
-    project: Project = Depends(get_project_by_api_key),
+@router.get("/projects/{project_id}/strings/{string_id}", response_model=StringOut)
+def get_string(
+    project_id: uuid.UUID,
+    string_id: uuid.UUID,
+    project: Project = Depends(project_access),
     db: Session = Depends(get_db),
 ) -> StringOut:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
+    return serialize_string(_get_string(db, project.id, string_id))
 
-    entry = _get_string_or_404(db, project.id, key)
+
+@router.patch("/projects/{project_id}/strings/{string_id}", response_model=StringOut)
+def update_string(
+    project_id: uuid.UUID,
+    string_id: uuid.UUID,
+    payload: StringUpdate,
+    project: Project = Depends(project_access),
+    db: Session = Depends(get_db),
+) -> StringOut:
+    entry = _get_string(db, project.id, string_id)
+    if payload.key is not None:
+        entry.key = payload.key
     if payload.source_text is not None:
         entry.source_text = payload.source_text
-    if payload.description is not None:
-        entry.description = payload.description
+    if "description" in payload.model_fields_set:
+        entry.description = payload.description or None
+    if "module_id" in payload.model_fields_set:
+        entry.module_id = payload.module_id
+    if payload.tag_ids is not None:
+        tags = (
+            db.query(Tag)
+            .filter(Tag.project_id == project.id, Tag.id.in_(payload.tag_ids))
+            .all()
+        )
+        entry.tags = tags
+    if payload.status is not None:
+        entry.status = payload.status
+    if payload.translations is not None:
+        _validate_locales(project, payload.translations)
+        ensure_translation_rows(db, entry, project)
+        apply_translation_values(db, entry, payload.translations)
     db.commit()
-    entry = _get_string_or_404(db, project.id, key)
-    return _serialize_string(entry)
+    return serialize_string(_get_string(db, project.id, string_id))
 
 
-@router.patch("/{project_id}/strings/{key}/{locale}", response_model=StringOut)
-def update_translation(
-    project_id: UUID,
-    key: str,
+@router.put(
+    "/projects/{project_id}/strings/{string_id}/translations/{locale}",
+    response_model=StringOut,
+)
+def upsert_translation(
+    project_id: uuid.UUID,
+    string_id: uuid.UUID,
     locale: str,
     payload: TranslationUpdate,
-    project: Project = Depends(get_project_by_api_key),
+    project: Project = Depends(project_access),
     db: Session = Depends(get_db),
 ) -> StringOut:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
+    entry = _get_string(db, project.id, string_id)
+    if locale not in project.target_languages and locale != project.base_language:
+        raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
-    entry = _get_string_or_404(db, project.id, key)
     translation = next((t for t in entry.translations if t.locale == locale), None)
     if not translation:
-        if locale not in project.target_languages and locale != project.base_language:
-            raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured for this project")
-        translation = Translation(string_id=entry.id, locale=locale, value=payload.value)
+        translation = Translation(
+            string_id=entry.id,
+            locale=locale,
+            value=payload.value,
+        )
         db.add(translation)
     else:
         translation.value = payload.value
-    if payload.status is not None:
-        translation.status = payload.status
     db.commit()
-    entry = _get_string_or_404(db, project.id, key)
-    return _serialize_string(entry)
+    return serialize_string(_get_string(db, project.id, string_id))
 
 
-@router.post("/{project_id}/strings/{key}/translate", response_model=TranslateMissingResult)
-def translate_string(
-    project_id: UUID,
-    key: str,
-    project: Project = Depends(get_project_by_api_key),
-    db: Session = Depends(get_db),
-) -> TranslateMissingResult:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    entry = _get_string_or_404(db, project.id, key)
-    _ensure_translation_rows(db, entry, project)
-    db.flush()
-    entry = _get_string_or_404(db, project.id, key)
-
-    translated_count = 0
-    for locale in project.target_languages:
-        translation = next((t for t in entry.translations if t.locale == locale), None)
-        if translation is None or translation.value.strip():
-            continue
-
-        try:
-            translation.value = translate_text(
-                entry.source_text,
-                project.base_language,
-                locale,
-                entry.description,
-            )
-            translation.status = TranslationStatus.live
-            translated_count += 1
-        except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
-
-    db.commit()
-    return TranslateMissingResult(translated_count=translated_count, locales=project.target_languages)
-
-
-@router.delete("/{project_id}/strings/{key}", status_code=204)
+@router.delete("/projects/{project_id}/strings/{string_id}", status_code=204)
 def delete_string(
-    project_id: UUID,
-    key: str,
-    project: Project = Depends(get_project_by_api_key),
+    project_id: uuid.UUID,
+    string_id: uuid.UUID,
+    project: Project = Depends(project_access),
     db: Session = Depends(get_db),
 ) -> None:
-    if project.id != project_id:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    entry = _get_string_or_404(db, project.id, key)
+    entry = _get_string(db, project.id, string_id)
     db.delete(entry)
     db.commit()

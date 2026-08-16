@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Backend: FastAPI (debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "cwd": "${workspaceFolder}/backend",
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "envFile": "${workspaceFolder}/.env",
+            "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+        }
+    ]
+}
