@@ -8,7 +8,6 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./tms.db"
     aws_region: str = "us-east-1"
-    aws_bearer_token_bedrock: str = ""
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     tms_secret: str = "dev-secret-change-me"
     tms_demo_api_key: str = "demo-api-key-change-me"

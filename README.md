@@ -116,3 +116,6 @@ See [.env.example](.env.example). Notable vars:
 | `TMS_DEMO_API_KEY` | Seeded demo project key |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Optional pruning of append-only activity log |
+| `AWS_REGION` | Bedrock region (default `us-east-1`) |
+| `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
+| `AWS_BEARER_TOKEN_BEDROCK` | Bedrock API key. Must be a real process env var (`export` or Docker Compose); boto3 does not read it from Pydantic `.env` loading. IAM keys/role also work if this is unset. |

@@ -1,6 +1,4 @@
-import json
-import urllib.error
-import urllib.request
+import os
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
@@ -8,12 +6,8 @@ from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from app.config import settings
 
 
-def _bearer_token() -> str:
-    return settings.aws_bearer_token_bedrock
-
-
 def _ensure_bedrock_auth() -> None:
-    if _bearer_token():
+    if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
         return
 
     if boto3.Session().get_credentials() is not None:
@@ -32,39 +26,7 @@ def _extract_text(response: dict) -> str:
     return (content[0].get("text") or "").strip()
 
 
-def _converse_with_bearer_token(prompt: str) -> str:
-    token = _bearer_token()
-    url = (
-        f"https://bedrock-runtime.{settings.aws_region}.amazonaws.com"
-        f"/model/{settings.bedrock_model_id}/converse"
-    )
-    payload = {
-        "messages": [{"role": "user", "content": [{"text": prompt}]}],
-        "inferenceConfig": {"temperature": 0.2, "maxTokens": 1024},
-    }
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            body = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Bedrock request failed ({exc.code}): {error_body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Bedrock request failed: {exc.reason}") from exc
-
-    return _extract_text(body)
-
-
-def _converse_with_boto3(prompt: str) -> str:
+def _converse(prompt: str) -> str:
     client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
     response = client.converse(
         modelId=settings.bedrock_model_id,
@@ -89,9 +51,7 @@ def translate_text(source_text: str, source_locale: str, target_locale: str, con
     )
 
     try:
-        if _bearer_token():
-            return _converse_with_bearer_token(prompt)
-        return _converse_with_boto3(prompt)
+        return _converse(prompt)
     except NoCredentialsError as exc:
         raise ValueError(
             "AWS Bedrock auth is not configured. Set AWS_BEARER_TOKEN_BEDROCK in your environment."
