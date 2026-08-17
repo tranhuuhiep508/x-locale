@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
-from app.auth import CurrentUser, generate_api_key, set_activity_context, AuthContext
+from app.auth import CurrentUser, generate_api_key
 from app.config import settings
-from app.database import get_db
+from app.database import DbSession
 from app.helpers import ensure_unique_slug, slugify
-from app.models import ApiKey, Project, StringEntry, User
+from app.models import ApiKey, Project
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -20,39 +20,26 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
 )
+from app.services.projects import count_strings_by_project, to_project_out
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-def _project_out(db: Session, project: Project) -> ProjectOut:
-    count = db.query(StringEntry).filter(StringEntry.project_id == project.id).count()
-    return ProjectOut(
-        id=project.id,
-        name=project.name,
-        slug=project.slug,
-        base_language=project.base_language,
-        target_languages=project.target_languages or [],
-        layout=project.layout,
-        string_count=count,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-    )
 
 
 @router.get("", response_model=list[ProjectOut])
 def list_projects(
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> list[ProjectOut]:
     projects = db.query(Project).order_by(Project.name).all()
-    return [_project_out(db, p) for p in projects]
+    counts = count_strings_by_project(db)
+    return [to_project_out(db, p, counts) for p in projects]
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
 def create_project(
     payload: ProjectCreate,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> ProjectOut:
     slug = payload.slug or slugify(payload.name)
     slug = ensure_unique_slug(db, slug)
@@ -69,19 +56,19 @@ def create_project(
     db.flush()
     db.commit()
     db.refresh(project)
-    return _project_out(db, project)
+    return to_project_out(db, project)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(
     project_id: uuid.UUID,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> ProjectOut:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return _project_out(db, project)
+    return to_project_out(db, project)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -89,7 +76,7 @@ def update_project(
     project_id: uuid.UUID,
     payload: ProjectUpdate,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> ProjectOut:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -106,14 +93,14 @@ def update_project(
         project.layout = payload.layout
     db.commit()
     db.refresh(project)
-    return _project_out(db, project)
+    return to_project_out(db, project)
 
 
 @router.delete("/{project_id}", status_code=204)
 def delete_project(
     project_id: uuid.UUID,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> None:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -126,7 +113,7 @@ def delete_project(
 def list_api_keys(
     project_id: uuid.UUID,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> list[ApiKey]:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -144,7 +131,7 @@ def create_api_key(
     project_id: uuid.UUID,
     payload: ApiKeyCreate,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> ApiKeyCreated:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -176,10 +163,8 @@ def revoke_api_key(
     project_id: uuid.UUID,
     key_id: uuid.UUID,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> None:
-    from datetime import UTC, datetime
-
     api_key = (
         db.query(ApiKey)
         .filter(ApiKey.id == key_id, ApiKey.project_id == project_id)

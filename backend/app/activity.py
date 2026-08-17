@@ -24,6 +24,17 @@ from app.models import (
 STRING_FIELDS = ("key", "source_text", "description", "module_id", "status")
 
 
+def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict[str, Any]:
+    """Stamp the current actor context with batch metadata. Returns the prior info dict."""
+    existing = session.info.get("activity") or {}
+    session.info["activity"] = {
+        **existing,
+        "batch_id": str(batch_id),
+        "batch_kind": batch_kind,
+    }
+    return existing
+
+
 def _jsonify(val: Any) -> Any:
     if val is None:
         return None

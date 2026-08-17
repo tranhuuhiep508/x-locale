@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
-from app.auth import CurrentUser, optional_user, project_from_api_key
-from app.database import get_db
-from app.models import Job, Project, User
+from app.auth import CurrentUser
+from app.database import DbSession
+from app.models import Job
 from app.schemas import JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -19,7 +18,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 def get_job(
     job_id: uuid.UUID,
     user: CurrentUser,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ) -> Job:
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:

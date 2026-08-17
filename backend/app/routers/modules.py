@@ -4,34 +4,21 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
-from app.auth import CurrentUser, project_access
-from app.database import get_db
-from app.models import Module, Project, StringEntry
+from app.auth import ProjectAccess
+from app.database import DbSession
+from app.models import Module
 from app.schemas import ModuleCreate, ModuleOut, ModuleUpdate
+from app.services.catalog import count_strings_by_module, to_module_out
 
-router = APIRouter(tags=["modules"])
-
-
-def _module_out(db: Session, module: Module) -> ModuleOut:
-    count = db.query(StringEntry).filter(StringEntry.module_id == module.id).count()
-    return ModuleOut(
-        id=module.id,
-        slug=module.slug,
-        name=module.name,
-        description=module.description,
-        position=module.position,
-        string_count=count,
-    )
+router = APIRouter(prefix="/projects/{project_id}", tags=["modules"])
 
 
-@router.get("/projects/{project_id}/modules", response_model=list[ModuleOut])
+@router.get("/modules", response_model=list[ModuleOut])
 def list_modules(
-    project_id: uuid.UUID,
-    project: Project = Depends(project_access),
-    db: Session = Depends(get_db),
+    project: ProjectAccess,
+    db: DbSession,
 ) -> list[ModuleOut]:
     modules = (
         db.query(Module)
@@ -39,15 +26,15 @@ def list_modules(
         .order_by(Module.position, Module.slug)
         .all()
     )
-    return [_module_out(db, m) for m in modules]
+    counts = count_strings_by_module(db, project.id)
+    return [to_module_out(db, m, counts) for m in modules]
 
 
-@router.post("/projects/{project_id}/modules", response_model=ModuleOut, status_code=201)
+@router.post("/modules", response_model=ModuleOut, status_code=201)
 def create_module(
-    project_id: uuid.UUID,
     payload: ModuleCreate,
-    project: Project = Depends(project_access),
-    db: Session = Depends(get_db),
+    project: ProjectAccess,
+    db: DbSession,
 ) -> ModuleOut:
     existing = (
         db.query(Module)
@@ -66,16 +53,15 @@ def create_module(
     db.add(module)
     db.commit()
     db.refresh(module)
-    return _module_out(db, module)
+    return to_module_out(db, module)
 
 
-@router.patch("/projects/{project_id}/modules/{module_id}", response_model=ModuleOut)
+@router.patch("/modules/{module_id}", response_model=ModuleOut)
 def update_module(
-    project_id: uuid.UUID,
     module_id: uuid.UUID,
     payload: ModuleUpdate,
-    project: Project = Depends(project_access),
-    db: Session = Depends(get_db),
+    project: ProjectAccess,
+    db: DbSession,
 ) -> ModuleOut:
     module = (
         db.query(Module)
@@ -101,15 +87,14 @@ def update_module(
         module.position = payload.position
     db.commit()
     db.refresh(module)
-    return _module_out(db, module)
+    return to_module_out(db, module)
 
 
-@router.delete("/projects/{project_id}/modules/{module_id}", status_code=204)
+@router.delete("/modules/{module_id}", status_code=204)
 def delete_module(
-    project_id: uuid.UUID,
     module_id: uuid.UUID,
-    project: Project = Depends(project_access),
-    db: Session = Depends(get_db),
+    project: ProjectAccess,
+    db: DbSession,
 ) -> None:
     module = (
         db.query(Module)
