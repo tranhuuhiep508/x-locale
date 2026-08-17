@@ -1,6 +1,6 @@
 import { createRootRouteWithContext, Outlet, redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
-import { Toaster } from '@/components/ui'
+import { Toaster } from '@/components/ui/sonner'
 import { ApiError } from '@/lib/api/client'
 import { meQuery } from '@/lib/queries'
 

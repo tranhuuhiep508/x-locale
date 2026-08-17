@@ -11,8 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/lib/api/types'
-import { Separator } from '@/components/ui'
-
+import { Separator } from '@/components/ui/separator'
 function useSideLink(suffix: string, projectId: string, exact = false) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const href = `/projects/${projectId}${suffix}`

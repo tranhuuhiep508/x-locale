@@ -8,32 +8,15 @@ import type {
   Tag,
   TranslationStatus,
 } from '@/lib/api/types'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-  Button,
-  Input,
-  Textarea,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldError,
-  FieldDescription,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  ToggleGroup,
-  ToggleGroupItem,
-  Switch,
-  Spinner,
-} from '@/components/ui'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Switch } from '@/components/ui/switch'
+import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 

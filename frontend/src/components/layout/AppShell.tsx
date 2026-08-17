@@ -5,18 +5,9 @@ import { authApi } from '@/lib/api/auth'
 import { meQuery } from '@/lib/queries'
 import { useToast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  Spinner,
-} from '@/components/ui'
-
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Spinner } from '@/components/ui/spinner'
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: user } = useQuery(meQuery())
 
