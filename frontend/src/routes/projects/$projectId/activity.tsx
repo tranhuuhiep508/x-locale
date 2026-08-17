@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { RotateCcw, RotateCw, Clock } from 'lucide-react'
-import { api } from '@/lib/api/client'
-import type { Activity, ActivityListResponse } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
+import { activitiesApi } from '@/lib/api/activities'
+import type { Activity } from '@/lib/api/types'
+import { activitiesQuery } from '@/lib/queries'
 import { activitySearchSchema } from '@/lib/schemas'
 import {
   Badge,
@@ -14,7 +14,7 @@ import {
   Spinner,
   ConfirmDialog,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
 import { useNavigate } from '@tanstack/react-router'
 
@@ -83,18 +83,11 @@ function ActivityPage() {
   const toast = useToast()
   const [revertTarget, setRevertTarget] = useState<Activity | null>(null)
 
-  const { data, isLoading } = useQuery<ActivityListResponse>({
-    queryKey: queryKeys.activities(projectId, search.page, search.page_size),
-    queryFn: () =>
-      api.get<ActivityListResponse>(`/projects/${projectId}/activities`, {
-        page: search.page,
-        page_size: search.page_size,
-      }),
-  })
+  const { data, isLoading } = useQuery(activitiesQuery(projectId, search.page, search.page_size))
 
   const revertMut = useMutation({
     mutationFn: (activityId: string) =>
-      api.post(`/projects/${projectId}/activities/${activityId}/revert`),
+      activitiesApi.revert(projectId, activityId),
     onSuccess: () => {
       toast.success(revertTarget && isRevertEntry(revertTarget) ? 'Redone successfully' : 'Reverted successfully')
       qc.invalidateQueries({ queryKey: ['projects', projectId, 'activities'] })

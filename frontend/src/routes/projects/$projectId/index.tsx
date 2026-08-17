@@ -2,9 +2,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlignLeft, Boxes, Tags, Globe2, Clock } from 'lucide-react'
-import { api } from '@/lib/api/client'
-import type { Project, Module, Tag, ActivityListResponse } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
+import {
+  activitiesQuery,
+  modulesQuery,
+  projectQuery,
+  tagsQuery,
+} from '@/lib/queries'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { formatDate } from '@/lib/utils'
 
@@ -43,29 +46,13 @@ function StatCard({
 function ProjectOverviewPage() {
   const { projectId } = Route.useParams()
 
-  const { data: project } = useQuery<Project>({
-    queryKey: queryKeys.project(projectId),
-    queryFn: () => api.get<Project>(`/projects/${projectId}`),
-  })
+  const { data: project } = useQuery(projectQuery(projectId))
 
-  const { data: modules = [] } = useQuery<Module[]>({
-    queryKey: queryKeys.modules(projectId),
-    queryFn: () => api.get<Module[]>(`/projects/${projectId}/modules`),
-  })
+  const { data: modules = [] } = useQuery(modulesQuery(projectId))
 
-  const { data: tags = [] } = useQuery<Tag[]>({
-    queryKey: queryKeys.tags(projectId),
-    queryFn: () => api.get<Tag[]>(`/projects/${projectId}/tags`),
-  })
+  const { data: tags = [] } = useQuery(tagsQuery(projectId))
 
-  const { data: activityData } = useQuery<ActivityListResponse>({
-    queryKey: queryKeys.activities(projectId, 1, 5),
-    queryFn: () =>
-      api.get<ActivityListResponse>(`/projects/${projectId}/activities`, {
-        page: 1,
-        page_size: 5,
-      }),
-  })
+  const { data: activityData } = useQuery(activitiesQuery(projectId, 1, 5))
 
   if (!project) return null
 

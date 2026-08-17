@@ -21,30 +21,24 @@ import {
   CardContent,
   Spinner,
 } from '@/components/ui'
-import { api } from '@/lib/api/client'
-import type { Language, Project } from '@/lib/api/types'
+import { languagesQuery } from '@/lib/queries'
+import { projectsApi } from '@/lib/api/projects'
 import { queryKeys } from '@/lib/query-keys'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 import { projectCreateSchema } from '@/lib/schemas'
 import type { ProjectCreateForm } from '@/lib/schemas'
 import { slugify } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/new')({
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData({
-      queryKey: queryKeys.languages(),
-      queryFn: () => api.get<Language[]>('/languages'),
-    }),
+    context.queryClient.ensureQueryData(languagesQuery()),
   component: NewProjectPage,
 })
 
 type FormErrors = Partial<Record<keyof ProjectCreateForm, string>>
 
 function NewProjectPage() {
-  const { data: languages = [] } = useQuery<Language[]>({
-    queryKey: queryKeys.languages(),
-    queryFn: () => api.get<Language[]>('/languages'),
-  })
+  const { data: languages = [] } = useQuery(languagesQuery())
 
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -62,7 +56,7 @@ function NewProjectPage() {
 
   const createMut = useMutation({
     mutationFn: (data: ProjectCreateForm) =>
-      api.post<Project>('/projects', {
+      projectsApi.create({
         ...data,
         slug: data.slug || undefined,
       }),

@@ -2,9 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Tags as TagsIcon } from 'lucide-react'
-import { api } from '@/lib/api/client'
+import { tagsApi } from '@/lib/api/catalog'
 import type { Tag } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
+import { tagsQuery } from '@/lib/queries'
 import { tagCreateSchema } from '@/lib/schemas'
 import type { TagCreateForm } from '@/lib/schemas'
 import {
@@ -30,7 +31,7 @@ import {
   Badge,
   Spinner,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 
 export const Route = createFileRoute('/projects/$projectId/tags')({
   component: TagsPage,
@@ -54,10 +55,7 @@ function TagsPage() {
   const qc = useQueryClient()
   const toast = useToast()
 
-  const { data: tags = [], isLoading } = useQuery<Tag[]>({
-    queryKey: queryKeys.tags(projectId),
-    queryFn: () => api.get<Tag[]>(`/projects/${projectId}/tags`),
-  })
+  const { data: tags = [], isLoading } = useQuery(tagsQuery(projectId))
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Tag | null>(null)
@@ -72,7 +70,7 @@ function TagsPage() {
 
   const createMut = useMutation({
     mutationFn: (data: TagCreateForm) =>
-      api.post<Tag>(`/projects/${projectId}/tags`, data),
+      tagsApi.create(projectId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
       toast.success('Tag created')
@@ -84,7 +82,7 @@ function TagsPage() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<TagCreateForm> }) =>
-      api.patch<Tag>(`/projects/${projectId}/tags/${id}`, data),
+      tagsApi.update(projectId, id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
       toast.success('Tag updated')
@@ -95,7 +93,7 @@ function TagsPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/projects/${projectId}/tags/${id}`),
+    mutationFn: (id: string) => tagsApi.delete(projectId, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
       toast.success('Tag deleted')

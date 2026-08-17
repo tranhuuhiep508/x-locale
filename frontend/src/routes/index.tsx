@@ -3,35 +3,29 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Layers, Globe, Calendar, Trash2 } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button, Badge, Card, CardContent, EmptyState, ConfirmDialog } from '@/components/ui'
-import { api } from '@/lib/api/client'
+import { projectsApi } from '@/lib/api/projects'
 import type { Project } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
-import { useToast } from '@/store'
+import { projectsQuery } from '@/lib/queries'
+import { useToast } from '@/lib/toast'
 import { formatDateShort } from '@/lib/utils'
 import { useState } from 'react'
 
 export const Route = createFileRoute('/')({
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData({
-      queryKey: queryKeys.projects(),
-      queryFn: () => api.get<Project[]>('/projects'),
-      staleTime: 30 * 1000,
-    }),
+    context.queryClient.ensureQueryData(projectsQuery()),
   component: ProjectListPage,
 })
 
 function ProjectListPage() {
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: queryKeys.projects(),
-    queryFn: () => api.get<Project[]>('/projects'),
-  })
+  const { data: projects = [] } = useQuery(projectsQuery())
 
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const qc = useQueryClient()
   const toast = useToast()
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/projects/${id}`),
+    mutationFn: (id: string) => projectsApi.delete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.projects() })
       toast.success('Project deleted')

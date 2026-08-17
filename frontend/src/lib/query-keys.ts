@@ -10,10 +10,10 @@ export const queryKeys = {
 
   tags: (projectId: string) => ['projects', projectId, 'tags'] as const,
 
-  strings: (projectId: string, search: Record<string, unknown>) =>
+    strings: (projectId: string, search: Record<string, unknown>) =>
     ['projects', projectId, 'strings', search] as const,
 
-    activities: (projectId: string, page: number, pageSize?: number) =>
+  activities: (projectId: string, page: number, pageSize?: number) =>
     ['projects', projectId, 'activities', page, pageSize ?? 20] as const,
 
   job: (jobId: string) => ['jobs', jobId] as const,

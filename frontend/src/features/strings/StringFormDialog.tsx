@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Wand2 } from 'lucide-react'
-import { api } from '@/lib/api/client'
+import { stringsApi } from '@/lib/api/strings'
 import type {
   Module,
   StringEntry,
@@ -34,7 +34,7 @@ import {
   Switch,
   Spinner,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -45,10 +45,6 @@ interface Props {
   targetLocales: string[]
   onClose: () => void
   onSuccess: () => void
-}
-
-interface TranslatePreviewResult {
-  translations: Record<string, string>
 }
 
 const NONE_MODULE = '__none__'
@@ -99,9 +95,9 @@ export default function StringFormDialog({
     mutationFn: async () => {
       const body = payload()
       if (isEdit && entry) {
-        await api.patch(`/projects/${projectId}/strings/${entry.id}`, body)
+        await stringsApi.update(projectId, entry.id, body)
       } else {
-        await api.post(`/projects/${projectId}/strings`, body)
+        await stringsApi.create(projectId, body)
       }
     },
     onSuccess: () => {
@@ -114,7 +110,7 @@ export default function StringFormDialog({
 
   const translateMut = useMutation({
     mutationFn: () =>
-      api.post<TranslatePreviewResult>(`/projects/${projectId}/translate/preview`, {
+      stringsApi.translatePreview(projectId, {
         source_text: sourceText.trim(),
         description: description.trim() || undefined,
         locales: targetLocales,

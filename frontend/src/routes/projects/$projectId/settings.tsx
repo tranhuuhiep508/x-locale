@@ -2,9 +2,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, Trash2, Copy, Check } from 'lucide-react'
-import { api } from '@/lib/api/client'
-import type { Project, Language, ApiKey, ApiKeyCreated } from '@/lib/api/types'
+import { projectsApi } from '@/lib/api/projects'
+import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
+import {
+  languagesQuery,
+  projectApiKeysQuery,
+  projectQuery,
+} from '@/lib/queries'
 import {
   Button,
   Input,
@@ -35,7 +40,7 @@ import {
   TableCell,
   Spinner,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
 
 export const Route = createFileRoute('/projects/$projectId/settings')({
@@ -47,20 +52,11 @@ function SettingsPage() {
   const qc = useQueryClient()
   const toast = useToast()
 
-  const { data: project } = useQuery<Project>({
-    queryKey: queryKeys.project(projectId),
-    queryFn: () => api.get<Project>(`/projects/${projectId}`),
-  })
+  const { data: project } = useQuery(projectQuery(projectId))
 
-  const { data: languages = [] } = useQuery<Language[]>({
-    queryKey: queryKeys.languages(),
-    queryFn: () => api.get<Language[]>('/languages'),
-  })
+  const { data: languages = [] } = useQuery(languagesQuery())
 
-  const { data: apiKeys = [] } = useQuery<ApiKey[]>({
-    queryKey: queryKeys.projectApiKeys(projectId),
-    queryFn: () => api.get<ApiKey[]>(`/projects/${projectId}/api-keys`),
-  })
+  const { data: apiKeys = [] } = useQuery(projectApiKeysQuery(projectId))
 
   const [saveForm, setSaveForm] = useState<{
     name: string
@@ -78,7 +74,7 @@ function SettingsPage() {
 
   const updateMut = useMutation({
     mutationFn: (data: typeof form) =>
-      api.patch<Project>(`/projects/${projectId}`, data),
+      projectsApi.update(projectId, data),
     onSuccess: (updated) => {
       qc.setQueryData(queryKeys.project(projectId), updated)
       qc.invalidateQueries({ queryKey: queryKeys.projects() })
@@ -96,7 +92,7 @@ function SettingsPage() {
 
   const createKeyMut = useMutation({
     mutationFn: (name: string) =>
-      api.post<ApiKeyCreated>(`/projects/${projectId}/api-keys`, { name }),
+      projectsApi.createApiKey(projectId, name),
     onSuccess: (key) => {
       qc.invalidateQueries({ queryKey: queryKeys.projectApiKeys(projectId) })
       setCreatedKey(key)
@@ -107,7 +103,7 @@ function SettingsPage() {
   })
 
   const revokeKeyMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/projects/${projectId}/api-keys/${id}`),
+    mutationFn: (id: string) => projectsApi.revokeApiKey(projectId, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.projectApiKeys(projectId) })
       toast.success('API key revoked')

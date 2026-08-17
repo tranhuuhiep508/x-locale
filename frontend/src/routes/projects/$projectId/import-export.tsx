@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { Download, Upload, FileText, FileSpreadsheet, ArrowUpDown } from 'lucide-react'
-import { api } from '@/lib/api/client'
-import type { Project, ImportResult } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
+import { syncApi } from '@/lib/api/sync'
+import type { ImportResult } from '@/lib/api/types'
+import { projectQuery } from '@/lib/queries'
 import {
   Button,
   Field,
@@ -28,7 +28,7 @@ import {
   CardTitle,
   Spinner,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 
 export const Route = createFileRoute('/projects/$projectId/import-export')({
   component: ImportExportPage,
@@ -38,10 +38,7 @@ function ImportExportPage() {
   const { projectId } = Route.useParams()
   const toast = useToast()
 
-  const { data: project } = useQuery<Project>({
-    queryKey: queryKeys.project(projectId),
-    queryFn: () => api.get<Project>(`/projects/${projectId}`),
-  })
+  const { data: project } = useQuery(projectQuery(projectId))
 
   // Export state
   const [exportFormat, setExportFormat] = useState<'json' | 'xlsx'>('json')
@@ -70,11 +67,7 @@ function ImportExportPage() {
     }) => {
       const fd = new FormData()
       fd.append('file', file)
-      return api.upload<ImportResult>(
-        `/projects/${projectId}/import`,
-        fd,
-        { locale, dry_run: String(dry) },
-      )
+      return syncApi.importFile(projectId, fd, { locale, dry_run: String(dry) })
     },
     onSuccess: (res) => {
       if (res.dry_run) {

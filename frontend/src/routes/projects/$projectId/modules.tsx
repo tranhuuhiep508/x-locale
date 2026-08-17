@@ -2,9 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Boxes } from 'lucide-react'
-import { api } from '@/lib/api/client'
+import { modulesApi } from '@/lib/api/catalog'
 import type { Module } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
+import { modulesQuery } from '@/lib/queries'
 import { moduleCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm } from '@/lib/schemas'
 import {
@@ -31,7 +32,7 @@ import {
   Badge,
   Spinner,
 } from '@/components/ui'
-import { useToast } from '@/store'
+import { useToast } from '@/lib/toast'
 
 export const Route = createFileRoute('/projects/$projectId/modules')({
   component: ModulesPage,
@@ -44,10 +45,7 @@ function ModulesPage() {
   const qc = useQueryClient()
   const toast = useToast()
 
-  const { data: modules = [], isLoading } = useQuery<Module[]>({
-    queryKey: queryKeys.modules(projectId),
-    queryFn: () => api.get<Module[]>(`/projects/${projectId}/modules`),
-  })
+  const { data: modules = [], isLoading } = useQuery(modulesQuery(projectId))
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Module | null>(null)
@@ -62,7 +60,7 @@ function ModulesPage() {
 
   const createMut = useMutation({
     mutationFn: (data: ModuleCreateForm) =>
-      api.post<Module>(`/projects/${projectId}/modules`, data),
+      modulesApi.create(projectId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
       toast.success('Module created')
@@ -74,7 +72,7 @@ function ModulesPage() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ModuleCreateForm> }) =>
-      api.patch<Module>(`/projects/${projectId}/modules/${id}`, data),
+      modulesApi.update(projectId, id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
       toast.success('Module updated')
@@ -85,7 +83,7 @@ function ModulesPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/projects/${projectId}/modules/${id}`),
+    mutationFn: (id: string) => modulesApi.delete(projectId, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
       toast.success('Module deleted')
