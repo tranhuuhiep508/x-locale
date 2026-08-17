@@ -1,14 +1,15 @@
-"""Module and tag serialization helpers."""
+"""Module and tag CRUD and serialization."""
 
 from __future__ import annotations
 
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Module, StringEntry, StringTag, Tag
-from app.schemas import ModuleOut, TagOut
+from app.models import Module, Project, StringEntry, StringTag, Tag
+from app.schemas import ModuleCreate, ModuleOut, ModuleUpdate, TagCreate, TagOut, TagUpdate
 
 
 def module_out(module: Module, string_count: int) -> ModuleOut:
@@ -79,3 +80,122 @@ def to_tag_out(
             or 0
         )
     return tag_out(tag, n)
+
+
+def list_modules(db: Session, project: Project) -> list[ModuleOut]:
+    modules = (
+        db.query(Module)
+        .filter(Module.project_id == project.id)
+        .order_by(Module.position, Module.slug)
+        .all()
+    )
+    counts = count_strings_by_module(db, project.id)
+    return [to_module_out(db, m, counts) for m in modules]
+
+
+def get_module(db: Session, project_id: uuid.UUID, module_id: uuid.UUID) -> Module:
+    module = (
+        db.query(Module)
+        .filter(Module.id == module_id, Module.project_id == project_id)
+        .first()
+    )
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return module
+
+
+def create_module(db: Session, project: Project, payload: ModuleCreate) -> ModuleOut:
+    existing = (
+        db.query(Module)
+        .filter(Module.project_id == project.id, Module.slug == payload.slug)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Module '{payload.slug}' already exists")
+    module = Module(
+        project_id=project.id,
+        slug=payload.slug,
+        name=payload.name,
+        description=payload.description,
+        position=payload.position,
+    )
+    db.add(module)
+    db.commit()
+    db.refresh(module)
+    return to_module_out(db, module)
+
+
+def update_module(
+    db: Session,
+    project: Project,
+    module_id: uuid.UUID,
+    payload: ModuleUpdate,
+) -> ModuleOut:
+    module = get_module(db, project.id, module_id)
+    if payload.slug is not None and payload.slug != module.slug:
+        clash = (
+            db.query(Module)
+            .filter(Module.project_id == project.id, Module.slug == payload.slug)
+            .first()
+        )
+        if clash:
+            raise HTTPException(status_code=409, detail=f"Module '{payload.slug}' already exists")
+        module.slug = payload.slug
+    if payload.name is not None:
+        module.name = payload.name
+    if payload.description is not None:
+        module.description = payload.description
+    if payload.position is not None:
+        module.position = payload.position
+    db.commit()
+    db.refresh(module)
+    return to_module_out(db, module)
+
+
+def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
+    module = get_module(db, project.id, module_id)
+    db.delete(module)
+    db.commit()
+
+
+def list_tags(db: Session, project: Project) -> list[TagOut]:
+    tags = db.query(Tag).filter(Tag.project_id == project.id).order_by(Tag.name).all()
+    counts = count_strings_by_tag(db, project.id)
+    return [to_tag_out(db, t, counts) for t in tags]
+
+
+def get_tag(db: Session, project_id: uuid.UUID, tag_id: uuid.UUID) -> Tag:
+    tag = db.query(Tag).filter(Tag.id == tag_id, Tag.project_id == project_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag
+
+
+def create_tag(db: Session, project: Project, payload: TagCreate) -> TagOut:
+    existing = (
+        db.query(Tag).filter(Tag.project_id == project.id, Tag.name == payload.name).first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Tag '{payload.name}' already exists")
+    tag = Tag(project_id=project.id, name=payload.name, color=payload.color)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return to_tag_out(db, tag)
+
+
+def update_tag(db: Session, project: Project, tag_id: uuid.UUID, payload: TagUpdate) -> TagOut:
+    tag = get_tag(db, project.id, tag_id)
+    if payload.name is not None:
+        tag.name = payload.name
+    if payload.color is not None:
+        tag.color = payload.color
+    db.commit()
+    db.refresh(tag)
+    return to_tag_out(db, tag)
+
+
+def delete_tag(db: Session, project: Project, tag_id: uuid.UUID) -> None:
+    tag = get_tag(db, project.id, tag_id)
+    db.delete(tag)
+    db.commit()

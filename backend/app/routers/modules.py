@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.models import Module
 from app.schemas import ModuleCreate, ModuleOut, ModuleUpdate
-from app.services.catalog import count_strings_by_module, to_module_out
+from app.services import catalog as catalog_service
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["modules"])
 
@@ -20,14 +19,7 @@ def list_modules(
     project: ProjectAccess,
     db: DbSession,
 ) -> list[ModuleOut]:
-    modules = (
-        db.query(Module)
-        .filter(Module.project_id == project.id)
-        .order_by(Module.position, Module.slug)
-        .all()
-    )
-    counts = count_strings_by_module(db, project.id)
-    return [to_module_out(db, m, counts) for m in modules]
+    return catalog_service.list_modules(db, project)
 
 
 @router.post("/modules", response_model=ModuleOut, status_code=201)
@@ -36,24 +28,7 @@ def create_module(
     project: ProjectAccess,
     db: DbSession,
 ) -> ModuleOut:
-    existing = (
-        db.query(Module)
-        .filter(Module.project_id == project.id, Module.slug == payload.slug)
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Module '{payload.slug}' already exists")
-    module = Module(
-        project_id=project.id,
-        slug=payload.slug,
-        name=payload.name,
-        description=payload.description,
-        position=payload.position,
-    )
-    db.add(module)
-    db.commit()
-    db.refresh(module)
-    return to_module_out(db, module)
+    return catalog_service.create_module(db, project, payload)
 
 
 @router.patch("/modules/{module_id}", response_model=ModuleOut)
@@ -63,31 +38,7 @@ def update_module(
     project: ProjectAccess,
     db: DbSession,
 ) -> ModuleOut:
-    module = (
-        db.query(Module)
-        .filter(Module.id == module_id, Module.project_id == project.id)
-        .first()
-    )
-    if not module:
-        raise HTTPException(status_code=404, detail="Module not found")
-    if payload.slug is not None and payload.slug != module.slug:
-        clash = (
-            db.query(Module)
-            .filter(Module.project_id == project.id, Module.slug == payload.slug)
-            .first()
-        )
-        if clash:
-            raise HTTPException(status_code=409, detail=f"Module '{payload.slug}' already exists")
-        module.slug = payload.slug
-    if payload.name is not None:
-        module.name = payload.name
-    if payload.description is not None:
-        module.description = payload.description
-    if payload.position is not None:
-        module.position = payload.position
-    db.commit()
-    db.refresh(module)
-    return to_module_out(db, module)
+    return catalog_service.update_module(db, project, module_id, payload)
 
 
 @router.delete("/modules/{module_id}", status_code=204)
@@ -96,12 +47,4 @@ def delete_module(
     project: ProjectAccess,
     db: DbSession,
 ) -> None:
-    module = (
-        db.query(Module)
-        .filter(Module.id == module_id, Module.project_id == project.id)
-        .first()
-    )
-    if not module:
-        raise HTTPException(status_code=404, detail="Module not found")
-    db.delete(module)
-    db.commit()
+    catalog_service.delete_module(db, project, module_id)

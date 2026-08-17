@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from app.auth import CurrentUser, generate_api_key
-from app.config import settings
+from app.auth import CurrentUser
 from app.database import DbSession
-from app.helpers import ensure_unique_slug, slugify
-from app.models import ApiKey, Project
+from app.models import ApiKey
 from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -20,7 +17,7 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
 )
-from app.services.projects import count_strings_by_project, to_project_out
+from app.services import projects as projects_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -30,9 +27,7 @@ def list_projects(
     user: CurrentUser,
     db: DbSession,
 ) -> list[ProjectOut]:
-    projects = db.query(Project).order_by(Project.name).all()
-    counts = count_strings_by_project(db)
-    return [to_project_out(db, p, counts) for p in projects]
+    return projects_service.list_projects(db)
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
@@ -41,22 +36,7 @@ def create_project(
     user: CurrentUser,
     db: DbSession,
 ) -> ProjectOut:
-    slug = payload.slug or slugify(payload.name)
-    slug = ensure_unique_slug(db, slug)
-    base = payload.base_language or settings.default_base_language
-    project = Project(
-        name=payload.name,
-        slug=slug,
-        base_language=base,
-        target_languages=payload.target_languages,
-        layout=payload.layout,
-        created_by=user.id,
-    )
-    db.add(project)
-    db.flush()
-    db.commit()
-    db.refresh(project)
-    return to_project_out(db, project)
+    return projects_service.create_project(db, payload, user)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -65,10 +45,7 @@ def get_project(
     user: CurrentUser,
     db: DbSession,
 ) -> ProjectOut:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return to_project_out(db, project)
+    return projects_service.to_project_out(db, projects_service.get_project(db, project_id))
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -78,22 +55,7 @@ def update_project(
     user: CurrentUser,
     db: DbSession,
 ) -> ProjectOut:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if payload.name is not None:
-        project.name = payload.name
-    if payload.slug is not None:
-        project.slug = ensure_unique_slug(db, payload.slug, exclude_id=project.id)
-    if payload.base_language is not None:
-        project.base_language = payload.base_language
-    if payload.target_languages is not None:
-        project.target_languages = payload.target_languages
-    if payload.layout is not None:
-        project.layout = payload.layout
-    db.commit()
-    db.refresh(project)
-    return to_project_out(db, project)
+    return projects_service.update_project(db, project_id, payload)
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -102,11 +64,7 @@ def delete_project(
     user: CurrentUser,
     db: DbSession,
 ) -> None:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    db.delete(project)
-    db.commit()
+    projects_service.delete_project(db, project_id)
 
 
 @router.get("/{project_id}/api-keys", response_model=list[ApiKeyOut])
@@ -115,15 +73,7 @@ def list_api_keys(
     user: CurrentUser,
     db: DbSession,
 ) -> list[ApiKey]:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return (
-        db.query(ApiKey)
-        .filter(ApiKey.project_id == project_id, ApiKey.revoked_at.is_(None))
-        .order_by(ApiKey.created_at.desc())
-        .all()
-    )
+    return projects_service.list_api_keys(db, project_id)
 
 
 @router.post("/{project_id}/api-keys", response_model=ApiKeyCreated, status_code=201)
@@ -133,29 +83,7 @@ def create_api_key(
     user: CurrentUser,
     db: DbSession,
 ) -> ApiKeyCreated:
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    raw, prefix, key_hash = generate_api_key()
-    api_key = ApiKey(
-        project_id=project.id,
-        name=payload.name,
-        key_prefix=prefix,
-        key_hash=key_hash,
-        created_by=user.id,
-    )
-    db.add(api_key)
-    db.commit()
-    db.refresh(api_key)
-    return ApiKeyCreated(
-        id=api_key.id,
-        name=api_key.name,
-        key_prefix=api_key.key_prefix,
-        created_at=api_key.created_at,
-        last_used_at=api_key.last_used_at,
-        revoked_at=api_key.revoked_at,
-        key=raw,
-    )
+    return projects_service.create_api_key(db, project_id, payload, user)
 
 
 @router.delete("/{project_id}/api-keys/{key_id}", status_code=204)
@@ -165,12 +93,4 @@ def revoke_api_key(
     user: CurrentUser,
     db: DbSession,
 ) -> None:
-    api_key = (
-        db.query(ApiKey)
-        .filter(ApiKey.id == key_id, ApiKey.project_id == project_id)
-        .first()
-    )
-    if not api_key:
-        raise HTTPException(status_code=404, detail="API key not found")
-    api_key.revoked_at = datetime.now(UTC)
-    db.commit()
+    projects_service.revoke_api_key(db, project_id, key_id)

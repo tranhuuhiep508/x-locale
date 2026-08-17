@@ -5,6 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from datetime import datetime
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
@@ -19,7 +21,7 @@ from app.models import (
     Translation,
     TranslationStatus,
 )
-from app.schemas import ActivityOut
+from app.schemas import ActivityListOut, ActivityOut
 
 
 def serialize_activity(activity: Activity) -> ActivityOut:
@@ -48,6 +50,67 @@ def serialize_activity(activity: Activity) -> ActivityOut:
         reverted_by_id=activity.reverted_by_id,
         is_revertible=activity.is_revertible,
         created_at=activity.created_at,
+    )
+
+
+def list_activities(
+    db: Session,
+    project: Project,
+    *,
+    entity_type: str | None = None,
+    string_id: uuid.UUID | None = None,
+    actor: str | None = None,
+    action: str | None = None,
+    batch_id: uuid.UUID | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> ActivityListOut:
+    q = db.query(Activity).filter(Activity.project_id == project.id)
+    if entity_type:
+        q = q.filter(Activity.entity_type == entity_type)
+    if string_id:
+        q = q.filter(Activity.string_id == string_id)
+    if actor:
+        q = q.filter(Activity.actor_label.ilike(f"%{actor}%"))
+    if action:
+        q = q.filter(Activity.action == action)
+    if batch_id:
+        q = q.filter(Activity.batch_id == batch_id)
+    if since:
+        q = q.filter(Activity.created_at >= since)
+    if until:
+        q = q.filter(Activity.created_at <= until)
+    total = q.count()
+    items = (
+        q.order_by(Activity.created_at.desc(), Activity.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return ActivityListOut(
+        items=[serialize_activity(a) for a in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def list_string_activities(
+    db: Session,
+    project: Project,
+    string_id: uuid.UUID,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+) -> ActivityListOut:
+    return list_activities(
+        db,
+        project,
+        string_id=string_id,
+        page=page,
+        page_size=page_size,
     )
 
 

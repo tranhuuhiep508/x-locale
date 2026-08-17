@@ -5,17 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.helpers import (
-    apply_translation_values,
-    ensure_translation_rows,
-    serialize_string,
-    string_query,
-)
-from app.models import StringEntry, Tag, Translation, TranslationStatus
+from app.models import TranslationStatus
 from app.schemas import (
     StringCreate,
     StringListOut,
@@ -23,7 +17,7 @@ from app.schemas import (
     StringUpdate,
     TranslationUpdate,
 )
-from app.services.strings import get_string, validate_locales
+from app.services import strings as strings_service
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["strings"])
 
@@ -40,25 +34,14 @@ def list_strings(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> StringListOut:
-    query = string_query(
+    return strings_service.list_strings(
         db,
-        project.id,
-        module_id=module,
-        tag_id=tag,
+        project,
+        module=module,
+        tag=tag,
         q=q,
         missing_locale=missing_locale,
         status=status,
-    )
-    total = query.count()
-    entries = (
-        query.order_by(StringEntry.key)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-    return StringListOut(
-        items=[serialize_string(e) for e in entries],
-        total=total,
         page=page,
         page_size=page_size,
     )
@@ -70,42 +53,7 @@ def create_string(
     project: ProjectAccess,
     db: DbSession,
 ) -> StringOut:
-    existing = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.module_id == payload.module_id,
-            StringEntry.key == payload.key,
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
-
-    validate_locales(project, payload.translations)
-
-    entry = StringEntry(
-        id=uuid.uuid4(),
-        project_id=project.id,
-        module_id=payload.module_id,
-        key=payload.key,
-        source_text=payload.source_text,
-        description=payload.description,
-        status=payload.status,
-    )
-    db.add(entry)
-    if payload.tag_ids:
-        tags = (
-            db.query(Tag)
-            .filter(Tag.project_id == project.id, Tag.id.in_(payload.tag_ids))
-            .all()
-        )
-        entry.tags = tags
-    ensure_translation_rows(db, entry, project)
-    if payload.translations:
-        apply_translation_values(db, entry, payload.translations)
-    db.commit()
-    return serialize_string(get_string(db, project.id, entry.id))
+    return strings_service.create_string(db, project, payload)
 
 
 @router.get("/strings/{string_id}", response_model=StringOut)
@@ -114,7 +62,9 @@ def get_string_endpoint(
     project: ProjectAccess,
     db: DbSession,
 ) -> StringOut:
-    return serialize_string(get_string(db, project.id, string_id))
+    return strings_service.serialize_string(
+        strings_service.get_string(db, project.id, string_id)
+    )
 
 
 @router.patch("/strings/{string_id}", response_model=StringOut)
@@ -124,30 +74,7 @@ def update_string(
     project: ProjectAccess,
     db: DbSession,
 ) -> StringOut:
-    entry = get_string(db, project.id, string_id)
-    if payload.key is not None:
-        entry.key = payload.key
-    if payload.source_text is not None:
-        entry.source_text = payload.source_text
-    if "description" in payload.model_fields_set:
-        entry.description = payload.description or None
-    if "module_id" in payload.model_fields_set:
-        entry.module_id = payload.module_id
-    if payload.tag_ids is not None:
-        tags = (
-            db.query(Tag)
-            .filter(Tag.project_id == project.id, Tag.id.in_(payload.tag_ids))
-            .all()
-        )
-        entry.tags = tags
-    if payload.status is not None:
-        entry.status = payload.status
-    if payload.translations is not None:
-        validate_locales(project, payload.translations)
-        ensure_translation_rows(db, entry, project)
-        apply_translation_values(db, entry, payload.translations)
-    db.commit()
-    return serialize_string(get_string(db, project.id, string_id))
+    return strings_service.update_string(db, project, string_id, payload)
 
 
 @router.put(
@@ -161,22 +88,7 @@ def upsert_translation(
     project: ProjectAccess,
     db: DbSession,
 ) -> StringOut:
-    entry = get_string(db, project.id, string_id)
-    if locale not in project.target_languages and locale != project.base_language:
-        raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
-
-    translation = next((t for t in entry.translations if t.locale == locale), None)
-    if not translation:
-        translation = Translation(
-            string_id=entry.id,
-            locale=locale,
-            value=payload.value,
-        )
-        db.add(translation)
-    else:
-        translation.value = payload.value
-    db.commit()
-    return serialize_string(get_string(db, project.id, string_id))
+    return strings_service.upsert_translation(db, project, string_id, locale, payload)
 
 
 @router.delete("/strings/{string_id}", status_code=204)
@@ -185,6 +97,4 @@ def delete_string(
     project: ProjectAccess,
     db: DbSession,
 ) -> None:
-    entry = get_string(db, project.id, string_id)
-    db.delete(entry)
-    db.commit()
+    strings_service.delete_string(db, project, string_id)
