@@ -43,7 +43,7 @@ export function NewProjectPage() {
         slug: data.slug || undefined,
       }),
     onSuccess: (project) => {
-      qc.invalidateQueries({ queryKey: queryKeys.projects() })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
       toast.success(`Project "${project.name}" created`)
       navigate({ to: '/projects/$projectId/strings', params: { projectId: project.id }, search: {} })
     },

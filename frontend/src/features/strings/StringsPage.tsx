@@ -49,6 +49,7 @@ import {
   stringsQuery as stringsQueryOptions,
   tagsQuery,
 } from '@/lib/queries'
+import { queryKeys } from '@/lib/query-keys'
 import { resolveStringsSearch } from '@/lib/schemas'
 import type { StringsSearch } from '@/lib/schemas'
 import { useToast } from '@/lib/toast'
@@ -107,8 +108,8 @@ export function StringsPage() {
   const { data: project } = useQuery(projectQuery(projectId))
 
   const invalidateStrings = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
-    qc.invalidateQueries({ queryKey: ['projects', projectId, 'activities'] })
+    qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
+    qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
   }, [qc, projectId])
 
   const batchMut = useMutation({

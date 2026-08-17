@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { RotateCcw, RotateCw, Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import type { Activity } from '@/lib/api/types'
+import { queryKeys } from '@/lib/query-keys'
 import { activitiesQuery } from '@/lib/queries'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -83,8 +84,8 @@ export function ActivityPage() {
       activitiesApi.revert(projectId, activityId),
     onSuccess: () => {
       toast.success(revertTarget && isRevertEntry(revertTarget) ? 'Redone successfully' : 'Reverted successfully')
-      qc.invalidateQueries({ queryKey: ['projects', projectId, 'activities'] })
-      qc.invalidateQueries({ queryKey: ['projects', projectId, 'strings'] })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
       setRevertTarget(null)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Revert failed'),

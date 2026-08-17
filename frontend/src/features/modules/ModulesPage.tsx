@@ -46,7 +46,7 @@ export function ModulesPage() {
     mutationFn: (data: ModuleCreateForm) =>
       modulesApi.create(projectId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
       toast.success('Module created')
       setShowCreate(false)
       resetForm()
@@ -58,7 +58,7 @@ export function ModulesPage() {
     mutationFn: ({ id, data }: { id: string; data: Partial<ModuleCreateForm> }) =>
       modulesApi.update(projectId, id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
       toast.success('Module updated')
       setEditTarget(null)
       resetForm()
@@ -69,7 +69,7 @@ export function ModulesPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => modulesApi.delete(projectId, id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.modules(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
       toast.success('Module deleted')
       setDeleteTarget(null)
     },

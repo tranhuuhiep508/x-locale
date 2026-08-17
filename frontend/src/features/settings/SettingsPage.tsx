@@ -54,8 +54,9 @@ export function SettingsPage() {
     mutationFn: (data: typeof form) =>
       projectsApi.update(projectId, data),
     onSuccess: (updated) => {
-      qc.setQueryData(queryKeys.project(projectId), updated)
-      qc.invalidateQueries({ queryKey: queryKeys.projects() })
+      qc.setQueryData(queryKeys.projects.detail(projectId), updated)
+      qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
       toast.success('Settings saved')
       setSaveForm(null)
     },
@@ -72,7 +73,7 @@ export function SettingsPage() {
     mutationFn: (name: string) =>
       projectsApi.createApiKey(projectId, name),
     onSuccess: (key) => {
-      qc.invalidateQueries({ queryKey: queryKeys.projectApiKeys(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.apiKeys(projectId) })
       setCreatedKey(key)
       setShowNewKey(false)
       setNewKeyName('')
@@ -83,7 +84,7 @@ export function SettingsPage() {
   const revokeKeyMut = useMutation({
     mutationFn: (id: string) => projectsApi.revokeApiKey(projectId, id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.projectApiKeys(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.apiKeys(projectId) })
       toast.success('API key revoked')
       setDeleteKeyTarget(null)
     },

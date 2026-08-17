@@ -56,7 +56,7 @@ export function TagsPage() {
     mutationFn: (data: TagCreateForm) =>
       tagsApi.create(projectId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.tags(projectId) })
       toast.success('Tag created')
       setShowCreate(false)
       resetForm()
@@ -68,7 +68,7 @@ export function TagsPage() {
     mutationFn: ({ id, data }: { id: string; data: Partial<TagCreateForm> }) =>
       tagsApi.update(projectId, id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.tags(projectId) })
       toast.success('Tag updated')
       setEditTarget(null)
       resetForm()
@@ -79,7 +79,7 @@ export function TagsPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => tagsApi.delete(projectId, id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.tags(projectId) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.tags(projectId) })
       toast.success('Tag deleted')
       setDeleteTarget(null)
     },

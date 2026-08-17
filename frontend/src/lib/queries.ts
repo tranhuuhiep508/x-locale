@@ -22,45 +22,45 @@ export const languagesQuery = () =>
 
 export const projectsQuery = () =>
   queryOptions({
-    queryKey: queryKeys.projects(),
+    queryKey: queryKeys.projects.list(),
     queryFn: projectsApi.list,
     staleTime: 30 * 1000,
   })
 
 export const projectQuery = (id: string) =>
   queryOptions({
-    queryKey: queryKeys.project(id),
+    queryKey: queryKeys.projects.detail(id),
     queryFn: () => projectsApi.get(id),
     staleTime: 30 * 1000,
   })
 
 export const projectApiKeysQuery = (id: string) =>
   queryOptions({
-    queryKey: queryKeys.projectApiKeys(id),
+    queryKey: queryKeys.projects.apiKeys(id),
     queryFn: () => projectsApi.listApiKeys(id),
   })
 
 export const modulesQuery = (projectId: string) =>
   queryOptions({
-    queryKey: queryKeys.modules(projectId),
+    queryKey: queryKeys.projects.modules(projectId),
     queryFn: () => modulesApi.list(projectId),
   })
 
 export const tagsQuery = (projectId: string) =>
   queryOptions({
-    queryKey: queryKeys.tags(projectId),
+    queryKey: queryKeys.projects.tags(projectId),
     queryFn: () => tagsApi.list(projectId),
   })
 
 export const stringsQuery = (projectId: string, search: StringListParams) =>
   queryOptions({
-    queryKey: queryKeys.strings(projectId, search),
+    queryKey: queryKeys.projects.strings.list(projectId, search),
     queryFn: () => stringsApi.list(projectId, search),
     placeholderData: (prev) => prev,
   })
 
 export const activitiesQuery = (projectId: string, page: number, pageSize?: number) =>
   queryOptions({
-    queryKey: queryKeys.activities(projectId, page, pageSize),
+    queryKey: queryKeys.projects.activities.list(projectId, { page, pageSize }),
     queryFn: () => activitiesApi.list(projectId, { page, page_size: pageSize }),
   })

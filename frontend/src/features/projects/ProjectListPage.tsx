@@ -24,8 +24,9 @@ export function ProjectListPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => projectsApi.delete(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.projects() })
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(id) })
       toast.success('Project deleted')
       setDeleteTarget(null)
     },
