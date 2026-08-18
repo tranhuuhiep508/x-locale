@@ -484,7 +484,7 @@ def test_translate_preview_does_not_persist(client, monkeypatch):
         item = items[0]
         return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
 
-    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
 
     before = client.get(f"/api/projects/{pid}/activities").json()["total"]
     r = client.post(
@@ -517,7 +517,7 @@ def test_translate_fills_all_locales_in_one_batch(client, monkeypatch):
         assert item.locales == ("en", "ja")
         return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
 
-    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
 
     r = client.post(
         f"/api/projects/{pid}/translate",
@@ -554,7 +554,7 @@ def test_translate_skips_filled_locale_unless_overwrite(client, monkeypatch):
         assert items[0].locales == ("ja",)
         return {items[0].id: {"ja": "こんにちは"}}
 
-    monkeypatch.setattr("app.routers.translate.translate_batch", fake_batch)
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
 
     r = client.post(
         f"/api/projects/{pid}/translate",

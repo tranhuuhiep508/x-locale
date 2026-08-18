@@ -229,3 +229,4 @@ def project_access(
 # Type aliases for Annotated Depends
 CurrentUser = Annotated[User, Depends(current_user)]
 ProjectFromApiKey = Annotated[Project, Depends(project_from_api_key)]
+ProjectAccess = Annotated[Project, Depends(project_access)]

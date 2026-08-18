@@ -1,35 +1,21 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { LogOut, ChevronDown, Layers } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api/client'
-import type { User } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
-import { useToast } from '@/store'
+import { authApi } from '@/lib/api/auth'
+import { meQuery } from '@/lib/queries'
+import { useToast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  Spinner,
-} from '@/components/ui'
-
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Spinner } from '@/components/ui/spinner'
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { data: user } = useQuery<User>({
-    queryKey: queryKeys.me(),
-    queryFn: () => api.get<User>('/auth/me'),
-    staleTime: 5 * 60 * 1000,
-  })
+  const { data: user } = useQuery(meQuery())
 
   const qc = useQueryClient()
   const toast = useToast()
 
   const logoutMut = useMutation({
-    mutationFn: () => api.post('/auth/logout'),
+    mutationFn: () => authApi.logout(),
     onSuccess: () => {
       qc.clear()
       window.location.href = '/login'

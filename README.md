@@ -118,4 +118,5 @@ See [.env.example](.env.example). Notable vars:
 | `ACTIVITY_RETENTION_DAYS` | Optional pruning of append-only activity log |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
-| `AWS_BEARER_TOKEN_BEDROCK` | Bedrock API key. Must be a real process env var (`export` or Docker Compose); boto3 does not read it from Pydantic `.env` loading. IAM keys/role also work if this is unset. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend auto-mints a short-term Bedrock API key before each request. |
+| `AWS_BEARER_TOKEN_BEDROCK` | Optional static long-term Bedrock API key if IAM is not available. Leave unset when using IAM so an expired key cannot shadow credentials. |

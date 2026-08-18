@@ -1,10 +1,8 @@
 import { createRootRouteWithContext, Outlet, redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
-import { Toaster } from '@/components/ui'
-import { api } from '@/lib/api/client'
+import { Toaster } from '@/components/ui/sonner'
 import { ApiError } from '@/lib/api/client'
-import type { User } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
+import { meQuery } from '@/lib/queries'
 
 interface RouterContext {
   queryClient: QueryClient
@@ -15,11 +13,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     if (location.pathname === '/login') return
 
     try {
-      await context.queryClient.ensureQueryData({
-        queryKey: queryKeys.me(),
-        queryFn: () => api.get<User>('/auth/me'),
-        staleTime: 5 * 60 * 1000,
-      })
+      await context.queryClient.ensureQueryData(meQuery())
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         throw redirect({

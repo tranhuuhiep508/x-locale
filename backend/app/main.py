@@ -42,11 +42,6 @@ if settings.cors_origin_list:
         allow_headers=["*"],
     )
 
-api = FastAPI(title="TMS API", version="0.2.0")
-# Mount routers under /api via a sub-app OR include with prefix.
-# Using include_router with prefix keeps OpenAPI under /api/openapi.json too if we want.
-# Simpler: include all with prefix="/api"
-
 app.include_router(auth.router, prefix="/api")
 app.include_router(bootstrap.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")

@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from urllib.parse import urlencode
-
-import httpx
-from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
-from starlette.responses import RedirectResponse
+import httpx
+from authlib.integrations.starlette_client import OAuth
 
-from app.auth import (
-    SESSION_COOKIE,
-    create_session_token,
-    current_user,
-    get_or_create_dev_user,
-)
+from app.auth import current_user, get_or_create_dev_user
 from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.schemas import UserOut
+from app.services.auth import clear_session, login_redirect, upsert_oidc_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,18 +35,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
     if settings.auth_dev_bypass and not settings.oidc_configured:
         user = get_or_create_dev_user(db)
         db.commit()
-        token = create_session_token(user)
-        # Redirect to frontend
-        response = RedirectResponse(url="/", status_code=302)
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            httponly=True,
-            samesite="lax",
-            max_age=72 * 3600,
-            path="/",
-        )
-        return response
+        return login_redirect(user)
 
     if not settings.oidc_configured:
         raise HTTPException(status_code=503, detail="OIDC is not configured")
@@ -77,7 +58,6 @@ async def callback(request: Request, db: Session = Depends(get_db)):
 
     userinfo = token.get("userinfo")
     if not userinfo:
-        # Fetch userinfo manually
         async with httpx.AsyncClient() as client:
             meta = await oauth.oidc.load_server_metadata()
             resp = await client.get(
@@ -93,45 +73,20 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     name = userinfo.get("name") or userinfo.get("preferred_username") or email
     avatar = userinfo.get("picture")
 
-    user = (
-        db.query(User)
-        .filter(User.oidc_issuer == issuer, User.oidc_sub == sub)
-        .first()
+    user = upsert_oidc_user(
+        db,
+        issuer=issuer,
+        sub=sub,
+        email=email,
+        name=name,
+        avatar=avatar,
     )
-    if user:
-        user.email = email
-        user.name = name
-        user.avatar_url = avatar
-        user.last_login_at = datetime.now(UTC)
-    else:
-        user = User(
-            email=email,
-            name=name,
-            avatar_url=avatar,
-            oidc_issuer=issuer,
-            oidc_sub=sub,
-            last_login_at=datetime.now(UTC),
-        )
-        db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    session_token = create_session_token(user)
-    response = RedirectResponse(url="/", status_code=302)
-    response.set_cookie(
-        SESSION_COOKIE,
-        session_token,
-        httponly=True,
-        samesite="lax",
-        max_age=72 * 3600,
-        path="/",
-    )
-    return response
+    return login_redirect(user)
 
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, str]:
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    clear_session(response)
     return {"status": "ok"}
 
 

@@ -1,20 +1,14 @@
 import { createFileRoute, Outlet, notFound } from '@tanstack/react-router'
 import { AppShell } from '@/components/layout/AppShell'
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
-import { api } from '@/lib/api/client'
 import { ApiError } from '@/lib/api/client'
-import type { Project } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
+import { projectQuery } from '@/lib/queries'
 import { useQuery } from '@tanstack/react-query'
 
 export const Route = createFileRoute('/projects/$projectId')({
   loader: async ({ params, context }) => {
     try {
-      return await context.queryClient.ensureQueryData({
-        queryKey: queryKeys.project(params.projectId),
-        queryFn: () => api.get<Project>(`/projects/${params.projectId}`),
-        staleTime: 30 * 1000,
-      })
+      return await context.queryClient.ensureQueryData(projectQuery(params.projectId))
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) throw notFound()
       throw err
@@ -30,10 +24,7 @@ export const Route = createFileRoute('/projects/$projectId')({
 
 function ProjectLayout() {
   const { projectId } = Route.useParams()
-  const { data: project } = useQuery<Project>({
-    queryKey: queryKeys.project(projectId),
-    queryFn: () => api.get<Project>(`/projects/${projectId}`),
-  })
+  const { data: project } = useQuery(projectQuery(projectId))
 
   if (!project) return null
 

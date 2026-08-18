@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 
 import boto3
+from aws_bedrock_token_generator import provide_token
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from app.config import settings
+
+_AUTH_ERROR = (
+    "AWS Bedrock auth is not configured. Set AWS_ACCESS_KEY_ID and "
+    "AWS_SECRET_ACCESS_KEY, or AWS_BEARER_TOKEN_BEDROCK in your environment."
+)
+_token_lock = threading.Lock()
 
 BATCH_SIZE = 20
 MAX_TOKENS = 4096
@@ -62,17 +70,20 @@ class TranslateItem:
     context: str | None = None
 
 
-def _ensure_bedrock_auth() -> None:
-    if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
-        return
+def _refresh_bedrock_token() -> None:
+    """Mint or reuse a cached short-term Bedrock API key before a request.
 
-    if boto3.Session().get_credentials() is not None:
-        return
-
-    raise ValueError(
-        "AWS Bedrock auth is not configured. Set AWS_BEARER_TOKEN_BEDROCK "
-        "or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment."
-    )
+    IAM credentials take precedence: provide_token() returns a cached token if
+    still valid, otherwise it generates a new one. A static
+    AWS_BEARER_TOKEN_BEDROCK is used only when no IAM credentials are present.
+    """
+    with _token_lock:
+        if boto3.Session().get_credentials() is not None:
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = provide_token(region=settings.aws_region)
+            return
+        if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
+            return
+        raise ValueError(_AUTH_ERROR)
 
 
 def _item_payload(item: TranslateItem) -> dict:
@@ -104,7 +115,8 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
 
 
 def _converse_tool(prompt: str) -> dict:
-    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    _refresh_bedrock_token()
+    client = boto3.Session().client("bedrock-runtime", region_name=settings.aws_region)
     try:
         return client.converse(
             modelId=settings.bedrock_model_id,
@@ -116,9 +128,7 @@ def _converse_tool(prompt: str) -> dict:
             },
         )
     except NoCredentialsError as exc:
-        raise ValueError(
-            "AWS Bedrock auth is not configured. Set AWS_BEARER_TOKEN_BEDROCK in your environment."
-        ) from exc
+        raise ValueError(_AUTH_ERROR) from exc
     except (BotoCoreError, ClientError) as exc:
         raise RuntimeError(f"Bedrock request failed: {exc}") from exc
 
@@ -226,7 +236,7 @@ def translate_batch(source_locale: str, items: list[TranslateItem]) -> dict[str,
     if not settings.bedrock_model_id:
         raise ValueError("BEDROCK_MODEL_ID is not configured")
 
-    _ensure_bedrock_auth()
+    _refresh_bedrock_token()
 
     merged: dict[str, dict[str, str]] = {}
     for index in range(0, len(items), BATCH_SIZE):

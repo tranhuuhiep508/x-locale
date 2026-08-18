@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
 
-from app.ai import BATCH_SIZE, MAX_TOKENS, TOOL_NAME, TranslateItem, translate_batch
+from app.ai import (
+    BATCH_SIZE,
+    MAX_TOKENS,
+    TOOL_NAME,
+    TranslateItem,
+    _refresh_bedrock_token,
+    translate_batch,
+)
+from app.config import settings
 
 
 def fake_converse_body(items: list[dict], stop_reason: str = "tool_use") -> dict:
@@ -55,8 +64,10 @@ def converse(monkeypatch) -> MagicMock:
     mock_converse = MagicMock()
     client = MagicMock()
     client.converse = mock_converse
-    monkeypatch.setattr("app.ai.boto3.client", lambda *args, **kwargs: client)
-    monkeypatch.setattr("app.ai._ensure_bedrock_auth", lambda: None)
+    session = MagicMock()
+    session.client.return_value = client
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+    monkeypatch.setattr("app.ai._refresh_bedrock_token", lambda: None)
     return mock_converse
 
 
@@ -181,3 +192,76 @@ def test_translate_batch_wraps_client_error(converse):
     )
     with pytest.raises(RuntimeError, match="Bedrock request failed"):
         translate_batch("vi", [TranslateItem(id="s1", source_text="Lưu", locales=("en",))])
+
+
+def test_translate_batch_refreshes_token_before_each_converse(monkeypatch):
+    refresh = MagicMock()
+    monkeypatch.setattr("app.ai._refresh_bedrock_token", refresh)
+    mock_converse = MagicMock()
+    client = MagicMock()
+    client.converse = mock_converse
+    session = MagicMock()
+    session.client.return_value = client
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+    mock_converse.side_effect = lambda **kwargs: complete_tool_response(
+        kwargs["messages"][0]["content"][0]["text"]
+    )
+    items = [
+        TranslateItem(id=str(index), source_text=f"s{index}", locales=("en",))
+        for index in range(BATCH_SIZE + 1)
+    ]
+    translate_batch("vi", items)
+    assert mock_converse.call_count == 2
+    assert refresh.call_count == 3
+
+
+def test_refresh_writes_provide_token_result(monkeypatch):
+    seen: dict[str, str | None] = {}
+
+    def fake_provide(region=None):
+        seen["region"] = region
+        return "minted-token"
+
+    monkeypatch.setattr("app.ai.provide_token", fake_provide)
+    session = MagicMock()
+    session.get_credentials.return_value = object()
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    _refresh_bedrock_token()
+    assert seen["region"] == settings.aws_region
+    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "minted-token"
+
+
+def test_refresh_overwrites_static_token_when_iam_present(monkeypatch):
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "expired-key")
+    monkeypatch.setattr("app.ai.provide_token", lambda region=None: "fresh-token")
+    session = MagicMock()
+    session.get_credentials.return_value = object()
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+
+    _refresh_bedrock_token()
+    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "fresh-token"
+
+
+def test_refresh_keeps_static_token_without_iam(monkeypatch):
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "static-key")
+    provide = MagicMock()
+    monkeypatch.setattr("app.ai.provide_token", provide)
+    session = MagicMock()
+    session.get_credentials.return_value = None
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+
+    _refresh_bedrock_token()
+    provide.assert_not_called()
+    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "static-key"
+
+
+def test_refresh_raises_when_no_auth(monkeypatch):
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+    session = MagicMock()
+    session.get_credentials.return_value = None
+    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
+
+    with pytest.raises(ValueError, match="AWS Bedrock auth is not configured"):
+        _refresh_bedrock_token()
