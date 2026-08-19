@@ -27,6 +27,22 @@ function buildUrl(path: string, params?: QueryParams): string {
   return qs ? `${url}?${qs}` : url
 }
 
+function errorMessage(errBody: unknown, statusText: string): string {
+  const detail = (errBody as { detail?: unknown } | null)?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const first = detail[0] as { msg?: string } | undefined
+    if (first?.msg) return first.msg
+  }
+  return statusText
+}
+
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)"?/i.exec(header)
+  return match?.[1] ? decodeURIComponent(match[1]) : fallback
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -50,9 +66,7 @@ async function request<T>(
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => null)
-    const message =
-      (errBody as { detail?: string } | null)?.detail ?? res.statusText
-    throw new ApiError(res.status, message, errBody)
+    throw new ApiError(res.status, errorMessage(errBody, res.statusText), errBody)
   }
 
   if (res.status === 204) return undefined as T
@@ -84,11 +98,27 @@ export const api = {
     }).then(async (res) => {
       if (!res.ok) {
         const errBody = await res.json().catch(() => null)
-        const message =
-          (errBody as { detail?: string } | null)?.detail ?? res.statusText
-        throw new ApiError(res.status, message, errBody)
+        throw new ApiError(res.status, errorMessage(errBody, res.statusText), errBody)
       }
       return res.json() as Promise<T>
     })
+  },
+
+  download: async (
+    path: string,
+    params?: QueryParams,
+    fallbackName = 'download',
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const url = buildUrl(path, params)
+    const res = await fetch(url, { method: 'GET', credentials: 'include' })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => null)
+      throw new ApiError(res.status, errorMessage(errBody, res.statusText), errBody)
+    }
+    const blob = await res.blob()
+    return {
+      blob,
+      filename: filenameFromDisposition(res.headers.get('Content-Disposition'), fallbackName),
+    }
   },
 }

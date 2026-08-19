@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
@@ -8,8 +8,9 @@ import type {
   Tag,
   TranslationStatus,
 } from '@/lib/api/types'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
@@ -26,6 +27,7 @@ interface Props {
   modules: Module[]
   tags: Tag[]
   targetLocales: string[]
+  autoPreview?: boolean
   onClose: () => void
   onSuccess: () => void
 }
@@ -34,12 +36,29 @@ const NONE_MODULE = '__none__'
 
 type FormErrors = Partial<Record<'key' | 'source_text', string>>
 
+function emptyLocales(map: Record<string, string>, locales: string[]): string[] {
+  return locales.filter((locale) => !map[locale]?.trim())
+}
+
+function mergeEmptyTranslations(
+  prev: Record<string, string>,
+  incoming: Record<string, string>,
+): Record<string, string> {
+  const next = { ...prev }
+  for (const [locale, value] of Object.entries(incoming)) {
+    if (!value.trim() || prev[locale]?.trim()) continue
+    next[locale] = value
+  }
+  return next
+}
+
 export default function StringFormDialog({
   projectId,
   entry,
   modules,
   tags,
   targetLocales,
+  autoPreview = false,
   onClose,
   onSuccess,
 }: Props) {
@@ -60,9 +79,11 @@ export default function StringFormDialog({
     return map
   })
   const [errors, setErrors] = useState<FormErrors>({})
+  const [aiLocales, setAiLocales] = useState<Set<string>>(() => new Set())
 
   const canAutoTranslate =
     key.trim().length > 0 && sourceText.trim().length > 0 && targetLocales.length > 0
+  const localesToFill = emptyLocales(translations, targetLocales)
 
   const payload = () => ({
     key: key.trim(),
@@ -92,18 +113,28 @@ export default function StringFormDialog({
   })
 
   const translateMut = useMutation({
-    mutationFn: () =>
+    mutationFn: (locales: string[]) =>
       stringsApi.translatePreview(projectId, {
         source_text: sourceText.trim(),
         description: description.trim() || undefined,
-        locales: targetLocales,
+        locales,
       }),
-    onSuccess: (res) => {
-      setTranslations((prev) => ({ ...prev, ...res.translations }))
-      toast.success('Translations filled')
+    onSuccess: (res, locales) => {
+      setTranslations((prev) => mergeEmptyTranslations(prev, res.translations))
+      setAiLocales(new Set(locales.filter((locale) => res.translations[locale]?.trim())))
+      toast.success('Review AI text, then Save')
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
   })
+
+  const startAutoPreview = useEffectEvent(() => {
+    if (!canAutoTranslate || localesToFill.length === 0) return
+    translateMut.mutate(localesToFill)
+  })
+
+  useEffect(() => {
+    if (autoPreview) startAutoPreview()
+  }, [autoPreview])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -249,8 +280,8 @@ export default function StringFormDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!canAutoTranslate || busy}
-                    onClick={() => translateMut.mutate()}
+                    disabled={!canAutoTranslate || localesToFill.length === 0 || busy}
+                    onClick={() => translateMut.mutate(localesToFill)}
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" />
@@ -260,21 +291,33 @@ export default function StringFormDialog({
                     Auto-translate
                   </Button>
                 </div>
+                {autoPreview || translateMut.isPending || translateMut.isSuccess ? (
+                  <p className="text-sm text-muted-foreground">
+                    {translateMut.isPending
+                      ? 'Generating translations…'
+                      : localesToFill.length === 0 && !translateMut.isSuccess
+                        ? 'All locales already have text.'
+                        : 'AI filled empty locales. Review, then Save.'}
+                  </p>
+                ) : null}
                 {targetLocales.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No target locales configured for this project.
                   </p>
                 ) : (
-                  <div className="flex flex-col gap-3">
+                  <FieldGroup className="gap-3">
                     {targetLocales.map((locale) => (
-                      <div
-                        key={locale}
-                        className="flex flex-col gap-2 rounded-lg border bg-muted/15 p-3"
-                      >
-                        <span className="text-sm font-medium uppercase tracking-wide">
-                          {locale}
-                        </span>
+                      <Field key={locale}>
+                        <div className="flex items-center justify-between gap-2">
+                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase">
+                            {locale}
+                          </FieldLabel>
+                          {aiLocales.has(locale) ? (
+                            <Badge variant="secondary">AI</Badge>
+                          ) : null}
+                        </div>
                         <Textarea
+                          id={`translation-${locale}`}
                           className="min-h-16 resize-none"
                           value={translations[locale] ?? ''}
                           onChange={(e) =>
@@ -284,11 +327,12 @@ export default function StringFormDialog({
                             }))
                           }
                           rows={2}
+                          autoComplete="off"
                           placeholder={`Translation for ${locale}…`}
                         />
-                      </div>
+                      </Field>
                     ))}
-                  </div>
+                  </FieldGroup>
                 )}
               </div>
             </div>

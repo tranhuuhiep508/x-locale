@@ -11,21 +11,34 @@ from app.auth import ProjectAccess
 from app.database import DbSession
 from app.models import Job, JobStatus
 from app.schemas import (
+    TranslateApplyRequest,
+    TranslateApplyResult,
     TranslatePreviewRequest,
     TranslatePreviewResult,
+    TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
 )
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
+    commit_proposals,
     count_work,
+    list_missing_items,
     preview_translations,
+    propose_translations,
+    run_propose_job,
     run_translate_job,
     select_entries,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
+
+
+def _ai_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=502, detail=f"AI translation failed: {exc}")
 
 
 @router.post("/translate", response_model=TranslateResult)
@@ -70,10 +83,8 @@ def translate(
     attach_batch(db, batch_id, "translate")
     try:
         translated = apply_translations(db, project, entries, locales, payload.overwrite)
-    except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
+        raise _ai_http_error(exc) from exc
 
     db.commit()
     return TranslateResult(translated_count=translated, locales=locales)
@@ -98,8 +109,79 @@ def translate_preview(
             locales,
             payload.description,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AI translation failed: {exc}") from exc
+        raise _ai_http_error(exc) from exc
     return TranslatePreviewResult(translations=translations)
+
+
+@router.post("/translate/missing", response_model=TranslateProposalsResult)
+def translate_missing(
+    payload: TranslateRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateProposalsResult:
+    locales = payload.locales or list(project.target_languages)
+    entries = select_entries(db, project, payload)
+    items = list_missing_items(entries, locales, payload.overwrite)
+    return TranslateProposalsResult(locales=locales, items=items)
+
+
+@router.post("/translate/proposals", response_model=TranslateProposalsResult)
+def translate_proposals(
+    payload: TranslateRequest,
+    background_tasks: BackgroundTasks,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateProposalsResult:
+    locales = payload.locales or list(project.target_languages)
+    entries = select_entries(db, project, payload)
+    work = count_work(entries, locales, payload.overwrite)
+    entry_ids = [e.id for e in entries]
+
+    if work > SYNC_THRESHOLD:
+        job = Job(
+            project_id=project.id,
+            kind="translate_proposals",
+            status=JobStatus.pending,
+            payload={
+                "scope": payload.scope,
+                "locales": locales,
+                "overwrite": payload.overwrite,
+                "entry_count": len(entry_ids),
+            },
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        background_tasks.add_task(
+            run_propose_job,
+            project.id,
+            entry_ids,
+            locales,
+            payload.overwrite,
+            job.id,
+        )
+        return TranslateProposalsResult(locales=locales, items=[], job_id=job.id)
+
+    try:
+        items = propose_translations(project, entries, locales, payload.overwrite)
+    except Exception as exc:
+        raise _ai_http_error(exc) from exc
+    return TranslateProposalsResult(locales=locales, items=items)
+
+
+@router.post("/translate/apply", response_model=TranslateApplyResult)
+def translate_apply(
+    payload: TranslateApplyRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateApplyResult:
+    batch_id = uuid.uuid4()
+    attach_batch(db, batch_id, "translate")
+    translated, locales = commit_proposals(db, project, payload.items)
+    db.commit()
+    return TranslateApplyResult(
+        translated_count=translated,
+        batch_id=batch_id,
+        locales=locales,
+    )

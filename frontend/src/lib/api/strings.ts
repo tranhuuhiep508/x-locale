@@ -6,8 +6,11 @@ import type {
   StringEntry,
   StringListResponse,
   StringUpdate,
+  TranslateApplyRequest,
+  TranslateApplyResult,
   TranslatePreviewRequest,
   TranslatePreviewResult,
+  TranslateProposalsResult,
   TranslateRequest,
   TranslateResult,
 } from '@/lib/api/types'
@@ -37,4 +40,10 @@ export const stringsApi = {
     api.post<TranslateResult>(`/projects/${projectId}/translate`, body),
   translatePreview: (projectId: string, body: TranslatePreviewRequest) =>
     api.post<TranslatePreviewResult>(`/projects/${projectId}/translate/preview`, body),
+  translateProposals: (projectId: string, body: TranslateRequest) =>
+    api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/proposals`, body),
+  translateMissing: (projectId: string, body: TranslateRequest) =>
+    api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/missing`, body),
+  translateApply: (projectId: string, body: TranslateApplyRequest) =>
+    api.post<TranslateApplyResult>(`/projects/${projectId}/translate/apply`, body),
 }

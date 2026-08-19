@@ -52,7 +52,7 @@ interface StringRowProps {
   onToggle: () => void
   onEdit: () => void
   onRefresh: () => void
-  onTranslate: (id: string) => void
+  onTranslate: () => void
 }
 
 export function StringRow({
@@ -176,7 +176,7 @@ export function StringRow({
             variant="ghost"
             size="icon-sm"
             title="AI Translate"
-            onClick={() => onTranslate(entry.id)}
+            onClick={onTranslate}
             className="text-muted-foreground hover:text-primary"
           >
             <Wand2 />

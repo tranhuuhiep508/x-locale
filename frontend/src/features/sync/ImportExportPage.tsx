@@ -1,40 +1,54 @@
 import { getRouteApi } from '@tanstack/react-router'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { Download, Upload, FileText, FileSpreadsheet, ArrowUpDown } from 'lucide-react'
 import { syncApi } from '@/lib/api/sync'
-import type { ImportResult } from '@/lib/api/types'
+import type { ImportResult, ProjectLayout } from '@/lib/api/types'
 import { projectQuery } from '@/lib/queries'
+import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
+
 const routeApi = getRouteApi('/projects/$projectId/import-export')
 
+function triggerDownload(blob: Blob, filename: string) {
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(href)
+}
 
 export function ImportExportPage() {
   const { projectId } = routeApi.useParams()
   const toast = useToast()
+  const queryClient = useQueryClient()
 
   const { data: project } = useQuery(projectQuery(projectId))
 
-  // Export state
   const [exportFormat, setExportFormat] = useState<'json' | 'xlsx'>('json')
-  const [exportLayout, setExportLayout] = useState<'flat' | 'modular'>(
-    project?.layout ?? 'flat',
-  )
+  const [exportLayout, setExportLayout] = useState<ProjectLayout | null>(null)
   const [exportStage, setExportStage] = useState<'all' | 'public'>('all')
   const [exportLocale, setExportLocale] = useState<string>('all')
 
-  // Import state
   const fileRef = useRef<HTMLInputElement>(null)
+  const pendingFileRef = useRef<File | null>(null)
   const [dryRun, setDryRun] = useState(true)
-  const [importLocale, setImportLocale] = useState(project?.base_language ?? 'en')
+  const [importLocale, setImportLocale] = useState<string | null>(null)
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+
+  const layout = exportLayout ?? project?.layout ?? 'flat'
+  const targetLocale = importLocale ?? project?.base_language ?? 'en'
 
   const importMut = useMutation({
     mutationFn: async ({
@@ -54,41 +68,50 @@ export function ImportExportPage() {
       if (res.dry_run) {
         setPreviewResult(res)
         setShowPreview(true)
-      } else {
-        toast.success(`Import complete: ${res.created} created, ${res.updated} updated`)
-        setPreviewResult(null)
+        return
       }
+      toast.success(`Import complete: ${res.created} created, ${res.updated} updated`)
+      setPreviewResult(null)
+      pendingFileRef.current = null
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
 
-  function handleExport() {
-    const params = new URLSearchParams({
-      format: exportFormat,
-      layout: exportLayout,
-      stage: exportStage,
-    })
-    if (exportLocale !== 'all') params.set('locale', exportLocale)
-    window.open(`/api/projects/${projectId}/export?${params}`, '_blank')
-  }
+  const exportMut = useMutation({
+    mutationFn: () =>
+      syncApi.exportFile(projectId, {
+        format: exportFormat,
+        layout,
+        stage: exportStage === 'all' ? 'draft' : 'public',
+        locale: exportLocale === 'all' ? undefined : exportLocale,
+      }),
+    onSuccess: ({ blob, filename }) => {
+      triggerDownload(blob, filename)
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Export failed'),
+  })
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    importMut.mutate({ file, locale: importLocale, dry: dryRun })
-    // Reset input for re-upload
+    pendingFileRef.current = file
+    importMut.mutate({ file, locale: targetLocale, dry: dryRun })
     e.target.value = ''
   }
 
   function confirmImport() {
-    if (!fileRef.current?.files?.[0]) {
+    const file = pendingFileRef.current
+    if (!file) {
       toast.error('Please select a file again to confirm import')
       setShowPreview(false)
       return
     }
     importMut.mutate({
-      file: fileRef.current.files[0],
-      locale: importLocale,
+      file,
+      locale: targetLocale,
       dry: false,
     })
     setShowPreview(false)
@@ -105,7 +128,6 @@ export function ImportExportPage() {
         Import / Export
       </h1>
 
-      {/* Export */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -136,8 +158,8 @@ export function ImportExportPage() {
             <Field>
               <FieldLabel htmlFor="export_layout">Layout</FieldLabel>
               <Select
-                value={exportLayout}
-                onValueChange={(v) => setExportLayout(v as 'flat' | 'modular')}
+                value={layout}
+                onValueChange={(v) => setExportLayout(v as ProjectLayout)}
               >
                 <SelectTrigger id="export_layout" className="w-full">
                   <SelectValue placeholder="Layout" />
@@ -190,19 +212,20 @@ export function ImportExportPage() {
           </div>
 
           <div>
-            <Button onClick={handleExport}>
-              {exportFormat === 'xlsx' ? (
+            <Button onClick={() => exportMut.mutate()} disabled={exportMut.isPending}>
+              {exportMut.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : exportFormat === 'xlsx' ? (
                 <FileSpreadsheet data-icon="inline-start" />
               ) : (
                 <FileText data-icon="inline-start" />
               )}
-              Download {exportFormat.toUpperCase()}
+              {exportMut.isPending ? 'Preparing…' : `Download ${exportFormat.toUpperCase()}`}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Import */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -214,7 +237,7 @@ export function ImportExportPage() {
           <div className="grid grid-cols-2 gap-4">
             <Field>
               <FieldLabel htmlFor="import_locale">Target locale</FieldLabel>
-              <Select value={importLocale} onValueChange={setImportLocale}>
+              <Select value={targetLocale} onValueChange={setImportLocale}>
                 <SelectTrigger id="import_locale" className="w-full">
                   <SelectValue placeholder="Target locale" />
                 </SelectTrigger>
@@ -272,13 +295,13 @@ export function ImportExportPage() {
             </Button>
 
             <p className="text-xs text-muted-foreground mt-2">
-              Accepted formats: .json, .xlsx — max 10 MB
+              Accepted formats: .json, .xlsx — max 10 MB. A single-locale JSON file is applied to
+              the target locale; exported multi-locale files import every locale they contain.
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Preview dialog */}
       <Dialog open={showPreview} onOpenChange={(o) => !o && setShowPreview(false)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
