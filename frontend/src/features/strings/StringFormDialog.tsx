@@ -8,7 +8,6 @@ import type {
   Tag,
   TranslationStatus,
 } from '@/lib/api/types'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -81,7 +80,6 @@ export default function StringFormDialog({
     return map
   })
   const [errors, setErrors] = useState<FormErrors>({})
-  const [aiLocales, setAiLocales] = useState<Set<string>>(() => new Set())
 
   const canAutoTranslate =
     key.trim().length > 0 && sourceText.trim().length > 0 && targetLocales.length > 0
@@ -121,15 +119,8 @@ export default function StringFormDialog({
         description: description.trim() || undefined,
         locales,
       }),
-    onSuccess: (res, { locales, overwrite }) => {
+    onSuccess: (res, { overwrite }) => {
       setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
-      setAiLocales((prev) => {
-        const next = overwrite ? new Set<string>() : new Set(prev)
-        for (const locale of locales) {
-          if (res.translations[locale]?.trim()) next.add(locale)
-        }
-        return next
-      })
       toast.success('Review AI text, then Save')
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
@@ -319,14 +310,9 @@ export default function StringFormDialog({
                   <FieldGroup className="gap-3">
                     {targetLocales.map((locale) => (
                       <Field key={locale}>
-                        <div className="flex items-center justify-between gap-2">
-                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase">
-                            {locale}
-                          </FieldLabel>
-                          {aiLocales.has(locale) ? (
-                            <Badge variant="secondary">AI</Badge>
-                          ) : null}
-                        </div>
+                        <FieldLabel htmlFor={`translation-${locale}`} className="uppercase">
+                          {locale}
+                        </FieldLabel>
                         <Textarea
                           id={`translation-${locale}`}
                           className="min-h-16 resize-none"
