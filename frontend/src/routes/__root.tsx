@@ -1,6 +1,7 @@
 import { createRootRouteWithContext, Outlet, redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api/client'
 import { meQuery } from '@/lib/queries'
 
@@ -30,9 +31,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function Root() {
   return (
-    <>
+    <TooltipProvider>
       <Outlet />
       <Toaster />
-    </>
+    </TooltipProvider>
   )
 }

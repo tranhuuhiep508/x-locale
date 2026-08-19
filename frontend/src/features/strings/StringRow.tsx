@@ -32,9 +32,7 @@ function TranslationPreview({ translation }: { translation?: Translation }) {
   const value = translation?.value?.trim() ?? ''
 
   if (!value) {
-    return (
-      <span className="text-muted-foreground/70 italic text-sm">Missing</span>
-    )
+    return <span className="text-missing-foreground italic text-sm">Missing</span>
   }
 
   return (
@@ -139,7 +137,13 @@ export function StringRow({
             onCheckedChange={(checked) => publishMut.mutate(checked)}
             aria-label={isPublic ? 'Published' : 'Draft'}
           />
-          <span className="text-xs text-muted-foreground">
+          <span
+            className={
+              isPublic
+                ? 'text-xs font-medium text-public-foreground'
+                : 'text-xs text-draft-foreground'
+            }
+          >
             {publishMut.isPending ? '…' : isPublic ? 'Public' : 'Draft'}
           </span>
         </div>
