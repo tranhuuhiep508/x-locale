@@ -214,6 +214,7 @@ export interface TranslateProposalItem {
   key: string
   source_text: string
   status: TranslationStatus
+  description?: string | null
   translations: Record<string, string>
 }
 
@@ -227,6 +228,7 @@ export interface TranslateApplyRequest {
   items: Array<{
     string_id: string
     translations: Record<string, string>
+    description?: string | null
   }>
 }
 

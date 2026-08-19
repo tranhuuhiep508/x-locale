@@ -242,6 +242,7 @@ class TranslateProposalItem(BaseModel):
     key: str
     source_text: str
     status: str
+    description: str | None = None
     translations: dict[str, str]
 
 
@@ -254,6 +255,7 @@ class TranslateProposalsResult(BaseModel):
 class TranslateApplyItem(BaseModel):
     string_id: UUID
     translations: dict[str, str]
+    description: str | None = None
 
 
 class TranslateApplyRequest(BaseModel):

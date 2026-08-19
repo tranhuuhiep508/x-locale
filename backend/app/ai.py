@@ -93,8 +93,20 @@ def _item_payload(item: TranslateItem) -> dict:
         "locales": list(item.locales),
     }
     if item.context and item.context.strip():
-        payload["context"] = item.context
+        payload["instructions"] = item.context.strip()
     return payload
+
+
+def _instruction_notes(items: list[TranslateItem]) -> str:
+    lines = [
+        f'- id={item.id}: {item.context.strip()}'
+        for item in items
+        if item.context and item.context.strip()
+    ]
+    if not lines:
+        return ""
+    header = "Mandatory translator notes (override a literal translation):\n"
+    return header + "\n".join(lines) + "\n\n"
 
 
 def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
@@ -104,12 +116,18 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
         f"Translate each source string from {source_locale} into the locales "
         "listed on that item.\n\n"
         "Rules:\n"
+        "- If an item has \"instructions\", those notes are mandatory and win over a "
+        "literal translation of the source. Follow glossary terms, tone, length, "
+        "and any required output text exactly, even if it is not a normal translation.\n"
+        "- Instructions may be written in any language; interpret the intent.\n"
         "- Preserve placeholders exactly: {name}, {count}, %s, %d, HTML tags, ICU plural/select.\n"
-        "- Keep UI tone: concise, natural, same intent. Do not add or drop meaning.\n"
-        "- Do not translate brand names, product names, or code identifiers.\n"
+        "- Keep UI tone: concise, natural, same intent, unless instructions say otherwise.\n"
+        "- Do not translate brand names, product names, or code identifiers, "
+        "unless instructions require it.\n"
         '- Copy each item "id" exactly.\n'
         f"- Call {TOOL_NAME} with every item and every requested locale. "
         "Do not reply with free text.\n\n"
+        f"{_instruction_notes(items)}"
         f"Items:\n{payload}"
     )
 

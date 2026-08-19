@@ -141,6 +141,7 @@ def _proposal_dict(entry: StringEntry, translations: dict[str, str]) -> dict[str
         "key": entry.key,
         "source_text": entry.source_text,
         "status": _status_str(entry),
+        "description": entry.description,
         "translations": translations,
     }
 
@@ -213,6 +214,8 @@ def commit_proposals(
         entry = by_id.get(item.string_id)
         if entry is None:
             continue
+        if item.description is not None:
+            entry.description = item.description.strip() or None
         for locale, value in item.translations.items():
             if locale not in allowed:
                 continue

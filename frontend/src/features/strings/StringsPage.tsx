@@ -162,6 +162,34 @@ export function StringsPage() {
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
   })
 
+  const previewItemsMut = useMutation({
+    mutationFn: async (items: TranslateProposalItem[]) => {
+      const next = await Promise.all(
+        items.map(async (item) => {
+          const locales = Object.keys(item.translations)
+          if (locales.length === 0) return item
+          const res = await stringsApi.translatePreview(projectId, {
+            source_text: item.source_text,
+            description: item.description?.trim() || undefined,
+            locales,
+          })
+          const translations = { ...item.translations }
+          for (const locale of locales) {
+            const value = res.translations[locale]
+            if (value?.trim()) translations[locale] = value
+          }
+          return { ...item, translations }
+        }),
+      )
+      return next
+    },
+    onSuccess: (items) => {
+      setProposalItems(items)
+      setProposalsReady(true)
+    },
+    onError: () => toast.error('Translation failed — check Bedrock credentials'),
+  })
+
   const proposalJobQuery = useQuery({
     queryKey: queryKeys.jobs.detail(proposalJobId ?? ''),
     queryFn: () => jobsApi.get(proposalJobId!),
@@ -190,6 +218,7 @@ export function StringsPage() {
         items: items.map((item) => ({
           string_id: item.string_id,
           translations: item.translations,
+          description: item.description ?? '',
         })),
       }),
     onSuccess: (res) => {
@@ -200,19 +229,21 @@ export function StringsPage() {
       setProposalsReady(false)
       proposeMut.reset()
       missingMut.reset()
+      previewItemsMut.reset()
       invalidateStrings()
     },
     onError: () => toast.error('Failed to save translations'),
   })
 
   function closeReview() {
-    if (applyMut.isPending || proposeMut.isPending) return
+    if (applyMut.isPending || proposeMut.isPending || previewItemsMut.isPending) return
     setReviewOpen(false)
     setProposalJobId(null)
     setProposalItems([])
     setProposalsReady(false)
     proposeMut.reset()
     missingMut.reset()
+    previewItemsMut.reset()
   }
 
   function openEditor(entry: StringEntry | null, autoPreview = false) {
@@ -233,15 +264,18 @@ export function StringsPage() {
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
+    previewItemsMut.isPending ||
     (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
   const reviewError =
     missingMut.error instanceof Error
       ? missingMut.error.message
       : proposeMut.error instanceof Error
         ? proposeMut.error.message
-        : proposalJobQuery.data?.status === 'failed'
-          ? proposalJobQuery.data.error ?? 'Translation job failed'
-          : null
+        : previewItemsMut.error instanceof Error
+          ? previewItemsMut.error.message
+          : proposalJobQuery.data?.status === 'failed'
+            ? proposalJobQuery.data.error ?? 'Translation job failed'
+            : null
   const hasActiveFilters = Boolean(
     search.q || search.module || search.tag || search.status || search.missing_locale,
   )
@@ -523,7 +557,7 @@ export function StringsPage() {
                   onToggle={() => toggleRow(s.id)}
                   onEdit={() => openEditor(s)}
                   onRefresh={invalidateStrings}
-                  onTranslate={() => openEditor(s)}
+                  onTranslate={() => openEditor(s, true)}
                 />
               ))}
             </TableBody>
@@ -576,9 +610,13 @@ export function StringsPage() {
         error={reviewError}
         items={reviewItems}
         onClose={closeReview}
-        onTranslate={() =>
+        onTranslate={(items) => {
+          if (proposalsReady || items.length === 1) {
+            previewItemsMut.mutate(items)
+            return
+          }
           proposeMut.mutate({ scope: 'missing', locales: targetLocales })
-        }
+        }}
         onApply={(items) => applyMut.mutate(items)}
       />
 

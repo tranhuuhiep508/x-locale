@@ -642,6 +642,8 @@ def test_translate_missing_lists_empty_locales_without_ai(client, monkeypatch):
     assert by_key["hi"]["string_id"] == filled["id"]
     assert by_key["bye"]["translations"] == {"en": "", "ja": ""}
     assert by_key["bye"]["string_id"] == empty["id"]
+    assert "description" in by_key["hi"]
+    assert "description" in by_key["bye"]
     after = client.get(f"/api/projects/{pid}/activities").json()["total"]
     assert after == before
     stored = {s["key"]: s for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
@@ -756,6 +758,33 @@ def test_translate_apply_skips_locale_filled_after_preview(client):
     by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
     assert by_locale["en"] == "Hello"
     assert by_locale["ja"] == "こんにちは"
+
+
+def test_translate_apply_saves_description(client):
+    project = _make_project(client, "Apply Description", targets=["en"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "description": "Greeting on the home screen",
+                    "translations": {"en": "Hello"},
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert refreshed["description"] == "Greeting on the home screen"
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "Hello"
 
 
 def test_translate_proposals_large_uses_job(client, monkeypatch):

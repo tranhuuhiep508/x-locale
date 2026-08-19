@@ -102,6 +102,31 @@ def test_translate_batch_single_item_uses_tool_choice(converse):
     assert "en" in prompt
     assert "ja" in prompt
     assert "button" in prompt
+    assert "instructions" in prompt
+    assert "mandatory" in prompt.lower()
+
+
+def test_translate_batch_prompt_treats_description_as_override(converse):
+    converse.return_value = fake_converse_body(
+        [
+            {
+                "id": "s1",
+                "translations": [{"locale": "en", "text": "ABC"}],
+            }
+        ]
+    )
+    notes = "Fix cứng là chữ ABC"
+    translate_batch(
+        "vi",
+        [TranslateItem(id="s1", source_text="Hủy", locales=("en",), context=notes)],
+    )
+    prompt = converse.call_args.kwargs["messages"][0]["content"][0]["text"]
+    assert notes in prompt
+    assert '"instructions":' in prompt
+    assert f"id=s1: {notes}" in prompt
+    assert "override" in prompt.lower()
+    payload = items_from_prompt(prompt)
+    assert payload[0]["instructions"] == notes
 
 
 def test_translate_batch_raises_when_tool_not_used(converse):

@@ -40,13 +40,15 @@ function emptyLocales(map: Record<string, string>, locales: string[]): string[] 
   return locales.filter((locale) => !map[locale]?.trim())
 }
 
-function mergeEmptyTranslations(
+function mergeTranslations(
   prev: Record<string, string>,
   incoming: Record<string, string>,
+  overwrite: boolean,
 ): Record<string, string> {
   const next = { ...prev }
   for (const [locale, value] of Object.entries(incoming)) {
-    if (!value.trim() || prev[locale]?.trim()) continue
+    if (!value.trim()) continue
+    if (!overwrite && prev[locale]?.trim()) continue
     next[locale] = value
   }
   return next
@@ -113,15 +115,21 @@ export default function StringFormDialog({
   })
 
   const translateMut = useMutation({
-    mutationFn: (locales: string[]) =>
+    mutationFn: ({ locales }: { locales: string[]; overwrite: boolean }) =>
       stringsApi.translatePreview(projectId, {
         source_text: sourceText.trim(),
         description: description.trim() || undefined,
         locales,
       }),
-    onSuccess: (res, locales) => {
-      setTranslations((prev) => mergeEmptyTranslations(prev, res.translations))
-      setAiLocales(new Set(locales.filter((locale) => res.translations[locale]?.trim())))
+    onSuccess: (res, { locales, overwrite }) => {
+      setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
+      setAiLocales((prev) => {
+        const next = overwrite ? new Set<string>() : new Set(prev)
+        for (const locale of locales) {
+          if (res.translations[locale]?.trim()) next.add(locale)
+        }
+        return next
+      })
       toast.success('Review AI text, then Save')
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
@@ -129,7 +137,7 @@ export default function StringFormDialog({
 
   const startAutoPreview = useEffectEvent(() => {
     if (!canAutoTranslate || localesToFill.length === 0) return
-    translateMut.mutate(localesToFill)
+    translateMut.mutate({ locales: localesToFill, overwrite: false })
   })
 
   useEffect(() => {
@@ -280,8 +288,13 @@ export default function StringFormDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!canAutoTranslate || localesToFill.length === 0 || busy}
-                    onClick={() => translateMut.mutate(localesToFill)}
+                    disabled={!canAutoTranslate || busy}
+                    onClick={() =>
+                      translateMut.mutate({
+                        locales: targetLocales,
+                        overwrite: true,
+                      })
+                    }
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" />
@@ -295,9 +308,7 @@ export default function StringFormDialog({
                   <p className="text-sm text-muted-foreground">
                     {translateMut.isPending
                       ? 'Generating translations…'
-                      : localesToFill.length === 0 && !translateMut.isSuccess
-                        ? 'All locales already have text.'
-                        : 'AI filled empty locales. Review, then Save.'}
+                      : 'Review AI text, then Save. Add description context and Auto-translate again if needed.'}
                   </p>
                 ) : null}
                 {targetLocales.length === 0 ? (
