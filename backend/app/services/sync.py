@@ -447,9 +447,9 @@ def import_modular_payload(
             report_orphans=True,
             index=index,
         )
-        create_keys.extend(f"{slug}.{k}" for k in created)
-        update_keys.extend(f"{slug}.{k}" for k in updated)
-        orphan_keys.update(f"{slug}.{k}" for k in orphans)
+        create_keys.extend(f"{slug}/{k}" for k in created)
+        update_keys.extend(f"{slug}/{k}" for k in updated)
+        orphan_keys.update(f"{slug}/{k}" for k in orphans)
         total += count
 
     if unassigned and _is_locale_maps(unassigned):

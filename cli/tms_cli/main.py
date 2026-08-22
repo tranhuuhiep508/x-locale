@@ -23,6 +23,7 @@ DEFAULT_OUTPUT_DIR = "./locales"
 DEFAULT_BASE_LANGUAGE = "en"
 DEFAULT_LAYOUT = "flat"
 DEFAULT_STAGE = "draft"
+UNASSIGNED_SLUG = "_unassigned"
 _KEY_LIST_LIMIT = 100
 
 
@@ -32,6 +33,14 @@ class PulledFileReport:
     keys: list[str] = field(default_factory=list)
     new_keys: list[str] = field(default_factory=list)
     updated_keys: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ChangeItem:
+    """One created/updated/orphaned key in a sync report."""
+
+    key: str
+    extra: str = ""
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -122,27 +131,110 @@ def _connection_error(action: str, exc: httpx.RequestError) -> typer.Exit:
     return typer.Exit(f"{action} failed: cannot reach server ({exc})")
 
 
-def _print_key_section(
+def scoped_key(module_slug: str, key: str) -> str:
+    """Label a modular string as ``module/key`` (folder + JSON key)."""
+    return f"{module_slug}/{key}"
+
+
+def change_items(keys: list[str]) -> list[ChangeItem]:
+    return [ChangeItem(key=key) for key in sorted(keys)]
+
+
+def file_module_locale(path: Path, output_dir: Path) -> tuple[str | None, str]:
+    """Return ``(module_or_none, locale)`` from a pulled locale file path."""
+    rel = path.relative_to(output_dir) if path.is_relative_to(output_dir) else Path(path.name)
+    locale = Path(rel.name).stem
+    module = rel.parts[0] if len(rel.parts) > 1 else None
+    return module, locale
+
+
+def group_pull_changes(
+    reports: list[PulledFileReport],
+    *,
+    output_dir: Path,
+    attr: str,
+) -> list[ChangeItem]:
+    """Group pull diffs by ``module/key`` (same identity as push), with locales."""
+    locales_by_key: dict[str, list[str]] = {}
+    for report in reports:
+        module, locale = file_module_locale(report.path, output_dir)
+        for key in getattr(report, attr):
+            ident = scoped_key(module, key) if module else key
+            seen = locales_by_key.setdefault(ident, [])
+            if locale not in seen:
+                seen.append(locale)
+    return [
+        ChangeItem(key=ident, extra=", ".join(locales))
+        for ident, locales in sorted(locales_by_key.items())
+    ]
+
+
+def _print_report_header(command: str, details: list[str]) -> None:
+    suffix = f"  [dim]{' · '.join(details)}[/dim]" if details else ""
+    console.print(f"\n[bold]{command}[/bold]{suffix}")
+
+
+def _print_counts(rows: list[tuple[str, int]]) -> None:
+    if not rows:
+        return
+    width = max(len(label) for label, _ in rows)
+    console.print()
+    for label, count in rows:
+        if label in {"Created", "Updated"} and count:
+            style = "green" if label == "Created" else "cyan"
+        elif label == "Orphaned" and count:
+            style = "yellow"
+        elif count == 0:
+            style = "dim"
+        else:
+            style = ""
+        line = f"  {label:<{width}}  {count:>4}"
+        console.print(f"[{style}]{line}[/]" if style else line)
+
+
+def _print_change_section(
     title: str,
-    keys: list[str],
+    items: list[ChangeItem],
     *,
     style: str = "",
     hint: str = "",
 ) -> None:
-    if not keys:
+    if not items:
         return
-    heading = f"{title} ({len(keys)})"
+    heading = f"{title} ({len(items)})"
+    console.print()
     if style:
-        console.print(f"\n[{style}]{heading}[/]")
+        console.print(f"[{style}]{heading}[/]")
     else:
-        console.print(f"\n{heading}")
+        console.print(heading)
     if hint:
         console.print(f"[dim]{hint}[/dim]")
-    shown = sorted(keys)[:_KEY_LIST_LIMIT]
-    for key in shown:
-        console.print(f"  {key}")
-    if len(keys) > _KEY_LIST_LIMIT:
-        console.print(f"  … and {len(keys) - _KEY_LIST_LIMIT} more")
+    shown = items[:_KEY_LIST_LIMIT]
+    key_width = max(len(item.key) for item in shown)
+    for item in shown:
+        if item.extra:
+            console.print(f"    {item.key:<{key_width}}  [dim]{item.extra}[/dim]")
+        else:
+            console.print(f"    {item.key}")
+    if len(items) > _KEY_LIST_LIMIT:
+        console.print(f"    … and {len(items) - _KEY_LIST_LIMIT} more")
+
+
+def _print_phase(name: str) -> None:
+    console.print()
+    console.rule(f"[bold]{name}[/bold]", align="left")
+
+
+def build_modular_push_body(
+    modules: dict[str, dict[str, str]],
+    base_language: str,
+) -> dict[str, dict[str, dict[str, dict[str, str]]]]:
+    """Build ``{ modules: { slug: { locale: { key: value } } } }`` for CLI push."""
+    return {
+        "modules": {
+            slug: {base_language: strings} for slug, strings in modules.items()
+        }
+    }
 
 
 def _diff_locale_maps(
@@ -230,6 +322,103 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
     return modules
 
 
+def load_unassigned_base(output_dir: Path, base_language: str) -> dict[str, str]:
+    """Load ``_unassigned/{base_language}.json`` if present."""
+    path = output_dir / UNASSIGNED_SLUG / f"{base_language}.json"
+    if not path.exists():
+        return {}
+    data = load_json_file(path)
+    if not isinstance(data, dict):
+        console.print(f"[yellow]Warning:[/yellow] {path} is not a JSON object — skipping")
+        return {}
+    return parse_locale_json(data)
+
+
+def _string_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {k: v for k, v in value.items() if isinstance(v, str)}
+
+
+def collect_modular_local_keys(
+    output_dir: Path, base_language: str
+) -> dict[str, str]:
+    """Local base-language strings keyed as ``module/key`` (includes ``_unassigned``)."""
+    result: dict[str, str] = {}
+    for slug, strings in scan_modular_base(output_dir, base_language).items():
+        for key, value in strings.items():
+            result[scoped_key(slug, key)] = value
+    for key, value in load_unassigned_base(output_dir, base_language).items():
+        result[scoped_key(UNASSIGNED_SLUG, key)] = value
+    return result
+
+
+def collect_modular_remote_keys(
+    export: dict[str, Any], base_language: str
+) -> dict[str, str]:
+    """Remote base-language strings keyed as ``module/key`` from a modular export."""
+    result: dict[str, str] = {}
+    modules = export.get("modules") or {}
+    if isinstance(modules, dict):
+        for slug, locale_map in modules.items():
+            if not isinstance(locale_map, dict):
+                continue
+            for key, value in _string_map(locale_map.get(base_language)).items():
+                result[scoped_key(str(slug), key)] = value
+    unassigned = export.get("unassigned") or {}
+    if isinstance(unassigned, dict):
+        for key, value in _string_map(unassigned.get(base_language)).items():
+            result[scoped_key(UNASSIGNED_SLUG, key)] = value
+    return result
+
+
+def modular_export_locales(export: dict[str, Any]) -> list[str]:
+    manifest = export.get("manifest") or {}
+    if isinstance(manifest, dict):
+        locales = manifest.get("locales")
+        if isinstance(locales, list) and locales:
+            return [str(lc) for lc in locales]
+    seen: list[str] = []
+    modules = export.get("modules") or {}
+    buckets: list[Any] = [modules] if isinstance(modules, dict) else []
+    if isinstance(export.get("unassigned"), dict):
+        buckets.append({"_": export["unassigned"]})
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        for locale_map in bucket.values():
+            if not isinstance(locale_map, dict):
+                continue
+            for locale in locale_map:
+                if locale not in seen:
+                    seen.append(str(locale))
+    return seen
+
+
+def count_modular_untranslated(
+    export: dict[str, Any],
+    *,
+    base_language: str,
+    target_locales: list[str],
+) -> dict[str, int]:
+    counts = {lc: 0 for lc in target_locales}
+    buckets: list[dict[str, Any]] = []
+    modules = export.get("modules") or {}
+    if isinstance(modules, dict):
+        buckets.extend(v for v in modules.values() if isinstance(v, dict))
+    unassigned = export.get("unassigned")
+    if isinstance(unassigned, dict):
+        buckets.append(unassigned)
+    for locale_map in buckets:
+        base_map = _string_map(locale_map.get(base_language))
+        for locale in target_locales:
+            target_map = _string_map(locale_map.get(locale))
+            counts[locale] += sum(
+                1 for key in base_map if not target_map.get(key, "").strip()
+            )
+    return counts
+
+
 def _write_locale_file(path: Path, strings: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -255,86 +444,96 @@ def _write_locale_file_reported(path: Path, strings: dict[str, str]) -> PulledFi
     )
 
 
-def _print_pull_report(reports: list[PulledFileReport], *, output_dir: Path) -> None:
+def _print_pull_report(
+    reports: list[PulledFileReport],
+    *,
+    output_dir: Path,
+    layout: str,
+    stage: str,
+    manifest_written: Path | None = None,
+) -> None:
     if not reports:
         console.print("[yellow]No locale files written.[/yellow]")
         return
 
-    total_keys = sum(len(report.keys) for report in reports)
-    total_new = sum(len(report.new_keys) for report in reports)
-    total_updated = sum(len(report.updated_keys) for report in reports)
+    created = group_pull_changes(reports, output_dir=output_dir, attr="new_keys")
+    updated = group_pull_changes(reports, output_dir=output_dir, attr="updated_keys")
 
-    table = Table(title="Pull summary")
-    table.add_column("Metric")
-    table.add_column("Count", justify="right")
-    table.add_row("Files written", str(len(reports)))
-    table.add_row("Keys pulled", str(total_keys))
-    table.add_row("New keys", str(total_new))
-    table.add_row("Updated keys", str(total_updated))
-    console.print(table)
-
-    for report in reports:
-        rel = report.path.relative_to(output_dir) if report.path.is_relative_to(output_dir) else report.path
-        console.print(
-            f"[green]✓[/green] {rel}  "
-            f"({len(report.keys)} key(s)"
-            f"{f', {len(report.new_keys)} new' if report.new_keys else ''}"
-            f"{f', {len(report.updated_keys)} updated' if report.updated_keys else ''})"
-        )
-
-    console.print(
-        f"\n[bold green]✓[/bold green]  {len(reports)} file(s) written to [bold]{output_dir}[/bold]"
+    details = [layout, stage, f"{len(reports)} files"]
+    _print_report_header("Pull", details)
+    _print_counts(
+        [
+            ("Created", len(created)),
+            ("Updated", len(updated)),
+            ("Files", len(reports)),
+        ]
     )
+    _print_change_section(
+        "Created",
+        created,
+        style="green",
+        hint="New keys in local files.",
+    )
+    _print_change_section(
+        "Updated",
+        updated,
+        style="cyan",
+        hint="Values changed in local files.",
+    )
+
+    if not created and not updated:
+        console.print("\n[green]Local files are already up to date.[/green]")
+    footer = f"Wrote {len(reports)} files to {output_dir}"
+    if manifest_written is not None:
+        footer += f"  ·  manifest {manifest_written.name}"
+    console.print(f"\n[dim]{footer}[/dim]")
 
 
 def _print_push_report(
     *,
     result: dict[str, Any],
-    flat_strings: dict[str, str],
+    local_key_count: int,
     orphans: list[str],
-    layout: str,
-    source_label: str,
+    details: list[str],
     dry_run: bool,
 ) -> None:
     diff = result.get("diff") or {}
-    created_keys: list[str] = diff.get("create", [])
-    updated_keys: list[str] = diff.get("update", [])
-    unchanged_count = max(0, len(flat_strings) - len(created_keys) - len(updated_keys))
+    created = change_items(diff.get("create", []))
+    updated = change_items(diff.get("update", []))
+    orphan_items = change_items(orphans)
+    unchanged_count = max(0, local_key_count - len(created) - len(updated))
 
-    title = f"Push {'(dry run) ' if dry_run else ''}— {layout} — {source_label}"
-    table = Table(title=title)
-    table.add_column("Metric")
-    table.add_column("Count", justify="right")
-    table.add_row("Created", str(len(created_keys)))
-    table.add_row("Updated", str(len(updated_keys)))
-    table.add_row("Unchanged", str(unchanged_count))
-    table.add_row("Total local keys", str(len(flat_strings)))
-    if orphans:
-        table.add_row("[yellow]Orphaned remote keys[/yellow]", str(len(orphans)))
-    console.print(table)
-
-    _print_key_section(
+    _print_report_header("Push", details)
+    counts: list[tuple[str, int]] = [
+        ("Created", len(created)),
+        ("Updated", len(updated)),
+        ("Unchanged", unchanged_count),
+    ]
+    if orphan_items:
+        counts.append(("Orphaned", len(orphan_items)))
+    _print_counts(counts)
+    _print_change_section(
         "Created",
-        created_keys,
+        created,
         style="green",
-        hint="New strings added to TMS.",
+        hint="New strings on TMS.",
     )
-    _print_key_section(
+    _print_change_section(
         "Updated",
-        updated_keys,
+        updated,
         style="cyan",
-        hint="Existing strings with changed base-language text.",
+        hint="Base-language text changed on TMS.",
     )
-    _print_key_section(
-        "Orphaned on TMS",
-        orphans,
+    _print_change_section(
+        "Orphaned",
+        orphan_items,
         style="yellow",
-        hint="Present on TMS but missing from local files (not deleted).",
+        hint="On TMS, missing locally — not deleted.",
     )
 
     if dry_run:
         console.print("\n[dim]Dry run — no changes were saved.[/dim]")
-    elif not created_keys and not updated_keys and not orphans:
+    elif not created and not updated and not orphan_items:
         console.print("\n[green]Everything is already up to date.[/green]")
 
 
@@ -350,6 +549,7 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
     base_language = config.get("base_language", DEFAULT_BASE_LANGUAGE)
     layout = config.get("layout", DEFAULT_LAYOUT)
 
+    pushed_module_slugs: set[str] | None = None
     if layout == "modular":
         modules = scan_modular_base(output_dir, base_language)
         if not modules:
@@ -357,26 +557,28 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
                 f"No module directories with {base_language}.json found in {output_dir}. "
                 "Create at least one module directory or switch to flat layout."
             )
-        flat_strings: dict[str, str] = {}
-        for module_slug, strings in modules.items():
-            for key, value in strings.items():
-                flat_strings[f"{module_slug}.{key}"] = value
-        source_label = f"{output_dir}/*/{base_language}.json  ({len(modules)} module(s))"
-        pushed_module_prefixes = set(modules.keys())
+        payload: dict[str, Any] = build_modular_push_body(modules, base_language)
+        local_key_count = sum(len(strings) for strings in modules.values())
+        details = [layout, f"{len(modules)} modules", base_language]
+        pushed_module_slugs = set(modules.keys())
     else:
         source_path = resolve_push_source(config, None)
         raw = load_json_file(source_path)
         if not isinstance(raw, dict):
             raise typer.Exit("Locale JSON must be a top-level object")
-        flat_strings = parse_locale_json(raw)
-        source_label = str(source_path)
-        pushed_module_prefixes = None
+        strings = parse_locale_json(raw)
+        payload = {"strings": strings}
+        local_key_count = len(strings)
+        details = [layout, str(source_path)]
+
+    if dry_run:
+        details = ["dry run", *details]
 
     with api_client(config) as client:
         try:
             resp = client.post(
                 f"/api/projects/{project_id}/strings/import",
-                json={"strings": flat_strings},
+                json=payload,
                 params={"dry_run": dry_run},
             )
             resp.raise_for_status()
@@ -390,20 +592,20 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
     all_orphans: list[str] = diff.get("orphan", [])
 
     # For modular layout: only report orphans for modules we actually pushed
-    if pushed_module_prefixes is not None:
+    if pushed_module_slugs is not None:
         orphans = [
-            k for k in all_orphans
-            if any(k == mod or k.startswith(f"{mod}.") for mod in pushed_module_prefixes)
+            k
+            for k in all_orphans
+            if any(k == mod or k.startswith(f"{mod}/") for mod in pushed_module_slugs)
         ]
     else:
         orphans = all_orphans
 
     _print_push_report(
         result=result,
-        flat_strings=flat_strings,
+        local_key_count=local_key_count,
         orphans=orphans,
-        layout=layout,
-        source_label=source_label,
+        details=details,
         dry_run=dry_run,
     )
 
@@ -434,6 +636,7 @@ def _do_pull(config: dict[str, Any]) -> None:
     data = resp.json()
     output_dir.mkdir(parents=True, exist_ok=True)
     reports: list[PulledFileReport] = []
+    manifest_written: Path | None = None
 
     if layout == "modular":
         modules = data.get("modules", {})
@@ -462,12 +665,11 @@ def _do_pull(config: dict[str, Any]) -> None:
                 reports.append(_write_locale_file_reported(target, strings))
 
         if write_manifest and manifest:
-            manifest_path = output_dir / "manifest.json"
-            manifest_path.write_text(
+            manifest_written = output_dir / "manifest.json"
+            manifest_written.write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            console.print(f"[green]wrote[/green] {manifest_path}")
 
     else:
         for locale, strings in data.items():
@@ -476,7 +678,13 @@ def _do_pull(config: dict[str, Any]) -> None:
             target = output_dir / f"{locale}.json"
             reports.append(_write_locale_file_reported(target, strings))
 
-    _print_pull_report(reports, output_dir=output_dir)
+    _print_pull_report(
+        reports,
+        output_dir=output_dir,
+        layout=layout,
+        stage=stage,
+        manifest_written=manifest_written,
+    )
 
 
 # ── CLI commands ───────────────────────────────────────────────────────────────
@@ -595,9 +803,16 @@ def sync(
         stage=stage,
         locales=locales.split(",") if locales else None,
     )
-    console.print("[bold]── push ─────────────────────────────────[/bold]")
+    _print_report_header(
+        "Sync",
+        [
+            str(config.get("layout", DEFAULT_LAYOUT)),
+            str(config.get("stage", DEFAULT_STAGE)),
+        ],
+    )
+    _print_phase("Push")
     _do_push(config)
-    console.print("\n[bold]── pull ─────────────────────────────────[/bold]")
+    _print_phase("Pull")
     _do_pull(config)
 
 
@@ -631,7 +846,7 @@ def status(
         try:
             resp = client.get(
                 f"/api/projects/{project_id}/export",
-                params={"layout": "flat", "stage": eff_stage},
+                params={"layout": eff_layout, "stage": eff_stage},
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -639,38 +854,40 @@ def status(
         except httpx.RequestError as exc:
             raise _connection_error("Status fetch", exc) from exc
 
-    remote: dict[str, dict[str, str]] = resp.json()
-    remote_base = remote.get(base_language, {})
-    remote_keys = set(remote_base.keys())
+    export = resp.json()
 
-    # Build local base-language key set
     if eff_layout == "modular":
-        modules_map = scan_modular_base(out, base_language)
-        local_flat: dict[str, str] = {}
-        for module_slug, strings in modules_map.items():
-            for key, value in strings.items():
-                local_flat[f"{module_slug}.{key}"] = value
+        remote_base = collect_modular_remote_keys(export, base_language)
+        local_base = collect_modular_local_keys(out, base_language)
+        locales_to_check = allowed_locales or modular_export_locales(export)
+        target_locales = [lc for lc in locales_to_check if lc != base_language]
+        untranslated = count_modular_untranslated(
+            export,
+            base_language=base_language,
+            target_locales=target_locales,
+        )
     else:
-        local_flat = {}
+        remote: dict[str, dict[str, str]] = export if isinstance(export, dict) else {}
+        remote_base = _string_map(remote.get(base_language))
+        local_base = {}
         src = out / f"{base_language}.json"
         if src.exists():
             raw = load_json_file(src)
             if isinstance(raw, dict):
-                local_flat = {k: v for k, v in raw.items() if isinstance(v, str)}
+                local_base = {k: v for k, v in raw.items() if isinstance(v, str)}
+        locales_to_check = allowed_locales or list(remote.keys())
+        target_locales = [lc for lc in locales_to_check if lc != base_language]
+        untranslated = {}
+        for locale in target_locales:
+            locale_map = _string_map(remote.get(locale))
+            untranslated[locale] = sum(
+                1 for k in remote_base if not locale_map.get(k, "").strip()
+            )
 
-    local_keys = set(local_flat.keys())
+    remote_keys = set(remote_base)
+    local_keys = set(local_base)
     missing = sorted(remote_keys - local_keys)
     orphan = sorted(local_keys - remote_keys)
-
-    locales_to_check: list[str] = allowed_locales or list(remote.keys())
-    target_locales = [lc for lc in locales_to_check if lc != base_language]
-
-    untranslated: dict[str, int] = {}
-    for locale in target_locales:
-        locale_map = remote.get(locale, {})
-        untranslated[locale] = sum(
-            1 for k in remote_keys if not locale_map.get(k, "").strip()
-        )
 
     console.print(
         f"\n[bold]TMS Status[/bold]  project={project_id}"

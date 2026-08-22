@@ -119,7 +119,9 @@ Push base-language strings to TMS.
 
 - **Flat** — reads `{output_dir}/{base_language}.json`
 - **Modular** — scans `{output_dir}/*/{base_language}.json`; derives module
-  slugs from directory names
+  slugs from directory names. Push sends
+  `{ modules: { slug: { locale: { key: value } } } }`. Keys in each file are
+  stored as-is and are **not** prefixed with the folder name.
 
 Orphaned remote keys (present on TMS but absent locally) are **reported but
 never deleted**.
@@ -139,7 +141,8 @@ Pull translations from TMS to local files.
 
 - **Flat** — writes `{output_dir}/{locale}.json`
 - **Modular** — writes `{output_dir}/{module}/{locale}.json` and, when
-  `manifest: true`, `{output_dir}/manifest.json`
+  `manifest: true`, `{output_dir}/manifest.json`. Created/updated keys use the
+  same `module/key` labels as push, with locales listed beside them.
 
 ```
 Options:
@@ -153,7 +156,8 @@ Options:
 ### `tms sync`
 
 Runs `push` then `pull` in one step.  Accepts the same override flags as
-`push`/`pull`.
+`push`/`pull`. Both phases use the same report: header, Created/Updated
+counts, then the changed `module/key` list.
 
 ### `tms status`
 
@@ -179,12 +183,14 @@ accepts it as a `?api_key=` query parameter for back-compat.
 
 ## Locale JSON format
 
-All locale files use flat JSON with string values only:
+All locale files use flat JSON with string values only. In **modular** layout,
+the folder is the module; keys inside the file are not prefixed with that
+folder name:
 
 ```json
 {
-  "auth.sign_in": "Sign in",
-  "common.save": "Save"
+  "auth.email": "Sign in",
+  "password": "Password"
 }
 ```
 

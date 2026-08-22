@@ -920,3 +920,38 @@ def test_xlsx_export_import_roundtrip(client):
     assert r.json()["created"] == 1
     keys = {s["key"] for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
     assert keys == {"hello", "bye"}
+
+
+def test_strings_import_modules_payload_keeps_key_and_module(client):
+    project = _make_project(client, "Modular Push")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "auth.email",
+            "source_text": "Email",
+            "module_id": module["id"],
+        },
+    )
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"modules": {"auth": {"vi": {"auth.email": "Địa chỉ email", "password": "Mật khẩu"}}}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 1
+    assert body["updated"] == 1
+    assert body["diff"]["create"] == ["auth/password"]
+    assert body["diff"]["update"] == ["auth/auth.email"]
+
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s for s in items}
+    assert set(by_key) == {"auth.email", "password"}
+    assert by_key["auth.email"]["source_text"] == "Địa chỉ email"
+    assert by_key["auth.email"]["module_slug"] == "auth"
+    assert by_key["password"]["module_slug"] == "auth"

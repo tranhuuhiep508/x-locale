@@ -7,15 +7,26 @@ from unittest.mock import Mock
 import typer
 
 from tms_cli.main import (
+    ChangeItem,
+    PulledFileReport,
+    UNASSIGNED_SLUG,
     _diff_locale_maps,
     _merge_overrides,
     _parse_api_error,
+    build_modular_push_body,
+    collect_modular_local_keys,
+    collect_modular_remote_keys,
+    count_modular_untranslated,
     default_source_file,
+    file_module_locale,
+    group_pull_changes,
     load_json_file,
+    load_unassigned_base,
     locale_json_from_strings,
     parse_locale_json,
     resolve_push_source,
     scan_modular_base,
+    scoped_key,
 )
 
 
@@ -189,6 +200,124 @@ class DiffLocaleMapsTests(unittest.TestCase):
         added, updated = _diff_locale_maps(old, new)
         self.assertEqual(added, ["sign_up"])
         self.assertEqual(updated, ["sign_in"])
+
+
+class GroupPullChangesTests(unittest.TestCase):
+    def test_groups_locales_under_module_key(self) -> None:
+        root = Path("/tmp/locales")
+        reports = [
+            PulledFileReport(
+                path=root / "auth" / "vi.json",
+                new_keys=["sign_up"],
+                updated_keys=["auth.email"],
+            ),
+            PulledFileReport(
+                path=root / "auth" / "en.json",
+                updated_keys=["auth.email"],
+            ),
+        ]
+        self.assertEqual(
+            group_pull_changes(reports, output_dir=root, attr="new_keys"),
+            [ChangeItem(key="auth/sign_up", extra="vi")],
+        )
+        self.assertEqual(
+            group_pull_changes(reports, output_dir=root, attr="updated_keys"),
+            [ChangeItem(key="auth/auth.email", extra="vi, en")],
+        )
+
+    def test_flat_layout_keeps_bare_key(self) -> None:
+        root = Path("/tmp/locales")
+        reports = [
+            PulledFileReport(path=root / "vi.json", new_keys=["sign_in"]),
+        ]
+        self.assertEqual(file_module_locale(root / "vi.json", root), (None, "vi"))
+        self.assertEqual(
+            group_pull_changes(reports, output_dir=root, attr="new_keys"),
+            [ChangeItem(key="sign_in", extra="vi")],
+        )
+
+
+class ScopedKeyTests(unittest.TestCase):
+    def test_joins_module_and_json_key(self) -> None:
+        self.assertEqual(scoped_key("auth", "auth.email"), "auth/auth.email")
+
+    def test_does_not_encode_dots(self) -> None:
+        self.assertEqual(scoped_key("home", "title"), "home/title")
+
+
+class ModularPushBodyTests(unittest.TestCase):
+    def test_nests_base_language_under_each_module(self) -> None:
+        modules = {
+            "auth": {"auth.email": "Email", "password": "Password"},
+            "home": {"title": "Home"},
+        }
+        self.assertEqual(
+            build_modular_push_body(modules, "vi"),
+            {
+                "modules": {
+                    "auth": {"vi": {"auth.email": "Email", "password": "Password"}},
+                    "home": {"vi": {"title": "Home"}},
+                }
+            },
+        )
+
+
+class ModularStatusHelpersTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _write(self, *parts: str, data: dict) -> None:
+        path = self.root.joinpath(*parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_load_unassigned_base(self) -> None:
+        self._write(UNASSIGNED_SLUG, "vi.json", data={"orphan": "X"})
+        self.assertEqual(load_unassigned_base(self.root, "vi"), {"orphan": "X"})
+
+    def test_collect_local_keys_includes_modules_and_unassigned(self) -> None:
+        self._write("auth", "vi.json", data={"auth.email": "Email"})
+        self._write(UNASSIGNED_SLUG, "vi.json", data={"loose": "Hi"})
+        keys = collect_modular_local_keys(self.root, "vi")
+        self.assertEqual(
+            keys,
+            {"auth/auth.email": "Email", f"{UNASSIGNED_SLUG}/loose": "Hi"},
+        )
+
+    def test_collect_remote_keys_from_modular_export(self) -> None:
+        export = {
+            "modules": {
+                "auth": {
+                    "vi": {"auth.email": "Email"},
+                    "en": {"auth.email": "Email Address"},
+                }
+            },
+            "unassigned": {"vi": {"loose": "Hi"}, "en": {}},
+        }
+        keys = collect_modular_remote_keys(export, "vi")
+        self.assertEqual(
+            keys,
+            {"auth/auth.email": "Email", f"{UNASSIGNED_SLUG}/loose": "Hi"},
+        )
+
+    def test_count_untranslated_walks_modules(self) -> None:
+        export = {
+            "modules": {
+                "auth": {
+                    "vi": {"auth.email": "Email", "password": "Mật khẩu"},
+                    "en": {"auth.email": "Email", "password": ""},
+                }
+            },
+            "unassigned": {"vi": {"loose": "Hi"}, "en": {"loose": ""}},
+        }
+        counts = count_modular_untranslated(
+            export, base_language="vi", target_locales=["en"]
+        )
+        self.assertEqual(counts, {"en": 2})
 
 
 class ParseApiErrorTests(unittest.TestCase):
