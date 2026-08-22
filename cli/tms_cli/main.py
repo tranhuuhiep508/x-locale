@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,15 @@ DEFAULT_OUTPUT_DIR = "./locales"
 DEFAULT_BASE_LANGUAGE = "en"
 DEFAULT_LAYOUT = "flat"
 DEFAULT_STAGE = "draft"
+_KEY_LIST_LIMIT = 100
+
+
+@dataclass
+class PulledFileReport:
+    path: Path
+    keys: list[str] = field(default_factory=list)
+    new_keys: list[str] = field(default_factory=list)
+    updated_keys: list[str] = field(default_factory=list)
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -61,6 +72,85 @@ def api_client(config: dict[str, Any]) -> httpx.Client:
 
 
 # ── JSON / file helpers ────────────────────────────────────────────────────────
+
+# Prettier 3+ (trailingComma: "all") and some editors emit trailing commas in JSON.
+_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+
+
+def load_json_file(path: Path) -> Any:
+    """Load JSON from *path*, tolerating trailing commas from common formatters."""
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(_TRAILING_COMMA_RE.sub(r"\1", text))
+    except json.JSONDecodeError as exc:
+        raise typer.Exit(
+            f"Invalid JSON in {path}: {exc.msg} (line {exc.lineno}, column {exc.colno})"
+        ) from exc
+
+
+def _parse_api_error(response: httpx.Response) -> str:
+    """Extract a human-readable message from a FastAPI error response."""
+    try:
+        body = response.json()
+    except json.JSONDecodeError:
+        text = response.text.strip()
+        return text or f"HTTP {response.status_code}"
+    detail = body.get("detail")
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        parts: list[str] = []
+        for item in detail:
+            if isinstance(item, dict):
+                loc = ".".join(str(part) for part in item.get("loc", ()))
+                msg = item.get("msg", "")
+                parts.append(f"{loc}: {msg}" if loc else msg)
+            else:
+                parts.append(str(item))
+        return "; ".join(parts) if parts else f"HTTP {response.status_code}"
+    if detail is not None:
+        return str(detail)
+    return response.text.strip() or f"HTTP {response.status_code}"
+
+
+def _http_error(action: str, exc: httpx.HTTPStatusError) -> typer.Exit:
+    detail = _parse_api_error(exc.response)
+    return typer.Exit(f"{action} failed ({exc.response.status_code}): {detail}")
+
+
+def _connection_error(action: str, exc: httpx.RequestError) -> typer.Exit:
+    return typer.Exit(f"{action} failed: cannot reach server ({exc})")
+
+
+def _print_key_section(
+    title: str,
+    keys: list[str],
+    *,
+    style: str = "",
+    hint: str = "",
+) -> None:
+    if not keys:
+        return
+    heading = f"{title} ({len(keys)})"
+    if style:
+        console.print(f"\n[{style}]{heading}[/]")
+    else:
+        console.print(f"\n{heading}")
+    if hint:
+        console.print(f"[dim]{hint}[/dim]")
+    shown = sorted(keys)[:_KEY_LIST_LIMIT]
+    for key in shown:
+        console.print(f"  {key}")
+    if len(keys) > _KEY_LIST_LIMIT:
+        console.print(f"  … and {len(keys) - _KEY_LIST_LIMIT} more")
+
+
+def _diff_locale_maps(
+    old: dict[str, str], new: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    added = sorted(set(new) - set(old))
+    updated = sorted(k for k in set(new) & set(old) if old[k] != new[k])
+    return added, updated
 
 
 def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
@@ -132,8 +222,7 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
         base_file = subdir / f"{base_language}.json"
         if not base_file.exists():
             continue
-        with base_file.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_json_file(base_file)
         if not isinstance(data, dict):
             console.print(f"[yellow]Warning:[/yellow] {base_file} is not a JSON object — skipping")
             continue
@@ -147,6 +236,106 @@ def _write_locale_file(path: Path, strings: dict[str, str]) -> None:
         json.dumps(locale_json_from_strings(strings), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_locale_file_reported(path: Path, strings: dict[str, str]) -> PulledFileReport:
+    old_strings: dict[str, str] = {}
+    if path.exists():
+        existing = load_json_file(path)
+        if isinstance(existing, dict):
+            old_strings = {k: v for k, v in existing.items() if isinstance(v, str)}
+
+    new_keys, updated_keys = _diff_locale_maps(old_strings, strings)
+    _write_locale_file(path, strings)
+    return PulledFileReport(
+        path=path,
+        keys=sorted(strings),
+        new_keys=new_keys,
+        updated_keys=updated_keys,
+    )
+
+
+def _print_pull_report(reports: list[PulledFileReport], *, output_dir: Path) -> None:
+    if not reports:
+        console.print("[yellow]No locale files written.[/yellow]")
+        return
+
+    total_keys = sum(len(report.keys) for report in reports)
+    total_new = sum(len(report.new_keys) for report in reports)
+    total_updated = sum(len(report.updated_keys) for report in reports)
+
+    table = Table(title="Pull summary")
+    table.add_column("Metric")
+    table.add_column("Count", justify="right")
+    table.add_row("Files written", str(len(reports)))
+    table.add_row("Keys pulled", str(total_keys))
+    table.add_row("New keys", str(total_new))
+    table.add_row("Updated keys", str(total_updated))
+    console.print(table)
+
+    for report in reports:
+        rel = report.path.relative_to(output_dir) if report.path.is_relative_to(output_dir) else report.path
+        console.print(
+            f"[green]✓[/green] {rel}  "
+            f"({len(report.keys)} key(s)"
+            f"{f', {len(report.new_keys)} new' if report.new_keys else ''}"
+            f"{f', {len(report.updated_keys)} updated' if report.updated_keys else ''})"
+        )
+
+    console.print(
+        f"\n[bold green]✓[/bold green]  {len(reports)} file(s) written to [bold]{output_dir}[/bold]"
+    )
+
+
+def _print_push_report(
+    *,
+    result: dict[str, Any],
+    flat_strings: dict[str, str],
+    orphans: list[str],
+    layout: str,
+    source_label: str,
+    dry_run: bool,
+) -> None:
+    diff = result.get("diff") or {}
+    created_keys: list[str] = diff.get("create", [])
+    updated_keys: list[str] = diff.get("update", [])
+    unchanged_count = max(0, len(flat_strings) - len(created_keys) - len(updated_keys))
+
+    title = f"Push {'(dry run) ' if dry_run else ''}— {layout} — {source_label}"
+    table = Table(title=title)
+    table.add_column("Metric")
+    table.add_column("Count", justify="right")
+    table.add_row("Created", str(len(created_keys)))
+    table.add_row("Updated", str(len(updated_keys)))
+    table.add_row("Unchanged", str(unchanged_count))
+    table.add_row("Total local keys", str(len(flat_strings)))
+    if orphans:
+        table.add_row("[yellow]Orphaned remote keys[/yellow]", str(len(orphans)))
+    console.print(table)
+
+    _print_key_section(
+        "Created",
+        created_keys,
+        style="green",
+        hint="New strings added to TMS.",
+    )
+    _print_key_section(
+        "Updated",
+        updated_keys,
+        style="cyan",
+        hint="Existing strings with changed base-language text.",
+    )
+    _print_key_section(
+        "Orphaned on TMS",
+        orphans,
+        style="yellow",
+        hint="Present on TMS but missing from local files (not deleted).",
+    )
+
+    if dry_run:
+        console.print("\n[dim]Dry run — no changes were saved.[/dim]")
+    elif not created_keys and not updated_keys and not orphans:
+        console.print("\n[green]Everything is already up to date.[/green]")
 
 
 # ── Core logic (shared between commands) ──────────────────────────────────────
@@ -176,8 +365,7 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
         pushed_module_prefixes = set(modules.keys())
     else:
         source_path = resolve_push_source(config, None)
-        with source_path.open("r", encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = load_json_file(source_path)
         if not isinstance(raw, dict):
             raise typer.Exit("Locale JSON must be a top-level object")
         flat_strings = parse_locale_json(raw)
@@ -193,11 +381,9 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise typer.Exit(
-                f"Push failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            raise _http_error("Push", exc) from exc
         except httpx.RequestError as exc:
-            raise typer.Exit(f"Connection error: {exc}") from exc
+            raise _connection_error("Push", exc) from exc
 
     result = resp.json()
     diff = result.get("diff") or {}
@@ -212,25 +398,14 @@ def _do_push(config: dict[str, Any], *, dry_run: bool = False) -> None:
     else:
         orphans = all_orphans
 
-    table = Table(title=f"Push {'(dry run) ' if dry_run else ''}— {layout} — {source_label}")
-    table.add_column("Metric")
-    table.add_column("Count", justify="right")
-    table.add_row("Created", str(result.get("created", 0)))
-    table.add_row("Updated", str(result.get("updated", 0)))
-    table.add_row("Total local keys", str(len(flat_strings)))
-    if orphans:
-        table.add_row("[yellow]Orphaned remote keys[/yellow]", str(len(orphans)))
-    console.print(table)
-
-    if orphans:
-        console.print(
-            f"\n[yellow]⚠  {len(orphans)} remote key(s) not present in local files"
-            " (not deleted — run `tms pull` or delete manually):[/yellow]"
-        )
-        for key in sorted(orphans)[:20]:
-            console.print(f"  {key}")
-        if len(orphans) > 20:
-            console.print(f"  … and {len(orphans) - 20} more")
+    _print_push_report(
+        result=result,
+        flat_strings=flat_strings,
+        orphans=orphans,
+        layout=layout,
+        source_label=source_label,
+        dry_run=dry_run,
+    )
 
 
 def _do_pull(config: dict[str, Any]) -> None:
@@ -252,15 +427,13 @@ def _do_pull(config: dict[str, Any]) -> None:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise typer.Exit(
-                f"Pull failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            raise _http_error("Pull", exc) from exc
         except httpx.RequestError as exc:
-            raise typer.Exit(f"Connection error: {exc}") from exc
+            raise _connection_error("Pull", exc) from exc
 
     data = resp.json()
     output_dir.mkdir(parents=True, exist_ok=True)
-    files_written: list[str] = []
+    reports: list[PulledFileReport] = []
 
     if layout == "modular":
         modules = data.get("modules", {})
@@ -274,9 +447,7 @@ def _do_pull(config: dict[str, Any]) -> None:
                 if allowed_locales and locale not in allowed_locales:
                     continue
                 target = module_dir / f"{locale}.json"
-                _write_locale_file(target, strings)
-                console.print(f"[green]wrote[/green] {target}  ({len(strings)} keys)")
-                files_written.append(str(target))
+                reports.append(_write_locale_file_reported(target, strings))
 
         has_unassigned = any(strings for strings in unassigned.values())
         if has_unassigned:
@@ -288,9 +459,7 @@ def _do_pull(config: dict[str, Any]) -> None:
                 if allowed_locales and locale not in allowed_locales:
                     continue
                 target = unassigned_dir / f"{locale}.json"
-                _write_locale_file(target, strings)
-                console.print(f"[green]wrote[/green] {target}  ({len(strings)} keys)")
-                files_written.append(str(target))
+                reports.append(_write_locale_file_reported(target, strings))
 
         if write_manifest and manifest:
             manifest_path = output_dir / "manifest.json"
@@ -299,20 +468,15 @@ def _do_pull(config: dict[str, Any]) -> None:
                 encoding="utf-8",
             )
             console.print(f"[green]wrote[/green] {manifest_path}")
-            files_written.append(str(manifest_path))
 
     else:
         for locale, strings in data.items():
             if allowed_locales and locale not in allowed_locales:
                 continue
             target = output_dir / f"{locale}.json"
-            _write_locale_file(target, strings)
-            console.print(f"[green]wrote[/green] {target}  ({len(strings)} keys)")
-            files_written.append(str(target))
+            reports.append(_write_locale_file_reported(target, strings))
 
-    console.print(
-        f"\n[bold green]✓[/bold green]  {len(files_written)} file(s) written to [bold]{output_dir}[/bold]"
-    )
+    _print_pull_report(reports, output_dir=output_dir)
 
 
 # ── CLI commands ───────────────────────────────────────────────────────────────
@@ -337,11 +501,9 @@ def init(
             resp.raise_for_status()
             project = resp.json()
         except httpx.HTTPStatusError as exc:
-            raise typer.Exit(
-                f"Bootstrap failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            raise _http_error("Bootstrap", exc) from exc
         except httpx.RequestError as exc:
-            raise typer.Exit(f"Cannot connect to {api_url}: {exc}") from exc
+            raise _connection_error("Bootstrap", exc) from exc
 
     project_id = str(project["id"])
     project_base = project.get("base_language") or base_language
@@ -473,11 +635,9 @@ def status(
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise typer.Exit(
-                f"Status fetch failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            raise _http_error("Status fetch", exc) from exc
         except httpx.RequestError as exc:
-            raise typer.Exit(f"Connection error: {exc}") from exc
+            raise _connection_error("Status fetch", exc) from exc
 
     remote: dict[str, dict[str, str]] = resp.json()
     remote_base = remote.get(base_language, {})
@@ -494,8 +654,7 @@ def status(
         local_flat = {}
         src = out / f"{base_language}.json"
         if src.exists():
-            with src.open("r", encoding="utf-8") as f:
-                raw = json.load(f)
+            raw = load_json_file(src)
             if isinstance(raw, dict):
                 local_flat = {k: v for k, v in raw.items() if isinstance(v, str)}
 

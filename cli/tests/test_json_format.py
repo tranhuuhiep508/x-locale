@@ -2,12 +2,16 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 import typer
 
 from tms_cli.main import (
+    _diff_locale_maps,
     _merge_overrides,
+    _parse_api_error,
     default_source_file,
+    load_json_file,
     locale_json_from_strings,
     parse_locale_json,
     resolve_push_source,
@@ -16,6 +20,12 @@ from tms_cli.main import (
 
 
 class LocaleJsonTests(unittest.TestCase):
+    def test_load_json_file_allows_trailing_comma(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vi.json"
+            path.write_text('{\n  "sign_in": "Đăng nhập",\n}\n', encoding="utf-8")
+            self.assertEqual(load_json_file(path), {"sign_in": "Đăng nhập"})
+
     def test_parse_locale_json(self) -> None:
         data = {"auth.sign_in": "Sign in", "common.save": "Save"}
         self.assertEqual(parse_locale_json(data), data)
@@ -94,6 +104,13 @@ class ScanModularBaseTests(unittest.TestCase):
         self.assertIn("auth", result)
         self.assertEqual(result["auth"], {"sign_in": "Sign in", "sign_out": "Sign out"})
 
+    def test_accepts_trailing_comma_in_module_file(self) -> None:
+        mod_dir = self.root / "auth"
+        mod_dir.mkdir()
+        (mod_dir / "en.json").write_text('{\n  "sign_in": "Sign in",\n}\n', encoding="utf-8")
+        result = scan_modular_base(self.root, "en")
+        self.assertEqual(result, {"auth": {"sign_in": "Sign in"}})
+
     def test_finds_multiple_modules(self) -> None:
         self._make_module("auth", "en", {"key": "val"})
         self._make_module("homepage", "en", {"title": "Home"})
@@ -163,6 +180,40 @@ class MergeOverridesTests(unittest.TestCase):
         merged = _merge_overrides(config, stage="public", layout="modular")
         self.assertEqual(merged["stage"], "public")
         self.assertEqual(merged["layout"], "modular")
+
+
+class DiffLocaleMapsTests(unittest.TestCase):
+    def test_detects_added_and_updated_keys(self) -> None:
+        old = {"sign_in": "Login", "password": "Password"}
+        new = {"sign_in": "Sign in", "password": "Password", "sign_up": "Create account"}
+        added, updated = _diff_locale_maps(old, new)
+        self.assertEqual(added, ["sign_up"])
+        self.assertEqual(updated, ["sign_in"])
+
+
+class ParseApiErrorTests(unittest.TestCase):
+    def test_parses_string_detail(self) -> None:
+        response = Mock()
+        response.status_code = 400
+        response.json.return_value = {"detail": "strings required"}
+        response.text = '{"detail":"strings required"}'
+        self.assertEqual(_parse_api_error(response), "strings required")
+
+    def test_parses_validation_errors(self) -> None:
+        response = Mock()
+        response.status_code = 422
+        response.json.return_value = {
+            "detail": [{"loc": ["body", "strings"], "msg": "field required"}]
+        }
+        response.text = "{}"
+        self.assertIn("field required", _parse_api_error(response))
+
+    def test_falls_back_to_response_text(self) -> None:
+        response = Mock()
+        response.status_code = 500
+        response.json.side_effect = json.JSONDecodeError("err", "doc", 0)
+        response.text = "Internal Server Error"
+        self.assertEqual(_parse_api_error(response), "Internal Server Error")
 
 
 if __name__ == "__main__":
