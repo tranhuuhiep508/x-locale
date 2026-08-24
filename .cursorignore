@@ -1,0 +1,6 @@
+# Secrets — blocked from Agent, Tab, @ mentions, and indexing
+.env
+.env.*
+!.env.example
+*.pem
+*.key

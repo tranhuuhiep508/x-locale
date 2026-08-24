@@ -37,6 +37,12 @@
       "skillPath": "plugins/tanstack-table/skills/tanstack-table/SKILL.md",
       "computedHash": "d5ac71bd795696cd3310165c3ea0e435c310a0ac3c4e9dd45b39ed91b8dbcbb1"
     },
+    "typer": {
+      "source": "fastapi/typer",
+      "sourceType": "github",
+      "skillPath": "typer/.agents/skills/typer/SKILL.md",
+      "computedHash": "f6469c8b58adf1eb290610a01f57dca1fa4ae1d4aedd49e8ee9da871013b2938"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
