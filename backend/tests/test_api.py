@@ -19,6 +19,39 @@ def test_auth_me_dev_bypass(client):
     assert data["email"] == "dev@localhost"
 
 
+def test_auth_me_unauthorized_without_bypass(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", False)
+    monkeypatch.setattr(settings, "oidc_issuer", "")
+    monkeypatch.setattr(settings, "oidc_client_id", "")
+    monkeypatch.setattr(settings, "oidc_client_secret", "")
+    r = client.get("/api/auth/me")
+    assert r.status_code == 401
+
+
+def test_login_503_when_neither_bypass_nor_oidc(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", False)
+    monkeypatch.setattr(settings, "oidc_issuer", "")
+    monkeypatch.setattr(settings, "oidc_client_id", "")
+    monkeypatch.setattr(settings, "oidc_client_secret", "")
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 503
+
+
+def test_bypass_skipped_when_oidc_configured(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", True)
+    monkeypatch.setattr(settings, "oidc_issuer", "https://login.microsoftonline.com/common/v2.0")
+    monkeypatch.setattr(settings, "oidc_client_id", "test-client")
+    monkeypatch.setattr(settings, "oidc_client_secret", "test-secret")
+    r = client.get("/api/auth/me")
+    assert r.status_code == 401
+
+
 def test_create_project_and_string(client):
     r = client.post(
         "/api/projects",

@@ -24,7 +24,7 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 ### Config / auth
 
 - Root `.env` (from `.env.example`) is shared by backend and Vite (`envDir` = repo root).
-- UI auth: session cookie (`tms_session` JWT signed with `TMS_SECRET`). `AUTH_DEV_BYPASS=true` mints a Dev User so no IdP is required locally.
+- UI auth: session cookie (`tms_session` JWT signed with `TMS_SECRET`). Microsoft Entra ID via `OIDC_*` (`/common` = work + personal accounts). `AUTH_DEV_BYPASS=true` mints a Dev User only when OIDC is not configured.
 - CLI/runtime auth: `X-API-Key` (or `?api_key=`). Keys are hashed in `api_keys`; create them in Project Settings.
 - Demo seed: `uv run python -m app.cli seed-demo` creates a Vietnamese-base modular "Demo App" with `auth`/`home`/`common` modules and key `TMS_DEMO_API_KEY`.
 
@@ -42,4 +42,4 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 - Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`).
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
 - CLI: `uv run --project cli python -m unittest discover -s cli/tests`.
-- Validate backend manually: `GET /health`, `GET /api/auth/me` (with bypass), `GET /api/bootstrap` with `X-API-Key`.
+- Validate backend manually: `GET /health`, `GET /api/auth/me` (session cookie, or bypass when OIDC is unset), `GET /api/bootstrap` with `X-API-Key`.

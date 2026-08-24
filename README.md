@@ -34,7 +34,7 @@ npm run dev
 
 - Dashboard: http://localhost:5173
 - API docs: http://localhost:8000/docs
-- Auth: `AUTH_DEV_BYPASS=true` (default) mints a local Dev User — no IdP needed
+- Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
 SQLite (`backend/tms.db`) is the default. Delete it and re-run migrate + seed to reset.
@@ -73,11 +73,50 @@ See [cli/README.md](cli/README.md) for modular vs flat layouts and override flag
 
 | Mode | How |
 |------|-----|
-| UI (session) | OIDC via Authlib, or `AUTH_DEV_BYPASS=true` for local Dev User |
+| UI (session) | Microsoft Entra ID via Authlib (`OIDC_*`). `AUTH_DEV_BYPASS=true` mints a local Dev User only when OIDC is **not** configured |
 | CLI / runtime | Project API key via `X-API-Key` header (or `?api_key=` for back-compat) |
 
 Any authenticated UI user can access all projects (no roles yet). Create and rotate
 keys under **Project → Settings**.
+
+### Microsoft Entra ID (work + personal)
+
+TMS uses the **`/common`** v2 endpoint so both **work/school** and **personal** Microsoft
+accounts (Outlook, Hotmail, Xbox) can sign in. That also allows work accounts from
+**any** Entra tenant, not only yours.
+
+1. Copy `.env.example` to `.env` and set:
+
+   ```
+   AUTH_DEV_BYPASS=false
+   OIDC_ISSUER=https://login.microsoftonline.com/common/v2.0
+   OIDC_CLIENT_ID=<application-client-id>
+   OIDC_CLIENT_SECRET=<client-secret>
+   OIDC_REDIRECT_URL=http://localhost:5173/api/auth/callback
+   ```
+
+   For production (SPA served by FastAPI on port 8000), use
+   `OIDC_REDIRECT_URL=https://<your-host>/api/auth/callback` (or `http://localhost:8000/api/auth/callback` locally).
+
+2. Create an app registration in [Entra ID → App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade):
+   1. **New registration**, name e.g. `TMS`
+   2. Supported accounts: **Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant) and personal Microsoft accounts**
+   3. Platform: **Web** (confidential/server-side — not SPA)
+   4. Redirect URIs (exact match):
+      - `http://localhost:5173/api/auth/callback` (local Vite)
+      - `http://localhost:8000/api/auth/callback` (optional, API-only / prod-compose)
+      - your production HTTPS callback when you have it
+   5. **Certificates & secrets** → New client secret → `OIDC_CLIENT_SECRET`
+   6. Overview → **Application (client) ID** → `OIDC_CLIENT_ID`
+   7. Token configuration → optional ID-token claim **email** (TMS still falls back to UPN / `preferred_username`)
+   8. API permissions: delegated Microsoft Graph `openid`, `profile`, `email`
+
+   `http://localhost` redirects are allowed for development. If the app was first created as single-tenant, switch **Authentication → Supported account types** (or manifest `signInAudience` to `AzureADandPersonalMicrosoftAccount`) and keep `OIDC_ISSUER` on `/common`, not `{tenant-id}`.
+
+3. Start backend then frontend, open http://localhost:5173 → **Continue with Microsoft**.
+
+Logout clears the TMS session cookie only (you stay signed into Microsoft). Do not
+commit client IDs or secrets.
 
 ## Concepts
 
@@ -111,8 +150,10 @@ See [.env.example](.env.example). Notable vars:
 | Var | Purpose |
 |-----|---------|
 | `TMS_SECRET` | Signs session JWTs |
-| `AUTH_DEV_BYPASS` | Local UI without OIDC |
-| `OIDC_*` | Generic OIDC provider |
+| `AUTH_DEV_BYPASS` | Local Dev User when OIDC is unset. Ignored once `OIDC_*` is filled |
+| `OIDC_ISSUER` | Entra discovery base (`https://login.microsoftonline.com/common/v2.0`) |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Entra app registration credentials |
+| `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
 | `TMS_DEMO_API_KEY` | Seeded demo project key |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Optional pruning of append-only activity log |
