@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from app.models import ProjectLayout, TranslationStatus
 
-
 # ── Auth ──────────────────────────────────────────────────────────────
 
 
@@ -236,6 +235,37 @@ class TranslatePreviewRequest(BaseModel):
 
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
+
+
+class TranslateProposalItem(BaseModel):
+    string_id: UUID
+    key: str
+    source_text: str
+    status: str
+    description: str | None = None
+    translations: dict[str, str]
+
+
+class TranslateProposalsResult(BaseModel):
+    locales: list[str]
+    items: list[TranslateProposalItem]
+    job_id: UUID | None = None
+
+
+class TranslateApplyItem(BaseModel):
+    string_id: UUID
+    translations: dict[str, str]
+    description: str | None = None
+
+
+class TranslateApplyRequest(BaseModel):
+    items: list[TranslateApplyItem]
+
+
+class TranslateApplyResult(BaseModel):
+    translated_count: int
+    batch_id: UUID
+    locales: list[str]
 
 
 class JobOut(BaseModel):

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_scopes: str = "openid email profile"
-    oidc_redirect_url: str = "http://localhost:8000/api/auth/callback"
+    oidc_redirect_url: str = "http://localhost:5173/api/auth/callback"
     auth_dev_bypass: bool = True
 
     # Optional retention for append-only activity log (0 = keep forever)
@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     @property
     def oidc_configured(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret)
+
+    @property
+    def dev_bypass_active(self) -> bool:
+        """Mint Dev User only when bypass is on and OIDC is not configured."""
+        return self.auth_dev_bypass and not self.oidc_configured
 
 
 settings = Settings()

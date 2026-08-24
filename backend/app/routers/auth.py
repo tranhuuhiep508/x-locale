@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy.orm import Session
+from typing import Annotated
+
 import httpx
 from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.orm import Session
 
-from app.auth import current_user, get_or_create_dev_user
+from app.auth import CurrentUser, get_or_create_dev_user
 from app.config import settings
 from app.database import get_db
 from app.models import User
+from app.oidc import OidcProfileError, map_oidc_profile, oidc_iss_claims_options
 from app.schemas import UserOut
 from app.services.auth import clear_session, login_redirect, upsert_oidc_user
 
@@ -25,14 +28,19 @@ def _configure_oauth() -> None:
             name="oidc",
             client_id=settings.oidc_client_id,
             client_secret=settings.oidc_client_secret,
-            server_metadata_url=f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration",
-            client_kwargs={"scope": settings.oidc_scopes},
+            server_metadata_url=(
+                f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+            ),
+            client_kwargs={
+                "scope": settings.oidc_scopes,
+                "token_endpoint_auth_method": "client_secret_post",
+            },
         )
 
 
 @router.get("/login")
-async def login(request: Request, db: Session = Depends(get_db)):
-    if settings.auth_dev_bypass and not settings.oidc_configured:
+async def login(request: Request, db: Annotated[Session, Depends(get_db)]):
+    if settings.dev_bypass_active:
         user = get_or_create_dev_user(db)
         db.commit()
         return login_redirect(user)
@@ -46,13 +54,16 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/callback")
-async def callback(request: Request, db: Session = Depends(get_db)):
+async def callback(request: Request, db: Annotated[Session, Depends(get_db)]):
     if not settings.oidc_configured:
         raise HTTPException(status_code=503, detail="OIDC is not configured")
 
     _configure_oauth()
     try:
-        token = await oauth.oidc.authorize_access_token(request)
+        token = await oauth.oidc.authorize_access_token(
+            request,
+            claims_options=oidc_iss_claims_options(settings.oidc_issuer),
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"OIDC callback failed: {exc}") from exc
 
@@ -67,19 +78,18 @@ async def callback(request: Request, db: Session = Depends(get_db)):
             resp.raise_for_status()
             userinfo = resp.json()
 
-    issuer = settings.oidc_issuer.rstrip("/")
-    sub = userinfo["sub"]
-    email = userinfo.get("email") or f"{sub}@unknown"
-    name = userinfo.get("name") or userinfo.get("preferred_username") or email
-    avatar = userinfo.get("picture")
+    try:
+        profile = map_oidc_profile(userinfo, configured_issuer=settings.oidc_issuer)
+    except OidcProfileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     user = upsert_oidc_user(
         db,
-        issuer=issuer,
-        sub=sub,
-        email=email,
-        name=name,
-        avatar=avatar,
+        issuer=profile.issuer,
+        sub=profile.sub,
+        email=profile.email,
+        name=profile.name,
+        avatar=profile.avatar,
     )
     return login_redirect(user)
 
@@ -91,5 +101,5 @@ def logout(response: Response) -> dict[str, str]:
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(current_user)) -> User:
+def me(user: CurrentUser) -> User:
     return user

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
 
 from app.ai import TranslateItem, translate_batch
 from app.database import SessionLocal
-from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation
-from app.schemas import TranslateRequest
+from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation, TranslationStatus
+from app.schemas import TranslateApplyItem, TranslateRequest
 
 SYNC_THRESHOLD = 20
 
@@ -127,6 +128,110 @@ def preview_translations(
     return result.get("preview") or {}
 
 
+def _status_str(entry: StringEntry) -> str:
+    status = entry.status
+    if isinstance(status, TranslationStatus):
+        return status.value
+    return str(status)
+
+
+def _proposal_dict(entry: StringEntry, translations: dict[str, str]) -> dict[str, Any]:
+    return {
+        "string_id": str(entry.id),
+        "key": entry.key,
+        "source_text": entry.source_text,
+        "status": _status_str(entry),
+        "description": entry.description,
+        "translations": translations,
+    }
+
+
+def list_missing_items(
+    entries: list[StringEntry],
+    locales: list[str],
+    overwrite: bool,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for entry in entries:
+        needed = needed_locales(entry, locales, overwrite)
+        if not needed:
+            continue
+        items.append(_proposal_dict(entry, {locale: "" for locale in needed}))
+    return items
+
+
+def propose_translations(
+    project: Project,
+    entries: list[StringEntry],
+    locales: list[str],
+    overwrite: bool,
+) -> list[dict[str, Any]]:
+    items = work_items(entries, locales, overwrite)
+    if not items:
+        return []
+
+    results = translate_batch(project.base_language, items)
+    by_id = {str(entry.id): entry for entry in entries}
+    proposals: list[dict[str, Any]] = []
+    for item in items:
+        entry = by_id.get(item.id)
+        if entry is None:
+            continue
+        locale_map = results.get(item.id) or {}
+        translations: dict[str, str] = {}
+        for locale in item.locales:
+            value = locale_map.get(locale)
+            if not value or not value.strip():
+                continue
+            translations[locale] = value
+        if not translations:
+            continue
+        proposals.append(_proposal_dict(entry, translations))
+    return proposals
+
+
+def commit_proposals(
+    db: Session,
+    project: Project,
+    items: list[TranslateApplyItem],
+) -> tuple[int, list[str]]:
+    if not items:
+        return 0, []
+
+    allowed = set(project.target_languages)
+    ids = [item.string_id for item in items]
+    entries = (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.translations))
+        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids))
+        .all()
+    )
+    by_id = {entry.id: entry for entry in entries}
+    translated = 0
+    locales_written: list[str] = []
+    seen_locales: set[str] = set()
+    for item in items:
+        entry = by_id.get(item.string_id)
+        if entry is None:
+            continue
+        if item.description is not None:
+            entry.description = item.description.strip() or None
+        for locale, value in item.translations.items():
+            if locale not in allowed:
+                continue
+            if not value or not value.strip():
+                continue
+            translation = _ensure_translation(db, entry, locale)
+            if translation.value.strip():
+                continue
+            translation.value = value
+            translated += 1
+            if locale not in seen_locales:
+                seen_locales.add(locale)
+                locales_written.append(locale)
+    return translated, locales_written
+
+
 def run_translate_job(
     project_id: uuid.UUID,
     entry_ids: list[uuid.UUID],
@@ -184,6 +289,55 @@ def run_translate_job(
                     failed.commit()
             finally:
                 failed.close()
+        raise
+    finally:
+        db.close()
+
+
+def run_propose_job(
+    project_id: uuid.UUID,
+    entry_ids: list[uuid.UUID],
+    locales: list[str],
+    overwrite: bool,
+    job_id: uuid.UUID,
+) -> None:
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = JobStatus.running
+
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            return
+
+        entries = (
+            db.query(StringEntry)
+            .options(joinedload(StringEntry.translations))
+            .filter(StringEntry.id.in_(entry_ids))
+            .all()
+        )
+        items = propose_translations(project, entries, locales, overwrite)
+
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = JobStatus.completed
+            job.result = {"locales": locales, "items": items}
+            job.completed_at = datetime.now(UTC)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        failed = SessionLocal()
+        try:
+            job = failed.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = JobStatus.failed
+                job.error = str(exc)
+                job.completed_at = datetime.now(UTC)
+                failed.commit()
+        finally:
+            failed.close()
         raise
     finally:
         db.close()

@@ -19,6 +19,11 @@ import {
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { FilterPill, StringRow } from '@/features/strings/StringRow'
+import {
+  TranslateReviewDialog,
+  jobStillRunning,
+  proposalsFromJobResult,
+} from '@/features/strings/TranslateReviewDialog'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
@@ -41,8 +46,14 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
+import { jobsApi } from '@/lib/api/jobs'
 import { stringsApi } from '@/lib/api/strings'
-import type { BatchRequest, StringEntry, TranslateRequest } from '@/lib/api/types'
+import type {
+  BatchRequest,
+  StringEntry,
+  TranslateProposalItem,
+  TranslateRequest,
+} from '@/lib/api/types'
 import {
   modulesQuery,
   projectQuery,
@@ -70,6 +81,11 @@ export function StringsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
+  const [dialogAutoPreview, setDialogAutoPreview] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [proposalJobId, setProposalJobId] = useState<string | null>(null)
+  const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
+  const [proposalsReady, setProposalsReady] = useState(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -124,18 +140,117 @@ export function StringsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Batch action failed'),
   })
 
-  const translateMut = useMutation({
-    mutationFn: (req: TranslateRequest) => stringsApi.translate(projectId, req),
+  const missingMut = useMutation({
+    mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
     onSuccess: (res) => {
-      if (res.translated_count > 0) {
-        toast.success(`Translating ${res.translated_count} string(s)…`)
-      } else {
-        toast.info('Nothing to translate')
+      setProposalItems(res.items)
+      setProposalsReady(false)
+    },
+    onError: () => toast.error('Failed to load missing translations'),
+  })
+
+  const proposeMut = useMutation({
+    mutationFn: (req: TranslateRequest) => stringsApi.translateProposals(projectId, req),
+    onSuccess: (res) => {
+      if (res.job_id) {
+        setProposalJobId(res.job_id)
+        return
       }
-      invalidateStrings()
+      setProposalItems(res.items)
+      setProposalsReady(true)
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
   })
+
+  const previewItemsMut = useMutation({
+    mutationFn: async (items: TranslateProposalItem[]) => {
+      const next = await Promise.all(
+        items.map(async (item) => {
+          const locales = Object.keys(item.translations)
+          if (locales.length === 0) return item
+          const res = await stringsApi.translatePreview(projectId, {
+            source_text: item.source_text,
+            description: item.description?.trim() || undefined,
+            locales,
+          })
+          const translations = { ...item.translations }
+          for (const locale of locales) {
+            const value = res.translations[locale]
+            if (value?.trim()) translations[locale] = value
+          }
+          return { ...item, translations }
+        }),
+      )
+      return next
+    },
+    onSuccess: (items) => {
+      setProposalItems(items)
+      setProposalsReady(true)
+    },
+    onError: () => toast.error('Translation failed — check Bedrock credentials'),
+  })
+
+  const proposalJobQuery = useQuery({
+    queryKey: queryKeys.jobs.detail(proposalJobId ?? ''),
+    queryFn: () => jobsApi.get(proposalJobId!),
+    enabled: Boolean(proposalJobId),
+    refetchInterval: (query) =>
+      jobStillRunning(query.state.data) ? 1000 : false,
+  })
+
+  const acceptJobResult = useEffectEvent((job: NonNullable<typeof proposalJobQuery.data>) => {
+    if (job.status === 'completed') {
+      setProposalItems(proposalsFromJobResult(job.result))
+      setProposalsReady(true)
+      setProposalJobId(null)
+    }
+  })
+
+  useEffect(() => {
+    const job = proposalJobQuery.data
+    if (!proposalJobId || !job) return
+    if (job.status === 'completed') acceptJobResult(job)
+  }, [proposalJobId, proposalJobQuery.data])
+
+  const applyMut = useMutation({
+    mutationFn: (items: TranslateProposalItem[]) =>
+      stringsApi.translateApply(projectId, {
+        items: items.map((item) => ({
+          string_id: item.string_id,
+          translations: item.translations,
+          description: item.description ?? '',
+        })),
+      }),
+    onSuccess: (res) => {
+      toast.success(`Filled ${res.translated_count} empty translation(s)`)
+      setReviewOpen(false)
+      setProposalJobId(null)
+      setProposalItems([])
+      setProposalsReady(false)
+      proposeMut.reset()
+      missingMut.reset()
+      previewItemsMut.reset()
+      invalidateStrings()
+    },
+    onError: () => toast.error('Failed to save translations'),
+  })
+
+  function closeReview() {
+    if (applyMut.isPending || proposeMut.isPending || previewItemsMut.isPending) return
+    setReviewOpen(false)
+    setProposalJobId(null)
+    setProposalItems([])
+    setProposalsReady(false)
+    proposeMut.reset()
+    missingMut.reset()
+    previewItemsMut.reset()
+  }
+
+  function openEditor(entry: StringEntry | null, autoPreview = false) {
+    setDialogEntry(entry)
+    setDialogAutoPreview(autoPreview)
+    setDialogOpen(true)
+  }
 
   function setFilter(updates: Partial<StringsSearch>) {
     startTransition(() => {
@@ -146,6 +261,21 @@ export function StringsPage() {
   const strings = stringsResult.data?.items ?? []
   const total = stringsResult.data?.total ?? 0
   const targetLocales = project?.target_languages ?? []
+  const reviewItems = proposalItems
+  const reviewGenerating =
+    proposeMut.isPending ||
+    previewItemsMut.isPending ||
+    (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
+  const reviewError =
+    missingMut.error instanceof Error
+      ? missingMut.error.message
+      : proposeMut.error instanceof Error
+        ? proposeMut.error.message
+        : previewItemsMut.error instanceof Error
+          ? previewItemsMut.error.message
+          : proposalJobQuery.data?.status === 'failed'
+            ? proposalJobQuery.data.error ?? 'Translation job failed'
+            : null
   const hasActiveFilters = Boolean(
     search.q || search.module || search.tag || search.status || search.missing_locale,
   )
@@ -292,21 +422,26 @@ export function StringsPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() =>
-              translateMut.mutate({ scope: 'missing', locales: targetLocales })
-            }
-            disabled={translateMut.isPending}
+            onClick={() => {
+              setProposalItems([])
+              setProposalJobId(null)
+              setProposalsReady(false)
+              setReviewOpen(true)
+              missingMut.mutate({ scope: 'missing', locales: targetLocales })
+            }}
+            disabled={missingMut.isPending || reviewOpen}
           >
-            {translateMut.isPending ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+            {missingMut.isPending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Wand2 data-icon="inline-start" />
+            )}
             Translate missing
           </Button>
 
           <Button
             size="sm"
-            onClick={() => {
-              setDialogEntry(null)
-              setDialogOpen(true)
-            }}
+            onClick={() => openEditor(null)}
           >
             <Plus data-icon="inline-start" />
             Add string
@@ -380,10 +515,7 @@ export function StringsPage() {
             action={
               !hasActiveFilters ? (
                 <Button
-                  onClick={() => {
-                    setDialogEntry(null)
-                    setDialogOpen(true)
-                  }}
+                  onClick={() => openEditor(null)}
                 >
                   <Plus data-icon="inline-start" />
                   Add string
@@ -423,18 +555,9 @@ export function StringsPage() {
                   targetLocales={targetLocales}
                   selected={selectedIds.has(s.id)}
                   onToggle={() => toggleRow(s.id)}
-                  onEdit={() => {
-                    setDialogEntry(s)
-                    setDialogOpen(true)
-                  }}
+                  onEdit={() => openEditor(s)}
                   onRefresh={invalidateStrings}
-                  onTranslate={(id) =>
-                    translateMut.mutate({
-                      scope: 'strings',
-                      string_ids: [id],
-                      locales: targetLocales,
-                    })
-                  }
+                  onTranslate={() => openEditor(s, true)}
                 />
               ))}
             </TableBody>
@@ -456,24 +579,46 @@ export function StringsPage() {
       {dialogOpen && (
         <Suspense fallback={null}>
           <StringFormDialog
-            key={dialogEntry?.id ?? 'new'}
+            key={`${dialogEntry?.id ?? 'new'}-${dialogAutoPreview ? 'ai' : 'edit'}`}
             projectId={projectId}
             entry={dialogEntry}
             modules={modules}
             tags={tags}
             targetLocales={targetLocales}
+            autoPreview={dialogAutoPreview}
             onClose={() => {
               setDialogOpen(false)
               setDialogEntry(null)
+              setDialogAutoPreview(false)
             }}
             onSuccess={() => {
               setDialogOpen(false)
               setDialogEntry(null)
+              setDialogAutoPreview(false)
               invalidateStrings()
             }}
           />
         </Suspense>
       )}
+
+      <TranslateReviewDialog
+        open={reviewOpen}
+        loadingQueue={missingMut.isPending}
+        generating={reviewGenerating}
+        applying={applyMut.isPending}
+        generated={proposalsReady}
+        error={reviewError}
+        items={reviewItems}
+        onClose={closeReview}
+        onTranslate={(items) => {
+          if (proposalsReady || items.length === 1) {
+            previewItemsMut.mutate(items)
+            return
+          }
+          proposeMut.mutate({ scope: 'missing', locales: targetLocales })
+        }}
+        onApply={(items) => applyMut.mutate(items)}
+      />
 
       <BatchMoveDialog
         open={showMoveModule}

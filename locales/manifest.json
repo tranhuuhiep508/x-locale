@@ -1,0 +1,17 @@
+{
+  "modules": [
+    "auth",
+    "common",
+    "draft",
+    "home"
+  ],
+  "locales": [
+    "vi",
+    "en",
+    "ja",
+    "ko",
+    "zh"
+  ],
+  "base_language": "vi",
+  "content_hash": "97d6c7f3235e1134a0051d0715a800b96fca74b58977fc331832eeec0b83c66e"
+}

@@ -14,13 +14,22 @@ from app.models import Module, Project, StringEntry, Tag, Translation, Translati
 from app.schemas import ImportDiff, ImportResult
 
 
-def build_workbook(project: Project, entries: list[StringEntry], stage: str) -> bytes:
+def build_workbook(
+    project: Project,
+    entries: list[StringEntry],
+    stage: str,
+    locale: str | None = None,
+) -> bytes:
     wb = Workbook()
     # Remove default sheet
     default = wb.active
     wb.remove(default)
 
     locales = [project.base_language, *project.target_languages]
+    if locale:
+        if locale not in locales:
+            raise ValueError(f"Unknown locale '{locale}'")
+        locales = [locale]
     by_module: dict[str | None, list[StringEntry]] = {}
     for e in entries:
         key = e.module.slug if e.module else None

@@ -2,124 +2,249 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-
-
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  --background: oklch(0.9821 0 0);
-  --foreground: oklch(0.2435 0 0);
-  --card: oklch(0.9911 0 0);
-  --card-foreground: oklch(0.2435 0 0);
-  --popover: oklch(0.9911 0 0);
-  --popover-foreground: oklch(0.2435 0 0);
-  --primary: oklch(0.4341 0.0392 41.9938);
-  --primary-foreground: oklch(1.0000 0 0);
-  --secondary: oklch(0.9200 0.0651 74.3695);
-  --secondary-foreground: oklch(0.3499 0.0685 40.8288);
-  --muted: oklch(0.9521 0 0);
-  --muted-foreground: oklch(0.5032 0 0);
-  --accent: oklch(0.9310 0 0);
-  --accent-foreground: oklch(0.2435 0 0);
-  --destructive: oklch(0.6271 0.1936 33.3390);
-  --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.8822 0 0);
-  --input: oklch(0.8822 0 0);
-  --ring: oklch(0.4341 0.0392 41.9938);
-  --chart-1: oklch(0.4341 0.0392 41.9938);
-  --chart-2: oklch(0.9200 0.0651 74.3695);
-  --chart-3: oklch(0.9310 0 0);
-  --chart-4: oklch(0.9367 0.0523 75.5009);
-  --chart-5: oklch(0.4338 0.0437 41.6746);
-  --sidebar: oklch(0.9881 0 0);
-  --sidebar-foreground: oklch(0.2645 0 0);
-  --sidebar-primary: oklch(0.3250 0 0);
-  --sidebar-primary-foreground: oklch(0.9881 0 0);
-  --sidebar-accent: oklch(0.9761 0 0);
-  --sidebar-accent-foreground: oklch(0.3250 0 0);
-  --sidebar-border: oklch(0.9401 0 0);
-  --sidebar-ring: oklch(0.7731 0 0);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+/* ---------------------------------------------------------------------------
+   ATMOSPHERE — primitives
+
+   Two ramps, both derived from sky.
+
+   `azure`  the sky itself. Hue drifts 228 -> 252 as it darkens, the way real
+            sky shifts from pale cyan at the horizon to a deeper, violet-leaning
+            blue at the zenith.
+   `haze`   the neutrals. Not grey: sky-tinted, with chroma peaking mid-ramp
+            because atmospheric haze is strongest at middle distance. Anything
+            that recedes in the UI picks up more sky, the same way distant
+            objects do.
+
+   Every foreground/background pair built from these ramps is verified against
+   WCAG AA (4.5:1 text, 3:1 non-text). Do not lighten `azure-600`, `haze-500`,
+   `--input`, or `--ring` without re-checking.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --color-azure-50: oklch(0.976 0.014 228);
+  --color-azure-100: oklch(0.952 0.03 230);
+  --color-azure-200: oklch(0.906 0.055 232);
+  --color-azure-300: oklch(0.845 0.086 234);
+  --color-azure-400: oklch(0.755 0.126 236);
+  --color-azure-500: oklch(0.64 0.165 239);
+  --color-azure-600: oklch(0.543 0.158 242);
+  --color-azure-700: oklch(0.468 0.14 245);
+  --color-azure-800: oklch(0.392 0.115 247);
+  --color-azure-900: oklch(0.328 0.088 249);
+  --color-azure-950: oklch(0.222 0.062 252);
+
+  --color-haze-50: oklch(0.985 0.003 240);
+  --color-haze-100: oklch(0.968 0.005 240);
+  --color-haze-200: oklch(0.921 0.009 241);
+  --color-haze-300: oklch(0.871 0.012 242);
+  --color-haze-400: oklch(0.7 0.017 245);
+  --color-haze-500: oklch(0.54 0.021 247);
+  --color-haze-600: oklch(0.462 0.021 248);
+  --color-haze-700: oklch(0.385 0.02 249);
+  --color-haze-800: oklch(0.292 0.019 250);
+  --color-haze-900: oklch(0.222 0.017 251);
+  --color-haze-950: oklch(0.162 0.015 252);
+
+  /* Light that has passed through sky, used for text on saturated fills. */
+  --color-sun: oklch(0.99 0.006 230);
+
+  /* Sunset red — the one warm hue the sky is allowed. */
+  --color-ember-500: oklch(0.555 0.19 27);
+  --color-ember-400: oklch(0.66 0.185 27);
+
+  /* Geist carries Vietnamese, Cyrillic and Latin-Extended, which this product
+     needs for source and target text. IBM Plex Mono is deliberately a different
+     voice: sans is what humans wrote, mono is what the system knows. */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --radius: 0.5rem;
-  --shadow-x: 0;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.1;
-  --shadow-color: oklch(0 0 0);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
-  --tracking-normal: 0em;
-  --spacing: 0.25rem;
-  --shadow-offset-x: 0;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
+
+  --ease-drift: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.dark {
-  --background: oklch(0.1776 0 0);
-  --foreground: oklch(0.9491 0 0);
-  --card: oklch(0.2134 0 0);
-  --card-foreground: oklch(0.9491 0 0);
-  --popover: oklch(0.2134 0 0);
-  --popover-foreground: oklch(0.9491 0 0);
-  --primary: oklch(0.9247 0.0524 66.1732);
-  --primary-foreground: oklch(0.2029 0.0240 200.1962);
-  --secondary: oklch(0.3163 0.0190 63.6992);
-  --secondary-foreground: oklch(0.9247 0.0524 66.1732);
-  --muted: oklch(0.2520 0 0);
-  --muted-foreground: oklch(0.7699 0 0);
-  --accent: oklch(0.2850 0 0);
-  --accent-foreground: oklch(0.9491 0 0);
-  --destructive: oklch(0.6271 0.1936 33.3390);
-  --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.2351 0.0115 91.7467);
-  --input: oklch(0.4017 0 0);
-  --ring: oklch(0.9247 0.0524 66.1732);
-  --chart-1: oklch(0.9247 0.0524 66.1732);
-  --chart-2: oklch(0.3163 0.0190 63.6992);
-  --chart-3: oklch(0.2850 0 0);
-  --chart-4: oklch(0.3481 0.0219 67.0001);
-  --chart-5: oklch(0.9245 0.0533 67.0855);
-  --sidebar: oklch(0.2103 0.0059 285.8852);
-  --sidebar-foreground: oklch(0.9674 0.0013 286.3752);
-  --sidebar-primary: oklch(0.4882 0.2172 264.3763);
-  --sidebar-primary-foreground: oklch(1.0000 0 0);
-  --sidebar-accent: oklch(0.2739 0.0055 286.0326);
-  --sidebar-accent-foreground: oklch(0.9674 0.0013 286.3752);
-  --sidebar-border: oklch(0.2739 0.0055 286.0326);
-  --sidebar-ring: oklch(0.8711 0.0055 286.2860);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+/* ---------------------------------------------------------------------------
+   DAYLIGHT — the light theme
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --background: var(--color-haze-50);
+  --foreground: var(--color-haze-900);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--color-haze-900);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--color-haze-900);
+
+  --primary: var(--color-azure-600);
+  --primary-foreground: var(--color-sun);
+  --secondary: var(--color-haze-100);
+  --secondary-foreground: var(--color-haze-800);
+  --muted: var(--color-haze-100);
+  --muted-foreground: var(--color-haze-500);
+
+  /* Hover and selection wash skyward rather than grey. */
+  --accent: var(--color-azure-50);
+  --accent-foreground: var(--color-azure-800);
+
+  --destructive: var(--color-ember-500);
+  --destructive-foreground: oklch(0.985 0.01 27);
+
+  /* `border` divides, `input` bounds an interactive control — so `input` is
+     deliberately heavier and clears 3:1 on card. */
+  --border: var(--color-haze-200);
+  --input: oklch(0.652 0.017 245);
+  --ring: var(--color-azure-500);
+
+  /* Translation lifecycle. Draft is overcast, public is clear sky, missing is
+     an absence rather than an error. */
+  --draft: var(--color-haze-100);
+  --draft-foreground: var(--color-haze-600);
+  --public: var(--color-azure-50);
+  --public-foreground: var(--color-azure-700);
+  --missing: transparent;
+  --missing-foreground: var(--color-haze-500);
+
+  /* One sky, sampled across a day: zenith, daylight, dawn, dusk, night. */
+  --chart-1: var(--color-azure-600);
+  --chart-2: oklch(0.7 0.132 208);
+  --chart-3: oklch(0.76 0.128 72);
+  --chart-4: oklch(0.56 0.15 300);
+  --chart-5: oklch(0.4 0.11 258);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: var(--color-haze-800);
+  --sidebar-primary: var(--color-azure-600);
+  --sidebar-primary-foreground: var(--color-sun);
+  --sidebar-accent: var(--color-azure-50);
+  --sidebar-accent-foreground: var(--color-azure-800);
+  --sidebar-border: var(--color-haze-200);
+  --sidebar-ring: var(--color-azure-500);
+
+  /* Shade outdoors is lit by the sky, so it is blue. Never black.
+     Held as bare oklch components so opacity can vary per step. */
+  --shadow-color: 0.328 0.088 249;
+  --shadow-2xs: 0 1px 2px 0 oklch(var(--shadow-color) / 0.04);
+  --shadow-xs: 0 1px 2px 0 oklch(var(--shadow-color) / 0.06);
+  --shadow-sm: 0 1px 2px -1px oklch(var(--shadow-color) / 0.1),
+    0 1px 3px 0 oklch(var(--shadow-color) / 0.06);
+  --shadow: 0 1px 3px 0 oklch(var(--shadow-color) / 0.08),
+    0 2px 6px -1px oklch(var(--shadow-color) / 0.08);
+  --shadow-md: 0 2px 4px -2px oklch(var(--shadow-color) / 0.08),
+    0 4px 10px -2px oklch(var(--shadow-color) / 0.1);
+  --shadow-lg: 0 4px 8px -4px oklch(var(--shadow-color) / 0.08),
+    0 10px 22px -4px oklch(var(--shadow-color) / 0.12);
+  --shadow-xl: 0 8px 16px -8px oklch(var(--shadow-color) / 0.1),
+    0 20px 40px -8px oklch(var(--shadow-color) / 0.14);
+  --shadow-2xl: 0 24px 60px -12px oklch(var(--shadow-color) / 0.22);
+
+  /* Signature: the horizon. A hairline that is only sky in the middle. */
+  --horizon: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--color-azure-200) 12%,
+    var(--color-azure-400) 36%,
+    var(--color-azure-500) 50%,
+    var(--color-azure-400) 64%,
+    var(--color-azure-200) 88%,
+    transparent 100%
+  );
+
   --radius: 0.5rem;
-  --shadow-x: 0;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.1;
-  --shadow-color: oklch(0 0 0);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
-  --shadow-offset-x: 0;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
+  --tracking-normal: -0.01em;
   --spacing: 0.25rem;
 }
+
+/* ---------------------------------------------------------------------------
+   NIGHTFALL — the dark theme
+
+   Civil twilight, not a switched-off screen: the background keeps its blue.
+--------------------------------------------------------------------------- */
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.168 0.019 252);
+  --foreground: oklch(0.93 0.012 240);
+  --card: oklch(0.208 0.021 252);
+  --card-foreground: oklch(0.93 0.012 240);
+  --popover: oklch(0.232 0.022 252);
+  --popover-foreground: oklch(0.93 0.012 240);
+
+  --primary: var(--color-azure-400);
+  --primary-foreground: oklch(0.19 0.03 250);
+  --secondary: oklch(0.268 0.022 250);
+  --secondary-foreground: oklch(0.93 0.012 240);
+  --muted: oklch(0.252 0.02 250);
+  --muted-foreground: oklch(0.7 0.02 246);
+
+  --accent: oklch(0.3 0.04 244);
+  --accent-foreground: oklch(0.945 0.02 236);
+
+  --destructive: var(--color-ember-400);
+  --destructive-foreground: oklch(0.16 0.02 27);
+
+  --border: oklch(0.75 0.06 240 / 14%);
+  --input: oklch(0.75 0.05 242 / 32%);
+  --ring: var(--color-azure-500);
+
+  --draft: oklch(0.268 0.022 250);
+  --draft-foreground: oklch(0.7 0.02 246);
+  --public: oklch(0.305 0.055 240);
+  --public-foreground: var(--color-azure-300);
+  --missing: transparent;
+  --missing-foreground: oklch(0.62 0.022 246);
+
+  --chart-1: var(--color-azure-400);
+  --chart-2: oklch(0.78 0.115 208);
+  --chart-3: oklch(0.82 0.12 72);
+  --chart-4: oklch(0.68 0.14 300);
+  --chart-5: oklch(0.58 0.115 258);
+
+  --sidebar: oklch(0.196 0.02 252);
+  --sidebar-foreground: oklch(0.93 0.012 240);
+  --sidebar-primary: var(--color-azure-400);
+  --sidebar-primary-foreground: oklch(0.19 0.03 250);
+  --sidebar-accent: oklch(0.3 0.04 244);
+  --sidebar-accent-foreground: oklch(0.945 0.02 236);
+  --sidebar-border: oklch(0.75 0.06 240 / 14%);
+  --sidebar-ring: var(--color-azure-500);
+
+  --shadow-color: 0.09 0.03 253;
+  --shadow-2xs: 0 1px 2px 0 oklch(var(--shadow-color) / 0.3);
+  --shadow-xs: 0 1px 2px 0 oklch(var(--shadow-color) / 0.36);
+  --shadow-sm: 0 1px 2px -1px oklch(var(--shadow-color) / 0.44),
+    0 1px 3px 0 oklch(var(--shadow-color) / 0.34);
+  --shadow: 0 1px 3px 0 oklch(var(--shadow-color) / 0.4),
+    0 2px 6px -1px oklch(var(--shadow-color) / 0.4);
+  --shadow-md: 0 2px 4px -2px oklch(var(--shadow-color) / 0.4),
+    0 4px 10px -2px oklch(var(--shadow-color) / 0.46);
+  --shadow-lg: 0 4px 8px -4px oklch(var(--shadow-color) / 0.44),
+    0 10px 22px -4px oklch(var(--shadow-color) / 0.5);
+  --shadow-xl: 0 8px 16px -8px oklch(var(--shadow-color) / 0.5),
+    0 20px 40px -8px oklch(var(--shadow-color) / 0.56);
+  --shadow-2xl: 0 24px 60px -12px oklch(var(--shadow-color) / 0.7);
+
+  --horizon: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--color-azure-800) 12%,
+    var(--color-azure-600) 36%,
+    var(--color-azure-500) 50%,
+    var(--color-azure-600) 64%,
+    var(--color-azure-800) 88%,
+    transparent 100%
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Semantic tokens -> Tailwind utilities
+--------------------------------------------------------------------------- */
 
 @theme inline {
   --color-background: var(--background);
@@ -141,11 +266,20 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-draft: var(--draft);
+  --color-draft-foreground: var(--draft-foreground);
+  --color-public: var(--public);
+  --color-public-foreground: var(--public-foreground);
+  --color-missing: var(--missing);
+  --color-missing-foreground: var(--missing-foreground);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -155,14 +289,13 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
@@ -172,33 +305,53 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
-  --radius: 0.5rem;
-  --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
-  --tracking-tight: calc(var(--tracking-normal) - 0.025em);
+
+  --tracking-tighter: calc(var(--tracking-normal) - 0.04em);
+  --tracking-tight: calc(var(--tracking-normal) - 0.02em);
+  --tracking-normal: var(--tracking-normal);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);
   --tracking-wider: calc(var(--tracking-normal) + 0.05em);
   --tracking-widest: calc(var(--tracking-normal) + 0.1em);
-  --tracking-normal: var(--tracking-normal);
+
   --spacing: var(--spacing);
-  --letter-spacing: var(--letter-spacing);
-  --shadow-offset-y: var(--shadow-offset-y);
-  --shadow-offset-x: var(--shadow-offset-x);
-  --shadow-spread: var(--shadow-spread);
-  --shadow-blur: var(--shadow-blur);
-  --shadow-opacity: var(--shadow-opacity);
-  --color-shadow-color: var(--shadow-color);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Counts, locale coverage and IDs should line up column to column. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: var(--color-azure-200);
+    color: var(--color-azure-900);
+  }
+
+  .dark ::selection {
+    background-color: var(--color-azure-800);
+    color: var(--color-azure-100);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
@@ -209,4 +362,26 @@
   @variant sm {
     padding-inline: 5rem;
   }
+}
+
+/* The horizon rule. Use in place of a flat `border-b` on the boundary that
+   separates chrome from content — one per view, not one per section.
+   Painted as a background image so it never fights `sticky` or `relative`. */
+@utility horizon-b {
+  background-image: var(--horizon);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% 1px;
+}
+
+/* The system's own voice: column headers, locale codes, metadata labels. */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
 }

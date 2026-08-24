@@ -4,6 +4,7 @@ import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
 import { ApiError } from '@/lib/api/client'
 import { projectQuery } from '@/lib/queries'
 import { useQuery } from '@tanstack/react-query'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 
 export const Route = createFileRoute('/projects/$projectId')({
   loader: async ({ params, context }) => {
@@ -17,7 +18,9 @@ export const Route = createFileRoute('/projects/$projectId')({
   component: ProjectLayout,
   notFoundComponent: () => (
     <AppShell>
-      <div className="flex items-center justify-center h-64 text-slate-500">Project not found</div>
+      <div className="flex h-64 items-center justify-center text-muted-foreground">
+        Project not found
+      </div>
     </AppShell>
   ),
 })
@@ -29,13 +32,17 @@ function ProjectLayout() {
   if (!project) return null
 
   return (
-    <AppShell>
-      <div className="flex h-[calc(100vh-3.5rem)]">
-        <ProjectSidebar project={project} />
+    <SidebarProvider>
+      <ProjectSidebar project={project} />
+      <SidebarInset>
+        <header className="horizon-b flex h-14 shrink-0 items-center gap-2 px-4">
+          <SidebarTrigger />
+          <span className="truncate font-medium md:hidden">{project.name}</span>
+        </header>
         <div className="flex-1 overflow-y-auto">
           <Outlet />
         </div>
-      </div>
-    </AppShell>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

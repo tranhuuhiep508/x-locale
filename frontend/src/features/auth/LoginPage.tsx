@@ -1,6 +1,7 @@
 import { Layers, LogIn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
 export function LoginPage() {
   return (
     <div className="min-h-screen bg-muted flex flex-col items-center justify-center p-4">
@@ -24,14 +25,14 @@ export function LoginPage() {
             <a href="/api/auth/login" className="block w-full">
               <Button className="w-full" size="lg">
                 <LogIn data-icon="inline-start" />
-                Continue with SSO
+                Continue with Microsoft
               </Button>
             </a>
           </CardContent>
         </Card>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          Secure authentication via your organization's identity provider.
+          Sign in with a work or personal Microsoft account.
         </p>
       </div>
     </div>

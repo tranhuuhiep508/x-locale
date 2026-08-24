@@ -24,5 +24,8 @@ const projectKeys = {
 export const queryKeys = {
   me: () => ['me'] as const,
   languages: () => ['languages'] as const,
+  jobs: {
+    detail: (id: string) => ['jobs', id] as const,
+  },
   projects: projectKeys,
 }

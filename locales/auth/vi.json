@@ -1,0 +1,17 @@
+{
+  "auth.email": "email của",
+  "auth.forgotpa": "Quên mật khẩu",
+  "auth.password": "Mật khẩu",
+  "auth.reset_password": "Đặt lại mật khẩu",
+  "auth.sign_in": "Đăng nhập",
+  "auth.sign_up": "Tạo tài khoản",
+  "auth.verify_email": "Xác thực email verify",
+  "auth.verify_email_button": "Xác thực emai button",
+  "auth.verify_email_description": "Vui lòng xác thực email của bạn để tiếp tục",
+  "auth.verify_email_error": "Email đã được xác thực",
+  "auth.verify_email_success": "Email đã được xác thực",
+  "auth.verify_email_title": "Xác thực email",
+  "password": "Mật khẩu ccc aaa",
+  "sign_in": "Đăng nhập bbb ",
+  "sign_up": "Tạo tài khoản aaa"
+}

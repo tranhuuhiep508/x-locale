@@ -119,7 +119,7 @@ def current_user(
         )
         return user
 
-    if settings.auth_dev_bypass:
+    if settings.dev_bypass_active:
         user = get_or_create_dev_user(db)
         db.commit()
         set_activity_context(
@@ -146,7 +146,7 @@ def optional_user(
             return db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
         except HTTPException:
             return None
-    if settings.auth_dev_bypass:
+    if settings.dev_bypass_active:
         user = get_or_create_dev_user(db)
         db.commit()
         return user

@@ -1,3 +1,3 @@
-from tms_cli.main import app
+from tms_cli.app import app
 
 app()

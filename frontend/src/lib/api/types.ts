@@ -209,6 +209,35 @@ export interface TranslatePreviewResult {
   translations: Record<string, string>
 }
 
+export interface TranslateProposalItem {
+  string_id: string
+  key: string
+  source_text: string
+  status: TranslationStatus
+  description?: string | null
+  translations: Record<string, string>
+}
+
+export interface TranslateProposalsResult {
+  locales: string[]
+  items: TranslateProposalItem[]
+  job_id: string | null
+}
+
+export interface TranslateApplyRequest {
+  items: Array<{
+    string_id: string
+    translations: Record<string, string>
+    description?: string | null
+  }>
+}
+
+export interface TranslateApplyResult {
+  translated_count: number
+  batch_id: string
+  locales: string[]
+}
+
 // ── Jobs ───────────────────────────────────────────────────────────────
 export interface Job {
   id: string

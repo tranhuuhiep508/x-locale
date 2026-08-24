@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 
@@ -16,6 +17,39 @@ def test_auth_me_dev_bypass(client):
     assert r.status_code == 200
     data = r.json()
     assert data["email"] == "dev@localhost"
+
+
+def test_auth_me_unauthorized_without_bypass(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", False)
+    monkeypatch.setattr(settings, "oidc_issuer", "")
+    monkeypatch.setattr(settings, "oidc_client_id", "")
+    monkeypatch.setattr(settings, "oidc_client_secret", "")
+    r = client.get("/api/auth/me")
+    assert r.status_code == 401
+
+
+def test_login_503_when_neither_bypass_nor_oidc(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", False)
+    monkeypatch.setattr(settings, "oidc_issuer", "")
+    monkeypatch.setattr(settings, "oidc_client_id", "")
+    monkeypatch.setattr(settings, "oidc_client_secret", "")
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 503
+
+
+def test_bypass_skipped_when_oidc_configured(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", True)
+    monkeypatch.setattr(settings, "oidc_issuer", "https://login.microsoftonline.com/common/v2.0")
+    monkeypatch.setattr(settings, "oidc_client_id", "test-client")
+    monkeypatch.setattr(settings, "oidc_client_secret", "test-secret")
+    r = client.get("/api/auth/me")
+    assert r.status_code == 401
 
 
 def test_create_project_and_string(client):
@@ -571,3 +605,386 @@ def test_translate_skips_filled_locale_unless_overwrite(client, monkeypatch):
     by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
     assert by_locale["en"] == "Hello"
     assert by_locale["ja"] == "こんにちは"
+
+
+def test_translate_proposals_do_not_persist(client, monkeypatch):
+    project = _make_project(client, "Propose", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    def fake_batch(source_locale, items):
+        item = items[0]
+        return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    before = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    r = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={"scope": "missing", "locales": ["en", "ja"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["job_id"] is None
+    assert len(body["items"]) == 1
+    assert body["items"][0]["string_id"] == string["id"]
+    assert body["items"][0]["translations"]["en"] == "en:Xin chào"
+    assert body["items"][0]["translations"]["ja"] == "ja:Xin chào"
+
+    after = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    assert after == before
+    stored = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert all(t["value"] == "" for t in stored["translations"])
+
+
+def test_translate_missing_lists_empty_locales_without_ai(client, monkeypatch):
+    project = _make_project(client, "Missing List", targets=["en", "ja"])
+    pid = project["id"]
+    filled = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "translations": {"en": "Hello"},
+        },
+    ).json()
+    empty = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "bye", "source_text": "Tạm biệt"},
+    ).json()
+
+    def fail_batch(*args, **kwargs):
+        raise AssertionError("AI should not run when listing missing translations")
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fail_batch)
+
+    before = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    r = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["job_id"] is None
+    by_key = {item["key"]: item for item in body["items"]}
+    assert "en" not in by_key["hi"]["translations"]
+    assert by_key["hi"]["translations"]["ja"] == ""
+    assert by_key["hi"]["string_id"] == filled["id"]
+    assert by_key["bye"]["translations"] == {"en": "", "ja": ""}
+    assert by_key["bye"]["string_id"] == empty["id"]
+    assert "description" in by_key["hi"]
+    assert "description" in by_key["bye"]
+    after = client.get(f"/api/projects/{pid}/activities").json()["total"]
+    assert after == before
+    stored = {s["key"]: s for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert {t["locale"]: t["value"] for t in stored["hi"]["translations"]}["en"] == "Hello"
+    assert all(t["value"] == "" for t in stored["bye"]["translations"])
+
+
+def test_translate_proposals_omit_filled_locales(client, monkeypatch):
+    project = _make_project(client, "Propose Skip", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "translations": {"en": "Hello"},
+        },
+    ).json()
+
+    def fake_batch(source_locale, items):
+        assert items[0].locales == ("ja",)
+        return {items[0].id: {"ja": "こんにちは", "en": "should-not-use"}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={
+            "scope": "strings",
+            "string_ids": [string["id"]],
+            "locales": ["en", "ja"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    item = r.json()["items"][0]
+    assert "en" not in item["translations"]
+    assert item["translations"]["ja"] == "こんにちは"
+
+
+def test_translate_apply_persists_and_is_revertible(client, monkeypatch):
+    project = _make_project(client, "Apply", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    def fake_batch(source_locale, items):
+        item = items[0]
+        return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    proposed = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={"scope": "strings", "string_ids": [string["id"]], "locales": ["en", "ja"]},
+    ).json()["items"]
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={"items": proposed},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["translated_count"] == 2
+    batch_id = r.json()["batch_id"]
+
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "en:Xin chào"
+    assert by_locale["ja"] == "ja:Xin chào"
+    assert refreshed["status"] == "draft"
+
+    activities = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    translate_rows = [a for a in activities if a["batch_kind"] == "translate"]
+    assert translate_rows
+    assert all(a["batch_id"] == batch_id for a in translate_rows)
+
+    revert = client.post(f"/api/projects/{pid}/activities/batch/{batch_id}/revert")
+    assert revert.status_code == 200, revert.text
+    restored = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert all(t["value"] == "" for t in restored["translations"])
+
+
+def test_translate_apply_skips_locale_filled_after_preview(client):
+    project = _make_project(client, "Apply Skip", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    client.put(
+        f"/api/projects/{pid}/strings/{string['id']}/translations/en",
+        json={"value": "Hello"},
+    )
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "translations": {"en": "AI Hello", "ja": "こんにちは"},
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["translated_count"] == 1
+
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "Hello"
+    assert by_locale["ja"] == "こんにちは"
+
+
+def test_translate_apply_saves_description(client):
+    project = _make_project(client, "Apply Description", targets=["en"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "description": "Greeting on the home screen",
+                    "translations": {"en": "Hello"},
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert refreshed["description"] == "Greeting on the home screen"
+    by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
+    assert by_locale["en"] == "Hello"
+
+
+def test_translate_proposals_large_uses_job(client, monkeypatch):
+    project = _make_project(client, "Propose Job", targets=["en"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
+    monkeypatch.setattr("app.routers.translate.run_propose_job", lambda *args, **kwargs: None)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={"scope": "strings", "string_ids": [created["id"]], "locales": ["en"]},
+    )
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    assert job_id
+    assert r.json()["items"] == []
+
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["kind"] == "translate_proposals"
+    assert job["status"] == "pending"
+
+
+def test_export_stage_all_and_locale_filter(client):
+    project = _make_project(client, "Export All")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}},
+    ).json()
+    client.patch(f"/api/projects/{pid}/strings/{created['id']}", json={"status": "public"})
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "drafty", "source_text": "Nháp"},
+    )
+
+    r = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "all"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "save" in data["vi"] and "drafty" in data["vi"]
+    assert r.headers["content-disposition"].endswith('.json"')
+
+    r = client.get(
+        f"/api/projects/{pid}/export",
+        params={"layout": "flat", "stage": "public", "locale": "en"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert list(data.keys()) == ["en"]
+    assert data["en"]["save"] == "Save"
+    assert "drafty" not in data["en"]
+
+
+def test_json_file_import_roundtrip_and_locale_overlay(client):
+    project = _make_project(client, "Import Round")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "common", "name": "Common"},
+    )
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "save",
+            "source_text": "Lưu",
+            "module_id": client.get(f"/api/projects/{pid}/modules").json()[0]["id"],
+            "translations": {"en": "Save"},
+            "status": "public",
+        },
+    )
+
+    exported = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}
+    )
+    assert exported.status_code == 200, exported.text
+
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"dry_run": True},
+        files={"file": ("export.json", exported.content, "application/json")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["dry_run"] is True
+
+    overlay = json.dumps({"common.save": "Saved"}).encode()
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "en", "dry_run": False},
+        files={"file": ("en.json", overlay, "application/json")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+
+    string = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t["value"] for t in string["translations"]}
+    assert string["source_text"] == "Lưu"
+    assert by_locale["en"] == "Saved"
+
+
+def test_xlsx_export_import_roundtrip(client):
+    project = _make_project(client, "Excel Round")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hello", "source_text": "Xin chào", "translations": {"en": "Hello"}},
+    )
+
+    exported = client.get(f"/api/projects/{pid}/export", params={"format": "xlsx", "stage": "all"})
+    assert exported.status_code == 200, exported.text
+    assert "spreadsheetml" in exported.headers["content-type"]
+
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        files={
+            "file": (
+                "bundle.xlsx",
+                exported.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"hello": "Xin chào", "bye": "Tạm biệt"}},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 1
+    keys = {s["key"] for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert keys == {"hello", "bye"}
+
+
+def test_strings_import_modules_payload_keeps_key_and_module(client):
+    project = _make_project(client, "Modular Push")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "auth.email",
+            "source_text": "Email",
+            "module_id": module["id"],
+        },
+    )
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"modules": {"auth": {"vi": {"auth.email": "Địa chỉ email", "password": "Mật khẩu"}}}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 1
+    assert body["updated"] == 1
+    assert body["diff"]["create"] == ["auth/password"]
+    assert body["diff"]["update"] == ["auth/auth.email"]
+
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s for s in items}
+    assert set(by_key) == {"auth.email", "password"}
+    assert by_key["auth.email"]["source_text"] == "Địa chỉ email"
+    assert by_key["auth.email"]["module_slug"] == "auth"
+    assert by_key["password"]["module_slug"] == "auth"
