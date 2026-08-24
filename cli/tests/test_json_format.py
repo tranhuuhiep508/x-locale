@@ -4,22 +4,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-import typer
-
-from tms_cli.main import (
-    ChangeItem,
-    PulledFileReport,
-    UNASSIGNED_SLUG,
-    _diff_locale_maps,
-    _merge_overrides,
-    _parse_api_error,
+from tms_cli.client import parse_api_error
+from tms_cli.errors import TmsError
+from tms_cli.io import (
     build_modular_push_body,
     collect_modular_local_keys,
     collect_modular_remote_keys,
     count_modular_untranslated,
     default_source_file,
+    diff_locale_maps,
     file_module_locale,
-    group_pull_changes,
     load_json_file,
     load_unassigned_base,
     locale_json_from_strings,
@@ -28,6 +22,16 @@ from tms_cli.main import (
     scan_modular_base,
     scoped_key,
 )
+from tms_cli.models import (
+    UNASSIGNED_SLUG,
+    ChangeItem,
+    Config,
+    Layout,
+    PulledFileReport,
+    Stage,
+    parse_locales,
+)
+from tms_cli.report import group_pull_changes
 
 
 class LocaleJsonTests(unittest.TestCase):
@@ -42,7 +46,7 @@ class LocaleJsonTests(unittest.TestCase):
         self.assertEqual(parse_locale_json(data), data)
 
     def test_parse_locale_json_rejects_nested_values(self) -> None:
-        with self.assertRaises(typer.Exit):
+        with self.assertRaises(TmsError):
             parse_locale_json({"auth": {"sign_in": "Sign in"}})
 
     def test_locale_json_from_strings_sorts_keys(self) -> None:
@@ -60,10 +64,12 @@ class ResolvePushSourceTests(unittest.TestCase):
         self.locales_dir.mkdir()
         (self.locales_dir / "en.json").write_text("{}", encoding="utf-8")
         (self.locales_dir / "vi.json").write_text("{}", encoding="utf-8")
-        self.config = {
-            "output_dir": str(self.locales_dir),
-            "base_language": "en",
-        }
+        self.config = Config.from_dict(
+            {
+                "output_dir": str(self.locales_dir),
+                "base_language": "en",
+            }
+        )
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -76,12 +82,12 @@ class ResolvePushSourceTests(unittest.TestCase):
         self.assertEqual(path, self.locales_dir / "en.json")
 
     def test_resolve_rejects_translation_file(self) -> None:
-        with self.assertRaises(typer.Exit) as ctx:
+        with self.assertRaises(TmsError) as ctx:
             resolve_push_source(self.config, self.locales_dir / "vi.json")
         self.assertIn("Cannot push translation file", str(ctx.exception))
 
     def test_resolve_rejects_directory(self) -> None:
-        with self.assertRaises(typer.Exit) as ctx:
+        with self.assertRaises(TmsError) as ctx:
             resolve_push_source(self.config, self.locales_dir)
         self.assertIn("got directory", str(ctx.exception))
 
@@ -161,43 +167,47 @@ class ScanModularBaseTests(unittest.TestCase):
 
     def test_rejects_non_string_values_in_module_file(self) -> None:
         self._make_module("auth", "en", {"key": {"nested": "bad"}})
-        with self.assertRaises(typer.Exit):
+        with self.assertRaises(TmsError):
             scan_modular_base(self.root, "en")
 
 
-class MergeOverridesTests(unittest.TestCase):
+class ConfigOverrideTests(unittest.TestCase):
     def test_applies_non_none_override(self) -> None:
-        config = {"output_dir": "./locales", "stage": "draft"}
-        merged = _merge_overrides(config, stage="public")
-        self.assertEqual(merged["stage"], "public")
+        config = Config.from_dict({"output_dir": "./locales", "stage": "draft"})
+        merged = config.with_overrides(stage=Stage.public)
+        self.assertEqual(merged.stage, Stage.public)
 
     def test_ignores_none_override(self) -> None:
-        config = {"output_dir": "./locales", "stage": "draft"}
-        merged = _merge_overrides(config, stage=None)
-        self.assertEqual(merged["stage"], "draft")
+        config = Config.from_dict({"output_dir": "./locales", "stage": "draft"})
+        merged = config.with_overrides(stage=None)
+        self.assertEqual(merged.stage, Stage.draft)
 
     def test_does_not_mutate_original(self) -> None:
-        config = {"stage": "draft"}
-        _merge_overrides(config, stage="public")
-        self.assertEqual(config["stage"], "draft")
+        config = Config.from_dict({"stage": "draft"})
+        config.with_overrides(stage=Stage.public)
+        self.assertEqual(config.stage, Stage.draft)
 
-    def test_adds_new_key(self) -> None:
-        config: dict = {}
-        merged = _merge_overrides(config, layout="modular")
-        self.assertEqual(merged["layout"], "modular")
+    def test_layout_override(self) -> None:
+        config = Config.from_dict({"layout": "flat"})
+        merged = config.with_overrides(layout=Layout.modular)
+        self.assertEqual(merged.layout, Layout.modular)
 
     def test_multiple_overrides(self) -> None:
-        config = {"stage": "draft", "layout": "flat"}
-        merged = _merge_overrides(config, stage="public", layout="modular")
-        self.assertEqual(merged["stage"], "public")
-        self.assertEqual(merged["layout"], "modular")
+        config = Config.from_dict({"stage": "draft", "layout": "flat"})
+        merged = config.with_overrides(stage=Stage.public, layout=Layout.modular)
+        self.assertEqual(merged.stage, Stage.public)
+        self.assertEqual(merged.layout, Layout.modular)
+
+    def test_parse_locales_strips_and_drops_empty(self) -> None:
+        self.assertEqual(parse_locales("en, ja, "), ["en", "ja"])
+        self.assertIsNone(parse_locales(None))
 
 
 class DiffLocaleMapsTests(unittest.TestCase):
     def test_detects_added_and_updated_keys(self) -> None:
         old = {"sign_in": "Login", "password": "Password"}
         new = {"sign_in": "Sign in", "password": "Password", "sign_up": "Create account"}
-        added, updated = _diff_locale_maps(old, new)
+        added, updated = diff_locale_maps(old, new)
         self.assertEqual(added, ["sign_up"])
         self.assertEqual(updated, ["sign_in"])
 
@@ -326,7 +336,7 @@ class ParseApiErrorTests(unittest.TestCase):
         response.status_code = 400
         response.json.return_value = {"detail": "strings required"}
         response.text = '{"detail":"strings required"}'
-        self.assertEqual(_parse_api_error(response), "strings required")
+        self.assertEqual(parse_api_error(response), "strings required")
 
     def test_parses_validation_errors(self) -> None:
         response = Mock()
@@ -335,14 +345,14 @@ class ParseApiErrorTests(unittest.TestCase):
             "detail": [{"loc": ["body", "strings"], "msg": "field required"}]
         }
         response.text = "{}"
-        self.assertIn("field required", _parse_api_error(response))
+        self.assertIn("field required", parse_api_error(response))
 
     def test_falls_back_to_response_text(self) -> None:
         response = Mock()
         response.status_code = 500
         response.json.side_effect = json.JSONDecodeError("err", "doc", 0)
         response.text = "Internal Server Error"
-        self.assertEqual(_parse_api_error(response), "Internal Server Error")
+        self.assertEqual(parse_api_error(response), "Internal Server Error")
 
 
 if __name__ == "__main__":
