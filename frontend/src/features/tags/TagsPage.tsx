@@ -1,7 +1,17 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, Tags as TagsIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  useReactTable,
+  type PaginationState,
+} from '@tanstack/react-table'
+import { Plus, Tags as TagsIcon } from 'lucide-react'
+import { DataTable } from '@/components/data-table/data-table'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { tagsApi } from '@/lib/api/catalog'
 import type { Tag } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -14,10 +24,9 @@ import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
+import { tagColumns } from '@/features/tags/tags-columns'
 const routeApi = getRouteApi('/projects/$projectId/tags')
 
 
@@ -40,6 +49,9 @@ export function TagsPage() {
   const toast = useToast()
 
   const { data: tags = [], isLoading } = useQuery(tagsQuery(projectId))
+  const data = useMemo(() => tags, [tags])
+  const [globalFilter, setGlobalFilter] = useState('')
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 20 })
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Tag | null>(null)
@@ -106,6 +118,28 @@ export function TagsPage() {
     }
   }
 
+  const table = useReactTable({
+    data,
+    columns: tagColumns,
+    state: { globalFilter, pagination },
+    onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    enableSorting: false,
+    globalFilterFn: 'includesString',
+    meta: {
+      onEdit: (tag: Tag) => {
+        setEditTarget(tag)
+        setForm({ name: tag.name, color: tag.color })
+        setErrors({})
+      },
+      onDelete: setDeleteTarget,
+    },
+  })
+
   return (
     <div className="container py-6">
       <div className="flex items-center justify-between mb-6">
@@ -129,56 +163,15 @@ export function TagsPage() {
           }
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tag</TableHead>
-              <TableHead>Strings</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tags.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell>
-                  <span
-                    className="flex items-center gap-2 px-2.5 py-0.5 rounded-full text-sm font-medium w-fit"
-                    style={{ backgroundColor: t.color + '22', color: t.color }}
-                  >
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                    {t.name}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="default">{t.string_count}</Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => {
-                        setEditTarget(t)
-                        setForm({ name: t.name, color: t.color })
-                        setErrors({})
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleteTarget(t)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="flex flex-col gap-4">
+          <DataTableToolbar
+            search={globalFilter}
+            onSearchChange={setGlobalFilter}
+            placeholder="Search tags…"
+          />
+          <DataTable table={table} />
+          <DataTablePagination table={table} />
+        </div>
       )}
 
       <Dialog
