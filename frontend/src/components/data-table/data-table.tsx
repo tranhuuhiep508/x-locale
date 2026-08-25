@@ -22,7 +22,7 @@ export function DataTable<TData>({ table, onRowClick, className }: DataTableProp
   const colSpan = table.getVisibleLeafColumns().length
 
   return (
-    <Table className={className}>
+    <Table className={className} containerClassName="h-full min-h-0 overflow-auto">
       <TableHeader>
         {table.getHeaderGroups().map((headerGroup) => (
           <TableRow key={headerGroup.id} className="hover:bg-transparent">

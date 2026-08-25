@@ -32,14 +32,14 @@ function ProjectLayout() {
   if (!project) return null
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <ProjectSidebar project={project} />
-      <SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden">
         <header className="horizon-b flex h-14 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger />
           <span className="truncate font-medium md:hidden">{project.name}</span>
         </header>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <Outlet />
         </div>
       </SidebarInset>

@@ -24,7 +24,7 @@ export function BatchActionBar({
   onClear: () => void
 }) {
   return (
-    <div className="sticky top-[57px] z-10 bg-primary text-primary-foreground px-4 py-2 flex items-center gap-3">
+    <div className="flex shrink-0 items-center gap-3 bg-primary px-4 py-2 text-primary-foreground">
       <span className="text-sm font-medium">{selectedCount} selected</span>
       <div className="flex gap-1.5">
         <Button variant="secondary" size="sm" onClick={onPublish}>
