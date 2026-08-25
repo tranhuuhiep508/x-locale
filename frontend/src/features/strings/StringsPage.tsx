@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useMemo,
   useState,
   useTransition,
   lazy,
@@ -10,15 +11,26 @@ import {
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  getCoreRowModel,
+  useReactTable,
+  type PaginationState,
+  type RowSelectionState,
+  type VisibilityState,
+} from '@tanstack/react-table'
+import {
   Filter,
   Plus,
   Search,
   Wand2,
   X,
 } from 'lucide-react'
+import { DataTable } from '@/components/data-table/data-table'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
-import { FilterPill, StringRow } from '@/features/strings/StringRow'
+import { FilterPill } from '@/features/strings/FilterPill'
+import { getStringColumns } from '@/features/strings/string-columns'
 import {
   TranslateReviewDialog,
   jobStillRunning,
@@ -26,7 +38,6 @@ import {
 } from '@/features/strings/TranslateReviewDialog'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import {
@@ -38,14 +49,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Checkbox } from '@/components/ui/checkbox'
 import { jobsApi } from '@/lib/api/jobs'
 import { stringsApi } from '@/lib/api/strings'
 import type {
@@ -78,7 +81,8 @@ export function StringsPage() {
   const qc = useQueryClient()
   const toast = useToast()
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogAutoPreview, setDialogAutoPreview] = useState(false)
@@ -132,7 +136,7 @@ export function StringsPage() {
     mutationFn: (req: BatchRequest) => stringsApi.batch(projectId, req),
     onSuccess: () => {
       invalidateStrings()
-      setSelectedIds(new Set())
+      setRowSelection({})
       setShowMoveModule(false)
       setShowAddTags(false)
       setDeleteConfirm(false)
@@ -246,11 +250,11 @@ export function StringsPage() {
     previewItemsMut.reset()
   }
 
-  function openEditor(entry: StringEntry | null, autoPreview = false) {
+  const openEditor = useCallback((entry: StringEntry | null, autoPreview = false) => {
     setDialogEntry(entry)
     setDialogAutoPreview(autoPreview)
     setDialogOpen(true)
-  }
+  }, [])
 
   function setFilter(updates: Partial<StringsSearch>) {
     startTransition(() => {
@@ -258,9 +262,11 @@ export function StringsPage() {
     })
   }
 
-  const strings = stringsResult.data?.items ?? []
+  const strings = stringsResult.data?.items
+  const data = useMemo(() => strings ?? [], [strings])
   const total = stringsResult.data?.total ?? 0
-  const targetLocales = project?.target_languages ?? []
+  const targetLocales = project?.target_languages
+  const locales = useMemo(() => targetLocales ?? [], [targetLocales])
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
@@ -283,26 +289,52 @@ export function StringsPage() {
   const moduleById = new Map(modules.map((m) => [m.id, m]))
   const tagById = new Map(tags.map((t) => [t.id, t]))
 
-  const allSelected = strings.length > 0 && strings.every((s) => selectedIds.has(s.id))
+  const columns = useMemo(() => getStringColumns(locales), [locales])
+  const pagination = useMemo<PaginationState>(
+    () => ({ pageIndex: search.page - 1, pageSize: search.page_size }),
+    [search.page, search.page_size],
+  )
+  const tableMeta = useMemo(
+    () => ({
+      projectId,
+      onEdit: (entry: StringEntry) => openEditor(entry),
+      onTranslate: (entry: StringEntry) => openEditor(entry, true),
+      onRefresh: invalidateStrings,
+    }),
+    [projectId, openEditor, invalidateStrings],
+  )
 
-  function toggleAll() {
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(strings.map((s) => s.id)))
-    }
-  }
+  const table = useReactTable({
+    data,
+    columns,
+    state: { pagination, rowSelection, columnVisibility },
+    onRowSelectionChange: setRowSelection,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(pagination) : updater
+      startTransition(() => {
+        navigate({
+          search: (prev) => ({
+            ...prev,
+            page: next.pageIndex + 1,
+            page_size: next.pageSize,
+          }),
+        })
+      })
+    },
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+    enableSorting: false,
+    enableRowSelection: true,
+    manualPagination: true,
+    autoResetPageIndex: false,
+    pageCount: Math.max(1, Math.ceil(total / search.page_size) || 1),
+    rowCount: total,
+    meta: tableMeta,
+  })
 
-  function toggleRow(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const selectedList = [...selectedIds]
+  const selectedList = Object.keys(rowSelection).filter((id) => rowSelection[id])
+  const selectedCount = selectedList.length
 
   return (
     <div className="flex flex-col h-full">
@@ -379,7 +411,7 @@ export function StringsPage() {
             </SelectContent>
           </Select>
 
-          {targetLocales.length > 0 && (
+          {locales.length > 0 && (
             <Select
               value={search.missing_locale ?? 'all'}
               onValueChange={(v) => setFilter({ missing_locale: v === 'all' ? undefined : v })}
@@ -390,7 +422,7 @@ export function StringsPage() {
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="all">All locales</SelectItem>
-                  {targetLocales.map((l) => (
+                  {locales.map((l) => (
                     <SelectItem key={l} value={l}>
                       Missing: {l}
                     </SelectItem>
@@ -419,6 +451,8 @@ export function StringsPage() {
 
           <div className="flex-1" />
 
+          <DataTableViewOptions table={table} />
+
           <Button
             size="sm"
             variant="outline"
@@ -427,7 +461,7 @@ export function StringsPage() {
               setProposalJobId(null)
               setProposalsReady(false)
               setReviewOpen(true)
-              missingMut.mutate({ scope: 'missing', locales: targetLocales })
+              missingMut.mutate({ scope: 'missing', locales })
             }}
             disabled={missingMut.isPending || reviewOpen}
           >
@@ -485,9 +519,9 @@ export function StringsPage() {
         )}
       </div>
 
-      {selectedIds.size > 0 && (
+      {selectedCount > 0 && (
         <BatchActionBar
-          selectedCount={selectedIds.size}
+          selectedCount={selectedCount}
           modules={modules}
           tags={tags}
           onPublish={() => batchMut.mutate({ action: 'publish', string_ids: selectedList })}
@@ -495,7 +529,7 @@ export function StringsPage() {
           onMove={() => setShowMoveModule(true)}
           onAddTags={() => setShowAddTags(true)}
           onDelete={() => setDeleteConfirm(true)}
-          onClear={() => setSelectedIds(new Set())}
+          onClear={() => setRowSelection({})}
         />
       )}
 
@@ -504,7 +538,7 @@ export function StringsPage() {
           <div className="flex items-center justify-center h-48">
             <Spinner />
           </div>
-        ) : strings.length === 0 ? (
+        ) : data.length === 0 ? (
           <EmptyState
             title="No strings found"
             description={
@@ -524,55 +558,20 @@ export function StringsPage() {
             }
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={() => toggleAll()}
-                    aria-label="Select all"
-                  />
-                </TableHead>
-                <TableHead className="min-w-[160px]">Key</TableHead>
-                <TableHead className="min-w-[200px]">Source</TableHead>
-                {targetLocales.map((l) => (
-                  <TableHead key={l} className="min-w-[160px] uppercase text-xs tracking-wide">
-                    {l}
-                  </TableHead>
-                ))}
-                <TableHead className="w-28">Published</TableHead>
-                <TableHead className="min-w-[120px]">Tags</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {strings.map((s) => (
-                <StringRow
-                  key={s.id}
-                  entry={s}
-                  projectId={projectId}
-                  targetLocales={targetLocales}
-                  selected={selectedIds.has(s.id)}
-                  onToggle={() => toggleRow(s.id)}
-                  onEdit={() => openEditor(s)}
-                  onRefresh={invalidateStrings}
-                  onTranslate={() => openEditor(s, true)}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            table={table}
+            onRowClick={(row, event) => {
+              const target = event.target as HTMLElement
+              if (target.closest('button, input, [role="checkbox"], [role="switch"], a')) return
+              openEditor(row.original)
+            }}
+          />
         )}
       </div>
 
-      {total > search.page_size && (
+      {total > 0 && (
         <div className="border-t px-4">
-          <DataPagination
-            page={search.page}
-            pageSize={search.page_size}
-            total={total}
-            onPageChange={(p) => navigate({ search: (prev) => ({ ...prev, page: p }) })}
-          />
+          <DataTablePagination table={table} />
         </div>
       )}
 
@@ -584,7 +583,7 @@ export function StringsPage() {
             entry={dialogEntry}
             modules={modules}
             tags={tags}
-            targetLocales={targetLocales}
+            targetLocales={locales}
             autoPreview={dialogAutoPreview}
             onClose={() => {
               setDialogOpen(false)
@@ -615,7 +614,7 @@ export function StringsPage() {
             previewItemsMut.mutate(items)
             return
           }
-          proposeMut.mutate({ scope: 'missing', locales: targetLocales })
+          proposeMut.mutate({ scope: 'missing', locales })
         }}
         onApply={(items) => applyMut.mutate(items)}
       />
@@ -654,7 +653,7 @@ export function StringsPage() {
         onConfirm={() =>
           batchMut.mutate({ action: 'delete', string_ids: selectedList })
         }
-        title={`Delete ${selectedIds.size} string${selectedIds.size > 1 ? 's' : ''}?`}
+        title={`Delete ${selectedCount} string${selectedCount > 1 ? 's' : ''}?`}
         description="This cannot be undone."
         confirmLabel="Delete"
         isLoading={batchMut.isPending}

@@ -1,7 +1,18 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Plus, Trash2, Copy, Check } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  useReactTable,
+  type PaginationState,
+} from '@tanstack/react-table'
+import { Plus, Copy, Check } from 'lucide-react'
+import { DataTable } from '@/components/data-table/data-table'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { apiKeyColumns } from '@/features/settings/api-keys-columns'
 import { projectsApi } from '@/lib/api/projects'
 import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -16,12 +27,9 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
-import { formatDate } from '@/lib/utils'
 const routeApi = getRouteApi('/projects/$projectId/settings')
 
 
@@ -35,6 +43,12 @@ export function SettingsPage() {
   const { data: languages = [] } = useQuery(languagesQuery())
 
   const { data: apiKeys = [] } = useQuery(projectApiKeysQuery(projectId))
+  const apiKeyData = useMemo(() => apiKeys, [apiKeys])
+  const [apiKeyFilter, setApiKeyFilter] = useState('')
+  const [apiKeyPagination, setApiKeyPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 20,
+  })
 
   const [saveForm, setSaveForm] = useState<{
     name: string
@@ -109,6 +123,23 @@ export function SettingsPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const apiKeyTable = useReactTable({
+    data: apiKeyData,
+    columns: apiKeyColumns,
+    state: { globalFilter: apiKeyFilter, pagination: apiKeyPagination },
+    onGlobalFilterChange: setApiKeyFilter,
+    onPaginationChange: setApiKeyPagination,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    enableSorting: false,
+    globalFilterFn: 'includesString',
+    meta: {
+      onRevoke: setDeleteKeyTarget,
+    },
+  })
 
   if (!project) return null
 
@@ -243,55 +274,15 @@ export function SettingsPage() {
         </div>
 
         {apiKeys.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Prefix</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Last used</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {apiKeys.map((k) => (
-                <TableRow key={k.id}>
-                  <TableCell className="font-medium">{k.name}</TableCell>
-                  <TableCell>
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                      {k.key_prefix}…
-                    </code>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {formatDate(k.created_at)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {k.last_used_at ? formatDate(k.last_used_at) : '—'}
-                  </TableCell>
-                  <TableCell>
-                    {k.revoked_at ? (
-                      <Badge variant="destructive">Revoked</Badge>
-                    ) : (
-                      <Badge variant="default">Active</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {!k.revoked_at && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => setDeleteKeyTarget(k)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="flex flex-col gap-4">
+            <DataTableToolbar
+              search={apiKeyFilter}
+              onSearchChange={setApiKeyFilter}
+              placeholder="Search keys…"
+            />
+            <DataTable table={apiKeyTable} />
+            <DataTablePagination table={apiKeyTable} />
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground py-4">No API keys yet.</p>
         )}

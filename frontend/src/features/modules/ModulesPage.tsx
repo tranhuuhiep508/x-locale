@@ -1,7 +1,17 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, Boxes } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  useReactTable,
+  type PaginationState,
+} from '@tanstack/react-table'
+import { Plus, Boxes } from 'lucide-react'
+import { DataTable } from '@/components/data-table/data-table'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { modulesApi } from '@/lib/api/catalog'
 import type { Module } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -15,10 +25,9 @@ import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
+import { moduleColumns } from '@/features/modules/modules-columns'
 const routeApi = getRouteApi('/projects/$projectId/modules')
 
 
@@ -30,6 +39,9 @@ export function ModulesPage() {
   const toast = useToast()
 
   const { data: modules = [], isLoading } = useQuery(modulesQuery(projectId))
+  const data = useMemo(() => modules, [modules])
+  const [globalFilter, setGlobalFilter] = useState('')
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 20 })
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Module | null>(null)
@@ -96,6 +108,32 @@ export function ModulesPage() {
     }
   }
 
+  const table = useReactTable({
+    data,
+    columns: moduleColumns,
+    state: { globalFilter, pagination },
+    onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    enableSorting: false,
+    globalFilterFn: 'includesString',
+    meta: {
+      onEdit: (module: Module) => {
+        setEditTarget(module)
+        setForm({
+          slug: module.slug,
+          name: module.name,
+          description: module.description ?? '',
+        })
+        setErrors({})
+      },
+      onDelete: setDeleteTarget,
+    },
+  })
+
   return (
     <div className="container py-6">
       <div className="flex items-center justify-between mb-6">
@@ -119,58 +157,15 @@ export function ModulesPage() {
           }
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Slug</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Strings</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {modules.map((m) => (
-              <TableRow key={m.id}>
-                <TableCell>
-                  <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    {m.slug}
-                  </code>
-                </TableCell>
-                <TableCell className="font-medium">{m.name}</TableCell>
-                <TableCell className="text-muted-foreground text-sm max-w-xs truncate">
-                  {m.description ?? '—'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="default">{m.string_count}</Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => {
-                        setEditTarget(m)
-                        setForm({ slug: m.slug, name: m.name, description: m.description ?? '' })
-                        setErrors({})
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleteTarget(m)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="flex flex-col gap-4">
+          <DataTableToolbar
+            search={globalFilter}
+            onSearchChange={setGlobalFilter}
+            placeholder="Search modules…"
+          />
+          <DataTable table={table} />
+          <DataTablePagination table={table} />
+        </div>
       )}
 
       {/* Create / Edit dialog */}
