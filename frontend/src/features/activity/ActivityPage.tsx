@@ -93,76 +93,85 @@ export function ActivityPage() {
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
+  const totalPages = Math.ceil(total / search.page_size)
 
   return (
-    <div className="container py-6">
-      <h1 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
-        <Clock className="h-5 w-5 text-primary" />
-        Activity feed
-      </h1>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b bg-background px-4 py-3">
+        <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+          <Clock className="size-5 text-primary" />
+          Activity feed
+        </h1>
+      </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <Spinner />
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState title="No activity yet" description="Changes will appear here." />
-      ) : (
-        <div className="flex flex-col gap-1">
-          {items.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-start gap-3 py-3 px-4 rounded-lg hover:bg-muted/50 transition-colors"
-            >
-              <div className="mt-0.5 shrink-0">
-                <Badge variant={ACTION_COLOR[activityLabel(a)] ?? 'default'}>
-                  {activityLabel(a)}
-                </Badge>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-foreground">{displaySummary(a.summary)}</p>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                  <span>{a.actor_label}</span>
-                  <span>·</span>
-                  <span>{formatDate(a.created_at)}</span>
-                  {a.locale && (
-                    <>
-                      <span>·</span>
-                      <code>{a.locale}</code>
-                    </>
-                  )}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex h-48 items-center justify-center">
+            <Spinner />
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState title="No activity yet" description="Changes will appear here." />
+        ) : (
+          <div className="flex flex-col gap-1 px-2 py-2">
+            {items.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-start gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-muted/50"
+              >
+                <div className="mt-0.5 shrink-0">
+                  <Badge variant={ACTION_COLOR[activityLabel(a)] ?? 'default'}>
+                    {activityLabel(a)}
+                  </Badge>
                 </div>
-                <ActivityFieldDiffs activity={a} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-foreground">{displaySummary(a.summary)}</p>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{a.actor_label}</span>
+                    <span>·</span>
+                    <span>{formatDate(a.created_at)}</span>
+                    {a.locale ? (
+                      <>
+                        <span>·</span>
+                        <code>{a.locale}</code>
+                      </>
+                    ) : null}
+                  </div>
+                  <ActivityFieldDiffs activity={a} />
+                </div>
+                {a.is_revertible && !a.reverted_by_id ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-muted-foreground hover:text-primary"
+                    onClick={() => setRevertTarget(a)}
+                  >
+                    {isRevertEntry(a) ? (
+                      <RotateCw data-icon="inline-start" />
+                    ) : (
+                      <RotateCcw data-icon="inline-start" />
+                    )}
+                    {feedActionLabel(a)}
+                  </Button>
+                ) : null}
+                {a.reverted_by_id ? (
+                  <span className="shrink-0 text-xs text-muted-foreground italic">reverted</span>
+                ) : null}
               </div>
-              {a.is_revertible && !a.reverted_by_id && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-primary shrink-0"
-                  onClick={() => setRevertTarget(a)}
-                >
-                  {isRevertEntry(a) ? (
-                    <RotateCw data-icon="inline-start" />
-                  ) : (
-                    <RotateCcw data-icon="inline-start" />
-                  )}
-                  {feedActionLabel(a)}
-                </Button>
-              )}
-              {a.reverted_by_id && (
-                <span className="text-xs text-muted-foreground shrink-0 italic">reverted</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
-      <DataPagination
-        page={search.page}
-        pageSize={search.page_size}
-        total={total}
-        onPageChange={(p) => navigate({ search: (prev) => ({ ...prev, page: p }) })}
-      />
+      {totalPages > 1 ? (
+        <div className="shrink-0 border-t px-4">
+          <DataPagination
+            page={search.page}
+            pageSize={search.page_size}
+            total={total}
+            onPageChange={(p) => navigate({ search: (prev) => ({ ...prev, page: p }) })}
+          />
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={revertTarget !== null}

@@ -337,8 +337,8 @@ export function StringsPage() {
   const selectedCount = selectedList.length
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80 border-b px-4 py-3">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b bg-background px-4 py-3">
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -533,9 +533,9 @@ export function StringsPage() {
         />
       )}
 
-      <div className="flex-1 overflow-x-auto">
+      <div className="min-h-0 flex-1">
         {stringsResult.isLoading ? (
-          <div className="flex items-center justify-center h-48">
+          <div className="flex h-48 items-center justify-center">
             <Spinner />
           </div>
         ) : data.length === 0 ? (
@@ -569,11 +569,11 @@ export function StringsPage() {
         )}
       </div>
 
-      {total > 0 && (
-        <div className="border-t px-4">
+      {total > 0 ? (
+        <div className="shrink-0 border-t px-4">
           <DataTablePagination table={table} />
         </div>
-      )}
+      ) : null}
 
       {dialogOpen && (
         <Suspense fallback={null}>
