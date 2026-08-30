@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
@@ -26,7 +26,6 @@ interface Props {
   modules: Module[]
   tags: Tag[]
   targetLocales: string[]
-  autoPreview?: boolean
   onClose: () => void
   onSuccess: () => void
 }
@@ -34,10 +33,6 @@ interface Props {
 const NONE_MODULE = '__none__'
 
 type FormErrors = Partial<Record<'key' | 'source_text', string>>
-
-function emptyLocales(map: Record<string, string>, locales: string[]): string[] {
-  return locales.filter((locale) => !map[locale]?.trim())
-}
 
 function mergeTranslations(
   prev: Record<string, string>,
@@ -59,7 +54,6 @@ export default function StringFormDialog({
   modules,
   tags,
   targetLocales,
-  autoPreview = false,
   onClose,
   onSuccess,
 }: Props) {
@@ -83,7 +77,6 @@ export default function StringFormDialog({
 
   const canAutoTranslate =
     key.trim().length > 0 && sourceText.trim().length > 0 && targetLocales.length > 0
-  const localesToFill = emptyLocales(translations, targetLocales)
 
   const payload = () => ({
     key: key.trim(),
@@ -125,15 +118,6 @@ export default function StringFormDialog({
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
   })
-
-  const startAutoPreview = useEffectEvent(() => {
-    if (!canAutoTranslate || localesToFill.length === 0) return
-    translateMut.mutate({ locales: localesToFill, overwrite: false })
-  })
-
-  useEffect(() => {
-    if (autoPreview) startAutoPreview()
-  }, [autoPreview])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -295,7 +279,7 @@ export default function StringFormDialog({
                     Auto-translate
                   </Button>
                 </div>
-                {autoPreview || translateMut.isPending || translateMut.isSuccess ? (
+                {translateMut.isPending || translateMut.isSuccess ? (
                   <p className="text-sm text-muted-foreground">
                     {translateMut.isPending
                       ? 'Generating translations…'

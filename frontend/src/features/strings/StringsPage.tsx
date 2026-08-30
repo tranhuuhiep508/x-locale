@@ -85,7 +85,6 @@ export function StringsPage() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
-  const [dialogAutoPreview, setDialogAutoPreview] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
@@ -250,9 +249,8 @@ export function StringsPage() {
     previewItemsMut.reset()
   }
 
-  const openEditor = useCallback((entry: StringEntry | null, autoPreview = false) => {
+  const openEditor = useCallback((entry: StringEntry | null) => {
     setDialogEntry(entry)
-    setDialogAutoPreview(autoPreview)
     setDialogOpen(true)
   }, [])
 
@@ -298,7 +296,6 @@ export function StringsPage() {
     () => ({
       projectId,
       onEdit: (entry: StringEntry) => openEditor(entry),
-      onTranslate: (entry: StringEntry) => openEditor(entry, true),
       onRefresh: invalidateStrings,
     }),
     [projectId, openEditor, invalidateStrings],
@@ -578,22 +575,19 @@ export function StringsPage() {
       {dialogOpen && (
         <Suspense fallback={null}>
           <StringFormDialog
-            key={`${dialogEntry?.id ?? 'new'}-${dialogAutoPreview ? 'ai' : 'edit'}`}
+            key={dialogEntry?.id ?? 'new'}
             projectId={projectId}
             entry={dialogEntry}
             modules={modules}
             tags={tags}
             targetLocales={locales}
-            autoPreview={dialogAutoPreview}
             onClose={() => {
               setDialogOpen(false)
               setDialogEntry(null)
-              setDialogAutoPreview(false)
             }}
             onSuccess={() => {
               setDialogOpen(false)
               setDialogEntry(null)
-              setDialogAutoPreview(false)
               invalidateStrings()
             }}
           />

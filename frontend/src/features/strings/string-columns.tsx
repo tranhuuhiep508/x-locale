@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
-import { Pencil, Trash2, Wand2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Spinner } from '@/components/ui/spinner'
@@ -12,7 +12,6 @@ import { useToast } from '@/lib/toast'
 export type StringTableMeta = {
   projectId: string
   onEdit: (entry: StringEntry) => void
-  onTranslate: (entry: StringEntry) => void
   onRefresh: () => void
 }
 
@@ -85,13 +84,11 @@ function StringActionsCell({
   entry,
   projectId,
   onEdit,
-  onTranslate,
   onRefresh,
 }: {
   entry: StringEntry
   projectId: string
   onEdit: (entry: StringEntry) => void
-  onTranslate: (entry: StringEntry) => void
   onRefresh: () => void
 }) {
   const toast = useToast()
@@ -118,15 +115,6 @@ function StringActionsCell({
         className="text-muted-foreground hover:text-foreground"
       >
         <Pencil />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title="AI Translate"
-        onClick={() => onTranslate(entry)}
-        className="text-muted-foreground hover:text-primary"
-      >
-        <Wand2 />
       </Button>
       <Button
         variant="ghost"
@@ -280,7 +268,6 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             entry={row.original}
             projectId={meta.projectId}
             onEdit={meta.onEdit}
-            onTranslate={meta.onTranslate}
             onRefresh={meta.onRefresh}
           />
         )
