@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.helpers import content_hash, export_key
 from app.models import Module, Project, StringEntry, TranslationStatus
 from app.schemas import ImportDiff, ImportResult
-from app.services.strings import apply_translation_values, ensure_translation_rows
+from app.services.strings import apply_translation_values, ensure_translation_rows, promote_string, restore_string
 
 
 def load_export_entries(db: Session, project_id) -> list[StringEntry]:
@@ -20,6 +20,7 @@ def load_export_entries(db: Session, project_id) -> list[StringEntry]:
         .options(
             joinedload(StringEntry.translations),
             joinedload(StringEntry.module),
+            joinedload(StringEntry.published_module),
             joinedload(StringEntry.tags),
         )
         .filter(StringEntry.project_id == project_id)
@@ -36,16 +37,21 @@ def translation_value(
 ) -> str | None:
     """Return value for locale given stage, or None to omit."""
     if locale == project.base_language:
+        if stage == "public":
+            if entry.published_source_text is not None:
+                return entry.published_source_text
+            return entry.source_text
         return entry.source_text
 
-    if stage == "public" and entry.status != TranslationStatus.public:
-        return None
+    if stage == "public":
+        if entry.status != TranslationStatus.public:
+            return None
+        translation = next((t for t in entry.translations if t.locale == locale), None)
+        if translation is not None and translation.published_value is not None:
+            return translation.published_value
+        return ""
 
     translation = next((t for t in entry.translations if t.locale == locale), None)
-    if stage == "public":
-        if translation:
-            return translation.value
-        return ""
     if translation and translation.value.strip():
         return translation.value
     return None
@@ -78,15 +84,24 @@ def build_flat_export(
     locales = resolve_export_locales(project, locale)
     result: dict[str, dict[str, str]] = {loc: {} for loc in locales}
     for entry in entries:
-        if stage == "public" and entry.status != TranslationStatus.public:
+        if entry.deleted_at is not None:
             continue
-        key = export_key(entry, "flat")
+        if stage == "public":
+            if entry.status != TranslationStatus.public:
+                continue
+        elif entry.pending_delete:
+            continue
+        key = export_key(entry, "flat", published=stage == "public")
         for locale in locales:
             val = translation_value(entry, locale, project, stage)
             if val is not None:
                 result[locale][key] = val
             elif locale == project.base_language:
-                result[locale][key] = entry.source_text
+                result[locale][key] = (
+                    entry.published_source_text
+                    if stage == "public" and entry.published_source_text is not None
+                    else entry.source_text
+                )
     return result
 
 
@@ -101,9 +116,19 @@ def build_modular_export(
     unassigned: dict[str, dict[str, str]] = {loc: {} for loc in locales}
 
     for entry in entries:
-        if stage == "public" and entry.status != TranslationStatus.public:
+        if entry.deleted_at is not None:
             continue
-        bucket_key = entry.module.slug if entry.module else None
+        if stage == "public":
+            if entry.status != TranslationStatus.public:
+                continue
+            module = entry.published_module
+            key = entry.published_key or entry.key
+        else:
+            if entry.pending_delete:
+                continue
+            module = entry.module
+            key = entry.key
+        bucket_key = module.slug if module else None
         if bucket_key:
             if bucket_key not in modules:
                 modules[bucket_key] = {loc: {} for loc in locales}
@@ -114,9 +139,13 @@ def build_modular_export(
         for locale in locales:
             val = translation_value(entry, locale, project, stage)
             if val is not None:
-                target[locale][entry.key] = val
+                target[locale][key] = val
             elif locale == project.base_language:
-                target[locale][entry.key] = entry.source_text
+                target[locale][key] = (
+                    entry.published_source_text
+                    if stage == "public" and entry.published_source_text is not None
+                    else entry.source_text
+                )
 
     module_list = sorted(modules.keys())
     manifest = {
@@ -194,22 +223,28 @@ class _ImportIndex:
     def __init__(self, entries: list[StringEntry]) -> None:
         self.by_export_key: dict[str, StringEntry] = {}
         self.by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
+        self.deleted_by_export_key: dict[str, StringEntry] = {}
+        self.deleted_by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
         for entry in entries:
             self.add(entry)
 
     def add(self, entry: StringEntry) -> None:
         label = export_key(entry, "flat")
-        self.by_export_key[label] = entry
-        self.by_module_key[(entry.module_id, entry.key)] = entry
+        dest_export = self.deleted_by_export_key if entry.deleted_at else self.by_export_key
+        dest_module = self.deleted_by_module_key if entry.deleted_at else self.by_module_key
+        dest_export[label] = entry
+        dest_module[(entry.module_id, entry.key)] = entry
         if entry.module_id is None:
-            self.by_export_key[entry.key] = entry
+            dest_export[entry.key] = entry
 
     def lookup(
         self, key: str, *, prefixed: bool, module_id: UUID | None
     ) -> StringEntry | None:
         if prefixed:
-            return self.by_export_key.get(key)
-        return self.by_module_key.get((module_id, key))
+            return self.by_export_key.get(key) or self.deleted_by_export_key.get(key)
+        return self.by_module_key.get((module_id, key)) or self.deleted_by_module_key.get(
+            (module_id, key)
+        )
 
 
 def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
@@ -260,13 +295,17 @@ def _upsert_imported_string(
                 entry,
                 {loc: val for loc, val in values.items() if loc != project.base_language},
             )
+            if status == TranslationStatus.public:
+                promote_string(entry)
             index.add(entry)
         return "create"
 
-    if not _values_changed(entry, project, values):
+    revived = bool(entry.deleted_at)
+    if not revived and not _values_changed(entry, project, values):
         return "unchanged"
 
     if not dry_run:
+        restore_string(entry)
         if project.base_language in values:
             entry.source_text = values[project.base_language]
         apply_translation_values(

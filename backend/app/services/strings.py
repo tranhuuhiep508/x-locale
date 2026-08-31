@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Sequence
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
@@ -23,6 +24,118 @@ from app.schemas import (
 )
 
 
+def mark_deleted(entry: StringEntry) -> None:
+    entry.deleted_at = datetime.now(UTC)
+    entry.pending_delete = False
+
+
+def restore_string(entry: StringEntry) -> bool:
+    """Clear pending delete and/or tombstone. Returns True if anything changed."""
+    changed = False
+    if entry.deleted_at is not None:
+        entry.deleted_at = None
+        changed = True
+    if entry.pending_delete:
+        entry.pending_delete = False
+        changed = True
+    return changed
+
+
+def queue_or_soft_delete(entry: StringEntry) -> bool:
+    """Hide a never-published string, or queue removal of a published one."""
+    if entry.deleted_at is not None:
+        return False
+    if entry.published_key is not None:
+        if entry.pending_delete:
+            return False
+        entry.pending_delete = True
+        return True
+    mark_deleted(entry)
+    return True
+
+
+def has_unpublished_changes(entry: StringEntry) -> bool:
+    if entry.deleted_at is not None:
+        return False
+    if entry.pending_delete:
+        return True
+    if entry.published_key is None:
+        return False
+    if entry.key != entry.published_key:
+        return True
+    if entry.module_id != entry.published_module_id:
+        return True
+    if entry.source_text != entry.published_source_text:
+        return True
+    for translation in entry.translations or []:
+        published = translation.published_value if translation.published_value is not None else ""
+        if (translation.value or "") != published:
+            return True
+    return False
+
+
+def unpublished_changes_clause():
+    translation_diff = exists(
+        select(Translation.id).where(
+            Translation.string_id == StringEntry.id,
+            func.coalesce(Translation.value, "")
+            != func.coalesce(Translation.published_value, ""),
+        )
+    )
+    return or_(
+        StringEntry.pending_delete.is_(True),
+        (StringEntry.published_key.isnot(None))
+        & StringEntry.deleted_at.is_(None)
+        & or_(
+            StringEntry.key != StringEntry.published_key,
+            StringEntry.source_text != StringEntry.published_source_text,
+            StringEntry.module_id.is_distinct_from(StringEntry.published_module_id),
+            translation_diff,
+        ),
+    )
+
+
+def promote_string(entry: StringEntry) -> None:
+    """Copy working copy → published snapshot and mark the string public."""
+    entry.published_key = entry.key
+    entry.published_module_id = entry.module_id
+    entry.published_source_text = entry.source_text
+    entry.published_at = datetime.now(UTC)
+    entry.status = TranslationStatus.public
+    entry.pending_delete = False
+    for translation in entry.translations or []:
+        translation.published_value = translation.value or ""
+
+
+def unpublish_string(entry: StringEntry) -> None:
+    entry.status = TranslationStatus.draft
+
+
+def discard_working_changes(entry: StringEntry) -> bool:
+    """Reset working copy to the last published snapshot. Returns True if anything changed."""
+    if entry.published_key is None:
+        return False
+    changed = False
+    if entry.key != entry.published_key:
+        entry.key = entry.published_key
+        changed = True
+    if entry.module_id != entry.published_module_id:
+        entry.module_id = entry.published_module_id
+        changed = True
+    if entry.source_text != (entry.published_source_text or ""):
+        entry.source_text = entry.published_source_text or entry.source_text
+        changed = True
+    for translation in entry.translations or []:
+        published = translation.published_value if translation.published_value is not None else ""
+        if (translation.value or "") != published:
+            translation.value = published
+            changed = True
+    if entry.pending_delete:
+        entry.pending_delete = False
+        changed = True
+    return changed
+
+
 def serialize_string(entry: StringEntry) -> StringOut:
     return StringOut(
         id=entry.id,
@@ -30,6 +143,14 @@ def serialize_string(entry: StringEntry) -> StringOut:
         source_text=entry.source_text,
         description=entry.description,
         status=entry.status,
+        pending_delete=bool(entry.pending_delete),
+        deleted_at=entry.deleted_at,
+        has_unpublished_changes=has_unpublished_changes(entry),
+        published_at=entry.published_at,
+        published_key=entry.published_key,
+        published_source_text=entry.published_source_text,
+        published_module_id=entry.published_module_id,
+        published_module_slug=entry.published_module.slug if entry.published_module else None,
         module_id=entry.module_id,
         module_slug=entry.module.slug if entry.module else None,
         tags=[
@@ -41,6 +162,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
                 id=t.id,
                 locale=t.locale,
                 value=t.value,
+                published_value=t.published_value,
                 updated_at=t.updated_at,
             )
             for t in (entry.translations or [])
@@ -91,6 +213,9 @@ def string_query(
     q: str | None = None,
     missing_locale: str | None = None,
     status: TranslationStatus | None = None,
+    pending_delete: bool | None = None,
+    has_unpublished_changes: bool | None = None,
+    deleted: bool | None = None,
 ):
     query = (
         db.query(StringEntry)
@@ -98,9 +223,14 @@ def string_query(
             joinedload(StringEntry.translations),
             joinedload(StringEntry.tags),
             joinedload(StringEntry.module),
+            joinedload(StringEntry.published_module),
         )
         .filter(StringEntry.project_id == project_id)
     )
+    if deleted is True:
+        query = query.filter(StringEntry.deleted_at.isnot(None))
+    else:
+        query = query.filter(StringEntry.deleted_at.is_(None))
     if module_id is not None:
         query = query.filter(StringEntry.module_id == module_id)
     if tag_id is not None:
@@ -126,6 +256,11 @@ def string_query(
         query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
     if status is not None:
         query = query.filter(StringEntry.status == status)
+    if pending_delete is not None:
+        query = query.filter(StringEntry.pending_delete.is_(pending_delete))
+    if has_unpublished_changes is not None:
+        clause = unpublished_changes_clause()
+        query = query.filter(clause if has_unpublished_changes else ~clause)
     return query.distinct()
 
 
@@ -147,6 +282,9 @@ def resolve_string_ids(
         q=getattr(filt, "q", None),
         missing_locale=getattr(filt, "missing_locale", None),
         status=getattr(filt, "status", None),
+        pending_delete=getattr(filt, "pending_delete", None),
+        has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
+        deleted=getattr(filt, "deleted", None),
     )
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
@@ -168,6 +306,7 @@ def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> Stri
             joinedload(StringEntry.translations),
             joinedload(StringEntry.tags),
             joinedload(StringEntry.module),
+            joinedload(StringEntry.published_module),
         )
         .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
         .first()
@@ -186,6 +325,9 @@ def list_strings(
     q: str | None = None,
     missing_locale: str | None = None,
     status: TranslationStatus | None = None,
+    pending_delete: bool | None = None,
+    has_unpublished_changes: bool | None = None,
+    deleted: bool | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> StringListOut:
@@ -197,6 +339,9 @@ def list_strings(
         q=q,
         missing_locale=missing_locale,
         status=status,
+        pending_delete=pending_delete,
+        has_unpublished_changes=has_unpublished_changes,
+        deleted=deleted,
     )
     total = query.count()
     entries = (
@@ -220,6 +365,7 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
             StringEntry.project_id == project.id,
             StringEntry.module_id == payload.module_id,
             StringEntry.key == payload.key,
+            StringEntry.deleted_at.is_(None),
         )
         .first()
     )
@@ -235,7 +381,7 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         key=payload.key,
         source_text=payload.source_text,
         description=payload.description,
-        status=payload.status,
+        status=TranslationStatus.draft,
     )
     db.add(entry)
     if payload.tag_ids:
@@ -248,6 +394,8 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
     ensure_translation_rows(db, entry, project)
     if payload.translations:
         apply_translation_values(db, entry, payload.translations)
+    if payload.status == TranslationStatus.public:
+        promote_string(entry)
     db.commit()
     return serialize_string(get_string(db, project.id, entry.id))
 
@@ -274,12 +422,14 @@ def update_string(
             .all()
         )
         entry.tags = tags
-    if payload.status is not None:
-        entry.status = payload.status
     if payload.translations is not None:
         validate_locales(project, payload.translations)
         ensure_translation_rows(db, entry, project)
         apply_translation_values(db, entry, payload.translations)
+    if payload.status == TranslationStatus.public:
+        promote_string(entry)
+    elif payload.status == TranslationStatus.draft:
+        unpublish_string(entry)
     db.commit()
     return serialize_string(get_string(db, project.id, string_id))
 
@@ -311,7 +461,7 @@ def upsert_translation(
 
 def delete_string(db: Session, project: Project, string_id: uuid.UUID) -> None:
     entry = get_string(db, project.id, string_id)
-    db.delete(entry)
+    queue_or_soft_delete(entry)
     db.commit()
 
 
@@ -327,7 +477,12 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
 
     entries = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+        .options(
+            joinedload(StringEntry.translations),
+            joinedload(StringEntry.tags),
+            joinedload(StringEntry.module),
+            joinedload(StringEntry.published_module),
+        )
         .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids))
         .all()
     )
@@ -337,18 +492,33 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
 
     if action == "publish":
         for entry in entries:
-            if entry.status != TranslationStatus.public:
-                entry.status = TranslationStatus.public
+            if entry.deleted_at is not None:
+                continue
+            if entry.pending_delete:
+                mark_deleted(entry)
+                affected += 1
+            else:
+                promote_string(entry)
                 affected += 1
     elif action == "unpublish":
         for entry in entries:
+            if entry.deleted_at is not None:
+                continue
             if entry.status != TranslationStatus.draft:
-                entry.status = TranslationStatus.draft
+                unpublish_string(entry)
                 affected += 1
     elif action == "delete":
         for entry in entries:
-            db.delete(entry)
-            affected += 1
+            if queue_or_soft_delete(entry):
+                affected += 1
+    elif action == "discard_changes":
+        for entry in entries:
+            if discard_working_changes(entry):
+                affected += 1
+    elif action in ("discard_delete", "restore"):
+        for entry in entries:
+            if restore_string(entry):
+                affected += 1
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
         mid = uuid.UUID(module_id) if module_id else None

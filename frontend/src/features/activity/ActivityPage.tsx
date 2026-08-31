@@ -201,6 +201,10 @@ const FIELD_LABELS: Record<string, string> = {
   description: 'Description',
   status: 'Status',
   module_id: 'Module',
+  published_key: 'Published key',
+  published_source_text: 'Published source',
+  pending_delete: 'Pending delete',
+  deleted_at: 'Deleted at',
   tags: 'Tags',
 }
 
@@ -213,7 +217,17 @@ function formatSnapshotValue(value: unknown): string {
 function flattenSnapshot(snap: Record<string, unknown> | null): Record<string, string> {
   if (!snap) return {}
   const out: Record<string, string> = {}
-  for (const key of ['key', 'source_text', 'description', 'status', 'module_id'] as const) {
+  for (const key of [
+    'key',
+    'source_text',
+    'description',
+    'status',
+    'module_id',
+    'published_key',
+    'published_source_text',
+    'pending_delete',
+    'deleted_at',
+  ] as const) {
     if (key in snap) out[key] = formatSnapshotValue(snap[key])
   }
   if ('tag_ids' in snap) out.tags = formatSnapshotValue(snap.tag_ids)

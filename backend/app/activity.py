@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import inspect as sa_inspect
@@ -21,7 +22,19 @@ from app.models import (
     TranslationStatus,
 )
 
-STRING_FIELDS = ("key", "source_text", "description", "module_id", "status")
+STRING_FIELDS = (
+    "key",
+    "source_text",
+    "description",
+    "module_id",
+    "status",
+    "published_key",
+    "published_module_id",
+    "published_source_text",
+    "published_at",
+    "pending_delete",
+    "deleted_at",
+)
 
 
 def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict[str, Any]:
@@ -42,6 +55,8 @@ def _jsonify(val: Any) -> Any:
         return str(val)
     if isinstance(val, TranslationStatus):
         return val.value
+    if isinstance(val, datetime):
+        return val.isoformat()
     return val
 
 
@@ -50,6 +65,8 @@ def _ensure_string_identity(obj: StringEntry) -> None:
         obj.id = uuid.uuid4()
     if obj.status is None:
         obj.status = TranslationStatus.draft
+    if obj.pending_delete is None:
+        obj.pending_delete = False
 
 
 def _status_value(obj: StringEntry) -> str:
@@ -186,6 +203,13 @@ def _translation_maps(
                 before[obj.locale] = (hist.deleted[0] if hist.deleted else "") or ""
             else:
                 before.setdefault(obj.locale, obj.value or "")
+            try:
+                pub_hist = sa_inspect(obj).attrs.published_value.history
+            except Exception:
+                pass
+            else:
+                if pub_hist.has_changes():
+                    changed = True
 
     for obj in list(session.deleted):
         if isinstance(obj, Translation) and obj.string_id == string_id:
@@ -194,6 +218,52 @@ def _translation_maps(
             changed = True
 
     return before, after, changed
+
+
+def _published_translation_maps(
+    session: Session, string_id: uuid.UUID, entry: StringEntry | None
+) -> tuple[dict[str, str | None], dict[str, str | None]]:
+    before: dict[str, str | None] = {}
+    after: dict[str, str | None] = {}
+
+    translations: list[Translation] = []
+    if entry is not None and _rel_loaded(entry, "translations"):
+        translations = [t for t in list(entry.translations or []) if t not in session.deleted]
+    elif entry is not None and entry.id:
+        translations = [
+            t
+            for t in session.query(Translation).filter(Translation.string_id == string_id).all()
+            if t not in session.deleted
+        ]
+
+    for translation in translations:
+        after[translation.locale] = translation.published_value
+        before[translation.locale] = translation.published_value
+
+    for obj in list(session.new):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            after[obj.locale] = obj.published_value
+            before.setdefault(obj.locale, None)
+
+    for obj in list(session.dirty):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            after[obj.locale] = obj.published_value
+            try:
+                hist = sa_inspect(obj).attrs.published_value.history
+            except Exception:
+                before[obj.locale] = obj.published_value
+                continue
+            if hist.has_changes():
+                before[obj.locale] = hist.deleted[0] if hist.deleted else None
+            else:
+                before.setdefault(obj.locale, obj.published_value)
+
+    for obj in list(session.deleted):
+        if isinstance(obj, Translation) and obj.string_id == string_id:
+            before[obj.locale] = obj.published_value
+            after.pop(obj.locale, None)
+
+    return before, after
 
 
 def _only_empty_new_translations(session: Session, string_id: uuid.UUID) -> bool:
@@ -227,6 +297,7 @@ def _snapshot(
     tags_after: list[str],
 ) -> dict[str, Any]:
     _ensure_string_identity(obj)
+    pub_before, pub_after = _published_translation_maps(session, obj.id, obj)
     return {
         "id": str(obj.id),
         "project_id": str(obj.project_id),
@@ -235,8 +306,15 @@ def _snapshot(
         "description": _field_value(obj, "description", before=before),
         "status": _field_value(obj, "status", before=before) or _status_value(obj),
         "module_id": _field_value(obj, "module_id", before=before),
+        "published_key": _field_value(obj, "published_key", before=before),
+        "published_module_id": _field_value(obj, "published_module_id", before=before),
+        "published_source_text": _field_value(obj, "published_source_text", before=before),
+        "published_at": _field_value(obj, "published_at", before=before),
+        "pending_delete": bool(_field_value(obj, "pending_delete", before=before)),
+        "deleted_at": _field_value(obj, "deleted_at", before=before),
         "tag_ids": tags_before if before else tags_after,
         "translations": trans_before if before else trans_after,
+        "published_translations": pub_before if before else pub_after,
     }
 
 
@@ -385,19 +463,24 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
         if before == after:
             continue
 
+        soft_deleted = not before.get("deleted_at") and bool(after.get("deleted_at"))
         activities.append(
             _make_activity(
                 project_id=entry.project_id,
                 actor_type=actor_type,
                 actor_id=actor_id,
                 actor_label=actor_label,
-                action=ActivityAction.update,
+                action=ActivityAction.delete if soft_deleted else ActivityAction.update,
                 entity_type=EntityType.string,
                 entity_id=str(entry.id),
                 string_id=entry.id,
                 before=before,
                 after=after,
-                summary=f"Updated string '{entry.key}'",
+                summary=(
+                    f"Deleted string '{entry.key}'"
+                    if soft_deleted
+                    else f"Updated string '{entry.key}'"
+                ),
                 batch_id=batch_id,
                 batch_kind=batch_kind,
                 is_revertible=True,

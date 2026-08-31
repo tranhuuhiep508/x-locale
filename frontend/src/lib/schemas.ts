@@ -6,6 +6,18 @@ export const stringsSearchSchema = z.object({
   q: z.string().optional(),
   missing_locale: z.string().optional(),
   status: z.enum(['draft', 'public']).optional(),
+  has_unpublished_changes: z
+    .union([z.boolean(), z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
+  pending_delete: z
+    .union([z.boolean(), z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
+  deleted: z
+    .union([z.boolean(), z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
 })

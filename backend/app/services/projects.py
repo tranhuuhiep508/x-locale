@@ -39,7 +39,7 @@ def project_out(project: Project, string_count: int) -> ProjectOut:
 def count_strings(db: Session, project_id: uuid.UUID) -> int:
     return (
         db.query(func.count(StringEntry.id))
-        .filter(StringEntry.project_id == project_id)
+        .filter(StringEntry.project_id == project_id, StringEntry.deleted_at.is_(None))
         .scalar()
         or 0
     )
@@ -48,6 +48,7 @@ def count_strings(db: Session, project_id: uuid.UUID) -> int:
 def count_strings_by_project(db: Session) -> dict[uuid.UUID, int]:
     rows = (
         db.query(StringEntry.project_id, func.count(StringEntry.id))
+        .filter(StringEntry.deleted_at.is_(None))
         .group_by(StringEntry.project_id)
         .all()
     )
@@ -138,6 +139,18 @@ def create_api_key(
     user: User,
 ) -> ApiKeyCreated:
     project = get_project(db, project_id)
+    now = datetime.now(UTC)
+    previous = (
+        db.query(ApiKey)
+        .filter(
+            ApiKey.project_id == project.id,
+            ApiKey.created_by == user.id,
+            ApiKey.revoked_at.is_(None),
+        )
+        .all()
+    )
+    for old in previous:
+        old.revoked_at = now
     raw, prefix, key_hash = generate_api_key()
     api_key = ApiKey(
         project_id=project.id,

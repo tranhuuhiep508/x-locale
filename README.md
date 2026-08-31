@@ -121,9 +121,9 @@ commit client IDs or secrets.
 ## Concepts
 
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export shape; modules are always stored.
-- **Status** is per string: `draft` or `public`. Export `stage=public` includes only public strings; untranslated locales export as empty.
+- **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `tms pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
-- **Activity log** records content changes; revert undoes one change (or a whole batch). **Snapshots** capture the full project for one-click restore (auto pre-restore backup included).
+- **Activity log** records content changes; revert undoes one change (or a whole batch).
 
 More detail: [docs/](docs/).
 

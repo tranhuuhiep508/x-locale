@@ -148,8 +148,9 @@ Pull translations from TMS to local files.
 Options:
   --output-dir TEXT    Override output directory
   --layout TEXT        Override layout
-  --stage TEXT         Override stage (draft returns everything; public returns
-                       only strings marked public, falling back to source text)
+  --stage TEXT         Override stage (draft is the working copy, omitting
+                       pending deletes and tombstones; public is the last
+                       published snapshot, omitting soft-deleted keys)
   --locales TEXT       Comma-separated locale list
 ```
 

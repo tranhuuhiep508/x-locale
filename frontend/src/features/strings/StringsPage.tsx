@@ -31,6 +31,7 @@ import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { FilterPill } from '@/features/strings/FilterPill'
 import { getStringColumns } from '@/features/strings/string-columns'
+import { canDiscardWorkingCopy, releaseRowClassName, releaseState } from '@/features/strings/working-copy'
 import {
   TranslateReviewDialog,
   jobStillRunning,
@@ -281,7 +282,14 @@ export function StringsPage() {
             ? proposalJobQuery.data.error ?? 'Translation job failed'
             : null
   const hasActiveFilters = Boolean(
-    search.q || search.module || search.tag || search.status || search.missing_locale,
+    search.q ||
+      search.module ||
+      search.tag ||
+      search.status ||
+      search.missing_locale ||
+      search.has_unpublished_changes ||
+      search.pending_delete ||
+      search.deleted,
   )
 
   const moduleById = new Map(modules.map((m) => [m.id, m]))
@@ -332,6 +340,13 @@ export function StringsPage() {
 
   const selectedList = Object.keys(rowSelection).filter((id) => rowSelection[id])
   const selectedCount = selectedList.length
+  const selectedEntries = data.filter((entry) => rowSelection[entry.id])
+  const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
+  const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
+  const showRestore = selectedEntries.some((entry) => Boolean(entry.deleted_at))
+  const selectedReleased = selectedEntries.some(
+    (entry) => entry.status === 'public' || entry.published_at,
+  )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -391,10 +406,44 @@ export function StringsPage() {
           )}
 
           <Select
-            value={search.status ?? 'all'}
-            onValueChange={(v) =>
-              setFilter({ status: v === 'all' ? undefined : (v as StringsSearch['status']) })
+            value={
+              search.deleted
+                ? 'deleted'
+                : search.has_unpublished_changes
+                  ? 'needs_publish'
+                  : (search.status ?? 'all')
             }
+            onValueChange={(v) => {
+              if (v === 'all') {
+                setFilter({
+                  status: undefined,
+                  has_unpublished_changes: undefined,
+                  deleted: undefined,
+                })
+                return
+              }
+              if (v === 'needs_publish') {
+                setFilter({
+                  status: undefined,
+                  has_unpublished_changes: true,
+                  deleted: undefined,
+                })
+                return
+              }
+              if (v === 'deleted') {
+                setFilter({
+                  status: undefined,
+                  has_unpublished_changes: undefined,
+                  deleted: true,
+                })
+                return
+              }
+              setFilter({
+                status: v as StringsSearch['status'],
+                has_unpublished_changes: undefined,
+                deleted: undefined,
+              })
+            }}
           >
             <SelectTrigger className="w-36">
               <SelectValue placeholder="Any status" />
@@ -404,6 +453,8 @@ export function StringsPage() {
                 <SelectItem value="all">Any status</SelectItem>
                 <SelectItem value="draft">Draft</SelectItem>
                 <SelectItem value="public">Public</SelectItem>
+                <SelectItem value="needs_publish">Needs publish</SelectItem>
+                <SelectItem value="deleted">Deleted</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -506,6 +557,15 @@ export function StringsPage() {
                 onRemove={() => setFilter({ status: undefined })}
               />
             )}
+            {search.has_unpublished_changes && (
+              <FilterPill
+                label="needs publish"
+                onRemove={() => setFilter({ has_unpublished_changes: undefined })}
+              />
+            )}
+            {search.deleted && (
+              <FilterPill label="deleted" onRemove={() => setFilter({ deleted: undefined })} />
+            )}
             {search.missing_locale && (
               <FilterPill
                 label={`missing: ${search.missing_locale}`}
@@ -526,6 +586,16 @@ export function StringsPage() {
           onMove={() => setShowMoveModule(true)}
           onAddTags={() => setShowAddTags(true)}
           onDelete={() => setDeleteConfirm(true)}
+          onDiscardChanges={() =>
+            batchMut.mutate({ action: 'discard_changes', string_ids: selectedList })
+          }
+          onDiscardDelete={() =>
+            batchMut.mutate({ action: 'discard_delete', string_ids: selectedList })
+          }
+          onRestore={() => batchMut.mutate({ action: 'restore', string_ids: selectedList })}
+          showDiscardChanges={showDiscardChanges}
+          showDiscardDelete={showDiscardDelete}
+          showRestore={showRestore}
           onClear={() => setRowSelection({})}
         />
       )}
@@ -557,9 +627,10 @@ export function StringsPage() {
         ) : (
           <DataTable
             table={table}
+            getRowClassName={(row) => releaseRowClassName(releaseState(row.original))}
             onRowClick={(row, event) => {
               const target = event.target as HTMLElement
-              if (target.closest('button, input, [role="checkbox"], [role="switch"], a')) return
+              if (target.closest('button, input, [role="checkbox"], [role="switch"], [role="radio"], a')) return
               openEditor(row.original)
             }}
           />
@@ -648,7 +719,11 @@ export function StringsPage() {
           batchMut.mutate({ action: 'delete', string_ids: selectedList })
         }
         title={`Delete ${selectedCount} string${selectedCount > 1 ? 's' : ''}?`}
-        description="This cannot be undone."
+        description={
+          selectedReleased
+            ? 'Published strings stay on prod until you publish the removal. Staging draft pull hides pending deletes. Never-published strings are hidden and can be restored from Deleted.'
+            : 'Strings are hidden from the grid. Restore them from the Deleted filter.'
+        }
         confirmLabel="Delete"
         isLoading={batchMut.isPending}
       />

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import io
-import uuid
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportResult
+from app.services.strings import promote_string, restore_string
 
 
 def build_workbook(
@@ -32,8 +31,11 @@ def build_workbook(
         locales = [locale]
     by_module: dict[str | None, list[StringEntry]] = {}
     for e in entries:
-        key = e.module.slug if e.module else None
-        by_module.setdefault(key, []).append(e)
+        if stage == "public":
+            slug = e.published_module.slug if e.published_module else None
+        else:
+            slug = e.module.slug if e.module else None
+        by_module.setdefault(slug, []).append(e)
 
     # Module sheets
     for slug in sorted(k for k in by_module if k is not None):
@@ -69,18 +71,41 @@ def _write_sheet(
     ws = wb.create_sheet(name[:31])  # Excel sheet name limit
     headers = ["key", "description", "tags", *locales]
     ws.append(headers)
-    for entry in sorted(entries, key=lambda e: e.key):
-        if stage == "public" and entry.status != TranslationStatus.public:
+
+    def _row_key(entry: StringEntry) -> str:
+        if stage == "public":
+            return entry.published_key or entry.key
+        return entry.key
+
+    for entry in sorted(entries, key=_row_key):
+        if entry.deleted_at is not None:
             continue
+        if stage == "public":
+            if entry.status != TranslationStatus.public:
+                continue
+            row_key = entry.published_key or entry.key
+            source = (
+                entry.published_source_text
+                if entry.published_source_text is not None
+                else entry.source_text
+            )
+        else:
+            if entry.pending_delete:
+                continue
+            row_key = entry.key
+            source = entry.source_text
         tags = ",".join(t.name for t in (entry.tags or []))
-        row: list[Any] = [entry.key, entry.description or "", tags]
+        row: list[Any] = [row_key, entry.description or "", tags]
         for locale in locales:
             if locale == project.base_language:
-                row.append(entry.source_text)
+                row.append(source)
             else:
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if stage == "public":
-                    row.append(t.value if t else "")
+                    if t is not None and t.published_value is not None:
+                        row.append(t.published_value)
+                    else:
+                        row.append("")
                 else:
                     row.append(t.value if t else "")
         ws.append(row)
@@ -170,31 +195,47 @@ def import_workbook(
             if not source_text:
                 source_text = key  # fallback
 
+            revived = False
             entry = (
                 db.query(StringEntry)
                 .filter(
                     StringEntry.project_id == project.id,
                     StringEntry.module_id == module_id,
                     StringEntry.key == key,
+                    StringEntry.deleted_at.is_(None),
                 )
                 .first()
             )
+            if entry is None:
+                entry = (
+                    db.query(StringEntry)
+                    .filter(
+                        StringEntry.project_id == project.id,
+                        StringEntry.module_id == module_id,
+                        StringEntry.key == key,
+                    )
+                    .first()
+                )
+                if entry is not None:
+                    revived = True
+                    if not dry_run:
+                        restore_string(entry)
 
             label = f"{sheet_name}.{key}" if sheet_name != "_unassigned" else key
+            created_this_row = False
             if entry:
-                if entry.source_text != source_text or (description and entry.description != description):
+                if revived or entry.source_text != source_text or (
+                    description and entry.description != description
+                ):
                     update_keys.append(label)
                     if not dry_run:
                         entry.source_text = source_text
                         if description is not None:
                             entry.description = description
                         updated += 1
-                else:
-                    if not dry_run:
-                        # Still update translations
-                        pass
             else:
                 create_keys.append(label)
+                created_this_row = True
                 if not dry_run:
                     entry = StringEntry(
                         project_id=project.id,
@@ -202,7 +243,7 @@ def import_workbook(
                         key=key,
                         source_text=source_text,
                         description=description,
-                        status=status,
+                        status=TranslationStatus.draft,
                     )
                     db.add(entry)
                     db.flush()
@@ -210,9 +251,6 @@ def import_workbook(
 
             if dry_run or entry is None:
                 continue
-
-            if not dry_run:
-                entry.status = status
 
             # Tags
             if tag_names:
@@ -238,18 +276,19 @@ def import_workbook(
                 value = str(val) if val is not None else ""
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if t is None:
-                    # Ensure relationship loaded
-                    from sqlalchemy.orm import object_session
-
                     t = Translation(
                         string_id=entry.id,
                         locale=locale,
                         value=value,
                     )
                     db.add(t)
+                    entry.translations.append(t)
                 else:
                     if value != t.value:
                         t.value = value
+
+            if created_this_row and status == TranslationStatus.public:
+                promote_string(entry)
 
     diff = ImportDiff(
         create=create_keys,

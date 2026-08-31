@@ -21,6 +21,9 @@ export type StringListParams = {
   q?: string
   missing_locale?: string
   status?: string
+  pending_delete?: boolean
+  has_unpublished_changes?: boolean
+  deleted?: boolean
   page?: number
   page_size?: number
 }
@@ -28,6 +31,8 @@ export type StringListParams = {
 export const stringsApi = {
   list: (projectId: string, params: StringListParams) =>
     api.get<StringListResponse>(`/projects/${projectId}/strings`, params),
+  get: (projectId: string, id: string) =>
+    api.get<StringEntry>(`/projects/${projectId}/strings/${id}`),
   create: (projectId: string, body: StringCreate) =>
     api.post<StringEntry>(`/projects/${projectId}/strings`, body),
   update: (projectId: string, id: string, body: StringUpdate) =>

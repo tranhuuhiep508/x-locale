@@ -31,6 +31,9 @@ def list_strings(
     q: Annotated[str | None, Query()] = None,
     missing_locale: Annotated[str | None, Query()] = None,
     status: Annotated[TranslationStatus | None, Query()] = None,
+    pending_delete: Annotated[bool | None, Query()] = None,
+    has_unpublished_changes: Annotated[bool | None, Query()] = None,
+    deleted: Annotated[bool | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> StringListOut:
@@ -42,6 +45,9 @@ def list_strings(
         q=q,
         missing_locale=missing_locale,
         status=status,
+        pending_delete=pending_delete,
+        has_unpublished_changes=has_unpublished_changes,
+        deleted=deleted,
         page=page,
         page_size=page_size,
     )

@@ -8,27 +8,31 @@ import {
   useReactTable,
   type PaginationState,
 } from '@tanstack/react-table'
-import { Plus, Copy, Check } from 'lucide-react'
+import { Plus, TriangleAlert } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { CopyableSecretField } from '@/components/copyable-secret-field'
 import { apiKeyColumns } from '@/features/settings/api-keys-columns'
 import { projectsApi } from '@/lib/api/projects'
 import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import {
   languagesQuery,
+  meQuery,
   projectApiKeysQuery,
   projectQuery,
 } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useToast } from '@/lib/toast'
 const routeApi = getRouteApi('/projects/$projectId/settings')
 
@@ -39,8 +43,10 @@ export function SettingsPage() {
   const toast = useToast()
 
   const { data: project } = useQuery(projectQuery(projectId))
+  const { data: me } = useQuery(meQuery())
 
   const { data: languages = [] } = useQuery(languagesQuery())
+  const defaultKeyName = me?.email || 'Default'
 
   const { data: apiKeys = [] } = useQuery(projectApiKeysQuery(projectId))
   const apiKeyData = useMemo(() => apiKeys, [apiKeys])
@@ -81,7 +87,11 @@ export function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState('')
   const [createdKey, setCreatedKey] = useState<ApiKeyCreated | null>(null)
   const [deleteKeyTarget, setDeleteKeyTarget] = useState<ApiKey | null>(null)
-  const [copied, setCopied] = useState(false)
+
+  function openGenerateKey() {
+    setNewKeyName(defaultKeyName)
+    setShowNewKey(true)
+  }
 
   const createKeyMut = useMutation({
     mutationFn: (name: string) =>
@@ -92,7 +102,7 @@ export function SettingsPage() {
       setShowNewKey(false)
       setNewKeyName('')
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to create key'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to generate key'),
   })
 
   const revokeKeyMut = useMutation({
@@ -115,13 +125,6 @@ export function SettingsPage() {
           : [...base.target_languages, code],
       }
     })
-  }
-
-  function copyKey() {
-    if (!createdKey) return
-    navigator.clipboard.writeText(createdKey.key)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   const apiKeyTable = useReactTable({
@@ -264,12 +267,13 @@ export function SettingsPage() {
           <div>
             <h2 className="text-base font-semibold text-foreground">API Keys</h2>
             <p className="text-sm text-muted-foreground">
-              Use API keys to authenticate CLI sync and integrations.
+              Generate a personal key for CLI sync. It identifies you in the activity log — do not share it.
+              Generating a new key revokes your previous personal key for this project.
             </p>
           </div>
-          <Button size="sm" onClick={() => setShowNewKey(true)}>
+          <Button size="sm" onClick={openGenerateKey}>
             <Plus data-icon="inline-start" />
-            New key
+            Generate key
           </Button>
         </div>
 
@@ -284,11 +288,19 @@ export function SettingsPage() {
             <DataTablePagination table={apiKeyTable} />
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground py-4">No API keys yet.</p>
+          <EmptyState
+            title="No API keys yet"
+            description="Generate a personal key for the CLI. The secret is created automatically and shown once."
+            action={
+              <Button size="sm" onClick={openGenerateKey}>
+                <Plus data-icon="inline-start" />
+                Generate key
+              </Button>
+            }
+          />
         )}
       </section>
 
-      {/* Create key dialog */}
       <Dialog
         open={showNewKey}
         onOpenChange={(o) => {
@@ -300,17 +312,24 @@ export function SettingsPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Create API key</DialogTitle>
+            <DialogTitle>Generate API key</DialogTitle>
+            <DialogDescription>
+              A secret is generated automatically and shown once. This key identifies you on the CLI — do not share it.
+              Your previous personal key for this project will be revoked.
+            </DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="key_name">Key name</FieldLabel>
               <Input
                 id="key_name"
-                placeholder="CI/CD pipeline"
+                placeholder={defaultKeyName}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
               />
+              <FieldDescription>
+                A label for this key. The secret itself is generated for you.
+              </FieldDescription>
             </Field>
           </FieldGroup>
           <DialogFooter>
@@ -324,40 +343,41 @@ export function SettingsPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => newKeyName && createKeyMut.mutate(newKeyName)}
-              disabled={!newKeyName || createKeyMut.isPending}
+              onClick={() => newKeyName.trim() && createKeyMut.mutate(newKeyName.trim())}
+              disabled={!newKeyName.trim() || createKeyMut.isPending}
             >
               {createKeyMut.isPending && <Spinner data-icon="inline-start" />}
-              Create
+              Generate key
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Show raw key (once only) */}
       <Dialog
         open={createdKey !== null}
         onOpenChange={(o) => !o && setCreatedKey(null)}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>API key created</DialogTitle>
+            <DialogTitle>API key generated</DialogTitle>
             <DialogDescription>
-              Copy this key now — it won't be shown again.
+              Copy this key now. You will not be able to see it again.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 bg-muted border border-border rounded-md p-3">
-            <code className="flex-1 text-xs font-mono text-foreground break-all">
-              {createdKey?.key}
-            </code>
-            <Button variant="ghost" size="icon-sm" onClick={copyKey}>
-              {copied ? (
-                <Check className="h-4 w-4 text-primary" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          <Alert>
+            <TriangleAlert />
+            <AlertTitle>Store this key securely</AlertTitle>
+            <AlertDescription>
+              Use it with <code>tms init -k</code>. Anyone with this key can push to this project as you.
+            </AlertDescription>
+          </Alert>
+          {createdKey ? (
+            <CopyableSecretField
+              value={createdKey.key}
+              label="API key"
+              onCopied={() => toast.success('Copied to clipboard')}
+            />
+          ) : null}
           <DialogFooter>
             <Button onClick={() => setCreatedKey(null)}>Done</Button>
           </DialogFooter>

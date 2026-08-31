@@ -1,13 +1,27 @@
+import { useState, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
-import { Pencil, Trash2 } from 'lucide-react'
+import { CheckCircle, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  ChangedValueHint,
+  WorkingCopyCell,
+  canDiscardWorkingCopy,
+  fieldChanged,
+  isReleased,
+  liveTranslation,
+  releaseState,
+  ReleaseBadge,
+} from '@/features/strings/working-copy'
 import { stringsApi } from '@/lib/api/strings'
-import type { BatchRequest, StringEntry, Translation } from '@/lib/api/types'
+import type { BatchRequest, StringEntry } from '@/lib/api/types'
 import { useToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 export type StringTableMeta = {
   projectId: string
@@ -19,21 +33,7 @@ function metaOf(table: Table<StringEntry>) {
   return table.options.meta as StringTableMeta
 }
 
-function TranslationPreview({ translation }: { translation?: Translation }) {
-  const value = translation?.value?.trim() ?? ''
-
-  if (!value) {
-    return <span className="text-missing-foreground italic text-sm">Missing</span>
-  }
-
-  return (
-    <p className="text-sm leading-snug line-clamp-2 whitespace-normal wrap-break-word">
-      {value}
-    </p>
-  )
-}
-
-function PublishCell({
+function PublishSwitch({
   entry,
   projectId,
   onRefresh,
@@ -43,40 +43,75 @@ function PublishCell({
   onRefresh: () => void
 }) {
   const toast = useToast()
-  const isPublic = entry.status === 'public'
+  const locked = entry.pending_delete || Boolean(entry.deleted_at)
+  const isPublic = entry.status === 'public' && !entry.deleted_at
 
   const publishMut = useMutation({
-    mutationFn: (publish: boolean) =>
+    mutationFn: (action: 'publish' | 'unpublish') =>
       stringsApi.batch(projectId, {
-        action: publish ? 'publish' : 'unpublish',
+        action,
         string_ids: [entry.id],
       } satisfies BatchRequest),
-    onSuccess: (_data, publish) => {
+    onSuccess: (_data, action) => {
       onRefresh()
-      toast.success(publish ? 'Published' : 'Moved to draft')
+      toast.success(action === 'publish' ? 'Published' : 'Moved to draft')
     },
     onError: () => toast.error('Failed to update status'),
   })
 
   return (
-    <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+    <div onClick={(event) => event.stopPropagation()}>
       <Switch
         size="sm"
         checked={isPublic}
-        disabled={publishMut.isPending}
-        onCheckedChange={(checked) => publishMut.mutate(checked)}
-        aria-label={isPublic ? 'Published' : 'Draft'}
+        disabled={publishMut.isPending || locked}
+        onCheckedChange={(checked) => {
+          if (locked) return
+          publishMut.mutate(checked ? 'publish' : 'unpublish')
+        }}
+        aria-label={isPublic ? 'Public' : 'Draft'}
       />
-      <span
-        className={
-          isPublic
-            ? 'text-xs font-medium text-public-foreground'
-            : 'text-xs text-draft-foreground'
-        }
-      >
-        {publishMut.isPending ? '…' : isPublic ? 'Public' : 'Draft'}
-      </span>
     </div>
+  )
+}
+
+function ActionIcon({
+  label,
+  onClick,
+  disabled,
+  pending,
+  children,
+  destructive = false,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  pending?: boolean
+  children: ReactNode
+  destructive?: boolean
+}) {
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          title={label}
+          aria-label={label}
+          disabled={disabled || pending}
+          onClick={onClick}
+          className={
+            destructive
+              ? 'text-muted-foreground hover:text-destructive'
+              : 'text-muted-foreground hover:text-foreground'
+          }
+        >
+          {pending ? <Spinner /> : children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -92,12 +127,45 @@ function StringActionsCell({
   onRefresh: () => void
 }) {
   const toast = useToast()
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmPublishDelete, setConfirmPublishDelete] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const released = isReleased(entry)
+  const dirty = entry.has_unpublished_changes && !entry.pending_delete && !entry.deleted_at
+  const discardable = canDiscardWorkingCopy(entry)
+  const deleted = Boolean(entry.deleted_at)
+
+  const lifecycleMut = useMutation({
+    mutationFn: (action: 'publish' | 'restore' | 'discard_changes') =>
+      stringsApi.batch(projectId, {
+        action,
+        string_ids: [entry.id],
+      } satisfies BatchRequest),
+    onSuccess: (_data, action) => {
+      setConfirmPublishDelete(false)
+      setConfirmDiscard(false)
+      onRefresh()
+      if (action === 'restore') {
+        toast.success('Restored')
+      } else if (action === 'discard_changes') {
+        toast.success('Working copy discarded')
+      } else if (entry.pending_delete) {
+        toast.success('Published deletion')
+      } else {
+        toast.success('Published')
+      }
+    },
+    onError: () => toast.error('Failed to update string'),
+  })
 
   const deleteMut = useMutation({
     mutationFn: () => stringsApi.delete(projectId, entry.id),
     onSuccess: () => {
+      setConfirmDelete(false)
       onRefresh()
-      toast.success('String deleted')
+      toast.success(
+        released ? 'Deletion queued — prod keeps the current text until you publish this removal' : 'String deleted',
+      )
     },
     onError: () => toast.error('Failed to delete string'),
   })
@@ -107,25 +175,96 @@ function StringActionsCell({
       className="flex items-center justify-end gap-0.5 opacity-70 group-hover:opacity-100"
       onClick={(event) => event.stopPropagation()}
     >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title="Edit"
-        onClick={() => onEdit(entry)}
-        className="text-muted-foreground hover:text-foreground"
-      >
+      {dirty ? (
+        <ActionIcon
+          label="Publish working copy"
+          pending={lifecycleMut.isPending}
+          onClick={() => lifecycleMut.mutate('publish')}
+        >
+          <CheckCircle />
+        </ActionIcon>
+      ) : null}
+      {discardable ? (
+        <ActionIcon
+          label="Discard changes"
+          pending={lifecycleMut.isPending}
+          onClick={() => setConfirmDiscard(true)}
+        >
+          <Undo2 />
+        </ActionIcon>
+      ) : null}
+      {entry.pending_delete ? (
+        <ActionIcon
+          label="Publish delete"
+          pending={lifecycleMut.isPending}
+          destructive
+          onClick={() => setConfirmPublishDelete(true)}
+        >
+          <CheckCircle />
+        </ActionIcon>
+      ) : null}
+      {deleted ? (
+        <ActionIcon
+          label="Restore"
+          pending={lifecycleMut.isPending}
+          onClick={() => lifecycleMut.mutate('restore')}
+        >
+          <RotateCcw />
+        </ActionIcon>
+      ) : null}
+      <ActionIcon label="Edit" onClick={() => onEdit(entry)}>
         <Pencil />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title="Delete"
-        onClick={() => deleteMut.mutate()}
-        disabled={deleteMut.isPending}
-        className="text-muted-foreground hover:text-destructive"
+      </ActionIcon>
+      <ActionIcon
+        label={
+          deleted
+            ? 'Already deleted'
+            : entry.pending_delete
+              ? 'Deletion already pending'
+              : 'Delete'
+        }
+        disabled={entry.pending_delete || deleted}
+        pending={deleteMut.isPending}
+        destructive
+        onClick={() => setConfirmDelete(true)}
       >
-        {deleteMut.isPending ? <Spinner /> : <Trash2 />}
-      </Button>
+        <Trash2 />
+      </ActionIcon>
+      <ConfirmDialog
+        open={confirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={() => lifecycleMut.mutate('discard_changes')}
+        title="Discard working copy?"
+        description={
+          entry.pending_delete
+            ? 'Cancels the pending removal and restores the last published text in staging.'
+            : 'Reverts staging to the last published snapshot. Production is unchanged.'
+        }
+        confirmLabel="Discard changes"
+        isLoading={lifecycleMut.isPending}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => deleteMut.mutate()}
+        title={released ? 'Remove this published string?' : 'Delete this string?'}
+        description={
+          released
+            ? 'Prod keeps the current text until you publish this removal. Staging draft pull will hide the key.'
+            : 'The string is hidden from the grid. Restore it from the Deleted filter, or revert the activity.'
+        }
+        confirmLabel={released ? 'Queue deletion' : 'Delete'}
+        isLoading={deleteMut.isPending}
+      />
+      <ConfirmDialog
+        open={confirmPublishDelete}
+        onClose={() => setConfirmPublishDelete(false)}
+        onConfirm={() => lifecycleMut.mutate('publish')}
+        title="Publish this deletion?"
+        description="Production will drop this key on the next public pull."
+        confirmLabel="Publish delete"
+        isLoading={lifecycleMut.isPending}
+      />
     </div>
   )
 }
@@ -141,8 +280,15 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       className: 'align-middle min-w-[160px] whitespace-normal',
     },
     cell: ({ row }) => {
-      const translation = row.original.translations.find((item) => item.locale === locale)
-      return <TranslationPreview translation={translation} />
+      const entry = row.original
+      const translation = entry.translations.find((item) => item.locale === locale)
+      return (
+        <WorkingCopyCell
+          working={translation?.value ?? ''}
+          published={liveTranslation(entry, locale)}
+          released={isReleased(entry)}
+        />
+      )
     },
   }))
 
@@ -177,19 +323,52 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       header: 'Key',
       enableSorting: false,
       meta: {
-        headerClassName: 'min-w-[160px]',
-        className: 'align-middle whitespace-normal max-w-[220px]',
+        headerClassName: 'min-w-[180px]',
+        className: 'align-middle whitespace-normal max-w-[240px]',
       },
-      cell: ({ row }) => (
-        <div className="flex flex-col gap-1">
-          <span className="font-mono text-xs text-foreground break-all leading-relaxed">
-            {row.original.key}
-          </span>
-          {row.original.module_slug ? (
-            <p className="text-[11px] text-muted-foreground font-mono">{row.original.module_slug}</p>
-          ) : null}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const entry = row.original
+        const state = releaseState(entry)
+        const released = isReleased(entry)
+        const keyChanged = fieldChanged(entry.key, entry.published_key, released)
+        const moduleChanged = fieldChanged(
+          entry.module_slug ?? '',
+          entry.published_module_slug ?? '',
+          released,
+        )
+        return (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-start gap-1.5">
+              <span
+                className={cn(
+                  'min-w-0 font-mono text-xs text-foreground break-all leading-relaxed',
+                  state === 'removing' && 'line-through',
+                )}
+              >
+                {entry.key}
+              </span>
+              {keyChanged ? (
+                <ChangedValueHint published={entry.published_key} working={entry.key} mono />
+              ) : null}
+              <ReleaseBadge state={state} />
+            </div>
+            {entry.module_slug || moduleChanged ? (
+              <div className="flex items-center gap-1">
+                <p className="text-[11px] text-muted-foreground font-mono">
+                  {entry.module_slug ?? '—'}
+                </p>
+                {moduleChanged ? (
+                  <ChangedValueHint
+                    published={entry.published_module_slug}
+                    working={entry.module_slug ?? ''}
+                    mono
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'source_text',
@@ -199,29 +378,33 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
         headerClassName: 'min-w-[200px]',
         className: 'align-middle max-w-[260px] whitespace-normal',
       },
-      cell: ({ row }) => (
-        <>
-          <p className="text-sm text-foreground leading-relaxed line-clamp-2">
-            {row.original.source_text}
-          </p>
-          {row.original.description ? (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-              {row.original.description}
-            </p>
-          ) : null}
-        </>
-      ),
+      cell: ({ row }) => {
+        const entry = row.original
+        return (
+          <div className="flex flex-col gap-1">
+            <WorkingCopyCell
+              working={entry.source_text}
+              published={entry.published_source_text}
+              released={isReleased(entry)}
+              emptyLabel="Missing"
+            />
+            {entry.description ? (
+              <p className="text-xs text-muted-foreground line-clamp-1">{entry.description}</p>
+            ) : null}
+          </div>
+        )
+      },
     },
     ...localeColumns,
     {
       accessorKey: 'status',
       header: 'Published',
       enableSorting: false,
-      meta: { headerClassName: 'w-28', className: 'align-middle' },
+      meta: { headerClassName: 'w-20', className: 'align-middle' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (
-          <PublishCell
+          <PublishSwitch
             entry={row.original}
             projectId={meta.projectId}
             onRefresh={meta.onRefresh}
@@ -260,7 +443,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       header: 'Actions',
       enableSorting: false,
       enableHiding: false,
-      meta: { headerClassName: 'w-24 text-right', className: 'align-middle text-right' },
+      meta: { headerClassName: 'w-36 text-right', className: 'align-middle text-right' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (

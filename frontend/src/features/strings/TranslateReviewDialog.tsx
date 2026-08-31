@@ -99,7 +99,9 @@ function ProposalTreeNode({
           <span className="truncate font-mono text-xs text-muted-foreground" translate="no">
             {item.key}
           </span>
-          {item.status === 'public' ? <Badge variant="secondary">Public</Badge> : null}
+          {item.status === 'public' ? (
+            <Badge variant="secondary">Public — apply stays off prod until publish</Badge>
+          ) : null}
         </div>
       </div>
 
@@ -219,8 +221,8 @@ export function TranslateReviewDialog({
             <p className="text-sm text-destructive">{error}</p>
           ) : publicCount > 0 && !loadingQueue ? (
             <p className="text-sm text-muted-foreground">
-              {publicCount} public {publicCount === 1 ? 'string is' : 'strings are'} in this list
-              and will appear on public export.
+              {publicCount} public {publicCount === 1 ? 'string is' : 'strings are'} in this list.
+              Applied values stay in the working copy until you publish.
             </p>
           ) : null}
         </DialogHeader>

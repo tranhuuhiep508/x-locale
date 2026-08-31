@@ -168,16 +168,34 @@ def _resolve_api_key(db: Session, raw_key: str) -> tuple[ApiKey, Project]:
     if not project:
         raise HTTPException(status_code=401, detail="Invalid API key")
     api_key.last_used_at = datetime.now(UTC)
-    set_activity_context(
-        db,
-        AuthContext(
-            actor_type="api_key",
-            actor_id=str(api_key.id),
-            actor_label=api_key.name,
-            api_key=api_key,
-            project=project,
-        ),
+    owner = (
+        db.query(User).filter(User.id == api_key.created_by).first()
+        if api_key.created_by
+        else None
     )
+    if owner:
+        set_activity_context(
+            db,
+            AuthContext(
+                actor_type="user",
+                actor_id=str(owner.id),
+                actor_label=owner.email or owner.name,
+                user=owner,
+                api_key=api_key,
+                project=project,
+            ),
+        )
+    else:
+        set_activity_context(
+            db,
+            AuthContext(
+                actor_type="api_key",
+                actor_id=str(api_key.id),
+                actor_label=api_key.name,
+                api_key=api_key,
+                project=project,
+            ),
+        )
     return api_key, project
 
 

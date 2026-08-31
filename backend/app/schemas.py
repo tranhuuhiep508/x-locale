@@ -135,6 +135,7 @@ class TranslationOut(BaseModel):
     id: UUID | None = None
     locale: str
     value: str
+    published_value: str | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -146,6 +147,14 @@ class StringOut(BaseModel):
     source_text: str
     description: str | None
     status: TranslationStatus
+    pending_delete: bool = False
+    deleted_at: datetime | None = None
+    has_unpublished_changes: bool = False
+    published_at: datetime | None = None
+    published_key: str | None = None
+    published_source_text: str | None = None
+    published_module_id: UUID | None = None
+    published_module_slug: str | None = None
     module_id: UUID | None = None
     module_slug: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
@@ -195,10 +204,23 @@ class BatchFilter(BaseModel):
     q: str | None = None
     missing_locale: str | None = None
     status: TranslationStatus | None = None
+    pending_delete: bool | None = None
+    has_unpublished_changes: bool | None = None
+    deleted: bool | None = None
 
 
 class BatchRequest(BaseModel):
-    action: Literal["publish", "unpublish", "delete", "move_module", "add_tags", "remove_tags"]
+    action: Literal[
+        "publish",
+        "unpublish",
+        "delete",
+        "discard_changes",
+        "discard_delete",
+        "restore",
+        "move_module",
+        "add_tags",
+        "remove_tags",
+    ]
     string_ids: list[UUID] | None = None
     filter: BatchFilter | None = None
     payload: dict[str, Any] = Field(default_factory=dict)

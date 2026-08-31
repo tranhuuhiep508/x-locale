@@ -30,7 +30,11 @@ def tag_out(tag: Tag, string_count: int) -> TagOut:
 def count_strings_by_module(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, int]:
     rows = (
         db.query(StringEntry.module_id, func.count(StringEntry.id))
-        .filter(StringEntry.project_id == project_id, StringEntry.module_id.isnot(None))
+        .filter(
+            StringEntry.project_id == project_id,
+            StringEntry.module_id.isnot(None),
+            StringEntry.deleted_at.is_(None),
+        )
         .group_by(StringEntry.module_id)
         .all()
     )
@@ -41,7 +45,8 @@ def count_strings_by_tag(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, 
     rows = (
         db.query(StringTag.tag_id, func.count(StringTag.string_id))
         .join(Tag, Tag.id == StringTag.tag_id)
-        .filter(Tag.project_id == project_id)
+        .join(StringEntry, StringEntry.id == StringTag.string_id)
+        .filter(Tag.project_id == project_id, StringEntry.deleted_at.is_(None))
         .group_by(StringTag.tag_id)
         .all()
     )
@@ -58,7 +63,7 @@ def to_module_out(
     else:
         n = (
             db.query(func.count(StringEntry.id))
-            .filter(StringEntry.module_id == module.id)
+            .filter(StringEntry.module_id == module.id, StringEntry.deleted_at.is_(None))
             .scalar()
             or 0
         )
@@ -75,7 +80,8 @@ def to_tag_out(
     else:
         n = (
             db.query(func.count(StringTag.string_id))
-            .filter(StringTag.tag_id == tag.id)
+            .join(StringEntry, StringEntry.id == StringTag.string_id)
+            .filter(StringTag.tag_id == tag.id, StringEntry.deleted_at.is_(None))
             .scalar()
             or 0
         )

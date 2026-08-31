@@ -30,12 +30,13 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 
 ### Non-obvious behavior
 
-- Translation status is `draft` \| `public` on each **string** (not per locale). AI translate never auto-publishes.
-- Export `stage=public` includes only public strings; missing target locales export as empty (no source fallback).
+- Translation status is `draft` \| `public` on each **string** (not per locale). The editor always writes the working copy. `stage=public` export reads the last published snapshot (`published_*` columns), not live edits. AI translate / import / CLI push never auto-publish.
+- Export `stage=public` includes public strings (including pending deletes) using the published snapshot; missing target locales export as empty (no source fallback). `stage=draft` omits `pending_delete` strings.
+- Deleting a previously published string queues `pending_delete`; prod keeps the snapshot until that delete is published. Publishing the delete sets `deleted_at` (soft tombstone) instead of removing the row. Never-published strings set `deleted_at` immediately and can be restored from the Deleted filter.
 - Translation inputs save on **blur**.
 - Content writes are audited via `before_flush` → `activities`. Batch/import/translate set `batch_id` for grouped revert.
 - Modules are always stored; project `layout` only affects export/CLI pull shape.
-- Flat export prefixes keys as `{module_slug}.{key}`.
+- Flat export prefixes keys as `{module_slug}.{key}` (public export uses `published_key` / published module).
 
 ### Lint / test / build
 

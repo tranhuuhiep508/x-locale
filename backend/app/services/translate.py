@@ -22,7 +22,7 @@ def select_entries(
     query = (
         db.query(StringEntry)
         .options(joinedload(StringEntry.translations))
-        .filter(StringEntry.project_id == project.id)
+        .filter(StringEntry.project_id == project.id, StringEntry.deleted_at.is_(None))
     )
     if payload.scope == "strings" and payload.string_ids:
         query = query.filter(StringEntry.id.in_(payload.string_ids))
@@ -203,7 +203,7 @@ def commit_proposals(
     entries = (
         db.query(StringEntry)
         .options(joinedload(StringEntry.translations))
-        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids))
+        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids), StringEntry.deleted_at.is_(None))
         .all()
     )
     by_id = {entry.id: entry for entry in entries}

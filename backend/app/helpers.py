@@ -39,13 +39,17 @@ def ensure_unique_slug(db: Session, base: str, exclude_id: uuid.UUID | None = No
         n += 1
 
 
-def export_key(entry: StringEntry, layout: str) -> str:
+def export_key(entry: StringEntry, layout: str, *, published: bool = False) -> str:
     """Key used in flat export — prefix with module slug when modular-aware flat."""
-    if entry.module and layout == "flat":
-        return f"{entry.module.slug}.{entry.key}"
-    if entry.module:
-        return entry.key
-    return entry.key
+    if published:
+        module = entry.published_module
+        key = entry.published_key or entry.key
+    else:
+        module = entry.module
+        key = entry.key
+    if module and layout == "flat":
+        return f"{module.slug}.{key}"
+    return key
 
 
 def content_hash(payload: dict) -> str:

@@ -152,6 +152,60 @@ def _set_entry_translations(db: Session, entry: StringEntry, translations: dict[
             existing.value = value
 
 
+def _set_entry_published_translations(
+    db: Session, entry: StringEntry, translations: dict[str, str | None]
+) -> None:
+    rows = db.query(Translation).filter(Translation.string_id == entry.id).all()
+    by_locale = {t.locale: t for t in rows}
+    for locale, value in translations.items():
+        existing = by_locale.get(locale)
+        if existing is None:
+            db.add(
+                Translation(
+                    string_id=entry.id,
+                    locale=locale,
+                    value="",
+                    published_value=value,
+                )
+            )
+        else:
+            existing.published_value = value
+
+
+def _parse_datetime(raw: Any) -> datetime | None:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    if isinstance(raw, str):
+        return datetime.fromisoformat(raw)
+    return None
+
+
+def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+    if "published_key" in snap:
+        entry.published_key = snap.get("published_key")
+    if "published_source_text" in snap:
+        entry.published_source_text = snap.get("published_source_text")
+    if "pending_delete" in snap:
+        entry.pending_delete = bool(snap.get("pending_delete"))
+    if "deleted_at" in snap:
+        entry.deleted_at = _parse_datetime(snap.get("deleted_at"))
+    if "published_at" in snap:
+        entry.published_at = _parse_datetime(snap.get("published_at"))
+    if "published_module_id" in snap:
+        pmid = snap.get("published_module_id")
+        if pmid:
+            module = db.query(Module).filter(Module.id == uuid.UUID(pmid)).first()
+            entry.published_module_id = module.id if module else None
+        else:
+            entry.published_module_id = None
+    if "published_translations" in snap:
+        _set_entry_published_translations(
+            db, entry, _translations_from_snapshot(snap.get("published_translations"))
+        )
+
+
 def current_matches_after(db: Session, activity: Activity) -> bool:
     """Conflict guard: current row must still match activity.after."""
     after = activity.after or {}
@@ -160,6 +214,8 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
             entry = (
                 db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
             )
+            if after.get("deleted_at"):
+                return entry is not None and entry.deleted_at is not None
             return entry is None
         entry = (
             db.query(StringEntry)
@@ -177,6 +233,21 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
         if "status" in after:
             current = entry.status.value if hasattr(entry.status, "value") else entry.status
             if current != after["status"]:
+                return False
+        if "pending_delete" in after and bool(entry.pending_delete) != bool(after["pending_delete"]):
+            return False
+        if "deleted_at" in after:
+            current_deleted = entry.deleted_at.isoformat() if entry.deleted_at else None
+            expected_deleted = after.get("deleted_at")
+            if bool(current_deleted) != bool(expected_deleted):
+                return False
+        if "published_key" in after and entry.published_key != after["published_key"]:
+            return False
+        if "published_source_text" in after and entry.published_source_text != after["published_source_text"]:
+            return False
+        if "published_module_id" in after:
+            current_pub = str(entry.published_module_id) if entry.published_module_id else None
+            if current_pub != after["published_module_id"]:
                 return False
         if "module_id" in after:
             current = str(entry.module_id) if entry.module_id else None
@@ -291,6 +362,45 @@ def _make_revert_marker(
     )
 
 
+def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+    entry.key = snap.get("key", entry.key)
+    entry.source_text = snap.get("source_text", entry.source_text)
+    entry.description = snap.get("description")
+    if "status" in snap:
+        entry.status = TranslationStatus(snap["status"])
+    mid = snap.get("module_id")
+    if mid:
+        module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
+        entry.module_id = module.id if module else None
+    else:
+        entry.module_id = None
+    if "tag_ids" in snap:
+        _set_entry_tags(db, entry, snap.get("tag_ids") or [])
+    if "translations" in snap:
+        trans_raw = snap.get("translations")
+        if isinstance(trans_raw, list):
+            by_locale = {t.locale: t for t in (entry.translations or [])}
+            for tdata in trans_raw:
+                locale = tdata["locale"]
+                existing = by_locale.get(locale)
+                value = tdata.get("value", "")
+                if existing is None:
+                    db.add(
+                        Translation(
+                            id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
+                            string_id=entry.id,
+                            locale=locale,
+                            value=value,
+                        )
+                    )
+                else:
+                    existing.value = value
+            db.flush()
+        else:
+            _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))
+    _apply_published_snapshot(db, entry, snap)
+
+
 def apply_revert(db: Session, activity: Activity) -> None:
     before = activity.before or {}
     after = activity.after or {}
@@ -308,23 +418,7 @@ def apply_revert(db: Session, activity: Activity) -> None:
             )
             if not entry:
                 raise HTTPException(status_code=404, detail="String no longer exists")
-            entry.key = before.get("key", entry.key)
-            entry.source_text = before.get("source_text", entry.source_text)
-            entry.description = before.get("description")
-            if "status" in before:
-                entry.status = TranslationStatus(before["status"])
-            mid = before.get("module_id")
-            if mid:
-                module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
-                entry.module_id = module.id if module else None
-            else:
-                entry.module_id = None
-            if "tag_ids" in before:
-                _set_entry_tags(db, entry, before.get("tag_ids") or [])
-            if "translations" in before or "translations" in after:
-                _set_entry_translations(
-                    db, entry, _translations_from_snapshot(before.get("translations"))
-                )
+            _apply_working_snapshot(db, entry, before)
         elif action == "create":
             entry = (
                 db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
@@ -332,36 +426,46 @@ def apply_revert(db: Session, activity: Activity) -> None:
             if entry:
                 db.delete(entry)
         elif action == "delete":
-            mid = before.get("module_id")
-            module_id = None
-            if mid:
-                module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
-                module_id = module.id if module else None
-            entry = StringEntry(
-                id=uuid.UUID(before["id"]),
-                project_id=uuid.UUID(before["project_id"]),
-                module_id=module_id,
-                key=before["key"],
-                source_text=before["source_text"],
-                description=before.get("description"),
-                status=TranslationStatus(before.get("status", "draft")),
+            existing = (
+                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(before["id"])).first()
             )
-            db.add(entry)
-            db.flush()
-            _set_entry_tags(db, entry, before.get("tag_ids") or [])
-            trans_raw = before.get("translations")
-            if isinstance(trans_raw, list):
-                for tdata in trans_raw:
-                    db.add(
-                        Translation(
-                            id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
-                            string_id=entry.id,
-                            locale=tdata["locale"],
-                            value=tdata.get("value", ""),
-                        )
-                    )
+            if existing:
+                _apply_working_snapshot(db, existing, before)
             else:
-                _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))
+                mid = before.get("module_id")
+                module_id = None
+                if mid:
+                    module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
+                    module_id = module.id if module else None
+                entry = StringEntry(
+                    id=uuid.UUID(before["id"]),
+                    project_id=uuid.UUID(before["project_id"]),
+                    module_id=module_id,
+                    key=before["key"],
+                    source_text=before["source_text"],
+                    description=before.get("description"),
+                    status=TranslationStatus(before.get("status", "draft")),
+                    pending_delete=bool(before.get("pending_delete", False)),
+                )
+                db.add(entry)
+                db.flush()
+                _set_entry_tags(db, entry, before.get("tag_ids") or [])
+                trans_raw = before.get("translations")
+                if isinstance(trans_raw, list):
+                    for tdata in trans_raw:
+                        db.add(
+                            Translation(
+                                id=uuid.UUID(tdata["id"]) if tdata.get("id") else uuid.uuid4(),
+                                string_id=entry.id,
+                                locale=tdata["locale"],
+                                value=tdata.get("value", ""),
+                            )
+                        )
+                    db.flush()
+                else:
+                    _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))
+                db.flush()
+                _apply_published_snapshot(db, entry, before)
 
     elif etype == "translation":
         if action == "update":

@@ -14,10 +14,16 @@ import './table-meta.ts'
 interface DataTableProps<TData> {
   table: TanStackTable<TData>
   onRowClick?: (row: Row<TData>, event: React.MouseEvent) => void
+  getRowClassName?: (row: Row<TData>) => string | undefined
   className?: string
 }
 
-export function DataTable<TData>({ table, onRowClick, className }: DataTableProps<TData>) {
+export function DataTable<TData>({
+  table,
+  onRowClick,
+  getRowClassName,
+  className,
+}: DataTableProps<TData>) {
   const rows = table.getRowModel().rows
   const colSpan = table.getVisibleLeafColumns().length
 
@@ -46,7 +52,10 @@ export function DataTable<TData>({ table, onRowClick, className }: DataTableProp
             <TableRow
               key={row.id}
               data-state={row.getIsSelected() ? 'selected' : undefined}
-              className={cn(onRowClick && 'cursor-pointer group')}
+              className={cn(
+                onRowClick && 'cursor-pointer group',
+                getRowClassName?.(row),
+              )}
               onClick={
                 onRowClick
                   ? (event) => {

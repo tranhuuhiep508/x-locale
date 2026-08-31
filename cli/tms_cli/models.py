@@ -22,7 +22,7 @@ class Layout(str, Enum):
 
 
 class Stage(str, Enum):
-    """Which string stage to export. Draft is everything; public is published only."""
+    """Which string stage to export. Draft is the working copy; public is the last published snapshot."""
 
     draft = "draft"
     public = "public"

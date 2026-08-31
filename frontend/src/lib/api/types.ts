@@ -107,6 +107,7 @@ export interface Translation {
   id: string | null
   locale: string
   value: string
+  published_value: string | null
   updated_at: string | null
 }
 
@@ -116,6 +117,14 @@ export interface StringEntry {
   source_text: string
   description: string | null
   status: TranslationStatus
+  pending_delete: boolean
+  deleted_at: string | null
+  has_unpublished_changes: boolean
+  published_at: string | null
+  published_key: string | null
+  published_source_text: string | null
+  published_module_id: string | null
+  published_module_slug: string | null
   module_id: string | null
   module_slug: string | null
   tags: Tag[]
@@ -159,6 +168,9 @@ export type BatchAction =
   | 'publish'
   | 'unpublish'
   | 'delete'
+  | 'discard_changes'
+  | 'discard_delete'
+  | 'restore'
   | 'move_module'
   | 'add_tags'
   | 'remove_tags'
@@ -169,6 +181,9 @@ export interface BatchFilter {
   q?: string
   missing_locale?: string
   status?: TranslationStatus
+  pending_delete?: boolean
+  has_unpublished_changes?: boolean
+  deleted?: boolean
 }
 
 export interface BatchRequest {

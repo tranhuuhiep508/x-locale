@@ -8,12 +8,14 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -153,7 +155,9 @@ class Module(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="modules")
-    strings: Mapped[list["StringEntry"]] = relationship(back_populates="module")
+    strings: Mapped[list["StringEntry"]] = relationship(
+        back_populates="module", foreign_keys="StringEntry.module_id"
+    )
 
 
 class Tag(Base):
@@ -189,7 +193,15 @@ class StringTag(Base):
 class StringEntry(Base):
     __tablename__ = "strings"
     __table_args__ = (
-        UniqueConstraint("project_id", "module_id", "key", name="uq_project_module_key"),
+        Index(
+            "uq_project_module_key_alive",
+            "project_id",
+            "module_id",
+            "key",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -207,13 +219,26 @@ class StringEntry(Base):
         nullable=False,
         default=TranslationStatus.draft,
     )
+    published_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    published_module_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("modules.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    published_source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pending_delete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     project: Mapped["Project"] = relationship(back_populates="strings")
-    module: Mapped["Module | None"] = relationship(back_populates="strings")
+    module: Mapped["Module | None"] = relationship(
+        back_populates="strings", foreign_keys=[module_id]
+    )
+    published_module: Mapped["Module | None"] = relationship(
+        foreign_keys=[published_module_id]
+    )
     translations: Mapped[list["Translation"]] = relationship(
         back_populates="string_entry", cascade="all, delete-orphan"
     )
@@ -232,6 +257,7 @@ class Translation(Base):
     )
     locale: Mapped[str] = mapped_column(String(10), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    published_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

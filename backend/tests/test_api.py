@@ -151,6 +151,148 @@ def test_api_key_auth(client):
     assert r.status_code == 200
 
 
+def test_api_key_write_activity_uses_owner(client):
+    me = client.get("/api/auth/me").json()
+    pid = _make_project(client, "Keyed Owner")["id"]
+    r = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "alice-laptop"},
+    )
+    assert r.status_code == 201, r.text
+    raw_key = r.json()["key"]
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        headers={"X-API-Key": raw_key},
+        json={"strings": {"hello": "Xin chào"}},
+    )
+    assert r.status_code == 200, r.text
+
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    created = [
+        a for a in items if a["action"] == "create" and a["entity_type"] == "string"
+    ]
+    assert created
+    assert created[0]["actor_type"] == "user"
+    assert created[0]["actor_label"] == me["email"]
+    assert created[0]["actor_id"] == me["id"]
+
+
+def test_generate_api_key_revokes_previous_personal_key(client):
+    pid = _make_project(client, "Keyed Rotate")["id"]
+    first = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "first"},
+    )
+    assert first.status_code == 201, first.text
+    old_key = first.json()["key"]
+
+    second = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "second"},
+    )
+    assert second.status_code == 201, second.text
+    new_key = second.json()["key"]
+    assert new_key != old_key
+
+    stale = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": old_key},
+    )
+    assert stale.status_code == 401
+
+    fresh = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": new_key},
+    )
+    assert fresh.status_code == 200
+
+    listed = client.get(f"/api/projects/{pid}/api-keys").json()
+    assert len(listed) == 1
+    assert listed[0]["name"] == "second"
+
+
+def test_generate_api_key_does_not_revoke_unowned_key(client):
+    from app.database import get_db
+    from app.main import app
+    from app.models import ApiKey
+
+    pid = _make_project(client, "Keyed Keep Demo")["id"]
+    r = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "github-actions"},
+    )
+    assert r.status_code == 201, r.text
+    unowned_key = r.json()["key"]
+    unowned_id = r.json()["id"]
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        key = db.query(ApiKey).filter(ApiKey.id == uuid.UUID(unowned_id)).first()
+        assert key is not None
+        key.created_by = None
+        db.commit()
+    finally:
+        db_gen.close()
+
+    personal = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "dev@localhost"},
+    )
+    assert personal.status_code == 201, personal.text
+
+    still_valid = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": unowned_key},
+    )
+    assert still_valid.status_code == 200
+
+    listed = client.get(f"/api/projects/{pid}/api-keys").json()
+    names = {k["name"] for k in listed}
+    assert names == {"github-actions", "dev@localhost"}
+
+
+def test_api_key_write_activity_without_owner(client):
+    from app.database import get_db
+    from app.main import app
+    from app.models import ApiKey
+
+    pid = _make_project(client, "Keyed CI")["id"]
+    r = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "github-actions"},
+    )
+    assert r.status_code == 201, r.text
+    raw_key = r.json()["key"]
+    key_id = r.json()["id"]
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        key = db.query(ApiKey).filter(ApiKey.id == uuid.UUID(key_id)).first()
+        assert key is not None
+        key.created_by = None
+        db.commit()
+    finally:
+        db_gen.close()
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        headers={"X-API-Key": raw_key},
+        json={"strings": {"bye": "Tạm biệt"}},
+    )
+    assert r.status_code == 200, r.text
+
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    created = [
+        a for a in items if a["action"] == "create" and a["entity_type"] == "string"
+    ]
+    assert created
+    assert created[0]["actor_type"] == "api_key"
+    assert created[0]["actor_label"] == "github-actions"
+
+
 def test_batch_publish(client):
     r = client.post(
         "/api/projects",
@@ -387,6 +529,12 @@ def test_string_delete_activity_and_revert(client):
     r = client.delete(f"/api/projects/{pid}/strings/{sid}")
     assert r.status_code == 204
 
+    hidden = client.get(f"/api/projects/{pid}/strings").json()
+    assert hidden["total"] == 0
+    tombstone = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert tombstone["deleted_at"] is not None
+    assert tombstone["key"] == "cancel"
+
     items = client.get(f"/api/projects/{pid}/activities").json()["items"]
     deletes = [a for a in items if a["action"] == "delete" and a["entity_type"] == "string"]
     assert len(deletes) == 1
@@ -399,8 +547,11 @@ def test_string_delete_activity_and_revert(client):
     assert r.status_code == 200, r.text
     restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert restored["key"] == "cancel"
+    assert restored["deleted_at"] is None
     assert restored["tags"][0]["id"] == tag["id"]
     assert restored["translations"][0]["value"] == "Cancel"
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 1
 
     after_revert = client.get(f"/api/projects/{pid}/activities").json()["items"]
     new_rows = [a for a in after_revert if a["id"] not in {x["id"] for x in items}]
@@ -988,3 +1139,281 @@ def test_strings_import_modules_payload_keeps_key_and_module(client):
     assert by_key["auth.email"]["source_text"] == "Địa chỉ email"
     assert by_key["auth.email"]["module_slug"] == "auth"
     assert by_key["password"]["module_slug"] == "auth"
+
+
+def test_edit_public_string_keeps_published_export(client):
+    project = _make_project(client, "Working Copy")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "save",
+            "source_text": "Lưu",
+            "translations": {"en": "Save"},
+            "status": "public",
+        },
+    ).json()
+    sid = created["id"]
+    assert created["status"] == "public"
+    assert created["has_unpublished_changes"] is False
+    assert created["pending_delete"] is False
+
+    r = client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"source_text": "Lưu ngay", "translations": {"en": "Save now"}},
+    )
+    assert r.status_code == 200, r.text
+    updated = r.json()
+    assert updated["status"] == "public"
+    assert updated["has_unpublished_changes"] is True
+    assert updated["source_text"] == "Lưu ngay"
+    assert updated["published_source_text"] == "Lưu"
+    assert updated["published_key"] == "save"
+    en = next(item for item in updated["translations"] if item["locale"] == "en")
+    assert en["value"] == "Save now"
+    assert en["published_value"] == "Save"
+
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    draft = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}).json()
+    assert public["vi"]["save"] == "Lưu"
+    assert public["en"]["save"] == "Save"
+    assert draft["vi"]["save"] == "Lưu ngay"
+    assert draft["en"]["save"] == "Save now"
+
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    assert public["vi"]["save"] == "Lưu ngay"
+    assert public["en"]["save"] == "Save now"
+    refreshed = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert refreshed["has_unpublished_changes"] is False
+
+
+def test_delete_public_string_is_pending_until_publish(client):
+    project = _make_project(client, "Pending Delete")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "bye", "source_text": "Tạm biệt", "status": "public", "translations": {"en": "Bye"}},
+    ).json()
+    sid = created["id"]
+
+    r = client.delete(f"/api/projects/{pid}/strings/{sid}")
+    assert r.status_code == 204
+    row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert row["pending_delete"] is True
+    assert row["has_unpublished_changes"] is True
+    assert row["status"] == "public"
+
+    draft = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}).json()
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    assert "bye" not in draft["vi"]
+    assert public["vi"]["bye"] == "Tạm biệt"
+    assert public["en"]["bye"] == "Bye"
+
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_delete", "string_ids": [sid]},
+    )
+    row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert row["pending_delete"] is False
+
+    client.delete(f"/api/projects/{pid}/strings/{sid}")
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 0
+    tombstone = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert tombstone["deleted_at"] is not None
+    assert tombstone["pending_delete"] is False
+    public = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}
+    ).json()
+    assert "bye" not in public["vi"]
+
+    deleted = client.get(f"/api/projects/{pid}/strings", params={"deleted": True}).json()
+    assert deleted["total"] == 1
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "restore", "string_ids": [sid]},
+    )
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 1
+    public = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}
+    ).json()
+    assert public["vi"]["bye"] == "Tạm biệt"
+
+
+def test_never_published_delete_is_soft(client):
+    project = _make_project(client, "Soft Draft")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "draft_key", "source_text": "Nháp"},
+    ).json()
+    sid = created["id"]
+    assert client.delete(f"/api/projects/{pid}/strings/{sid}").status_code == 204
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 0
+    row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert row["deleted_at"] is not None
+    draft = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}
+    ).json()
+    assert "draft_key" not in draft["vi"]
+    again = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "draft_key", "source_text": "Nháp 2"},
+    )
+    assert again.status_code == 201, again.text
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] != sid
+    assert listed["items"][0]["source_text"] == "Nháp 2"
+
+
+def test_unpublish_omits_from_public_export_immediately(client):
+    project = _make_project(client, "Unpublish Now")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "ok", "source_text": "OK", "status": "public"},
+    ).json()
+    client.patch(f"/api/projects/{pid}/strings/{created['id']}", json={"status": "draft"})
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    draft = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}).json()
+    assert "ok" not in public["vi"]
+    assert draft["vi"]["ok"] == "OK"
+
+
+def test_import_and_ai_apply_do_not_promote(client):
+    project = _make_project(client, "No Auto Publish", targets=["en", "ja"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}, "status": "public"},
+    ).json()
+
+    overlay = json.dumps({"save": "Saved"}).encode()
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "en", "dry_run": False},
+        files={"file": ("en.json", overlay, "application/json")},
+    )
+    assert r.status_code == 200, r.text
+    string = client.get(f"/api/projects/{pid}/strings/{created['id']}").json()
+    by_locale = {t["locale"]: t["value"] for t in string["translations"]}
+    assert by_locale["en"] == "Saved"
+    assert string["status"] == "public"
+    assert string["has_unpublished_changes"] is True
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    assert public["en"]["save"] == "Save"
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": created["id"],
+                    "translations": {"en": "AI Save", "ja": "保存"},
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    string = client.get(f"/api/projects/{pid}/strings/{created['id']}").json()
+    by_locale = {t["locale"]: t["value"] for t in string["translations"]}
+    assert by_locale["en"] == "Saved"
+    assert by_locale["ja"] == "保存"
+    assert string["status"] == "public"
+    public = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}
+    ).json()
+    assert public["en"]["save"] == "Save"
+    assert public["ja"]["save"] == ""
+
+
+def test_excel_update_does_not_flip_status(client):
+    project = _make_project(client, "Excel Status")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hello", "source_text": "Xin chào", "translations": {"en": "Hello"}, "status": "public"},
+    )
+    exported = client.get(f"/api/projects/{pid}/export", params={"format": "xlsx", "stage": "all"})
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        files={
+            "file": (
+                "bundle.xlsx",
+                exported.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    string = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert string["status"] == "public"
+
+
+def test_revert_edit_does_not_change_published_snapshot(client):
+    project = _make_project(client, "Revert Edit")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}, "status": "public"},
+    ).json()
+    sid = created["id"]
+    client.patch(f"/api/projects/{pid}/strings/{sid}", json={"source_text": "Lưu 2"})
+    items = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    update = next(a for a in items if a["action"] == "update" and a["entity_type"] == "string")
+    r = client.post(f"/api/projects/{pid}/activities/{update['id']}/revert")
+    assert r.status_code == 200, r.text
+    string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert string["source_text"] == "Lưu"
+    assert string["status"] == "public"
+    public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
+    assert public["vi"]["save"] == "Lưu"
+
+
+def test_discard_changes_restores_published_working_copy(client):
+    project = _make_project(client, "Discard")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}, "status": "public"},
+    ).json()
+    sid = created["id"]
+    client.patch(f"/api/projects/{pid}/strings/{sid}", json={"key": "save_v2", "source_text": "Lưu 2"})
+    r = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_changes", "string_ids": [sid]},
+    )
+    assert r.status_code == 200, r.text
+    string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert string["key"] == "save"
+    assert string["source_text"] == "Lưu"
+    assert string["has_unpublished_changes"] is False
+
+
+def test_list_filter_unpublished_changes(client):
+    project = _make_project(client, "Filter Dirty")
+    pid = project["id"]
+    public = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "a", "source_text": "A", "status": "public"},
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "b", "source_text": "B"},
+    )
+    client.patch(f"/api/projects/{pid}/strings/{public['id']}", json={"source_text": "A2"})
+    r = client.get(f"/api/projects/{pid}/strings", params={"has_unpublished_changes": True})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["key"] == "a"
