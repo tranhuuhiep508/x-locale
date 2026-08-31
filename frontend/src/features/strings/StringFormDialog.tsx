@@ -19,6 +19,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectI
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
+import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -135,7 +136,12 @@ export default function StringFormDialog({
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [createdModules, setCreatedModules] = useState<Module[]>([])
+  const [createdTags, setCreatedTags] = useState<Tag[]>([])
   const [baseline, setBaseline] = useState(entry ?? null)
+  const moduleOptions = [...modules, ...createdModules.filter((item) => !modules.some((m) => m.id === item.id))]
+  const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
+  const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
   const formValues = {
     key,
@@ -248,7 +254,7 @@ export default function StringFormDialog({
 
   const busy = saveMut.isPending || translateMut.isPending || discardMut.isPending
   const released = isEdit && baseline ? isReleased(baseline) : false
-  const moduleSlug = modules.find((item) => item.id === moduleId)?.slug ?? ''
+  const moduleSlug = moduleOptions.find((item) => item.id === moduleId)?.slug ?? ''
   const serverDiscardable = Boolean(baseline && canDiscardWorkingCopy(baseline))
   const formDirty = Boolean(baseline && isFormDirty(baseline, targetLocales, formValues))
   const canDiscard =
@@ -366,45 +372,69 @@ export default function StringFormDialog({
                   </p>
                 ) : null}
 
-                {modules.length > 0 && (
-                  <Field>
-                    <div className="flex items-center gap-1">
-                      <FieldLabel htmlFor="string-module">Module</FieldLabel>
-                      {released && baseline ? (
-                        <PublishedChangeHint
-                          published={baseline.published_module_slug ?? ''}
-                          working={moduleSlug}
-                          released={released}
-                          mono
-                        />
-                      ) : null}
-                    </div>
-                    <Select
-                      value={moduleId || NONE_MODULE}
-                      onValueChange={(v) =>
-                        setModuleId(v === NONE_MODULE ? '' : v)
-                      }
-                    >
-                      <SelectTrigger id="string-module" className="w-full">
-                        <SelectValue placeholder="— None —" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={NONE_MODULE}>— None —</SelectItem>
-                          {modules.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                )}
+                <Field>
+                  <div className="flex items-center gap-1">
+                    <FieldLabel htmlFor="string-module">Module</FieldLabel>
+                    {released && baseline ? (
+                      <PublishedChangeHint
+                        published={baseline.published_module_slug ?? ''}
+                        working={moduleSlug}
+                        released={released}
+                        mono
+                      />
+                    ) : null}
+                    <CreateModulePopover
+                      projectId={projectId}
+                      disabled={busy}
+                      onCreated={(created) => {
+                        setCreatedModules((prev) =>
+                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                        )
+                      }}
+                    />
+                  </div>
+                  <Select
+                    value={moduleId || NONE_MODULE}
+                    onValueChange={(v) => setModuleId(v === NONE_MODULE ? '' : v)}
+                  >
+                    <SelectTrigger id="string-module" className="w-full">
+                      <SelectValue placeholder="— None —">
+                        {selectedModuleName ?? '— None —'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={NONE_MODULE}>— None —</SelectItem>
+                        {moduleOptions.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {moduleOptions.length === 0 ? (
+                    <FieldDescription>
+                      None yet. Create one without leaving this form.
+                    </FieldDescription>
+                  ) : null}
+                </Field>
 
-                {tags.length > 0 && (
-                  <Field>
+                <Field>
+                  <div className="flex items-center gap-1">
                     <FieldLabel>Tag</FieldLabel>
+                    <CreateTagPopover
+                      projectId={projectId}
+                      tags={tagOptions}
+                      disabled={busy}
+                      onCreated={(created) => {
+                        setCreatedTags((prev) =>
+                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                        )
+                      }}
+                    />
+                  </div>
+                  {tagOptions.length > 0 ? (
                     <ToggleGroup
                       type="single"
                       variant="outline"
@@ -412,7 +442,7 @@ export default function StringFormDialog({
                       value={tagId}
                       onValueChange={setTagId}
                     >
-                      {tags.map((t) => (
+                      {tagOptions.map((t) => (
                         <ToggleGroupItem key={t.id} value={t.id} size="sm">
                           <span
                             className="size-2 rounded-full"
@@ -422,8 +452,12 @@ export default function StringFormDialog({
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
-                  </Field>
-                )}
+                  ) : (
+                    <FieldDescription>
+                      None yet. Create one without leaving this form.
+                    </FieldDescription>
+                  )}
+                </Field>
               </FieldGroup>
 
               <div className="flex flex-col gap-3">
