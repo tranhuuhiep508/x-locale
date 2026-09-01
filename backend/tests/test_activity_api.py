@@ -18,24 +18,27 @@ def _make_project(client, name: str, targets=None):
 
 
 def test_excel_import_is_one_feed_card(client):
-    src = _make_project(client, "Excel Feed Src")
-    src_id = src["id"]
-    for i in range(40):
-        r = client.post(
-            f"/api/projects/{src_id}/strings",
-            json={"key": f"k{i:02d}", "source_text": f"Nguồn {i}"},
-        )
-        assert r.status_code == 201, r.text
-
-    exported = client.get(
-        f"/api/projects/{src_id}/export", params={"format": "xlsx", "stage": "all"}
+    project = _make_project(client, "Excel Feed")
+    pid = project["id"]
+    seeded = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {f"k{i:02d}": f"Nguồn {i}" for i in range(40)}},
     )
+    assert seeded.status_code == 200, seeded.text
+    assert seeded.json()["created"] == 40
+
+    exported = client.get(f"/api/projects/{pid}/export", params={"format": "xlsx", "stage": "all"})
     assert exported.status_code == 200, exported.text
 
-    dest = _make_project(client, "Excel Feed Dst")
-    dest_id = dest["id"]
+    items = client.get(f"/api/projects/{pid}/strings", params={"page_size": 100}).json()["items"]
+    for row in items:
+        client.patch(
+            f"/api/projects/{pid}/strings/{row['id']}",
+            json={"source_text": f"{row['source_text']} changed"},
+        )
+
     imported = client.post(
-        f"/api/projects/{dest_id}/import",
+        f"/api/projects/{pid}/import",
         files={
             "file": (
                 "bundle.xlsx",
@@ -45,14 +48,11 @@ def test_excel_import_is_one_feed_card(client):
         },
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["created"] == 40
-
-    raw = client.get(f"/api/projects/{dest_id}/activities").json()
-    assert raw["total"] >= 40
+    assert imported.json()["updated"] == 40
 
     feed = client.get(
-        f"/api/projects/{dest_id}/activities/feed",
-        params={"page": 1, "page_size": 20},
+        f"/api/projects/{pid}/activities/feed",
+        params={"page": 1, "page_size": 20, "event_type": "excel_import"},
     )
     assert feed.status_code == 200, feed.text
     body = feed.json()
@@ -89,7 +89,8 @@ def test_restore_version_applies_after_without_409(client):
     hello = next(
         a
         for a in history
-        if a["action"] == "update" and (a["after"] or {}).get("translations", {}).get("en") == "Hello"
+        if a["action"] == "update"
+        and (a["after"] or {}).get("translations", {}).get("en") == "Hello"
     )
 
     r = client.post(
@@ -111,9 +112,14 @@ def test_restore_version_applies_after_without_409(client):
 def test_batch_undo_force_overwrites_later_edits(client):
     project = _make_project(client, "Batch Undo Force")
     pid = project["id"]
-    imported = client.post(
+    first = client.post(
         f"/api/projects/{pid}/strings/import",
         json={"strings": {"a": "A1", "b": "B1"}},
+    )
+    assert first.status_code == 200, first.text
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"a": "A2", "b": "B2"}},
     )
     assert imported.status_code == 200, imported.text
     batch_id = imported.json()["batch_id"]
@@ -122,7 +128,7 @@ def test_batch_undo_force_overwrites_later_edits(client):
     by_key = {row["key"]: row for row in items}
     client.patch(
         f"/api/projects/{pid}/strings/{by_key['a']['id']}",
-        json={"source_text": "A2"},
+        json={"source_text": "A3"},
     )
 
     conflict = client.post(
@@ -135,8 +141,10 @@ def test_batch_undo_force_overwrites_later_edits(client):
     assert undo.status_code == 200, undo.text
     assert undo.json()["reverted"] == 2
 
-    missing = client.get(f"/api/projects/{pid}/strings").json()
-    assert missing["total"] == 0
+    restored = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {row["key"]: row for row in restored}
+    assert by_key["a"]["source_text"] == "A1"
+    assert by_key["b"]["source_text"] == "B1"
 
     feed = client.get(f"/api/projects/{pid}/activities/feed").json()["items"]
     restored = next(card for card in feed if card["event_type"] == "revert")

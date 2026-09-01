@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 
 import sqlalchemy as sa
-from alembic import op
 
+from alembic import op
 from app.services.activity_events import classify_event
 
 revision = "f60718293b4c"
@@ -60,7 +60,8 @@ def upgrade() -> None:
         )
         conn.execute(
             sa.text(
-                "UPDATE activities SET event_type = :event_type, summary = :summary, locale = COALESCE(locale, :locale) "
+                "UPDATE activities SET event_type = :event_type, "
+                "summary = :summary, locale = COALESCE(locale, :locale) "
                 "WHERE id = :id"
             ),
             {

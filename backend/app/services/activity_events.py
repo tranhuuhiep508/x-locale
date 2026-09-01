@@ -274,7 +274,9 @@ def batch_card_event_type(batch_kind: str | None) -> str:
     return "batch"
 
 
-def batch_card_summary(batch_kind: str | None, children: list[ClassifiedEvent | str], count: int) -> str:
+def batch_card_summary(
+    batch_kind: str | None, children: list[ClassifiedEvent | str], count: int
+) -> str:
     kind = _enum_val(batch_kind)
     noun = "string" if count == 1 else "strings"
     if kind == "excel_import":

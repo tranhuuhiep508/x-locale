@@ -742,7 +742,7 @@ export function StringsPage() {
         onClose={() => setRestoreLastConfirm(false)}
         onConfirm={() =>
           batchMut.mutate({ action: 'restore_last_history', string_ids: selectedList })
-        }}
+        }
         title="Restore last edit?"
         description={`This restores the previous working copy for ${selectedCount} selected string${selectedCount === 1 ? '' : 's'}. Production snapshots are unchanged.`}
         confirmLabel="Restore last edit"

@@ -49,10 +49,14 @@ def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict
     return existing
 
 
+RESTORE_INTENT_KEY = "_tms_restore_intent"
+
+
 def set_restore_intent(session: Session) -> None:
     """Mark the next flush as a history restore so capture emits string.restored."""
     existing = session.info.get("activity") or {}
     session.info["activity"] = {**existing, "intent": "restore"}
+    session.info[RESTORE_INTENT_KEY] = True
 
 
 def _jsonify(val: Any) -> Any:
@@ -334,6 +338,8 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
     del flush_context, instances
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(session)
     intent = (session.info.get("activity") or {}).get("intent")
+    if session.info.get(RESTORE_INTENT_KEY):
+        intent = "restore"
     # Revert routes write an explicit marker; do not also log the restored mutation.
     if batch_kind == BatchKind.revert:
         return

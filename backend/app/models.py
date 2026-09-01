@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -20,6 +20,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class TranslationStatus(str, enum.Enum):
@@ -306,7 +310,10 @@ class Activity(Base):
     reverted_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     is_revertible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=_utcnow,
+        index=True,
     )
 
     project: Mapped["Project"] = relationship(back_populates="activities")

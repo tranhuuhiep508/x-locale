@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
-
 from datetime import datetime
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_
@@ -362,6 +361,7 @@ def restore_activity_version(
     set_restore_intent(db)
     _apply_working_copy_only(db, entry, activity.after, include_status=False)
     db.commit()
+    db.expire_all()
     latest = (
         db.query(Activity)
         .filter(Activity.project_id == project.id, Activity.string_id == string_id)
@@ -381,7 +381,11 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
             continue
         latest = (
             db.query(Activity)
-            .filter(Activity.project_id == project.id, Activity.string_id == entry.id)
+            .filter(
+                Activity.project_id == project.id,
+                Activity.string_id == entry.id,
+                Activity.before.isnot(None),
+            )
             .order_by(Activity.created_at.desc(), Activity.id.desc())
             .first()
         )
@@ -493,7 +497,9 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
     if activity.entity_type == EntityType.string or activity.entity_type == "string":
         if activity.action == ActivityAction.delete or activity.action == "delete":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if after.get("deleted_at"):
                 return entry is not None and entry.deleted_at is not None
@@ -515,7 +521,9 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
             current = entry.status.value if hasattr(entry.status, "value") else entry.status
             if current != after["status"]:
                 return False
-        if "pending_delete" in after and bool(entry.pending_delete) != bool(after["pending_delete"]):
+        if "pending_delete" in after and bool(entry.pending_delete) != bool(
+            after["pending_delete"]
+        ):
             return False
         if "deleted_at" in after:
             current_deleted = entry.deleted_at.isoformat() if entry.deleted_at else None
@@ -524,7 +532,10 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
                 return False
         if "published_key" in after and entry.published_key != after["published_key"]:
             return False
-        if "published_source_text" in after and entry.published_source_text != after["published_source_text"]:
+        if (
+            "published_source_text" in after
+            and entry.published_source_text != after["published_source_text"]
+        ):
             return False
         if "published_module_id" in after:
             current_pub = str(entry.published_module_id) if entry.published_module_id else None
@@ -549,7 +560,11 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
 
     if activity.entity_type == EntityType.translation or activity.entity_type == "translation":
         if activity.action == ActivityAction.delete or activity.action == "delete":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             return t is None
         t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
         if t is None:
@@ -655,7 +670,6 @@ def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any
 
 def apply_revert(db: Session, activity: Activity) -> None:
     before = activity.before or {}
-    after = activity.after or {}
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     etype = (
         activity.entity_type.value
@@ -666,14 +680,18 @@ def apply_revert(db: Session, activity: Activity) -> None:
     if etype == "string":
         if action == "update":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if not entry:
                 raise HTTPException(status_code=404, detail="String no longer exists")
             _apply_working_snapshot(db, entry, before)
         elif action == "create":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if entry:
                 db.delete(entry)
@@ -721,12 +739,20 @@ def apply_revert(db: Session, activity: Activity) -> None:
 
     elif etype == "translation":
         if action == "update":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             if not t:
                 raise HTTPException(status_code=404, detail="Translation no longer exists")
             t.value = before.get("value", t.value)
         elif action == "create":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             if t:
                 db.delete(t)
         elif action == "delete":
@@ -761,7 +787,10 @@ def revert_activity(
     if not force and not current_matches_after(db, activity):
         raise HTTPException(
             status_code=409,
-            detail="Conflict: current state does not match activity after-state. Pass force=true to override.",
+            detail=(
+                "Conflict: current state does not match activity after-state. "
+                "Pass force=true to override."
+            ),
         )
 
     from app.activity import attach_batch

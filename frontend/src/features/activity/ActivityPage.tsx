@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
+import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
@@ -99,7 +100,7 @@ export function ActivityPage() {
     return groups
   }, [items])
 
-  function setSearch(updates: Record<string, string | number | undefined>) {
+  function setSearch(updates: Partial<ActivitySearch>) {
     navigate({
       search: (prev) => ({ ...prev, ...updates, page: updates.page ?? 1 }),
     })
