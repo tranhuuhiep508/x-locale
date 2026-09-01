@@ -1,5 +1,7 @@
 import { createRootRouteWithContext, Outlet, redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
+import { ThemeProvider } from 'next-themes'
+import { THEME_STORAGE_KEY } from '@/lib/theme'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api/client'
@@ -31,9 +33,17 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function Root() {
   return (
-    <TooltipProvider>
-      <Outlet />
-      <Toaster />
-    </TooltipProvider>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+      storageKey={THEME_STORAGE_KEY}
+    >
+      <TooltipProvider>
+        <Outlet />
+        <Toaster />
+      </TooltipProvider>
+    </ThemeProvider>
   )
 }

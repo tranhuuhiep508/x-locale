@@ -364,7 +364,7 @@ export function StringsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b bg-background px-4 py-3">
+      <div className="shrink-0 px-5 py-3">
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />

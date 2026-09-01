@@ -12,6 +12,7 @@ import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import { formatDate } from '@/lib/utils'
 const routeApi = getRouteApi('/projects/$projectId/activity')
@@ -97,26 +98,31 @@ export function ActivityPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b bg-background px-4 py-3">
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
-          <Clock className="size-5 text-primary" />
-          Activity feed
-        </h1>
+      <div className="shrink-0 px-5 py-5">
+        <PageHeader
+          eyebrow="Project"
+          title="Activity"
+          description="Every change to this catalog, newest first."
+        />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto px-2">
         {isLoading ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner />
           </div>
         ) : items.length === 0 ? (
-          <EmptyState title="No activity yet" description="Changes will appear here." />
+          <EmptyState
+            icon={<Clock />}
+            title="No activity yet"
+            description="Changes will appear here."
+          />
         ) : (
           <div className="flex flex-col gap-1 px-2 py-2">
             {items.map((a) => (
               <div
                 key={a.id}
-                className="flex items-start gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-muted/50"
+                className="flex items-start gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-accent/60"
               >
                 <div className="mt-0.5 shrink-0">
                   <Badge variant={ACTION_COLOR[activityLabel(a)] ?? 'default'}>
@@ -132,7 +138,7 @@ export function ActivityPage() {
                     {a.locale ? (
                       <>
                         <span>·</span>
-                        <code>{a.locale}</code>
+                        <span className="font-mono">{a.locale}</span>
                       </>
                     ) : null}
                   </div>

@@ -1,7 +1,7 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
-import { Download, Upload, FileText, FileSpreadsheet, ArrowUpDown } from 'lucide-react'
+import { Upload, FileText, FileSpreadsheet } from 'lucide-react'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
 import { projectQuery } from '@/lib/queries'
@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 
 const routeApi = getRouteApi('/projects/$projectId/import-export')
@@ -122,18 +123,18 @@ export function ImportExportPage() {
     : []
 
   return (
-    <div className="container flex flex-col gap-8 py-6">
-      <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-        <ArrowUpDown className="h-5 w-5 text-primary" />
-        Import / Export
-      </h1>
+    <PageBody>
+      <PageHeader
+        eyebrow="Project"
+        title="Import / Export"
+        description="Download a snapshot of this catalog, or bring strings in from JSON or Excel."
+      />
 
-      <Card>
+      <Card className="sky-panel">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-4 w-4 text-primary" />
-            Export
-          </CardTitle>
+          <p className="eyebrow">Outbound</p>
+          <CardTitle>Export</CardTitle>
+          <CardDescription>Download JSON or Excel using this project's layout.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
@@ -226,12 +227,11 @@ export function ImportExportPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="sky-panel">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-primary" />
-            Import
-          </CardTitle>
+          <p className="eyebrow">Inbound</p>
+          <CardTitle>Import</CardTitle>
+          <CardDescription>Preview first, then apply. Secrets stay in the file you choose.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
@@ -364,6 +364,6 @@ export function ImportExportPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageBody>
   )
 }

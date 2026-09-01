@@ -73,6 +73,7 @@
 
 :root {
   color-scheme: light;
+  --app-header-height: 3.5rem;
 
   --background: var(--color-haze-50);
   --foreground: var(--color-haze-900);
@@ -372,6 +373,21 @@
   background-repeat: no-repeat;
   background-position: bottom center;
   background-size: 100% 1px;
+}
+
+/* App chrome: a slice of sky. Zenith wash at the top, horizon at the floor. */
+@utility sky-chrome {
+  background-color: var(--card);
+  background-image:
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--primary) 14%, transparent),
+      transparent 78%
+    ),
+    var(--horizon);
+  background-repeat: no-repeat, no-repeat;
+  background-position: top center, bottom center;
+  background-size: 100% 100%, 100% 1px;
 }
 
 /* The system's own voice: column headers, locale codes, metadata labels. */

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
@@ -87,16 +88,21 @@ export function NewProjectPage() {
 
   return (
     <AppShell>
-      <div className="container py-8">
-        <Link
-          to="/"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to projects
-        </Link>
-
-        <h1 className="text-xl font-semibold text-foreground mb-6">New project</h1>
+      <PageBody contained className="flex flex-col gap-6">
+        <div>
+          <Link
+            to="/"
+            className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" />
+            All projects
+          </Link>
+          <PageHeader
+            eyebrow="Workspace"
+            title="New project"
+            description="Name the catalog, pick a base language, then add the locales you translate into."
+          />
+        </div>
 
         <Card>
           <CardContent>
@@ -238,7 +244,7 @@ export function NewProjectPage() {
             </form>
           </CardContent>
         </Card>
-      </div>
+      </PageBody>
     </AppShell>
   )
 }
