@@ -10,10 +10,12 @@ from fastapi import APIRouter, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.schemas import ActivityListOut, ActivityOut
+from app.schemas import ActivityFeedOut, ActivityListOut, ActivityOut
 from app.services.activities import (
     list_activities,
+    list_activity_feed,
     list_string_activities,
+    restore_activity_version,
     revert_activity,
     revert_batch,
     serialize_activity,
@@ -30,6 +32,7 @@ def list_activities_endpoint(
     string_id: uuid.UUID | None = None,
     actor: str | None = None,
     action: str | None = None,
+    event_type: str | None = None,
     batch_id: uuid.UUID | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
@@ -43,7 +46,33 @@ def list_activities_endpoint(
         string_id=string_id,
         actor=actor,
         action=action,
+        event_type=event_type,
         batch_id=batch_id,
+        since=since,
+        until=until,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/activities/feed", response_model=ActivityFeedOut)
+def activity_feed(
+    project: ProjectAccess,
+    db: DbSession,
+    event_type: str | None = None,
+    actor: str | None = None,
+    locale: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ActivityFeedOut:
+    return list_activity_feed(
+        db,
+        project,
+        actor=actor,
+        event_type=event_type,
+        locale=locale,
         since=since,
         until=until,
         page=page,
@@ -64,6 +93,17 @@ def string_activities(
     )
 
 
+@router.post("/strings/{string_id}/activities/{activity_id}/restore", response_model=ActivityOut)
+def restore_string_version(
+    string_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    project: ProjectAccess,
+    db: DbSession,
+) -> ActivityOut:
+    activity = restore_activity_version(db, project, string_id, activity_id)
+    return serialize_activity(activity)
+
+
 @router.post("/activities/{activity_id}/revert", response_model=ActivityOut)
 def revert_activity_endpoint(
     activity_id: uuid.UUID,
@@ -80,6 +120,6 @@ def revert_batch_endpoint(
     batch_id: uuid.UUID,
     project: ProjectAccess,
     db: DbSession,
-    force: Annotated[bool, Query()] = False,
+    force: Annotated[bool, Query()] = True,
 ) -> dict:
     return revert_batch(db, project, batch_id, force=force)

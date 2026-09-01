@@ -291,6 +291,7 @@ class Activity(Base):
     locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, default="string.updated", index=True)
     summary: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, index=True)
     batch_kind: Mapped[BatchKind | None] = mapped_column(

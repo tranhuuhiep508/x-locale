@@ -1,4 +1,4 @@
-import { CheckCircle, MoveRight, RotateCcw, Tag as TagIcon, Trash2, Undo2, X, XCircle } from 'lucide-react'
+import { CheckCircle, History, MoveRight, RotateCcw, Tag as TagIcon, Trash2, Undo2, X, XCircle } from 'lucide-react'
 import type { Module, Tag } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 
@@ -14,10 +14,12 @@ export function BatchActionBar({
   onDiscardChanges,
   onDiscardDelete,
   onRestore,
+  onRestoreLastEdit,
   onClear,
   showDiscardChanges,
   showDiscardDelete,
   showRestore,
+  showRestoreLastEdit,
 }: {
   selectedCount: number
   modules: Module[]
@@ -25,6 +27,7 @@ export function BatchActionBar({
   showDiscardChanges: boolean
   showDiscardDelete: boolean
   showRestore: boolean
+  showRestoreLastEdit?: boolean
   onPublish: () => void
   onUnpublish: () => void
   onMove: () => void
@@ -33,6 +36,7 @@ export function BatchActionBar({
   onDiscardChanges: () => void
   onDiscardDelete: () => void
   onRestore: () => void
+  onRestoreLastEdit?: () => void
   onClear: () => void
 }) {
   return (
@@ -77,6 +81,12 @@ export function BatchActionBar({
             Restore
           </Button>
         )}
+        {showRestoreLastEdit && onRestoreLastEdit ? (
+          <Button variant="secondary" size="sm" onClick={onRestoreLastEdit}>
+            <History data-icon="inline-start" />
+            Restore last edit
+          </Button>
+        ) : null}
         <Button variant="destructive" size="sm" onClick={onDelete}>
           <Trash2 data-icon="inline-start" />
           Delete

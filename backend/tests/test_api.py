@@ -482,6 +482,9 @@ def test_string_create_activity_snapshot(client):
     assert after["key"] == "save"
     assert after["tag_ids"] == [tag["id"]]
     assert after["translations"]["en"] == "Save"
+    assert creates[0]["event_type"] == "string.created"
+    assert creates[0]["summary"] == "Created 'save'"
+    assert all(change["field"] != "published_key" for change in creates[0]["changed"])
 
 
 def test_string_patch_one_activity_with_translation(client):
@@ -557,7 +560,8 @@ def test_string_delete_activity_and_revert(client):
     new_rows = [a for a in after_revert if a["id"] not in {x["id"] for x in items}]
     assert len(new_rows) == 1
     assert new_rows[0]["batch_kind"] == "revert"
-    assert new_rows[0]["summary"] == "Reverted delete of 'cancel'"
+    assert new_rows[0]["event_type"] == "string.restored"
+    assert new_rows[0]["summary"] == "Restored previous value of 'cancel'"
     assert new_rows[0]["revert_of_id"] == deletes[0]["id"]
 
 
@@ -600,8 +604,10 @@ def test_revert_create_and_update_tags_translations(client):
     new_rows = [a for a in after_revert if a["id"] not in {x["id"] for x in items}]
     assert len(new_rows) == 1
     assert new_rows[0]["batch_kind"] == "revert"
-    assert new_rows[0]["summary"] == "Reverted update of 'ok'"
+    assert new_rows[0]["event_type"] == "string.restored"
+    assert new_rows[0]["summary"] == "Restored previous value of 'ok'"
     assert not any("Reverted:" in a["summary"] for a in new_rows)
+    assert not any("Redid " in a["summary"] for a in new_rows)
 
     creates = [
         a
@@ -633,11 +639,7 @@ def test_revert_redo_summaries_do_not_stack(client):
 
     summaries = []
     current_id = update["id"]
-    for expected in (
-        "Reverted update of 'cancel'",
-        "Redid update of 'cancel'",
-        "Reverted update of 'cancel'",
-    ):
+    for _ in range(3):
         r = client.post(f"/api/projects/{pid}/activities/{current_id}/revert")
         assert r.status_code == 200, r.text
         latest = next(
@@ -645,15 +647,17 @@ def test_revert_redo_summaries_do_not_stack(client):
             for a in client.get(f"/api/projects/{pid}/activities").json()["items"]
             if a["revert_of_id"] == current_id
         )
-        assert latest["summary"] == expected
+        assert latest["summary"] == "Restored previous value of 'cancel'"
+        assert latest["event_type"] == "string.restored"
         assert "Reverted:" not in latest["summary"]
+        assert "Redid " not in latest["summary"]
         summaries.append(latest["summary"])
         current_id = latest["id"]
 
     assert summaries == [
-        "Reverted update of 'cancel'",
-        "Redid update of 'cancel'",
-        "Reverted update of 'cancel'",
+        "Restored previous value of 'cancel'",
+        "Restored previous value of 'cancel'",
+        "Restored previous value of 'cancel'",
     ]
 
 

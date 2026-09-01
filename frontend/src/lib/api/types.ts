@@ -171,6 +171,7 @@ export type BatchAction =
   | 'discard_changes'
   | 'discard_delete'
   | 'restore'
+  | 'restore_last_history'
   | 'move_module'
   | 'add_tags'
   | 'remove_tags'
@@ -265,6 +266,13 @@ export interface Job {
 }
 
 // ── Activities ─────────────────────────────────────────────────────────
+export interface ActivityChange {
+  field: string
+  before: string | null
+  after: string | null
+  locale: string | null
+}
+
 export interface Activity {
   id: string
   actor_type: string
@@ -277,6 +285,7 @@ export interface Activity {
   locale: string | null
   before: Record<string, unknown> | null
   after: Record<string, unknown> | null
+  event_type: string
   summary: string
   batch_id: string | null
   batch_kind: string | null
@@ -284,10 +293,48 @@ export interface Activity {
   reverted_by_id: string | null
   is_revertible: boolean
   created_at: string | null
+  changed: ActivityChange[]
 }
 
 export interface ActivityListResponse {
   items: Activity[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ActivityFeedChild {
+  id: string
+  event_type: string
+  summary: string
+  string_id: string | null
+  string_key: string | null
+  locale: string | null
+  changed: ActivityChange[]
+}
+
+export interface ActivityFeedCard {
+  id: string
+  kind: 'single' | 'batch'
+  event_type: string
+  summary: string
+  actor_type: string
+  actor_label: string
+  created_at: string | null
+  string_id: string | null
+  string_key: string | null
+  locale: string | null
+  batch_id: string | null
+  batch_kind: string | null
+  children_count: number
+  is_undoable: boolean
+  counts: Record<string, number>
+  changed: ActivityChange[]
+  children: ActivityFeedChild[]
+}
+
+export interface ActivityFeedResponse {
+  items: ActivityFeedCard[]
   total: number
   page: number
   page_size: number

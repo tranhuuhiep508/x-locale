@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
-import { CheckCircle, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { CheckCircle, History, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 export type StringTableMeta = {
   projectId: string
   onEdit: (entry: StringEntry) => void
+  onHistory: (entry: StringEntry) => void
   onRefresh: () => void
 }
 
@@ -119,11 +120,13 @@ function StringActionsCell({
   entry,
   projectId,
   onEdit,
+  onHistory,
   onRefresh,
 }: {
   entry: StringEntry
   projectId: string
   onEdit: (entry: StringEntry) => void
+  onHistory: (entry: StringEntry) => void
   onRefresh: () => void
 }) {
   const toast = useToast()
@@ -212,6 +215,9 @@ function StringActionsCell({
           <RotateCcw />
         </ActionIcon>
       ) : null}
+      <ActionIcon label="History" onClick={() => onHistory(entry)}>
+        <History />
+      </ActionIcon>
       <ActionIcon label="Edit" onClick={() => onEdit(entry)}>
         <Pencil />
       </ActionIcon>
@@ -443,7 +449,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       header: 'Actions',
       enableSorting: false,
       enableHiding: false,
-      meta: { headerClassName: 'w-36 text-right', className: 'align-middle text-right' },
+      meta: { headerClassName: 'w-40 text-right', className: 'align-middle text-right' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (
@@ -451,6 +457,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             entry={row.original}
             projectId={meta.projectId}
             onEdit={meta.onEdit}
+            onHistory={meta.onHistory}
             onRefresh={meta.onRefresh}
           />
         )

@@ -17,7 +17,11 @@ const projectKeys = {
   activities: {
     all: (id: string) => [...projectKeys.detail(id), 'activities'] as const,
     list: (id: string, params: { page: number; pageSize?: number }) =>
-      [...projectKeys.activities.all(id), params] as const,
+      [...projectKeys.activities.all(id), 'list', params] as const,
+    feed: (id: string, params: Record<string, unknown>) =>
+      [...projectKeys.activities.all(id), 'feed', params] as const,
+    string: (id: string, stringId: string) =>
+      [...projectKeys.activities.all(id), 'string', stringId] as const,
   },
 }
 
