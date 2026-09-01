@@ -13,7 +13,7 @@ def status(
     stage: StageOption = None,
     locales: LocalesOption = None,
 ) -> None:
-    """Show diff between local files and TMS (missing keys, orphans, untranslated)."""
+    """Show diff between local files and TMS (mismatches with hints)."""
     show_status(
         runtime_config(output_dir=output_dir, layout=layout, stage=stage, locales=locales)
     )

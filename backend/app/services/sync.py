@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.helpers import content_hash, export_key
 from app.models import Module, Project, StringEntry, TranslationStatus
-from app.schemas import ImportDiff, ImportResult
-from app.services.strings import apply_translation_values, ensure_translation_rows, promote_string, restore_string
+from app.schemas import ImportDiff, ImportResult, SyncStateOut
+from app.services.strings import (
+    apply_translation_values,
+    ensure_translation_rows,
+    promote_string,
+    restore_string,
+)
+
+CLI_UNASSIGNED = "_unassigned"
 
 
 def load_export_entries(db: Session, project_id) -> list[StringEntry]:
@@ -155,6 +162,79 @@ def build_modular_export(
         "content_hash": content_hash({"modules": modules, "unassigned": unassigned}),
     }
     return {"modules": modules, "unassigned": unassigned, "manifest": manifest}
+
+
+def _cli_identity(entry: StringEntry, layout: str, *, published: bool = False) -> str:
+    """Key label matching CLI status identity (modular ``module/key``, flat export key)."""
+    if layout == "flat":
+        return export_key(entry, "flat", published=published)
+    if published:
+        module = entry.published_module
+        key = entry.published_key or entry.key
+    else:
+        module = entry.module
+        key = entry.key
+    if module:
+        return f"{module.slug}/{key}"
+    return f"{CLI_UNASSIGNED}/{key}"
+
+
+def _exported_cli_keys(
+    project: Project,
+    entries: list[StringEntry],
+    layout: str,
+    stage: str,
+) -> list[str]:
+    if layout == "modular":
+        payload = build_modular_export(project, entries, stage)
+        keys: list[str] = []
+        modules = payload.get("modules") or {}
+        if isinstance(modules, dict):
+            for slug, locale_map in modules.items():
+                if not isinstance(locale_map, dict):
+                    continue
+                base_map = locale_map.get(project.base_language) or {}
+                if isinstance(base_map, dict):
+                    keys.extend(f"{slug}/{k}" for k in base_map)
+        unassigned = payload.get("unassigned") or {}
+        if isinstance(unassigned, dict):
+            base_map = unassigned.get(project.base_language) or {}
+            if isinstance(base_map, dict):
+                keys.extend(f"{CLI_UNASSIGNED}/{k}" for k in base_map)
+        return sorted(keys)
+    payload = build_flat_export(project, entries, stage)
+    base_map = payload.get(project.base_language) or {}
+    return sorted(base_map.keys()) if isinstance(base_map, dict) else []
+
+
+def build_sync_state(
+    project: Project,
+    entries: list[StringEntry],
+    layout: str,
+    stage: str,
+) -> SyncStateOut:
+    pending_remove: list[str] = []
+    tombstones: list[str] = []
+    seen_pending: set[str] = set()
+    seen_tombstones: set[str] = set()
+    for entry in entries:
+        label = _cli_identity(entry, layout, published=False)
+        if entry.deleted_at is not None:
+            if label not in seen_tombstones:
+                tombstones.append(label)
+                seen_tombstones.add(label)
+        elif entry.pending_delete:
+            if label not in seen_pending:
+                pending_remove.append(label)
+                seen_pending.add(label)
+    return SyncStateOut(
+        stage=stage,
+        layout=layout,
+        base_language=project.base_language,
+        exported=_exported_cli_keys(project, entries, layout, stage),
+        pending_remove=sorted(pending_remove),
+        tombstones=sorted(tombstones),
+    )
 
 
 def _is_str_map(value: Any) -> bool:

@@ -139,11 +139,12 @@ class PulledFileReport:
     keys: list[str] = field(default_factory=list)
     new_keys: list[str] = field(default_factory=list)
     updated_keys: list[str] = field(default_factory=list)
+    removed_keys: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class ChangeItem:
-    """One created/updated/orphaned key in a sync report."""
+    """One created/updated/mismatched key in a sync report."""
 
     key: str
     extra: str = ""

@@ -124,7 +124,8 @@ Push base-language strings to TMS.
   stored as-is and are **not** prefixed with the folder name.
 
 Orphaned remote keys (present on TMS but absent locally) are **reported but
-never deleted**.
+never deleted**. Keys queued for removal (`pending_delete`) are listed as
+**Pending remove (unchanged)** — push will not re-create them.
 
 ```
 Options:
@@ -143,6 +144,9 @@ Pull translations from TMS to local files.
 - **Modular** — writes `{output_dir}/{module}/{locale}.json` and, when
   `manifest: true`, `{output_dir}/manifest.json`. Created/updated keys use the
   same `module/key` labels as push, with locales listed beside them.
+- Keys that were in a rewritten file but are **not** in this stage’s export are
+  listed as **Removed from local files**, with a reason (pending remove,
+  tombstone, `_unassigned`, or local-only).
 
 ```
 Options:
@@ -157,21 +161,34 @@ Options:
 ### `tms sync`
 
 Runs `push` then `pull` in one step.  Accepts the same override flags as
-`push`/`pull`. Both phases use the same report: header, Created/Updated
-counts, then the changed `module/key` list.
+`push`/`pull`. After both phases, a **Sync summary** lists leftover mismatches
+with reasons and next steps. Exit code `1` if any blocking issue remains
+(untranslated counts alone do not fail).
 
 ### `tms status`
 
 Show a diff between local files and TMS without making any changes.
 
+Compares local base-language keys to this stage’s **export**, then classifies
+keys that exist on TMS but are hidden from export.
+
 Displays:
 
-- **Remote keys** — total base-language keys on TMS
+- **Keys in export** — base-language keys in the stage export
 - **Local keys** — total base-language keys found locally
-- **Missing locally** — keys on TMS that are absent from local files
-- **Orphaned locally** — local keys not found on TMS
-- **Untranslated (locale)** — count of base-language keys with no translation
-  on TMS for each target locale
+- **Missing locally** — in export, absent locally → `tms pull`
+- **Local only** — in local files, not on TMS → `tms push`
+- **Pending remove on TMS** — local key is queued for deletion; omitted from
+  draft export. Push will not re-add it. Restore or publish the delete in TMS,
+  or remove the key locally.
+- **Removed on TMS (tombstone)** — soft-deleted on TMS
+- **Source text differs** — same key, different base-language text
+- **`_unassigned` (CLI will not push)** — extra keys under `_unassigned/`
+- **Untranslated (locale)** — base-language keys with no translation on TMS
+  (informational; does not fail the command)
+
+Draft export omits pending-remove keys and tombstones. Exit code `1` when any
+blocking mismatch above remains.
 
 ---
 

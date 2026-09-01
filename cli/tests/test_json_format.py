@@ -21,6 +21,7 @@ from tms_cli.io import (
     resolve_push_source,
     scan_modular_base,
     scoped_key,
+    write_locale_file_reported,
 )
 from tms_cli.models import (
     UNASSIGNED_SLUG,
@@ -204,12 +205,13 @@ class ConfigOverrideTests(unittest.TestCase):
 
 
 class DiffLocaleMapsTests(unittest.TestCase):
-    def test_detects_added_and_updated_keys(self) -> None:
-        old = {"sign_in": "Login", "password": "Password"}
+    def test_detects_added_updated_and_removed_keys(self) -> None:
+        old = {"sign_in": "Login", "password": "Password", "gone": "X"}
         new = {"sign_in": "Sign in", "password": "Password", "sign_up": "Create account"}
-        added, updated = diff_locale_maps(old, new)
+        added, updated, removed = diff_locale_maps(old, new)
         self.assertEqual(added, ["sign_up"])
         self.assertEqual(updated, ["sign_in"])
+        self.assertEqual(removed, ["gone"])
 
 
 class GroupPullChangesTests(unittest.TestCase):
@@ -233,6 +235,19 @@ class GroupPullChangesTests(unittest.TestCase):
         self.assertEqual(
             group_pull_changes(reports, output_dir=root, attr="updated_keys"),
             [ChangeItem(key="auth/auth.email", extra="vi, en")],
+        )
+
+    def test_groups_removed_keys(self) -> None:
+        root = Path("/tmp/locales")
+        reports = [
+            PulledFileReport(
+                path=root / UNASSIGNED_SLUG / "vi.json",
+                removed_keys=["123ewfewf"],
+            ),
+        ]
+        self.assertEqual(
+            group_pull_changes(reports, output_dir=root, attr="removed_keys"),
+            [ChangeItem(key=f"{UNASSIGNED_SLUG}/123ewfewf", extra="vi")],
         )
 
     def test_flat_layout_keeps_bare_key(self) -> None:
@@ -297,6 +312,15 @@ class ModularStatusHelpersTests(unittest.TestCase):
             keys,
             {"auth/auth.email": "Email", f"{UNASSIGNED_SLUG}/loose": "Hi"},
         )
+
+    def test_pull_overwrite_reports_removed_keys(self) -> None:
+        path = self.root / UNASSIGNED_SLUG / "vi.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        first = write_locale_file_reported(path, {"keep": "A", "gone": "B"})
+        self.assertEqual(first.new_keys, ["gone", "keep"])
+        second = write_locale_file_reported(path, {"keep": "A"})
+        self.assertEqual(second.removed_keys, ["gone"])
+        self.assertEqual(second.new_keys, [])
 
     def test_collect_remote_keys_from_modular_export(self) -> None:
         export = {

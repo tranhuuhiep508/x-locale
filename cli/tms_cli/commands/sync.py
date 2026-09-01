@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tms_cli.commands.options import LayoutOption, LocalesOption, OutputDirOption, StageOption
 from tms_cli.config import runtime_config
-from tms_cli.ops import pull_translations, push_strings
+from tms_cli.ops import finish_sync, pull_translations, push_strings
 from tms_cli.report import print_phase, print_report_header
 
 
@@ -21,3 +21,4 @@ def sync(
     push_strings(config)
     print_phase("Pull")
     pull_translations(config)
+    finish_sync(config)

@@ -61,10 +61,11 @@ def string_map(value: Any) -> dict[str, str]:
 
 def diff_locale_maps(
     old: dict[str, str], new: dict[str, str]
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     added = sorted(set(new) - set(old))
     updated = sorted(k for k in set(new) & set(old) if old[k] != new[k])
-    return added, updated
+    removed = sorted(set(old) - set(new))
+    return added, updated, removed
 
 
 def default_source_file(config: Config) -> Path:
@@ -233,13 +234,14 @@ def write_locale_file_reported(path: Path, strings: dict[str, str]) -> PulledFil
         if isinstance(existing, dict):
             old_strings = {k: v for k, v in existing.items() if isinstance(v, str)}
 
-    new_keys, updated_keys = diff_locale_maps(old_strings, strings)
+    new_keys, updated_keys, removed_keys = diff_locale_maps(old_strings, strings)
     write_locale_file(path, strings)
     return PulledFileReport(
         path=path,
         keys=sorted(strings),
         new_keys=new_keys,
         updated_keys=updated_keys,
+        removed_keys=removed_keys,
     )
 
 
