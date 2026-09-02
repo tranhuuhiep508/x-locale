@@ -52,21 +52,11 @@ def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict
 RESTORE_INTENT_KEY = "_tms_restore_intent"
 
 
-def set_activity_intent(session: Session, intent: str) -> None:
-    """Stamp the next flush with a product intent (restore, discard, …)."""
-    existing = session.info.get("activity") or {}
-    session.info["activity"] = {**existing, "intent": intent}
-
-
 def set_restore_intent(session: Session) -> None:
     """Mark the next flush as a history restore so capture emits string.restored."""
-    set_activity_intent(session, "restore")
+    existing = session.info.get("activity") or {}
+    session.info["activity"] = {**existing, "intent": "restore"}
     session.info[RESTORE_INTENT_KEY] = True
-
-
-def set_discard_intent(session: Session) -> None:
-    """Mark the next flush as discard-changes so capture emits string.discarded."""
-    set_activity_intent(session, "discard")
 
 
 def _jsonify(val: Any) -> Any:

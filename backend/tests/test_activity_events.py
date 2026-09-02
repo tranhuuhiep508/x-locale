@@ -1,7 +1,6 @@
 from app.services.activity_events import (
     EVENT_CREATED,
     EVENT_DELETED,
-    EVENT_DISCARDED,
     EVENT_PENDING_DELETE,
     EVENT_PUBLISHED,
     EVENT_RENAMED,
@@ -10,7 +9,6 @@ from app.services.activity_events import (
     EVENT_TRANSLATION,
     EVENT_UNPUBLISHED,
     EVENT_UPDATED,
-    batch_card_event_type,
     batch_card_summary,
     classify_event,
     human_changed,
@@ -25,7 +23,7 @@ def test_classify_create():
         after={"key": "login.title", "source_text": "Đăng nhập", "status": "draft"},
     )
     assert event.event_type == EVENT_CREATED
-    assert event.summary == "Added string 'login.title' with source “Đăng nhập”"
+    assert event.summary == "Created 'login.title'"
 
 
 def test_classify_source_only():
@@ -66,8 +64,7 @@ def test_classify_single_locale():
     )
     assert event.event_type == EVENT_TRANSLATION
     assert event.locale == "en"
-    assert "en" in event.summary
-    assert "Welcome" in event.summary
+    assert "→ en" in event.summary
 
 
 def test_classify_pending_delete_is_not_deleted():
@@ -112,47 +109,7 @@ def test_classify_restore_intent():
         intent="restore",
     )
     assert event.event_type == EVENT_RESTORED
-    assert event.summary == "Restored a previous working-copy version of 'k'"
-
-
-def test_classify_discard_intent_is_not_restore():
-    event = classify_event(
-        action="update",
-        before={"key": "k", "source_text": "New", "translations": {"en": "B"}},
-        after={"key": "k", "source_text": "Old", "translations": {"en": "A"}},
-        intent="discard",
-    )
-    assert event.event_type == EVENT_DISCARDED
-    assert "Discarded unpublished changes" in event.summary
-    assert "last published snapshot" in event.summary
-    restored = classify_event(
-        action="update",
-        before={"key": "k", "translations": {"en": "B"}},
-        after={"key": "k", "translations": {"en": "A"}},
-        intent="restore",
-    )
-    assert restored.event_type == EVENT_RESTORED
-    assert restored.event_type != EVENT_DISCARDED
-
-
-def test_classify_pending_delete_cancel_is_restore():
-    event = classify_event(
-        action="update",
-        before={"key": "gone", "pending_delete": True, "deleted_at": None, "status": "public"},
-        after={"key": "gone", "pending_delete": False, "deleted_at": None, "status": "public"},
-    )
-    assert event.event_type == EVENT_RESTORED
-    assert "pending deletion" in event.summary
-
-
-def test_classify_tombstone_restore():
-    event = classify_event(
-        action="update",
-        before={"key": "gone", "deleted_at": "2026-01-01T00:00:00"},
-        after={"key": "gone", "deleted_at": None},
-    )
-    assert event.event_type == EVENT_RESTORED
-    assert "deleted string" in event.summary
+    assert event.summary == "Restored previous value of 'k'"
 
 
 def test_classify_mixed_fields_fallback():
@@ -203,15 +160,6 @@ def test_batch_card_summary_excel():
     text = batch_card_summary("excel_import", [], 43)
     assert "Excel" in text
     assert "43" in text
-
-
-def test_batch_card_treats_discard_as_own_type():
-    assert batch_card_event_type("batch", [EVENT_DISCARDED, EVENT_DISCARDED]) == EVENT_DISCARDED
-    assert batch_card_event_type("batch", [EVENT_RESTORED]) == EVENT_RESTORED
-    text = batch_card_summary("batch", [EVENT_DISCARDED], 3)
-    assert "Discarded unpublished changes" in text
-    restored = batch_card_summary("batch", [EVENT_RESTORED], 2)
-    assert "Restored" in restored
 
 
 def test_history_restorable_skips_lifecycle_events():

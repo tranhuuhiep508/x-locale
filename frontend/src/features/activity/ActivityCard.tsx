@@ -4,7 +4,6 @@ import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import type { ActivityChange, ActivityFeedCard } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { formatRelativeTime } from '@/lib/utils'
-import { activityActionLabel, activityFieldLabel } from '@/features/activity/activity-copy'
 
 function quote(value: string | null | undefined) {
   if (!value) return '—'
@@ -13,23 +12,23 @@ function quote(value: string | null | undefined) {
 }
 
 function ChangeLine({ change }: { change: ActivityChange }) {
-  const label = activityFieldLabel(change)
+  const label = change.locale ?? (change.field === 'source_text' ? 'Source' : change.field)
   if (!change.before) {
     return (
-      <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground/80">{label}</span> set to {quote(change.after)}
+      <p className="truncate text-xs text-muted-foreground">
+        <span className="font-medium text-foreground/80">{label}</span> {quote(change.after)}
       </p>
     )
   }
   if (!change.after) {
     return (
-      <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground/80">{label}</span> cleared (was {quote(change.before)})
+      <p className="truncate text-xs text-muted-foreground">
+        <span className="font-medium text-foreground/80">{label}</span> {quote(change.before)}
       </p>
     )
   }
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="truncate text-xs text-muted-foreground">
       <span className="font-medium text-foreground/80">{label}</span>{' '}
       {quote(change.before)} → {quote(change.after)}
     </p>
@@ -41,8 +40,6 @@ function countParts(counts: Record<string, number>) {
   if (counts.created) parts.push(`+${counts.created} created`)
   if (counts.updated) parts.push(`${counts.updated} updated`)
   if (counts.published) parts.push(`${counts.published} published`)
-  if (counts.discarded) parts.push(`${counts.discarded} discarded`)
-  if (counts.restored) parts.push(`${counts.restored} restored`)
   if (counts.deleted) parts.push(`${counts.deleted} deleted`)
   return parts
 }
@@ -61,17 +58,14 @@ export function ActivityCard({
   const [open, setOpen] = useState(false)
   const isBatch = card.kind === 'batch'
   const parts = countParts(card.counts)
-  const action = activityActionLabel(card.event_type)
 
   return (
     <div className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent/60">
       <div className="min-w-0 flex-1">
         <p className="text-sm text-foreground">
-          <span className="font-medium">{card.actor_label}</span>
-          <span className="text-muted-foreground"> · </span>
-          <span>{action}</span>
+          <span className="font-medium">{card.actor_label}</span>{' '}
+          <span>{card.summary}</span>
         </p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{card.summary}</p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           <span>{formatRelativeTime(card.created_at)}</span>
           {card.locale ? (
@@ -108,11 +102,11 @@ export function ActivityCard({
             {open ? (
               <ul className="mt-1 flex flex-col gap-1 border-l pl-3">
                 {card.children.map((child) => (
-                  <li key={child.id} className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                  <li key={child.id} className="text-xs text-muted-foreground">
                     <span className="font-mono text-foreground/80">
                       {child.string_key ?? 'string'}
-                    </span>
-                    <span>{child.summary}</span>
+                    </span>{' '}
+                    {child.summary}
                   </li>
                 ))}
               </ul>

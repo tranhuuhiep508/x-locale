@@ -512,9 +512,6 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             if queue_or_soft_delete(entry):
                 affected += 1
     elif action == "discard_changes":
-        from app.activity import set_discard_intent
-
-        set_discard_intent(db)
         for entry in entries:
             if discard_working_changes(entry):
                 affected += 1
