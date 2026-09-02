@@ -22,6 +22,9 @@ BATCH_EVENT_TYPES = frozenset(
     {"import", "excel_import", "translate", "batch", "revert"}
 )
 UNDOABLE_BATCH_KINDS = frozenset({"import", "excel_import", "translate", "batch"})
+HISTORY_UNRESTORABLE_EVENT_TYPES = frozenset(
+    {EVENT_PUBLISHED, EVENT_UNPUBLISHED, EVENT_PENDING_DELETE, EVENT_DELETED}
+)
 
 PUBLISHED_FIELDS = (
     "published_key",
@@ -260,6 +263,14 @@ def human_changed(
             ChangedField(field="translation", locale=locale, before=old_s, after=new_s)
         )
     return rows
+
+
+def is_history_restorable(event_type: str | None, action: str | None = None) -> bool:
+    """History restore writes working-copy text/metadata, not publish or delete lifecycle."""
+    action_val = _enum_val(action) or "update"
+    if action_val == "delete":
+        return False
+    return (event_type or "") not in HISTORY_UNRESTORABLE_EVENT_TYPES
 
 
 def snapshot_key(activity_before: dict | None, activity_after: dict | None) -> str | None:

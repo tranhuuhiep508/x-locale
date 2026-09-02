@@ -35,11 +35,13 @@ from app.services.activity_events import (
     EVENT_DELETED,
     EVENT_PENDING_DELETE,
     EVENT_PUBLISHED,
+    EVENT_UNPUBLISHED,
     UNDOABLE_BATCH_KINDS,
     batch_card_event_type,
     batch_card_summary,
     classify_event,
     human_changed,
+    is_history_restorable,
     snapshot_key,
 )
 
@@ -352,11 +354,19 @@ def restore_activity_version(
         raise HTTPException(status_code=404, detail="Activity not found")
     if not activity.after:
         raise HTTPException(status_code=400, detail="This version cannot be restored")
+    action = activity.action.value if hasattr(activity.action, "value") else activity.action
+    if not is_history_restorable(activity.event_type, action):
+        raise HTTPException(status_code=400, detail=_history_restore_reject_detail(activity.event_type))
     entry = get_string(db, project.id, string_id)
     if entry.deleted_at is not None:
         raise HTTPException(
             status_code=400,
             detail="Restore the string from Deleted before restoring a version",
+        )
+    if _working_copy_matches(entry, activity.after):
+        raise HTTPException(
+            status_code=400,
+            detail="Working copy already matches this version",
         )
     set_restore_intent(db)
     _apply_working_copy_only(db, entry, activity.after, include_status=False)
@@ -369,6 +379,50 @@ def restore_activity_version(
         .first()
     )
     return latest or activity
+
+
+def _history_restore_reject_detail(event_type: str | None) -> str:
+    if event_type == EVENT_PUBLISHED or event_type == EVENT_UNPUBLISHED:
+        return (
+            "Publish and unpublish cannot be restored from History. "
+            "Use Publish or Unpublish, or Undo a batch on the Activity feed."
+        )
+    if event_type == EVENT_PENDING_DELETE:
+        return (
+            "Pending deletes cannot be restored from History. "
+            "Use Restore on the strings grid to cancel the removal."
+        )
+    if event_type == EVENT_DELETED:
+        return "Deleted strings cannot be restored from History. Use Restore on the Deleted filter."
+    return "This version cannot be restored"
+
+
+def _working_copy_matches(entry: StringEntry, snap: dict[str, Any]) -> bool:
+    if snap.get("key", entry.key) != entry.key:
+        return False
+    if snap.get("source_text", entry.source_text) != entry.source_text:
+        return False
+    if "description" in snap and snap.get("description") != entry.description:
+        return False
+    if "pending_delete" in snap and bool(snap.get("pending_delete")) != bool(entry.pending_delete):
+        return False
+    if "module_id" in snap:
+        current = str(entry.module_id) if entry.module_id else None
+        expected = snap.get("module_id")
+        if current != expected:
+            return False
+    if "tag_ids" in snap:
+        current_tags = sorted(str(t.id) for t in (entry.tags or []))
+        expected_tags = sorted(str(tid) for tid in (snap.get("tag_ids") or []))
+        if current_tags != expected_tags:
+            return False
+    if "translations" in snap:
+        expected = _translations_from_snapshot(snap.get("translations"))
+        current_map = {t.locale: t.value or "" for t in (entry.translations or [])}
+        for locale, value in expected.items():
+            if current_map.get(locale, "") != value:
+                return False
+    return True
 
 
 def restore_last_history(db: Session, project: Project, entries: list[StringEntry]) -> int:
@@ -630,6 +684,8 @@ def _apply_working_copy_only(
         entry.description = snap.get("description")
     if include_status and "status" in snap:
         entry.status = TranslationStatus(snap["status"])
+    if "pending_delete" in snap:
+        entry.pending_delete = bool(snap.get("pending_delete"))
     if "module_id" in snap:
         mid = snap.get("module_id")
         if mid:

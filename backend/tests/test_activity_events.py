@@ -12,6 +12,7 @@ from app.services.activity_events import (
     batch_card_summary,
     classify_event,
     human_changed,
+    is_history_restorable,
 )
 
 
@@ -159,3 +160,12 @@ def test_batch_card_summary_excel():
     text = batch_card_summary("excel_import", [], 43)
     assert "Excel" in text
     assert "43" in text
+
+
+def test_history_restorable_skips_lifecycle_events():
+    assert is_history_restorable(EVENT_TRANSLATION, "update") is True
+    assert is_history_restorable(EVENT_CREATED, "create") is True
+    assert is_history_restorable(EVENT_PUBLISHED, "update") is False
+    assert is_history_restorable(EVENT_UNPUBLISHED, "update") is False
+    assert is_history_restorable(EVENT_PENDING_DELETE, "update") is False
+    assert is_history_restorable(EVENT_DELETED, "delete") is False

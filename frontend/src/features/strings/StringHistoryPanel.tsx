@@ -5,12 +5,9 @@ import { stringActivitiesQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { canRestoreHistoryVersion } from '@/features/strings/history-restore'
 import { useToast } from '@/lib/toast'
 import { formatRelativeTime } from '@/lib/utils'
-
-function canRestore(activity: Activity) {
-  return Boolean(activity.after) && activity.action !== 'delete'
-}
 
 function changePreview(activity: Activity) {
   const change = activity.changed.find((item) => item.field === 'translation') ?? activity.changed[0]
@@ -76,7 +73,7 @@ export function StringHistoryPanel({
               </p>
             ) : null}
           </div>
-          {index > 0 && canRestore(activity) ? (
+          {index > 0 && canRestoreHistoryVersion(activity) ? (
             <Button
               type="button"
               variant="ghost"
