@@ -31,8 +31,9 @@ command.
 ## Quick start
 
 ```bash
-# 1. Initialise — discovers the project from your API key
-tms init -k tms_your_api_key -u https://tms.example.com -o ./src/locales
+# 1. Initialise — interactive wizard, or pass flags for CI
+tms init
+# tms init -k tms_your_api_key -u https://tms.example.com -o ./src/locales
 
 # 2. Push base-language source strings to TMS
 tms push
@@ -100,17 +101,24 @@ The shared flags are: `--output-dir`, `--layout`, `--stage`, `--locales`.
 
 ### `tms init`
 
-Initialise `.tms/config.yaml`.  Calls `GET /api/bootstrap` with the supplied API
-key to discover the linked project and its locales.
+Initialise `.tms/config.yaml`. Calls `GET /api/bootstrap` with the API key to
+discover the linked project, its locales, base language, and layout so those
+values are not retyped.
+
+Run `tms init` with no flags in a terminal for the interactive wizard (API URL,
+API key, output directory, pull stage). Passing any of those flags skips the
+wizard and uses defaults for the rest. Existing config is not overwritten
+unless you confirm or pass `--yes`.
 
 ```
 Options:
-  -k, --api-key TEXT       Project API key  [required]
+  -k, --api-key TEXT       Project API key (prompted if omitted)
   -u, --api-url TEXT       TMS server base URL  [default: http://localhost:8000]
   -o, --output-dir TEXT    Directory for locale files  [default: ./locales]
-  --base-language TEXT     Base/source language override  [default: en]
-  --layout TEXT            flat | modular  [default: flat]
+  --base-language TEXT     Base/source language override (otherwise from project)
+  --layout TEXT            flat | modular (otherwise from project)
   --stage TEXT             draft | public  [default: draft]
+  -y, --yes                Skip prompts; overwrite existing config
 ```
 
 ### `tms push`
