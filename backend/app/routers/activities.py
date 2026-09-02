@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.schemas import ActivityFeedOut, ActivityListOut, ActivityOut
+from app.schemas import ActivityFeedOut, ActivityListOut, ActivityOut, RestoreVersionOut
 from app.services.activities import (
     list_activities,
     list_activity_feed,
@@ -93,15 +93,14 @@ def string_activities(
     )
 
 
-@router.post("/strings/{string_id}/activities/{activity_id}/restore", response_model=ActivityOut)
+@router.post("/strings/{string_id}/activities/{activity_id}/restore", response_model=RestoreVersionOut)
 def restore_string_version(
     string_id: uuid.UUID,
     activity_id: uuid.UUID,
     project: ProjectAccess,
     db: DbSession,
-) -> ActivityOut:
-    activity = restore_activity_version(db, project, string_id, activity_id)
-    return serialize_activity(activity)
+) -> RestoreVersionOut:
+    return restore_activity_version(db, project, string_id, activity_id)
 
 
 @router.post("/activities/{activity_id}/revert", response_model=ActivityOut)

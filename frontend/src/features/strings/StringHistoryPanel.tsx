@@ -35,8 +35,12 @@ export function StringHistoryPanel({
   const restoreMut = useMutation({
     mutationFn: (activityId: string) =>
       activitiesApi.restoreVersion(projectId, stringId, activityId),
-    onSuccess: () => {
-      toast.success('Restored this version')
+    onSuccess: (result) => {
+      if (result.pending_delete) {
+        toast.warning(result.notice)
+      } else {
+        toast.info(result.notice)
+      }
       qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
       qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
       onRestored()

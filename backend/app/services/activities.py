@@ -29,6 +29,7 @@ from app.schemas import (
     ActivityFeedOut,
     ActivityListOut,
     ActivityOut,
+    RestoreVersionOut,
 )
 from app.services.activity_events import (
     EVENT_CREATED,
@@ -337,7 +338,7 @@ def restore_activity_version(
     project: Project,
     string_id: uuid.UUID,
     activity_id: uuid.UUID,
-) -> Activity:
+) -> RestoreVersionOut:
     from app.activity import set_restore_intent
     from app.services.strings import get_string
 
@@ -363,10 +364,11 @@ def restore_activity_version(
             status_code=400,
             detail="Restore the string from Deleted before restoring a version",
         )
+    still_pending = bool(entry.pending_delete)
     if _working_copy_matches(entry, activity.after):
         raise HTTPException(
             status_code=400,
-            detail="Working copy already matches this version",
+            detail=_history_restore_noop_detail(still_pending),
         )
     set_restore_intent(db)
     _apply_working_copy_only(db, entry, activity.after, include_status=False)
@@ -378,7 +380,12 @@ def restore_activity_version(
         .order_by(Activity.created_at.desc(), Activity.id.desc())
         .first()
     )
-    return latest or activity
+    out = serialize_activity(latest or activity)
+    return RestoreVersionOut(
+        **out.model_dump(),
+        notice=_history_restore_notice(still_pending),
+        pending_delete=still_pending,
+    )
 
 
 def _history_restore_reject_detail(event_type: str | None) -> str:
@@ -397,14 +404,30 @@ def _history_restore_reject_detail(event_type: str | None) -> str:
     return "This version cannot be restored"
 
 
+def _history_restore_notice(pending_delete: bool) -> str:
+    if pending_delete:
+        return (
+            "Restored this version's text. Publish status is unchanged. "
+            "This string is still marked for deletion — use Restore on the grid to cancel the removal."
+        )
+    return "Restored this version's text. Publish status is unchanged."
+
+
+def _history_restore_noop_detail(pending_delete: bool) -> str:
+    if pending_delete:
+        return (
+            "Text already matches this version. "
+            "This string is still marked for deletion — use Restore on the grid to cancel the removal."
+        )
+    return "Working copy already matches this version. Publish status is unchanged."
+
+
 def _working_copy_matches(entry: StringEntry, snap: dict[str, Any]) -> bool:
     if snap.get("key", entry.key) != entry.key:
         return False
     if snap.get("source_text", entry.source_text) != entry.source_text:
         return False
     if "description" in snap and snap.get("description") != entry.description:
-        return False
-    if "pending_delete" in snap and bool(snap.get("pending_delete")) != bool(entry.pending_delete):
         return False
     if "module_id" in snap:
         current = str(entry.module_id) if entry.module_id else None
@@ -684,8 +707,6 @@ def _apply_working_copy_only(
         entry.description = snap.get("description")
     if include_status and "status" in snap:
         entry.status = TranslationStatus(snap["status"])
-    if "pending_delete" in snap:
-        entry.pending_delete = bool(snap.get("pending_delete"))
     if "module_id" in snap:
         mid = snap.get("module_id")
         if mid:

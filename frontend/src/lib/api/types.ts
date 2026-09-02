@@ -296,6 +296,11 @@ export interface Activity {
   changed: ActivityChange[]
 }
 
+export interface RestoreVersionResult extends Activity {
+  notice: string
+  pending_delete: boolean
+}
+
 export interface ActivityListResponse {
   items: Activity[]
   total: number

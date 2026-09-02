@@ -100,6 +100,8 @@ def test_restore_version_applies_after_without_409(client):
     assert r.json()["event_type"] == "string.restored"
     assert r.json()["summary"] == "Restored previous value of 'welcome'"
     assert r.json()["batch_kind"] is None
+    assert r.json()["pending_delete"] is False
+    assert "Publish status is unchanged" in r.json()["notice"]
 
     string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     by_locale = {t["locale"]: t["value"] for t in string["translations"]}
@@ -240,8 +242,8 @@ def test_restore_rejects_publish_and_pending_delete_events(client):
     assert still["pending_delete"] is True
 
 
-def test_restore_content_version_clears_pending_delete(client):
-    project = _make_project(client, "Restore Clears Pending")
+def test_restore_content_version_leaves_pending_delete(client):
+    project = _make_project(client, "Restore Leaves Pending")
     pid = project["id"]
     created = client.post(
         f"/api/projects/{pid}/strings",
@@ -269,6 +271,16 @@ def test_restore_content_version_clears_pending_delete(client):
         f"/api/projects/{pid}/strings/{sid}/activities/{created_event['id']}/restore"
     )
     assert r.status_code == 200, r.text
+    assert r.json()["pending_delete"] is True
+    assert "marked for deletion" in r.json()["notice"]
     restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
-    assert restored["pending_delete"] is False
+    assert restored["pending_delete"] is True
+    assert restored["status"] == "public"
     assert {t["locale"]: t["value"] for t in restored["translations"]}["en"] == "Cancel"
+
+    same = client.post(
+        f"/api/projects/{pid}/strings/{sid}/activities/{created_event['id']}/restore"
+    )
+    assert same.status_code == 400, same.text
+    assert "already matches" in same.json()["detail"]
+    assert "marked for deletion" in same.json()["detail"]

@@ -375,6 +375,11 @@ class ActivityOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RestoreVersionOut(ActivityOut):
+    notice: str
+    pending_delete: bool = False
+
+
 class ActivityListOut(BaseModel):
     items: list[ActivityOut]
     total: int

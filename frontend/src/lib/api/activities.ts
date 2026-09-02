@@ -1,5 +1,5 @@
 import { api } from '@/lib/api/client'
-import type { Activity, ActivityFeedResponse, ActivityListResponse } from '@/lib/api/types'
+import type { ActivityFeedResponse, ActivityListResponse, RestoreVersionResult } from '@/lib/api/types'
 
 export type ActivityListParams = {
   page?: number
@@ -27,7 +27,7 @@ export const activitiesApi = {
   forString: (projectId: string, stringId: string, params?: { page?: number; page_size?: number }) =>
     api.get<ActivityListResponse>(`/projects/${projectId}/strings/${stringId}/activities`, params),
   restoreVersion: (projectId: string, stringId: string, activityId: string) =>
-    api.post<Activity>(`/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore`),
+    api.post<RestoreVersionResult>(`/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore`),
   revert: (projectId: string, activityId: string) =>
     api.post(`/projects/${projectId}/activities/${activityId}/revert`),
   revertBatch: (projectId: string, batchId: string) =>
