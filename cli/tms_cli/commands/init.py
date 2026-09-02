@@ -6,6 +6,7 @@ import sys
 from typing import Annotated, Any
 
 import typer
+from rich.markup import escape
 
 from tms_cli.client import api_client, request_json
 from tms_cli.config import CONFIG_FILE, save_config
@@ -72,7 +73,10 @@ def init(
         base_language=base_language,
     )
     if wizard:
-        console.print("[bold]TMS init[/bold] — connect this directory to a project")
+        console.print(
+            "[bold]TMS init[/bold] — connect this directory to a project",
+            highlight=False,
+        )
 
     api_url = _normalize_api_url(
         _value_or_prompt(
@@ -84,7 +88,7 @@ def init(
     )
     api_key = _require_api_key(api_key, prompt=wizard)
 
-    console.print("Discovering project…")
+    console.print("Discovering project…", highlight=False)
     project = _discover_project(api_url, api_key)
     project_id = str(project["id"])
     project_name = str(project.get("name") or project_id)
@@ -124,13 +128,15 @@ def init(
 
     save_config(config)
     console.print(
-        f"[green]Initialized[/green] project=[bold]{project_name}[/bold] ({project_id})"
+        f"[green]Initialized[/green] project=[bold]{escape(project_name)}[/bold] ({project_id})",
+        highlight=False,
     )
     console.print(
         f"  Base: {project_base}  ·  Locales: {', '.join(locales)}"
-        f"  ·  Layout: {effective_layout.value}  ·  Stage: {stage.value}"
+        f"  ·  Layout: {effective_layout.value}  ·  Stage: {stage.value}",
+        highlight=False,
     )
-    console.print(f"Config saved to [bold]{CONFIG_FILE}[/bold]")
+    console.print(f"Config saved to [bold]{CONFIG_FILE}[/bold]", highlight=False)
 
 
 def _stdin_is_tty() -> bool:
@@ -190,7 +196,7 @@ def _require_api_key(value: str | None, *, prompt: bool) -> str:
         typed = str(typer.prompt("API key", hide_input=hide_input)).strip()
         if typed:
             return typed
-        console.print("[red]API key cannot be empty.[/red]")
+        console.print("[red]API key cannot be empty.[/red]", highlight=False)
 
 
 def _resolve_stage(value: Stage | None, *, prompt: bool) -> Stage:
@@ -203,7 +209,7 @@ def _resolve_stage(value: Stage | None, *, prompt: bool) -> Stage:
         try:
             return Stage(raw)
         except ValueError:
-            console.print(f"[red]Stage must be {_STAGE_CHOICES}.[/red]")
+            console.print(f"[red]Stage must be {_STAGE_CHOICES}.[/red]", highlight=False)
 
 
 def _discover_project(api_url: str, api_key: str) -> dict[str, Any]:
@@ -223,11 +229,11 @@ def _print_discovered(
     locales: list[str],
     layout: Layout,
 ) -> None:
-    console.print(f"Found: [bold]{name}[/bold]")
-    console.print(f"  id:      {project_id}")
-    console.print(f"  base:    {base}")
-    console.print(f"  locales: {', '.join(locales) if locales else '—'}")
-    console.print(f"  layout:  {layout.value}  (from project)")
+    console.print(f"Found: [bold]{escape(name)}[/bold]", highlight=False)
+    console.print(f"  id:      {project_id}", highlight=False)
+    console.print(f"  base:    {base}", highlight=False)
+    console.print(f"  locales: {', '.join(locales) if locales else '—'}", highlight=False)
+    console.print(f"  layout:  {layout.value}  (from project)", highlight=False)
 
 
 def _confirm_write(*, yes: bool) -> None:
