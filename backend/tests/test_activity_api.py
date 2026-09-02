@@ -98,7 +98,7 @@ def test_restore_version_applies_after_without_409(client):
     )
     assert r.status_code == 200, r.text
     assert r.json()["event_type"] == "string.restored"
-    assert r.json()["summary"] == "Restored previous value of 'welcome'"
+    assert r.json()["summary"] == "Restored a previous working-copy version of 'welcome'"
     assert r.json()["batch_kind"] is None
     assert r.json()["pending_delete"] is False
     assert "Publish status is unchanged" in r.json()["notice"]
@@ -151,7 +151,7 @@ def test_batch_undo_force_overwrites_later_edits(client):
     feed = client.get(f"/api/projects/{pid}/activities/feed").json()["items"]
     restored = next(card for card in feed if card["event_type"] == "revert")
     assert restored["kind"] == "batch"
-    assert "Restored" in restored["summary"]
+    assert "restored" in restored["summary"].lower()
 
 
 def test_restore_last_history_batch(client):
@@ -180,6 +180,45 @@ def test_restore_last_history_batch(client):
 
     latest = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"][0]
     assert latest["event_type"] == "string.restored"
+
+    feed = client.get(f"/api/projects/{pid}/activities/feed").json()["items"]
+    restored = next(card for card in feed if card["event_type"] == "string.restored")
+    assert "Restored" in restored["summary"]
+
+
+def test_discard_changes_feed_is_not_restore(client):
+    project = _make_project(client, "Discard Event")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "save",
+            "source_text": "Lưu",
+            "translations": {"en": "Save"},
+            "status": "public",
+        },
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"source_text": "Lưu 2", "translations": {"en": "Save 2"}},
+    )
+    r = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_changes", "string_ids": [sid]},
+    )
+    assert r.status_code == 200, r.text
+
+    latest = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"][0]
+    assert latest["event_type"] == "string.discarded"
+    assert latest["event_type"] != "string.restored"
+    assert "Discarded unpublished changes" in latest["summary"]
+
+    feed = client.get(f"/api/projects/{pid}/activities/feed").json()["items"]
+    discarded = next(card for card in feed if card["event_type"] == "string.discarded")
+    assert discarded["kind"] == "batch"
+    assert "last published snapshot" in discarded["summary"]
+    assert discarded["event_type"] != "string.restored"
 
 
 def test_pending_delete_event_type(client):

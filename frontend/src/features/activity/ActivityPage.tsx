@@ -36,6 +36,7 @@ const EVENT_FILTERS: { value: string; label: string }[] = [
   { value: 'import', label: 'Imports' },
   { value: 'translate', label: 'AI translate' },
   { value: 'batch', label: 'Batch actions' },
+  { value: 'string.discarded', label: 'Discarded changes' },
   { value: 'string.restored', label: 'Restored' },
 ]
 

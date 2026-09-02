@@ -17,6 +17,7 @@ EVENT_UNPUBLISHED = "string.unpublished"
 EVENT_PENDING_DELETE = "string.pending_delete"
 EVENT_DELETED = "string.deleted"
 EVENT_RESTORED = "string.restored"
+EVENT_DISCARDED = "string.discarded"
 
 BATCH_EVENT_TYPES = frozenset(
     {"import", "excel_import", "translate", "batch", "revert"}
@@ -140,6 +141,71 @@ def _changed_locales(before: dict[str, Any] | None, after: dict[str, Any] | None
     return [locale for locale in locales if left.get(locale, "") != right.get(locale, "")]
 
 
+def _clip(value: Any, limit: int = 48) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def _quoted_text(value: Any) -> str:
+    return f"“{_clip(value)}”"
+
+
+def _changed_part_names(before: dict[str, Any] | None, after: dict[str, Any] | None) -> list[str]:
+    diffs = _working_diffs(before, after)
+    names: list[str] = []
+    if diffs["key"]:
+        names.append("key")
+    if diffs["source_text"]:
+        names.append("source")
+    if diffs["description"]:
+        names.append("description")
+    if diffs["module_id"]:
+        names.append("module")
+    if diffs["tags"]:
+        names.append("tags")
+    names.extend(_changed_locales(before, after))
+    return names
+
+
+def _parts_suffix(before: dict[str, Any] | None, after: dict[str, Any] | None) -> str:
+    parts = _changed_part_names(before, after)
+    if not parts:
+        return ""
+    return f" ({', '.join(parts)})"
+
+
+def _source_change_summary(
+    key: str, before: dict[str, Any] | None, after: dict[str, Any] | None
+) -> str:
+    old = (before or {}).get("source_text") or ""
+    new = (after or {}).get("source_text") or ""
+    if old and new:
+        return f"Changed source of {_quote(key)} from {_quoted_text(old)} to {_quoted_text(new)}"
+    if new and not old:
+        return f"Set source of {_quote(key)} to {_quoted_text(new)}"
+    if old and not new:
+        return f"Cleared source of {_quote(key)} (was {_quoted_text(old)})"
+    return f"Updated source of {_quote(key)}"
+
+
+def _translation_change_summary(
+    key: str, locale: str, before: dict[str, Any] | None, after: dict[str, Any] | None
+) -> str:
+    old = translations_map((before or {}).get("translations")).get(locale, "")
+    new = translations_map((after or {}).get("translations")).get(locale, "")
+    if old and new:
+        return (
+            f"Changed {locale} of {_quote(key)} from {_quoted_text(old)} to {_quoted_text(new)}"
+        )
+    if new and not old:
+        return f"Set {locale} of {_quote(key)} to {_quoted_text(new)}"
+    if old and not new:
+        return f"Cleared {locale} of {_quote(key)} (was {_quoted_text(old)})"
+    return f"Updated {locale} of {_quote(key)}"
+
+
 def classify_event(
     *,
     action: str,
@@ -152,37 +218,85 @@ def classify_event(
     del batch_kind
     action_val = _enum_val(action) or "update"
     key = _key(after) or _key(before)
+    quoted = _quote(key)
+
+    if intent == "discard":
+        suffix = _parts_suffix(before, after)
+        return ClassifiedEvent(
+            EVENT_DISCARDED,
+            None,
+            (
+                f"Discarded unpublished changes on {quoted} and reset it to the "
+                f"last published snapshot{suffix}"
+            ),
+        )
 
     if intent == "restore":
-        return ClassifiedEvent(EVENT_RESTORED, None, f"Restored previous value of {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_RESTORED,
+            None,
+            f"Restored a previous working-copy version of {quoted}",
+        )
 
     if action_val == "create":
-        return ClassifiedEvent(EVENT_CREATED, None, f"Created {_quote(key)}")
+        source = (after or {}).get("source_text") or ""
+        if source:
+            return ClassifiedEvent(
+                EVENT_CREATED,
+                None,
+                f"Added string {quoted} with source {_quoted_text(source)}",
+            )
+        return ClassifiedEvent(EVENT_CREATED, None, f"Added string {quoted}")
 
     deleted_now = _truthy_deleted(after) and not _truthy_deleted(before)
     if action_val == "delete" or deleted_now:
-        return ClassifiedEvent(EVENT_DELETED, None, f"Deleted {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_DELETED,
+            None,
+            f"Deleted string {quoted} from the catalog",
+        )
 
     if _truthy_deleted(before) and not _truthy_deleted(after):
-        return ClassifiedEvent(EVENT_RESTORED, None, f"Restored {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_RESTORED,
+            None,
+            f"Restored deleted string {quoted} back into the catalog",
+        )
 
     if not _pending(before) and _pending(after):
         return ClassifiedEvent(
-            EVENT_PENDING_DELETE, None, f"Marked {_quote(key)} for deletion"
+            EVENT_PENDING_DELETE,
+            None,
+            (
+                f"Marked {quoted} for deletion; public export keeps the last snapshot "
+                "until this removal is published"
+            ),
         )
 
     if _pending(before) and not _pending(after) and not deleted_now:
-        return ClassifiedEvent(EVENT_RESTORED, None, f"Restored {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_RESTORED,
+            None,
+            f"Canceled the pending deletion of {quoted}",
+        )
 
     before_status = _status(before)
     after_status = _status(after)
     if before_status == "public" and after_status == "draft":
-        return ClassifiedEvent(EVENT_UNPUBLISHED, None, f"Unpublished {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_UNPUBLISHED,
+            None,
+            f"Unpublished {quoted}, removing it from public export",
+        )
 
     if (before_status != "public" and after_status == "public") or _published_changed(
         before, after
     ):
-        return ClassifiedEvent(EVENT_PUBLISHED, None, f"Published {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_PUBLISHED,
+            None,
+            f"Published {quoted}, making the current draft live for public export",
+        )
 
     diffs = _working_diffs(before, after)
     changed = [name for name, flag in diffs.items() if flag]
@@ -190,27 +304,45 @@ def classify_event(
     if changed == ["key"]:
         old = _key(before)
         new = _key(after)
-        return ClassifiedEvent(EVENT_RENAMED, None, f"Renamed {_quote(old)} → {_quote(new)}")
+        return ClassifiedEvent(
+            EVENT_RENAMED,
+            None,
+            f"Renamed string {_quote(old)} to {_quote(new)}",
+        )
 
     if set(changed) <= {"source_text", "description"} and diffs["source_text"]:
-        return ClassifiedEvent(EVENT_SOURCE, None, f"Updated source of {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_SOURCE, None, _source_change_summary(key, before, after)
+        )
 
     if changed == ["module_id"]:
-        return ClassifiedEvent(EVENT_MOVED, None, f"Moved {_quote(key)}")
+        return ClassifiedEvent(
+            EVENT_MOVED,
+            None,
+            f"Moved {quoted} to a different module",
+        )
 
     if changed == ["tags"]:
-        return ClassifiedEvent(EVENT_TAGGED, None, f"Tagged {_quote(key)}")
+        return ClassifiedEvent(EVENT_TAGGED, None, f"Changed tags on {quoted}")
 
     if changed == ["translations"]:
         locales = _changed_locales(before, after)
         locale = locales[0] if len(locales) == 1 else None
         if locale:
             return ClassifiedEvent(
-                EVENT_TRANSLATION, locale, f"Translated {_quote(key)} → {locale}"
+                EVENT_TRANSLATION,
+                locale,
+                _translation_change_summary(key, locale, before, after),
             )
-        return ClassifiedEvent(EVENT_TRANSLATION, None, f"Updated translations of {_quote(key)}")
+        listed = ", ".join(locales)
+        return ClassifiedEvent(
+            EVENT_TRANSLATION,
+            None,
+            f"Updated translations of {quoted} ({listed})",
+        )
 
-    return ClassifiedEvent(EVENT_UPDATED, None, f"Updated {_quote(key)}")
+    suffix = _parts_suffix(before, after)
+    return ClassifiedEvent(EVENT_UPDATED, None, f"Updated {quoted}{suffix}")
 
 
 def _fmt(value: Any) -> str | None:
@@ -278,7 +410,21 @@ def snapshot_key(activity_before: dict | None, activity_after: dict | None) -> s
     return key or None
 
 
-def batch_card_event_type(batch_kind: str | None) -> str:
+def _child_event_types(children: list[ClassifiedEvent | str] | None) -> set[str]:
+    return {
+        item.event_type if isinstance(item, ClassifiedEvent) else item
+        for item in (children or [])
+    }
+
+
+def batch_card_event_type(
+    batch_kind: str | None, children: list[ClassifiedEvent | str] | None = None
+) -> str:
+    types = _child_event_types(children)
+    if types == {EVENT_DISCARDED}:
+        return EVENT_DISCARDED
+    if types == {EVENT_RESTORED} and (_enum_val(batch_kind) or "") == "batch":
+        return EVENT_RESTORED
     value = _enum_val(batch_kind)
     if value in BATCH_EVENT_TYPES:
         return value
@@ -291,22 +437,25 @@ def batch_card_summary(
     kind = _enum_val(batch_kind)
     noun = "string" if count == 1 else "strings"
     if kind == "excel_import":
-        return f"Imported from Excel · {count} {noun}"
+        return f"Imported {count} {noun} from Excel into the catalog"
     if kind == "import":
-        return f"Imported · {count} {noun}"
+        return f"Imported {count} {noun} into the catalog"
     if kind == "translate":
-        return f"AI translated {count} {noun}"
+        return f"Filled missing translations on {count} {noun} with AI"
     if kind == "revert":
-        return f"Restored {count} {noun}"
-    types = {
-        item.event_type if isinstance(item, ClassifiedEvent) else item for item in children
-    }
+        return f"Undid a batch and restored {count} {noun} to their earlier working copies"
+    types = _child_event_types(children)
     if types == {EVENT_PUBLISHED}:
-        return f"Published {count} {noun}"
+        return f"Published {count} {noun}, making their current drafts live for public export"
     if types == {EVENT_UNPUBLISHED}:
-        return f"Unpublished {count} {noun}"
+        return f"Unpublished {count} {noun}, removing them from public export"
     if types == {EVENT_DELETED} or types == {EVENT_PENDING_DELETE}:
-        return f"Deleted {count} {noun}"
+        return f"Deleted {count} {noun} from the catalog"
+    if types == {EVENT_DISCARDED}:
+        return (
+            f"Discarded unpublished changes on {count} {noun} and reset them "
+            "to the last published snapshot"
+        )
     if types == {EVENT_RESTORED}:
-        return f"Restored {count} {noun}"
+        return f"Restored {count} {noun} to an earlier working copy"
     return f"Updated {count} {noun}"

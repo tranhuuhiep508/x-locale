@@ -34,13 +34,14 @@ from app.schemas import (
 from app.services.activity_events import (
     EVENT_CREATED,
     EVENT_DELETED,
+    EVENT_DISCARDED,
     EVENT_PENDING_DELETE,
     EVENT_PUBLISHED,
+    EVENT_RESTORED,
     EVENT_UNPUBLISHED,
     UNDOABLE_BATCH_KINDS,
     batch_card_event_type,
     batch_card_summary,
-    classify_event,
     human_changed,
     is_history_restorable,
     snapshot_key,
@@ -221,35 +222,32 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
     )
     is_batch = newest.batch_id is not None
     card_id = str(newest.batch_id or newest.id)
-    classified = [
-        classify_event(
-            action=row.action.value if hasattr(row.action, "value") else str(row.action),
-            before=row.before,
-            after=row.after,
-            batch_kind=kind_val,
-        )
-        for row in rows
-    ]
+    stored_types = [row.event_type or "string.updated" for row in rows]
     if is_batch:
-        event_type = batch_card_event_type(kind_val)
-        summary = batch_card_summary(kind_val, classified, len(rows))
+        event_type = batch_card_event_type(kind_val, stored_types)
+        summary = batch_card_summary(kind_val, stored_types, len(rows))
     else:
-        event_type = newest.event_type or classified[0].event_type
+        event_type = newest.event_type or stored_types[0]
         summary = newest.summary
+    counted_elsewhere = {
+        EVENT_CREATED,
+        EVENT_DELETED,
+        EVENT_PENDING_DELETE,
+        EVENT_PUBLISHED,
+        EVENT_DISCARDED,
+        EVENT_RESTORED,
+    }
     counts = {
         "created": sum(1 for row in rows if (row.event_type or "") == EVENT_CREATED),
-        "updated": sum(
-            1
-            for row in rows
-            if (row.event_type or "")
-            not in {EVENT_CREATED, EVENT_DELETED, EVENT_PENDING_DELETE, EVENT_PUBLISHED}
-        ),
+        "updated": sum(1 for row in rows if (row.event_type or "") not in counted_elsewhere),
         "deleted": sum(
             1
             for row in rows
             if (row.event_type or "") in {EVENT_DELETED, EVENT_PENDING_DELETE}
         ),
         "published": sum(1 for row in rows if (row.event_type or "") == EVENT_PUBLISHED),
+        "discarded": sum(1 for row in rows if (row.event_type or "") == EVENT_DISCARDED),
+        "restored": sum(1 for row in rows if (row.event_type or "") == EVENT_RESTORED),
     }
     undoable = bool(
         is_batch
@@ -665,7 +663,10 @@ def _entity_label(activity: Activity) -> str:
 
 
 def _revert_summary(activity: Activity) -> str:
-    return f"Restored previous value of {_entity_label(activity)}"
+    return (
+        f"Undid the previous change to {_entity_label(activity)} "
+        "and restored its earlier working copy"
+    )
 
 
 def _make_revert_marker(

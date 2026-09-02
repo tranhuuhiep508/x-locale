@@ -483,7 +483,7 @@ def test_string_create_activity_snapshot(client):
     assert after["tag_ids"] == [tag["id"]]
     assert after["translations"]["en"] == "Save"
     assert creates[0]["event_type"] == "string.created"
-    assert creates[0]["summary"] == "Created 'save'"
+    assert "Added string 'save'" in creates[0]["summary"]
     assert all(change["field"] != "published_key" for change in creates[0]["changed"])
 
 
@@ -561,7 +561,9 @@ def test_string_delete_activity_and_revert(client):
     assert len(new_rows) == 1
     assert new_rows[0]["batch_kind"] == "revert"
     assert new_rows[0]["event_type"] == "string.restored"
-    assert new_rows[0]["summary"] == "Restored previous value of 'cancel'"
+    assert new_rows[0]["summary"] == (
+        "Undid the previous change to 'cancel' and restored its earlier working copy"
+    )
     assert new_rows[0]["revert_of_id"] == deletes[0]["id"]
 
 
@@ -605,7 +607,9 @@ def test_revert_create_and_update_tags_translations(client):
     assert len(new_rows) == 1
     assert new_rows[0]["batch_kind"] == "revert"
     assert new_rows[0]["event_type"] == "string.restored"
-    assert new_rows[0]["summary"] == "Restored previous value of 'ok'"
+    assert new_rows[0]["summary"] == (
+        "Undid the previous change to 'ok' and restored its earlier working copy"
+    )
     assert not any("Reverted:" in a["summary"] for a in new_rows)
     assert not any("Redid " in a["summary"] for a in new_rows)
 
@@ -647,7 +651,9 @@ def test_revert_redo_summaries_do_not_stack(client):
             for a in client.get(f"/api/projects/{pid}/activities").json()["items"]
             if a["revert_of_id"] == current_id
         )
-        assert latest["summary"] == "Restored previous value of 'cancel'"
+        assert latest["summary"] == (
+            "Undid the previous change to 'cancel' and restored its earlier working copy"
+        )
         assert latest["event_type"] == "string.restored"
         assert "Reverted:" not in latest["summary"]
         assert "Redid " not in latest["summary"]
@@ -655,9 +661,9 @@ def test_revert_redo_summaries_do_not_stack(client):
         current_id = latest["id"]
 
     assert summaries == [
-        "Restored previous value of 'cancel'",
-        "Restored previous value of 'cancel'",
-        "Restored previous value of 'cancel'",
+        "Undid the previous change to 'cancel' and restored its earlier working copy",
+        "Undid the previous change to 'cancel' and restored its earlier working copy",
+        "Undid the previous change to 'cancel' and restored its earlier working copy",
     ]
 
 
@@ -1453,6 +1459,16 @@ def test_discard_changes_restores_published_working_copy(client):
     assert string["key"] == "save"
     assert string["source_text"] == "Lưu"
     assert string["has_unpublished_changes"] is False
+
+    latest = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"][0]
+    assert latest["event_type"] == "string.discarded"
+    assert "Discarded unpublished changes" in latest["summary"]
+    assert latest["event_type"] != "string.restored"
+
+    feed = client.get(f"/api/projects/{pid}/activities/feed").json()["items"]
+    discarded = next(card for card in feed if card["event_type"] == "string.discarded")
+    assert "last published snapshot" in discarded["summary"]
+    assert discarded["event_type"] != "string.restored"
 
 
 def test_list_filter_unpublished_changes(client):

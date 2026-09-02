@@ -6,17 +6,21 @@ import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { canRestoreHistoryVersion } from '@/features/strings/history-restore'
+import { activityActionLabel, activityFieldLabel } from '@/features/activity/activity-copy'
 import { useToast } from '@/lib/toast'
 import { formatRelativeTime } from '@/lib/utils'
 
 function changePreview(activity: Activity) {
   const change = activity.changed.find((item) => item.field === 'translation') ?? activity.changed[0]
   if (!change) return null
-  const label = change.locale ?? change.field
+  const label = activityFieldLabel(change)
   if (change.before && change.after) {
     return `${label}: “${change.before}” → “${change.after}”`
   }
-  return `${label}: “${change.after ?? change.before ?? ''}”`
+  if (!change.after) {
+    return `${label}: cleared (was “${change.before}”)`
+  }
+  return `${label}: set to “${change.after}”`
 }
 
 export function StringHistoryPanel({
@@ -67,9 +71,14 @@ export function StringHistoryPanel({
       {items.map((activity, index) => (
         <li key={activity.id} className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm text-foreground">{activity.summary}</p>
+            <p className="text-sm text-foreground">
+              <span className="font-medium">{activity.actor_label}</span>
+              <span className="text-muted-foreground"> · </span>
+              <span>{activityActionLabel(activity.event_type)}</span>
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">{activity.summary}</p>
             <p className="text-xs text-muted-foreground">
-              {activity.actor_label} · {formatRelativeTime(activity.created_at)}
+              {formatRelativeTime(activity.created_at)}
             </p>
             {changePreview(activity) ? (
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
