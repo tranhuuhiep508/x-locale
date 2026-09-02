@@ -13,10 +13,11 @@ from app.activity import attach_batch
 from app.auth import ProjectAccess
 from app.database import DbSession
 from app.models import TranslationStatus
-from app.schemas import ImportPayload, ImportResult
+from app.schemas import ImportPayload, ImportResult, SyncStateOut
 from app.services.sync import (
     build_flat_export,
     build_modular_export,
+    build_sync_state,
     import_flat_strings,
     import_json_data,
     load_export_entries,
@@ -73,6 +74,22 @@ def export_project(
         content=payload,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/sync-state", response_model=SyncStateOut)
+def project_sync_state(
+    project: ProjectAccess,
+    db: DbSession,
+    layout: Annotated[str | None, Query(pattern="^(flat|modular)$")] = None,
+    stage: Annotated[str, Query(pattern="^(draft|public|all)$")] = "draft",
+) -> SyncStateOut:
+    """Export keys plus pending-remove and tombstone identities for CLI status."""
+    effective_layout = layout or (
+        project.layout.value if hasattr(project.layout, "value") else project.layout
+    )
+    effective_stage = normalize_export_stage(stage)
+    entries = load_export_entries(db, project.id)
+    return build_sync_state(project, entries, effective_layout, effective_stage)
 
 
 @router.get("/translations.json")

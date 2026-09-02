@@ -1253,6 +1253,56 @@ def test_delete_public_string_is_pending_until_publish(client):
     assert public["vi"]["bye"] == "Tạm biệt"
 
 
+def test_sync_state_lists_pending_remove_hidden_from_draft_export(client):
+    project = _make_project(client, "Sync State")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "draft", "name": "Draft"},
+    ).json()
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "123ewfewf",
+            "source_text": "sfdsfds",
+            "status": "public",
+            "module_id": module["id"],
+        },
+    ).json()
+    sid = created["id"]
+    assert client.delete(f"/api/projects/{pid}/strings/{sid}").status_code == 204
+
+    draft = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "modular", "stage": "draft"}
+    ).json()
+    draft_vi = (draft.get("modules") or {}).get("draft", {}).get("vi", {})
+    assert "123ewfewf" not in draft_vi
+
+    state = client.get(
+        f"/api/projects/{pid}/sync-state",
+        params={"layout": "modular", "stage": "draft"},
+    )
+    assert state.status_code == 200, state.text
+    body = state.json()
+    assert body["stage"] == "draft"
+    assert body["layout"] == "modular"
+    assert body["base_language"] == "vi"
+    assert "draft/123ewfewf" not in body["exported"]
+    assert body["pending_remove"] == ["draft/123ewfewf"]
+    assert body["tombstones"] == []
+
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+    after = client.get(
+        f"/api/projects/{pid}/sync-state",
+        params={"layout": "modular", "stage": "draft"},
+    ).json()
+    assert after["pending_remove"] == []
+    assert after["tombstones"] == ["draft/123ewfewf"]
+
+
 def test_never_published_delete_is_soft(client):
     project = _make_project(client, "Soft Draft")
     pid = project["id"]

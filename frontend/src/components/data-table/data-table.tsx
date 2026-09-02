@@ -55,6 +55,7 @@ export function DataTable<TData>({
               className={cn(
                 onRowClick && 'cursor-pointer group',
                 getRowClassName?.(row),
+                row.getIsSelected() && 'bg-accent hover:bg-accent',
               )}
               onClick={
                 onRowClick

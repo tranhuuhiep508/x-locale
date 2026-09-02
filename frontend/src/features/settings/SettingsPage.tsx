@@ -33,6 +33,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 const routeApi = getRouteApi('/projects/$projectId/settings')
 
@@ -150,10 +151,13 @@ export function SettingsPage() {
   const isDirty = saveForm !== null
 
   return (
-    <div className="container flex flex-col gap-10 py-6">
-      {/* Project settings */}
-      <section>
-        <h1 className="text-xl font-semibold text-foreground mb-5">Project settings</h1>
+    <PageBody className="gap-10">
+      <section className="flex flex-col gap-5">
+        <PageHeader
+          eyebrow="Project"
+          title="Settings"
+          description="Name, languages, and layout for this catalog."
+        />
 
         <Card>
           <CardContent>
@@ -262,20 +266,19 @@ export function SettingsPage() {
       </section>
 
       {/* API Keys */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">API Keys</h2>
-            <p className="text-sm text-muted-foreground">
-              Generate a personal key for CLI sync. It identifies you in the activity log — do not share it.
-              Generating a new key revokes your previous personal key for this project.
-            </p>
-          </div>
-          <Button size="sm" onClick={openGenerateKey}>
-            <Plus data-icon="inline-start" />
-            Generate key
-          </Button>
-        </div>
+      <section className="flex flex-col gap-5">
+        <PageHeader
+          eyebrow="CLI"
+          title="API keys"
+          titleAs="h2"
+          description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
+          actions={
+            <Button size="sm" onClick={openGenerateKey}>
+              <Plus data-icon="inline-start" />
+              Generate key
+            </Button>
+          }
+        />
 
         {apiKeys.length > 0 ? (
           <div className="flex flex-col gap-4">
@@ -393,6 +396,6 @@ export function SettingsPage() {
         confirmLabel="Revoke key"
         isLoading={revokeKeyMut.isPending}
       />
-    </div>
+    </PageBody>
   )
 }

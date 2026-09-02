@@ -1,30 +1,19 @@
 import { useEffect } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   AlignLeft,
   ArrowLeft,
   ArrowUpDown,
   Boxes,
-  ChevronDown,
   LayoutDashboard,
   Settings,
   Tags,
 } from 'lucide-react'
-import { meQuery } from '@/lib/queries'
 import type { Project } from '@/lib/api/types'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -34,7 +23,6 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { SignOutMenuItem, useLogout } from '@/components/layout/UserMenu'
 
 function CloseMobileSidebarOnNavigate() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -52,42 +40,6 @@ function isProjectPath(pathname: string, projectId: string, suffix: string, exac
   return exact
     ? pathname === href || pathname === `${href}/`
     : pathname === href || pathname.startsWith(`${href}/`)
-}
-
-function SidebarUserMenu() {
-  const { data: user } = useQuery(meQuery())
-  const logoutMut = useLogout()
-
-  if (!user) return null
-
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" tooltip={user.name}>
-              <Avatar size="sm">
-                {user.avatar_url ? (
-                  <AvatarImage src={user.avatar_url} alt={user.name} />
-                ) : null}
-                <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <span className="truncate">{user.name}</span>
-              <ChevronDown className="ml-auto" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start">
-            <DropdownMenuGroup>
-              <SignOutMenuItem
-                pending={logoutMut.isPending}
-                onSignOut={() => logoutMut.mutate()}
-              />
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
-  )
 }
 
 interface ProjectSidebarProps {
@@ -216,9 +168,6 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarUserMenu />
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

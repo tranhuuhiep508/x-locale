@@ -329,6 +329,17 @@ class ImportResult(BaseModel):
     batch_id: UUID | None = None
 
 
+class SyncStateOut(BaseModel):
+    """CLI snapshot of export keys plus rows hidden from draft export."""
+
+    stage: str
+    layout: str
+    base_language: str
+    exported: list[str] = Field(default_factory=list)
+    pending_remove: list[str] = Field(default_factory=list)
+    tombstones: list[str] = Field(default_factory=list)
+
+
 # ── Activities ────────────────────────────────────────────────────────
 
 

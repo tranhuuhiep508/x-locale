@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
@@ -108,14 +109,12 @@ export function ActivityPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b px-4 py-3">
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
-          <Clock className="size-5 text-primary" />
-          Activity
-        </h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          What happened in this catalog, grouped by day.
-        </p>
+      <div className="shrink-0 border-b px-5 py-5">
+        <PageHeader
+          eyebrow="Project"
+          title="Activity"
+          description="What happened in this catalog, grouped by day."
+        />
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Select
             value={search.event_type || 'all'}

@@ -18,10 +18,9 @@ import { queryKeys } from '@/lib/query-keys'
 import { modulesQuery } from '@/lib/queries'
 import { moduleCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm } from '@/lib/schemas'
+import { ModuleFormFields } from '@/features/catalog/ModuleFormFields'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
+import { FieldGroup } from '@/components/ui/field'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -185,39 +184,12 @@ export function ModulesPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <FieldGroup>
-              <Field data-invalid={errors.slug ? 'true' : undefined}>
-                <FieldLabel htmlFor="module_slug">Slug</FieldLabel>
-                <Input
-                  id="module_slug"
-                  className="font-mono"
-                  placeholder="common"
-                  value={form.slug}
-                  onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-                  aria-invalid={errors.slug ? true : undefined}
-                  disabled={!!editTarget}
-                />
-                <FieldError>{errors.slug}</FieldError>
-              </Field>
-              <Field data-invalid={errors.name ? 'true' : undefined}>
-                <FieldLabel htmlFor="module_name">Name</FieldLabel>
-                <Input
-                  id="module_name"
-                  placeholder="Common strings"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  aria-invalid={errors.name ? true : undefined}
-                />
-                <FieldError>{errors.name}</FieldError>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="module_description">Description (optional)</FieldLabel>
-                <Textarea
-                  id="module_description"
-                  placeholder="Shared UI strings used across pages"
-                  value={form.description ?? ''}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </Field>
+              <ModuleFormFields
+                form={form}
+                errors={errors}
+                onChange={setForm}
+                slugDisabled={!!editTarget}
+              />
               <DialogFooter className="mt-2">
                 <Button
                   variant="outline"

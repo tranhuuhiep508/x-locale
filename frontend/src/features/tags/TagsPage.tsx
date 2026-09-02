@@ -18,9 +18,9 @@ import { queryKeys } from '@/lib/query-keys'
 import { tagsQuery } from '@/lib/queries'
 import { tagCreateSchema } from '@/lib/schemas'
 import type { TagCreateForm } from '@/lib/schemas'
+import { TagFormFields } from '@/features/catalog/TagFormFields'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
+import { FieldGroup } from '@/components/ui/field'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -29,17 +29,6 @@ import { useToast } from '@/lib/toast'
 import { tagColumns } from '@/features/tags/tags-columns'
 const routeApi = getRouteApi('/projects/$projectId/tags')
 
-
-const PRESET_COLORS = [
-  '#64748b',
-  '#0d9488',
-  '#2563eb',
-  '#9333ea',
-  '#e11d48',
-  '#f59e0b',
-  '#10b981',
-  '#f97316',
-]
 
 type FormErrors = Partial<Record<keyof TagCreateForm, string>>
 
@@ -190,52 +179,7 @@ export function TagsPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <FieldGroup>
-              <Field data-invalid={errors.name ? 'true' : undefined}>
-                <FieldLabel htmlFor="tag_name">Name</FieldLabel>
-                <Input
-                  id="tag_name"
-                  placeholder="ios"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  aria-invalid={errors.name ? true : undefined}
-                />
-                <FieldError>{errors.name}</FieldError>
-              </Field>
-              <Field>
-                <FieldLabel>Color</FieldLabel>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={form.color}
-                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                    className="h-9 w-9 rounded border border-input p-0.5 cursor-pointer"
-                  />
-                  <div className="flex flex-wrap gap-1">
-                    {PRESET_COLORS.map((c) => (
-                      <Button
-                        key={c}
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setForm((f) => ({ ...f, color: c }))}
-                        className="size-6 rounded-full border-2 p-0 transition-transform hover:scale-110"
-                        style={{
-                          backgroundColor: c,
-                          borderColor: form.color === c ? 'var(--primary)' : 'transparent',
-                        }}
-                        aria-label={`Select color ${c}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium w-fit mt-1"
-                  style={{ backgroundColor: form.color + '22', color: form.color }}
-                >
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: form.color }} />
-                  {form.name || 'Preview'}
-                </div>
-              </Field>
+              <TagFormFields form={form} errors={errors} onChange={setForm} />
               <DialogFooter className="mt-2">
                 <Button
                   variant="outline"

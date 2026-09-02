@@ -10,6 +10,8 @@ import {
 } from '@/lib/queries'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
+
 const routeApi = getRouteApi('/projects/$projectId/')
 
 
@@ -26,13 +28,15 @@ function StatCard({
 }) {
   return (
     <Link to={href} className="group">
-      <Card className="h-full transition-all hover:ring-primary/30 hover:shadow-sm">
+      <Card className="sky-panel h-full transition-shadow hover:shadow-sm hover:ring-primary/25">
         <CardContent className="flex items-start gap-4">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/15">
-            <Icon className="h-5 w-5" />
-          </div>
+          <MarkWell className="group-hover:bg-primary/15">
+            <Icon className="size-4" />
+          </MarkWell>
           <div>
-            <p className="text-2xl font-bold text-foreground">{value}</p>
+            <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+              {value}
+            </p>
             <p className="text-sm text-muted-foreground">{label}</p>
           </div>
         </CardContent>
@@ -55,16 +59,19 @@ export function ProjectOverviewPage() {
   if (!project) return null
 
   return (
-    <div className="container py-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">{project.name}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {project.layout} layout · base:{' '}
-          <span className="font-mono font-medium">{project.base_language}</span>
-        </p>
-      </div>
+    <PageBody>
+      <PageHeader
+        eyebrow="Catalog"
+        title="Overview"
+        description={
+          <>
+            {project.layout} layout · base{' '}
+            <span className="font-mono font-medium text-foreground">{project.base_language}</span>
+          </>
+        }
+      />
 
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3 mb-8">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
           icon={AlignLeft}
           label="Strings"
@@ -88,8 +95,9 @@ export function ProjectOverviewPage() {
       <div className="grid gap-6 sm:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Globe2 className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Locales</p>
+            <CardTitle className="flex items-center gap-2">
+              <Globe2 className="size-4 text-primary" />
               Languages
             </CardTitle>
           </CardHeader>
@@ -99,7 +107,7 @@ export function ProjectOverviewPage() {
                 <Badge>base</Badge>
                 <span className="font-mono">{project.base_language}</span>
               </div>
-              <span className="text-muted-foreground">{project.string_count} strings</span>
+              <span className="font-mono text-muted-foreground">{project.string_count} strings</span>
             </div>
             {project.target_languages.map((locale) => (
               <div key={locale} className="flex items-center justify-between text-sm">
@@ -119,8 +127,9 @@ export function ProjectOverviewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Log</p>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="size-4 text-primary" />
               Recent activity
             </CardTitle>
           </CardHeader>
@@ -143,13 +152,13 @@ export function ProjectOverviewPage() {
               to="/projects/$projectId/activity"
               params={{ projectId }}
               search={{}}
-              className="text-xs text-primary hover:underline mt-1 inline-block"
+              className="mt-1 inline-block text-xs text-primary hover:underline"
             >
               View all activity →
             </Link>
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageBody>
   )
 }

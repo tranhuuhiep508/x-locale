@@ -10,7 +10,7 @@ import typer
 
 from tms_cli.commands import COMMANDS
 from tms_cli.console import console
-from tms_cli.errors import TmsError
+from tms_cli.errors import TmsError, TmsExit
 
 app = typer.Typer(
     help="TMS CLI — sync translations with your TMS server",
@@ -28,6 +28,8 @@ def _register(command: Callable[..., Any]) -> None:
         except TmsError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(1) from exc
+        except TmsExit as exc:
+            raise typer.Exit(exc.code) from exc
 
     app.command()(wrapped)
 

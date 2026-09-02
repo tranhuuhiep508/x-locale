@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Layers, Globe, Calendar, Trash2 } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -35,25 +36,24 @@ export function ProjectListPage() {
 
   return (
     <AppShell>
-      <div className="container py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Projects</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {projects.length} project{projects.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <Link to="/projects/new">
-            <Button>
-              <Plus data-icon="inline-start" />
-              New project
-            </Button>
-          </Link>
-        </div>
+      <PageBody contained className="flex flex-col gap-6">
+        <PageHeader
+          eyebrow="Workspace"
+          title="Projects"
+          description={`${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+          actions={
+            <Link to="/projects/new">
+              <Button>
+                <Plus data-icon="inline-start" />
+                New project
+              </Button>
+            </Link>
+          }
+        />
 
         {projects.length === 0 ? (
           <EmptyState
-            icon={<Layers className="h-12 w-12" />}
+            icon={<Layers />}
             title="No projects yet"
             description="Create your first translation project to get started."
             action={
@@ -70,20 +70,22 @@ export function ProjectListPage() {
             {projects.map((p) => (
               <Card
                 key={p.id}
-                className="group transition-all hover:ring-primary/30 hover:shadow-sm"
+                className="sky-panel group transition-shadow hover:shadow-sm hover:ring-primary/25"
               >
                 <CardContent className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <Link
                       to="/projects/$projectId/strings"
                       params={{ projectId: p.id }}
                       search={{}}
-                      className="flex-1 min-w-0"
+                      className="min-w-0 flex-1"
                     >
-                      <h2 className="font-semibold text-foreground truncate group-hover:text-primary">
+                      <h2 className="truncate font-semibold tracking-tight text-foreground group-hover:text-primary">
                         {p.name}
                       </h2>
-                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{p.slug}</p>
+                      <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                        {p.slug}
+                      </p>
                     </Link>
                     <Button
                       variant="ghost"
@@ -92,19 +94,19 @@ export function ProjectListPage() {
                         e.preventDefault()
                         setDeleteTarget(p)
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                     >
                       <Trash2 />
                     </Button>
                   </div>
 
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge className="gap-1">
-                      <Globe className="h-3 w-3" />
+                    <Badge className="font-mono">
+                      <Globe data-icon="inline-start" />
                       {p.base_language}
                     </Badge>
                     {p.target_languages.slice(0, 3).map((lang) => (
-                      <Badge key={lang} variant="outline">
+                      <Badge key={lang} variant="outline" className="font-mono">
                         {lang}
                       </Badge>
                     ))}
@@ -113,10 +115,10 @@ export function ProjectListPage() {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
                     <span>{p.string_count} strings</span>
                     <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
+                      <Calendar className="size-3" />
                       {formatDateShort(p.updated_at)}
                     </span>
                   </div>
@@ -125,7 +127,7 @@ export function ProjectListPage() {
             ))}
           </div>
         )}
-      </div>
+      </PageBody>
 
       <ConfirmDialog
         open={deleteTarget !== null}

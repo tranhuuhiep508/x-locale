@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, notFound } from '@tanstack/react-router'
+import { AppHeader } from '@/components/layout/AppHeader'
 import { AppShell } from '@/components/layout/AppShell'
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
 import { ApiError } from '@/lib/api/client'
@@ -32,17 +33,16 @@ function ProjectLayout() {
   if (!project) return null
 
   return (
-    <SidebarProvider className="h-svh overflow-hidden">
-      <ProjectSidebar project={project} />
-      <SidebarInset className="min-h-0 overflow-hidden">
-        <header className="horizon-b flex h-14 shrink-0 items-center gap-2 px-4">
-          <SidebarTrigger />
-          <span className="truncate font-medium md:hidden">{project.name}</span>
-        </header>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <Outlet />
-        </div>
-      </SidebarInset>
+    <SidebarProvider className="flex h-svh min-h-0 flex-col overflow-hidden">
+      <AppHeader leading={<SidebarTrigger />} title={project.name} />
+      <div className="flex min-h-0 flex-1">
+        <ProjectSidebar project={project} />
+        <SidebarInset className="min-h-0 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </div>
     </SidebarProvider>
   )
 }

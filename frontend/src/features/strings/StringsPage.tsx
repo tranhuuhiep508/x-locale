@@ -346,6 +346,20 @@ export function StringsPage() {
   const selectedList = Object.keys(rowSelection).filter((id) => rowSelection[id])
   const selectedCount = selectedList.length
   const selectedEntries = data.filter((entry) => rowSelection[entry.id])
+
+  useEffect(() => {
+    if (selectedCount === 0) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      if (event.defaultPrevented) return
+      if (document.querySelector('[data-slot="alert-dialog-content"], [data-slot="dialog-content"]')) return
+      if (dialogOpen || reviewOpen || showMoveModule || showAddTags || deleteConfirm) return
+      setRowSelection({})
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedCount, dialogOpen, reviewOpen, showMoveModule, showAddTags, deleteConfirm])
+
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
   const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
   const showRestore = selectedEntries.some((entry) => Boolean(entry.deleted_at))
@@ -355,7 +369,7 @@ export function StringsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b bg-background px-4 py-3">
+      <div className="shrink-0 px-5 py-3">
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -581,32 +595,6 @@ export function StringsPage() {
         )}
       </div>
 
-      {selectedCount > 0 && (
-        <BatchActionBar
-          selectedCount={selectedCount}
-          modules={modules}
-          tags={tags}
-          onPublish={() => batchMut.mutate({ action: 'publish', string_ids: selectedList })}
-          onUnpublish={() => batchMut.mutate({ action: 'unpublish', string_ids: selectedList })}
-          onMove={() => setShowMoveModule(true)}
-          onAddTags={() => setShowAddTags(true)}
-          onDelete={() => setDeleteConfirm(true)}
-          onDiscardChanges={() =>
-            batchMut.mutate({ action: 'discard_changes', string_ids: selectedList })
-          }
-          onDiscardDelete={() =>
-            batchMut.mutate({ action: 'discard_delete', string_ids: selectedList })
-          }
-          onRestore={() => batchMut.mutate({ action: 'restore', string_ids: selectedList })}
-          onRestoreLastEdit={() => setRestoreLastConfirm(true)}
-          showDiscardChanges={showDiscardChanges}
-          showDiscardDelete={showDiscardDelete}
-          showRestore={showRestore}
-          showRestoreLastEdit={!showRestore}
-          onClear={() => setRowSelection({})}
-        />
-      )}
-
       <div className="min-h-0 flex-1">
         {stringsResult.isLoading ? (
           <div className="flex h-48 items-center justify-center">
@@ -646,7 +634,36 @@ export function StringsPage() {
 
       {total > 0 ? (
         <div className="shrink-0 border-t px-4">
-          <DataTablePagination table={table} />
+          <DataTablePagination
+            table={table}
+            center={
+              <BatchActionBar
+                selectedCount={selectedCount}
+                visible={selectedCount > 0}
+                pending={batchMut.isPending}
+                modules={modules}
+                tags={tags}
+                onPublish={() => batchMut.mutate({ action: 'publish', string_ids: selectedList })}
+                onUnpublish={() => batchMut.mutate({ action: 'unpublish', string_ids: selectedList })}
+                onMove={() => setShowMoveModule(true)}
+                onAddTags={() => setShowAddTags(true)}
+                onDelete={() => setDeleteConfirm(true)}
+                onDiscardChanges={() =>
+                  batchMut.mutate({ action: 'discard_changes', string_ids: selectedList })
+                }
+                onDiscardDelete={() =>
+                  batchMut.mutate({ action: 'discard_delete', string_ids: selectedList })
+                }
+                onRestore={() => batchMut.mutate({ action: 'restore', string_ids: selectedList })}
+                onRestoreLastEdit={() => setRestoreLastConfirm(true)}
+                showDiscardChanges={showDiscardChanges}
+                showDiscardDelete={showDiscardDelete}
+                showRestore={showRestore}
+                showRestoreLastEdit={!showRestore}
+                onClear={() => setRowSelection({})}
+              />
+            }
+          />
         </div>
       ) : null}
 

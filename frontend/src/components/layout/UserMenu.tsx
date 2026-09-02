@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/lib/api/auth'
 import { meQuery } from '@/lib/queries'
@@ -10,6 +10,8 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
@@ -59,18 +61,30 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2">
+        <Button variant="ghost" className="h-8 gap-2 rounded-full px-1.5">
           <Avatar size="sm">
             {user.avatar_url ? (
               <AvatarImage src={user.avatar_url} alt={user.name} />
             ) : null}
             <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <span className="hidden font-medium sm:inline">{user.name}</span>
-          <ChevronDown className="text-muted-foreground" data-icon="inline-end" />
+          <span className="hidden pr-1.5 text-sm font-medium sm:inline">{user.name}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuLabel className="flex items-center gap-2.5 py-2 font-normal">
+          <Avatar size="sm">
+            {user.avatar_url ? (
+              <AvatarImage src={user.avatar_url} alt={user.name} />
+            ) : null}
+            <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-medium text-foreground">{user.name}</span>
+            <span className="truncate">{user.email}</span>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <SignOutMenuItem
             pending={logoutMut.isPending}
