@@ -5,9 +5,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const HAS_TZ = /[zZ]|[+-]\d{2}:?\d{2}$/
+const HAS_TIME = /T\d{2}:\d{2}| \d{2}:\d{2}/
+
+export function parseApiDate(dateStr: string): Date {
+  const trimmed = dateStr.trim()
+  if (HAS_TZ.test(trimmed)) {
+    return new Date(trimmed)
+  }
+  if (HAS_TIME.test(trimmed)) {
+    return new Date(`${trimmed}Z`)
+  }
+  return new Date(trimmed)
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleString('en-US', {
+  return parseApiDate(dateStr).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -18,7 +32,7 @@ export function formatDate(dateStr: string | null | undefined): string {
 
 export function formatDateShort(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleString('en-US', {
+  return parseApiDate(dateStr).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -27,7 +41,7 @@ export function formatDateShort(dateStr: string | null | undefined): string {
 
 export function formatRelativeTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  const then = new Date(dateStr).getTime()
+  const then = parseApiDate(dateStr).getTime()
   if (Number.isNaN(then)) return '—'
   const mins = Math.round((Date.now() - then) / 60000)
   if (Math.abs(mins) < 1) return 'just now'
@@ -41,7 +55,7 @@ export function formatRelativeTime(dateStr: string | null | undefined): string {
 
 export function dayHeading(dateStr: string | null | undefined): string {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
+  const date = parseApiDate(dateStr)
   if (Number.isNaN(date.getTime())) return ''
   const today = new Date()
   const yesterday = new Date()
@@ -53,7 +67,7 @@ export function dayHeading(dateStr: string | null | undefined): string {
 
 export function dayKey(dateStr: string | null | undefined): string {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
+  const date = parseApiDate(dateStr)
   if (Number.isNaN(date.getTime())) return ''
   return date.toDateString()
 }
