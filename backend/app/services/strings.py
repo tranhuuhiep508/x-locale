@@ -519,6 +519,10 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         for entry in entries:
             if restore_string(entry):
                 affected += 1
+    elif action == "restore_last_history":
+        from app.services.activities import restore_last_history
+
+        affected = restore_last_history(db, project, entries)
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
         mid = uuid.UUID(module_id) if module_id else None

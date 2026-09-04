@@ -21,6 +21,7 @@ from app.models import (
     Translation,
     TranslationStatus,
 )
+from app.services.activity_events import classify_event
 
 STRING_FIELDS = (
     "key",
@@ -46,6 +47,16 @@ def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict
         "batch_kind": batch_kind,
     }
     return existing
+
+
+RESTORE_INTENT_KEY = "_tms_restore_intent"
+
+
+def set_restore_intent(session: Session) -> None:
+    """Mark the next flush as a history restore so capture emits string.restored."""
+    existing = session.info.get("activity") or {}
+    session.info["activity"] = {**existing, "intent": "restore"}
+    session.info[RESTORE_INTENT_KEY] = True
 
 
 def _jsonify(val: Any) -> Any:
@@ -326,6 +337,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
     """SQLAlchemy before_flush listener — one string snapshot per flushed string."""
     del flush_context, instances
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(session)
+    intent = (session.info.get("activity") or {}).get("intent")
+    if session.info.get(RESTORE_INTENT_KEY):
+        intent = "restore"
     # Revert routes write an explicit marker; do not also log the restored mutation.
     if batch_kind == BatchKind.revert:
         return
@@ -378,6 +392,13 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 tags_before=tags_before,
                 tags_after=tags_after,
             )
+            classified = classify_event(
+                action=ActivityAction.delete.value,
+                before=before,
+                after=None,
+                batch_kind=batch_kind.value if batch_kind else None,
+                intent=intent,
+            )
             activities.append(
                 _make_activity(
                     project_id=entry.project_id,
@@ -388,9 +409,11 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                     entity_type=EntityType.string,
                     entity_id=str(entry.id),
                     string_id=entry.id,
+                    locale=classified.locale,
                     before=before,
                     after=None,
-                    summary=f"Deleted string '{entry.key}'",
+                    event_type=classified.event_type,
+                    summary=classified.summary,
                     batch_id=batch_id,
                     batch_kind=batch_kind,
                     is_revertible=True,
@@ -411,6 +434,13 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 tags_before=tags_before,
                 tags_after=tags_after,
             )
+            classified = classify_event(
+                action=ActivityAction.create.value,
+                before=None,
+                after=after,
+                batch_kind=batch_kind.value if batch_kind else None,
+                intent=intent,
+            )
             activities.append(
                 _make_activity(
                     project_id=entry.project_id,
@@ -421,9 +451,11 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                     entity_type=EntityType.string,
                     entity_id=str(entry.id),
                     string_id=entry.id,
+                    locale=classified.locale,
                     before=None,
                     after=after,
-                    summary=f"Created string '{entry.key}'",
+                    event_type=classified.event_type,
+                    summary=classified.summary,
                     batch_id=batch_id,
                     batch_kind=batch_kind,
                     is_revertible=True,
@@ -464,23 +496,29 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             continue
 
         soft_deleted = not before.get("deleted_at") and bool(after.get("deleted_at"))
+        action = ActivityAction.delete if soft_deleted else ActivityAction.update
+        classified = classify_event(
+            action=action.value,
+            before=before,
+            after=after,
+            batch_kind=batch_kind.value if batch_kind else None,
+            intent=intent,
+        )
         activities.append(
             _make_activity(
                 project_id=entry.project_id,
                 actor_type=actor_type,
                 actor_id=actor_id,
                 actor_label=actor_label,
-                action=ActivityAction.delete if soft_deleted else ActivityAction.update,
+                action=action,
                 entity_type=EntityType.string,
                 entity_id=str(entry.id),
                 string_id=entry.id,
+                locale=classified.locale,
                 before=before,
                 after=after,
-                summary=(
-                    f"Deleted string '{entry.key}'"
-                    if soft_deleted
-                    else f"Updated string '{entry.key}'"
-                ),
+                event_type=classified.event_type,
+                summary=classified.summary,
                 batch_id=batch_id,
                 batch_kind=batch_kind,
                 is_revertible=True,
@@ -504,6 +542,7 @@ def _make_activity(
     locale: str | None = None,
     before: dict | None = None,
     after: dict | None = None,
+    event_type: str = "string.updated",
     summary: str = "",
     batch_id: uuid.UUID | None = None,
     batch_kind: BatchKind | None = None,
@@ -521,6 +560,7 @@ def _make_activity(
         locale=locale,
         before=before,
         after=after,
+        event_type=event_type,
         summary=summary,
         batch_id=batch_id,
         batch_kind=batch_kind,

@@ -10,11 +10,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Use in-memory SQLite for tests before app imports engine
+# Use in-memory SQLite for tests before app imports engine.
+# Cloud/dev hosts may inject OIDC_*; bypass is ignored when OIDC is configured.
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["AUTH_DEV_BYPASS"] = "true"
 os.environ["TMS_SECRET"] = "test-secret"
 os.environ["TMS_DEMO_API_KEY"] = "test-demo-key"
+os.environ["OIDC_ISSUER"] = ""
+os.environ["OIDC_CLIENT_ID"] = ""
+os.environ["OIDC_CLIENT_SECRET"] = ""
 
 
 @pytest.fixture()
@@ -24,10 +28,15 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", url)
 
     # Re-import with patched settings is tricky; create tables on a fresh engine
-    from app.database import Base, get_db
     from app import models  # noqa: F401
+    from app.config import settings
+    from app.database import Base, get_db, register_activity_listener
     from app.main import app
-    from app.database import register_activity_listener
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", True)
+    monkeypatch.setattr(settings, "oidc_issuer", "")
+    monkeypatch.setattr(settings, "oidc_client_id", "")
+    monkeypatch.setattr(settings, "oidc_client_secret", "")
 
     engine = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)

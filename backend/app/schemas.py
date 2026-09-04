@@ -1,10 +1,10 @@
-from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models import ProjectLayout, TranslationStatus
+from app.timefmt import UtcDateTime
 
 # ── Auth ──────────────────────────────────────────────────────────────
 
@@ -53,8 +53,8 @@ class ProjectOut(BaseModel):
     target_languages: list[str]
     layout: ProjectLayout
     string_count: int = 0
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UtcDateTime | None = None
+    updated_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -67,9 +67,9 @@ class ApiKeyOut(BaseModel):
     id: UUID
     name: str
     key_prefix: str
-    created_at: datetime | None = None
-    last_used_at: datetime | None = None
-    revoked_at: datetime | None = None
+    created_at: UtcDateTime | None = None
+    last_used_at: UtcDateTime | None = None
+    revoked_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -136,7 +136,7 @@ class TranslationOut(BaseModel):
     locale: str
     value: str
     published_value: str | None = None
-    updated_at: datetime | None = None
+    updated_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -148,9 +148,9 @@ class StringOut(BaseModel):
     description: str | None
     status: TranslationStatus
     pending_delete: bool = False
-    deleted_at: datetime | None = None
+    deleted_at: UtcDateTime | None = None
     has_unpublished_changes: bool = False
-    published_at: datetime | None = None
+    published_at: UtcDateTime | None = None
     published_key: str | None = None
     published_source_text: str | None = None
     published_module_id: UUID | None = None
@@ -158,7 +158,7 @@ class StringOut(BaseModel):
     module_id: UUID | None = None
     module_slug: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
-    updated_at: datetime | None = None
+    updated_at: UtcDateTime | None = None
     translations: list[TranslationOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
@@ -217,6 +217,7 @@ class BatchRequest(BaseModel):
         "discard_changes",
         "discard_delete",
         "restore",
+        "restore_last_history",
         "move_module",
         "add_tags",
         "remove_tags",
@@ -296,8 +297,8 @@ class JobOut(BaseModel):
     status: str
     result: dict[str, Any] | None = None
     error: str | None = None
-    created_at: datetime | None = None
-    completed_at: datetime | None = None
+    created_at: UtcDateTime | None = None
+    completed_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -342,6 +343,13 @@ class SyncStateOut(BaseModel):
 # ── Activities ────────────────────────────────────────────────────────
 
 
+class ActivityChangeOut(BaseModel):
+    field: str
+    before: str | None = None
+    after: str | None = None
+    locale: str | None = None
+
+
 class ActivityOut(BaseModel):
     id: UUID
     actor_type: str
@@ -354,19 +362,63 @@ class ActivityOut(BaseModel):
     locale: str | None
     before: dict[str, Any] | None
     after: dict[str, Any] | None
+    event_type: str
     summary: str
     batch_id: UUID | None
     batch_kind: str | None
     revert_of_id: UUID | None
     reverted_by_id: UUID | None
     is_revertible: bool
-    created_at: datetime | None
+    created_at: UtcDateTime | None
+    changed: list[ActivityChangeOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
 
+class RestoreVersionOut(ActivityOut):
+    notice: str
+    pending_delete: bool = False
+
+
 class ActivityListOut(BaseModel):
     items: list[ActivityOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class ActivityFeedChildOut(BaseModel):
+    id: UUID
+    event_type: str
+    summary: str
+    string_id: UUID | None = None
+    string_key: str | None = None
+    locale: str | None = None
+    changed: list[ActivityChangeOut] = Field(default_factory=list)
+
+
+class ActivityFeedCardOut(BaseModel):
+    id: str
+    kind: Literal["single", "batch"]
+    event_type: str
+    summary: str
+    actor_type: str
+    actor_label: str
+    created_at: UtcDateTime | None
+    string_id: UUID | None = None
+    string_key: str | None = None
+    locale: str | None = None
+    batch_id: UUID | None = None
+    batch_kind: str | None = None
+    children_count: int = 1
+    is_undoable: bool = False
+    counts: dict[str, int] = Field(default_factory=dict)
+    changed: list[ActivityChangeOut] = Field(default_factory=list)
+    children: list[ActivityFeedChildOut] = Field(default_factory=list)
+
+
+class ActivityFeedOut(BaseModel):
+    items: list[ActivityFeedCardOut]
     total: int
     page: int
     page_size: int

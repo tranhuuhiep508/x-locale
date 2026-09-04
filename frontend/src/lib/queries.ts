@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
+import type { ActivityFeedParams } from '@/lib/api/activities'
 import { authApi } from '@/lib/api/auth'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
 import { projectsApi } from '@/lib/api/projects'
@@ -63,4 +64,16 @@ export const activitiesQuery = (projectId: string, page: number, pageSize?: numb
   queryOptions({
     queryKey: queryKeys.projects.activities.list(projectId, { page, pageSize }),
     queryFn: () => activitiesApi.list(projectId, { page, page_size: pageSize }),
+  })
+
+export const activityFeedQuery = (projectId: string, params: ActivityFeedParams) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.feed(projectId, params),
+    queryFn: () => activitiesApi.feed(projectId, params),
+  })
+
+export const stringActivitiesQuery = (projectId: string, stringId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.string(projectId, stringId),
+    queryFn: () => activitiesApi.forString(projectId, stringId, { page: 1, page_size: 50 }),
   })
