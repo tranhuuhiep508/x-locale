@@ -61,7 +61,8 @@ docker compose -f docker-compose.prod.yml up --build
 ```bash
 uv tool install -e ./cli
 
-tms init -k demo-api-key-change-me -u http://localhost:8000 -o ./locales
+tms init
+# or: tms init -k <api-key> -u http://localhost:8000 -o ./locales -y
 tms push
 tms pull
 tms status
