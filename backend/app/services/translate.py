@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.ai import TranslateItem, translate_batch
+from app.ai import TranslatedCell, TranslateItem, as_translated_cell, translate_batch
 from app.database import SessionLocal
 from app.models import Job, JobStatus, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
@@ -77,6 +77,27 @@ def _ensure_translation(db: Session, entry: StringEntry, locale: str) -> Transla
     return translation
 
 
+def _cell_map(results: dict[str, dict], item_id: str) -> dict[str, TranslatedCell]:
+    raw = results.get(item_id) or {}
+    cells: dict[str, TranslatedCell] = {}
+    for locale, value in raw.items():
+        cell = as_translated_cell(value)
+        if cell is not None:
+            cells[locale] = cell
+    return cells
+
+
+def _scores_from_cells(
+    cells: dict[str, TranslatedCell], locales: tuple[str, ...] | list[str]
+) -> dict[str, int]:
+    scores: dict[str, int] = {}
+    for locale in locales:
+        cell = cells.get(locale)
+        if cell is not None and cell.confidence is not None:
+            scores[locale] = cell.confidence
+    return scores
+
+
 def apply_translations(
     db: Session,
     project: Project,
@@ -95,15 +116,16 @@ def apply_translations(
         entry = by_id.get(item.id)
         if entry is None:
             continue
-        locale_map = results.get(item.id) or {}
+        locale_map = _cell_map(results, item.id)
         for locale in item.locales:
             translation = _ensure_translation(db, entry, locale)
             if translation.value.strip() and not overwrite:
                 continue
-            value = locale_map.get(locale)
-            if not value or not value.strip():
+            cell = locale_map.get(locale)
+            if cell is None or not cell.text.strip():
                 continue
-            translation.value = value
+            translation.value = cell.text
+            translation.confidence = cell.confidence
             translated += 1
     return translated
 
@@ -113,7 +135,7 @@ def preview_translations(
     source_text: str,
     locales: list[str],
     context: str | None,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, int]]:
     result = translate_batch(
         source_locale,
         [
@@ -125,7 +147,9 @@ def preview_translations(
             )
         ],
     )
-    return result.get("preview") or {}
+    cells = _cell_map(result, "preview")
+    translations = {locale: cells[locale].text for locale in locales if locale in cells}
+    return translations, _scores_from_cells(cells, locales)
 
 
 def _status_str(entry: StringEntry) -> str:
@@ -135,7 +159,11 @@ def _status_str(entry: StringEntry) -> str:
     return str(status)
 
 
-def _proposal_dict(entry: StringEntry, translations: dict[str, str]) -> dict[str, Any]:
+def _proposal_dict(
+    entry: StringEntry,
+    translations: dict[str, str],
+    scores: dict[str, int] | None = None,
+) -> dict[str, Any]:
     return {
         "string_id": str(entry.id),
         "key": entry.key,
@@ -143,6 +171,7 @@ def _proposal_dict(entry: StringEntry, translations: dict[str, str]) -> dict[str
         "status": _status_str(entry),
         "description": entry.description,
         "translations": translations,
+        "scores": scores or {},
     }
 
 
@@ -177,16 +206,18 @@ def propose_translations(
         entry = by_id.get(item.id)
         if entry is None:
             continue
-        locale_map = results.get(item.id) or {}
+        locale_map = _cell_map(results, item.id)
         translations: dict[str, str] = {}
         for locale in item.locales:
-            value = locale_map.get(locale)
-            if not value or not value.strip():
+            cell = locale_map.get(locale)
+            if cell is None or not cell.text.strip():
                 continue
-            translations[locale] = value
+            translations[locale] = cell.text
         if not translations:
             continue
-        proposals.append(_proposal_dict(entry, translations))
+        proposals.append(
+            _proposal_dict(entry, translations, _scores_from_cells(locale_map, item.locales))
+        )
     return proposals
 
 
@@ -203,7 +234,11 @@ def commit_proposals(
     entries = (
         db.query(StringEntry)
         .options(joinedload(StringEntry.translations))
-        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids), StringEntry.deleted_at.is_(None))
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.id.in_(ids),
+            StringEntry.deleted_at.is_(None),
+        )
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
@@ -225,6 +260,7 @@ def commit_proposals(
             if translation.value.strip():
                 continue
             translation.value = value
+            translation.confidence = item.scores.get(locale)
             translated += 1
             if locale not in seen_locales:
                 seen_locales.add(locale)

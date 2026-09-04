@@ -129,6 +129,7 @@ def discard_working_changes(entry: StringEntry) -> bool:
         published = translation.published_value if translation.published_value is not None else ""
         if (translation.value or "") != published:
             translation.value = published
+            translation.confidence = None
             changed = True
     if entry.pending_delete:
         entry.pending_delete = False
@@ -163,6 +164,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
                 locale=t.locale,
                 value=t.value,
                 published_value=t.published_value,
+                confidence=t.confidence,
                 updated_at=t.updated_at,
             )
             for t in (entry.translations or [])
@@ -187,21 +189,34 @@ def apply_translation_values(
     db: Session,
     entry: StringEntry,
     translations: dict[str, str],
+    scores: dict[str, int] | None = None,
 ) -> None:
-    """Upsert locale values on an entry. Caller must validate locales."""
+    """Upsert locale values on an entry. Caller must validate locales.
+
+    Pass scores from an AI write. Any other value change clears the stored score.
+    """
+    scored = scores or {}
     by_locale = {t.locale: t for t in entry.translations}
     for locale, value in translations.items():
         existing = by_locale.get(locale)
+        has_score = locale in scored
+        score = scored[locale] if has_score else None
         if existing is None:
             translation = Translation(
                 string_id=entry.id,
                 locale=locale,
                 value=value,
+                confidence=score if has_score else None,
             )
             db.add(translation)
             entry.translations.append(translation)
         else:
+            value_changed = existing.value != value
             existing.value = value
+            if has_score:
+                existing.confidence = score
+            elif value_changed:
+                existing.confidence = None
 
 
 def string_query(
@@ -216,6 +231,7 @@ def string_query(
     pending_delete: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
+    max_confidence: int | None = None,
 ):
     query = (
         db.query(StringEntry)
@@ -261,6 +277,17 @@ def string_query(
     if has_unpublished_changes is not None:
         clause = unpublished_changes_clause()
         query = query.filter(clause if has_unpublished_changes else ~clause)
+    if max_confidence is not None:
+        scored = (
+            db.query(Translation.string_id)
+            .filter(
+                Translation.confidence.isnot(None),
+                Translation.confidence <= max_confidence,
+                Translation.value != "",
+            )
+            .subquery()
+        )
+        query = query.filter(StringEntry.id.in_(db.query(scored.c.string_id)))
     return query.distinct()
 
 
@@ -285,6 +312,7 @@ def resolve_string_ids(
         pending_delete=getattr(filt, "pending_delete", None),
         has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
         deleted=getattr(filt, "deleted", None),
+        max_confidence=getattr(filt, "max_confidence", None),
     )
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
@@ -328,6 +356,7 @@ def list_strings(
     pending_delete: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
+    max_confidence: int | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> StringListOut:
@@ -342,6 +371,7 @@ def list_strings(
         pending_delete=pending_delete,
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
+        max_confidence=max_confidence,
     )
     total = query.count()
     entries = (
@@ -393,7 +423,7 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         entry.tags = tags
     ensure_translation_rows(db, entry, project)
     if payload.translations:
-        apply_translation_values(db, entry, payload.translations)
+        apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
         promote_string(entry)
     db.commit()
@@ -425,7 +455,7 @@ def update_string(
     if payload.translations is not None:
         validate_locales(project, payload.translations)
         ensure_translation_rows(db, entry, project)
-        apply_translation_values(db, entry, payload.translations)
+        apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
         promote_string(entry)
     elif payload.status == TranslationStatus.draft:
@@ -451,9 +481,12 @@ def upsert_translation(
             string_id=entry.id,
             locale=locale,
             value=payload.value,
+            confidence=None,
         )
         db.add(translation)
     else:
+        if translation.value != payload.value:
+            translation.confidence = None
         translation.value = payload.value
     db.commit()
     return serialize_string(get_string(db, project.id, string_id))

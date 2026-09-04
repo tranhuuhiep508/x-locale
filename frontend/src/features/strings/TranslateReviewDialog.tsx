@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { ConfidenceBadge } from '@/features/strings/confidence'
 
 export function proposalsFromJobResult(
   result: Record<string, unknown> | null | undefined,
@@ -33,6 +34,7 @@ function cloneItems(items: TranslateProposalItem[]): TranslateProposalItem[] {
     ...item,
     description: item.description ?? '',
     translations: { ...item.translations },
+    scores: { ...(item.scores ?? {}) },
   }))
 }
 
@@ -60,11 +62,12 @@ function updateDraft(
   locale: string,
   value: string,
 ): TranslateProposalItem[] {
-  return prev.map((row) =>
-    row.string_id === stringId
-      ? { ...row, translations: { ...row.translations, [locale]: value } }
-      : row,
-  )
+  return prev.map((row) => {
+    if (row.string_id !== stringId) return row
+    const scores = { ...(row.scores ?? {}) }
+    delete scores[locale]
+    return { ...row, translations: { ...row.translations, [locale]: value }, scores }
+  })
 }
 
 function updateDescription(
@@ -128,9 +131,12 @@ function ProposalTreeNode({
               const inputId = `proposal-${item.string_id}-${locale}`
               return (
                 <Field key={locale}>
-                  <FieldLabel htmlFor={inputId} className="uppercase">
-                    {locale}
-                  </FieldLabel>
+                  <div className="flex items-center gap-2">
+                    <FieldLabel htmlFor={inputId} className="uppercase">
+                      {locale}
+                    </FieldLabel>
+                    <ConfidenceBadge score={item.scores?.[locale]} />
+                  </div>
                   <Textarea
                     id={inputId}
                     className="min-h-9 resize-none"

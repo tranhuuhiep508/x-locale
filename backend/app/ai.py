@@ -27,7 +27,8 @@ SUBMIT_TRANSLATIONS_TOOL = {
         "name": TOOL_NAME,
         "description": (
             "Submit translations for every source string. "
-            "Copy each item id exactly. Include every requested locale."
+            "Copy each item id exactly. Include every requested locale "
+            "and an honest confidence score from 0 to 100."
         ),
         "inputSchema": {
             "json": {
@@ -46,8 +47,17 @@ SUBMIT_TRANSLATIONS_TOOL = {
                                         "properties": {
                                             "locale": {"type": "string"},
                                             "text": {"type": "string"},
+                                            "confidence": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 100,
+                                                "description": (
+                                                    "Self-evaluated confidence that this "
+                                                    "translation is correct for UI use."
+                                                ),
+                                            },
                                         },
-                                        "required": ["locale", "text"],
+                                        "required": ["locale", "text", "confidence"],
                                     },
                                 },
                             },
@@ -68,6 +78,36 @@ class TranslateItem:
     source_text: str
     locales: tuple[str, ...]
     context: str | None = None
+
+
+@dataclass(frozen=True)
+class TranslatedCell:
+    text: str
+    confidence: int | None = None
+
+
+def clamp_confidence(value: object) -> int | None:
+    """Parse a model-provided score into 0–100, or None if missing/invalid."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        number = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, number))
+
+
+def as_translated_cell(value: object) -> TranslatedCell | None:
+    """Normalize a batch result cell. Strings from tests have no score."""
+    if isinstance(value, TranslatedCell):
+        if not value.text.strip():
+            return None
+        return TranslatedCell(text=value.text, confidence=clamp_confidence(value.confidence))
+    if isinstance(value, str) and value.strip():
+        return TranslatedCell(text=value, confidence=None)
+    return None
 
 
 def _refresh_bedrock_token() -> None:
@@ -125,6 +165,11 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
         "- Do not translate brand names, product names, or code identifiers, "
         "unless instructions require it.\n"
         '- Copy each item "id" exactly.\n'
+        "- For every locale, set confidence 0-100 honestly. Do not default to 90+.\n"
+        "  90-100: unambiguous, instructions followed, placeholders preserved.\n"
+        "  70-89: good, but more than one valid wording or slight tone ambiguity.\n"
+        "  50-69: missing context, idiom, or UI length is uncertain — human should review.\n"
+        "  0-49: guess; insufficient context or conflicting instructions.\n"
         f"- Call {TOOL_NAME} with every item and every requested locale. "
         "Do not reply with free text.\n\n"
         f"{_instruction_notes(items)}"
@@ -151,7 +196,7 @@ def _converse_tool(prompt: str) -> dict:
         raise RuntimeError(f"Bedrock request failed: {exc}") from exc
 
 
-def _parse_tool_input(response: dict) -> dict[str, dict[str, str]]:
+def _parse_tool_input(response: dict) -> dict[str, dict[str, TranslatedCell]]:
     content = response.get("output", {}).get("message", {}).get("content") or []
     tool_use = None
     for block in content:
@@ -178,7 +223,7 @@ def _parse_tool_input(response: dict) -> dict[str, dict[str, str]]:
     if not isinstance(rows, list):
         raise RuntimeError("Bedrock tool input is missing items")
 
-    result: dict[str, dict[str, str]] = {}
+    result: dict[str, dict[str, TranslatedCell]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -196,45 +241,56 @@ def _parse_tool_input(response: dict) -> dict[str, dict[str, str]]:
             text = cell.get("text")
             if not locale or not isinstance(text, str) or not text.strip():
                 continue
-            dest[locale] = text
+            dest[locale] = TranslatedCell(
+                text=text,
+                confidence=clamp_confidence(cell.get("confidence")),
+            )
     return result
 
 
 def _filter_chunk_result(
-    items: list[TranslateItem], parsed: dict[str, dict[str, str]]
-) -> dict[str, dict[str, str]]:
+    items: list[TranslateItem], parsed: dict[str, dict[str, TranslatedCell]]
+) -> dict[str, dict[str, TranslatedCell]]:
     allowed = {item.id: set(item.locales) for item in items}
-    filtered: dict[str, dict[str, str]] = {}
+    filtered: dict[str, dict[str, TranslatedCell]] = {}
     for item_id, locales in parsed.items():
         wanted = allowed.get(item_id)
         if wanted is None:
             continue
-        kept = {locale: text for locale, text in locales.items() if locale in wanted}
+        kept = {locale: cell for locale, cell in locales.items() if locale in wanted}
         if kept:
             filtered[item_id] = kept
     return filtered
 
 
-def _translate_chunk(source_locale: str, items: list[TranslateItem]) -> dict[str, dict[str, str]]:
+def _translate_chunk(
+    source_locale: str, items: list[TranslateItem]
+) -> dict[str, dict[str, TranslatedCell]]:
     response = _converse_tool(_build_prompt(source_locale, items))
     return _filter_chunk_result(items, _parse_tool_input(response))
 
 
-def _merge_results(into: dict[str, dict[str, str]], extra: dict[str, dict[str, str]]) -> None:
+def _merge_results(
+    into: dict[str, dict[str, TranslatedCell]], extra: dict[str, dict[str, TranslatedCell]]
+) -> None:
     for item_id, locales in extra.items():
         dest = into.setdefault(item_id, {})
-        for locale, text in locales.items():
-            if text.strip():
-                dest[locale] = text
+        for locale, cell in locales.items():
+            if cell.text.strip():
+                dest[locale] = cell
 
 
 def _missing_items(
-    items: list[TranslateItem], results: dict[str, dict[str, str]]
+    items: list[TranslateItem], results: dict[str, dict[str, TranslatedCell]]
 ) -> list[TranslateItem]:
     missing: list[TranslateItem] = []
     for item in items:
         filled = results.get(item.id) or {}
-        needed = tuple(locale for locale in item.locales if not (filled.get(locale) or "").strip())
+        needed = tuple(
+            locale
+            for locale in item.locales
+            if not (filled.get(locale) and filled[locale].text.strip())
+        )
         if needed:
             missing.append(
                 TranslateItem(
@@ -247,8 +303,10 @@ def _missing_items(
     return missing
 
 
-def translate_batch(source_locale: str, items: list[TranslateItem]) -> dict[str, dict[str, str]]:
-    """Return {item_id: {locale: translated_text}} for every filled cell."""
+def translate_batch(
+    source_locale: str, items: list[TranslateItem]
+) -> dict[str, dict[str, TranslatedCell]]:
+    """Return {item_id: {locale: TranslatedCell}} for every filled cell."""
     if not items:
         return {}
     if not settings.bedrock_model_id:
@@ -256,7 +314,7 @@ def translate_batch(source_locale: str, items: list[TranslateItem]) -> dict[str,
 
     _refresh_bedrock_token()
 
-    merged: dict[str, dict[str, str]] = {}
+    merged: dict[str, dict[str, TranslatedCell]] = {}
     for index in range(0, len(items), BATCH_SIZE):
         chunk = items[index : index + BATCH_SIZE]
         _merge_results(merged, _translate_chunk(source_locale, chunk))

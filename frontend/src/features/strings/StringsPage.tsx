@@ -30,6 +30,7 @@ import { DataTableViewOptions } from '@/components/data-table/data-table-view-op
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { FilterPill } from '@/features/strings/FilterPill'
+import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
 import { getStringColumns } from '@/features/strings/string-columns'
 import { canDiscardWorkingCopy, releaseRowClassName, releaseState } from '@/features/strings/working-copy'
 import {
@@ -178,11 +179,16 @@ export function StringsPage() {
             locales,
           })
           const translations = { ...item.translations }
+          const scores = { ...(item.scores ?? {}) }
           for (const locale of locales) {
             const value = res.translations[locale]
-            if (value?.trim()) translations[locale] = value
+            if (!value?.trim()) continue
+            translations[locale] = value
+            const score = res.scores?.[locale]
+            if (typeof score === 'number') scores[locale] = score
+            else delete scores[locale]
           }
-          return { ...item, translations }
+          return { ...item, translations, scores }
         }),
       )
       return next
@@ -222,6 +228,7 @@ export function StringsPage() {
         items: items.map((item) => ({
           string_id: item.string_id,
           translations: item.translations,
+          scores: item.scores,
           description: item.description ?? '',
         })),
       }),
@@ -289,7 +296,8 @@ export function StringsPage() {
       search.missing_locale ||
       search.has_unpublished_changes ||
       search.pending_delete ||
-      search.deleted,
+      search.deleted ||
+      search.max_confidence != null,
   )
 
   const moduleById = new Map(modules.map((m) => [m.id, m]))
@@ -494,6 +502,38 @@ export function StringsPage() {
             </Select>
           )}
 
+          <Select
+            value={
+              search.max_confidence === CONFIDENCE_LOW_MAX
+                ? 'low'
+                : search.max_confidence === CONFIDENCE_REVIEW_MAX
+                  ? 'review'
+                  : 'all'
+            }
+            onValueChange={(v) => {
+              if (v === 'low') {
+                setFilter({ max_confidence: CONFIDENCE_LOW_MAX })
+                return
+              }
+              if (v === 'review') {
+                setFilter({ max_confidence: CONFIDENCE_REVIEW_MAX })
+                return
+              }
+              setFilter({ max_confidence: undefined })
+            }}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Any AI score" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">Any AI score</SelectItem>
+                <SelectItem value="review">Needs review</SelectItem>
+                <SelectItem value="low">Low confidence</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+
           {hasActiveFilters && (
             <Button
               variant="ghost"
@@ -586,6 +626,17 @@ export function StringsPage() {
                 onRemove={() => setFilter({ missing_locale: undefined })}
               />
             )}
+            {search.max_confidence === CONFIDENCE_LOW_MAX ? (
+              <FilterPill
+                label="low confidence"
+                onRemove={() => setFilter({ max_confidence: undefined })}
+              />
+            ) : search.max_confidence != null ? (
+              <FilterPill
+                label="needs review"
+                onRemove={() => setFilter({ max_confidence: undefined })}
+              />
+            ) : null}
           </div>
         )}
       </div>

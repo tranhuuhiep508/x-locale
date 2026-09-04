@@ -103,7 +103,7 @@ def translate_preview(
             raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
     try:
-        translations = preview_translations(
+        translations, scores = preview_translations(
             project.base_language,
             payload.source_text,
             locales,
@@ -111,7 +111,7 @@ def translate_preview(
         )
     except Exception as exc:
         raise _ai_http_error(exc) from exc
-    return TranslatePreviewResult(translations=translations)
+    return TranslatePreviewResult(translations=translations, scores=scores)
 
 
 @router.post("/translate/missing", response_model=TranslateProposalsResult)

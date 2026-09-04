@@ -13,8 +13,10 @@ from app.ai import (
     BATCH_SIZE,
     MAX_TOKENS,
     TOOL_NAME,
+    TranslatedCell,
     TranslateItem,
     _refresh_bedrock_token,
+    clamp_confidence,
     translate_batch,
 )
 from app.config import settings
@@ -50,7 +52,7 @@ def complete_tool_response(prompt: str) -> dict:
             {
                 "id": item["id"],
                 "translations": [
-                    {"locale": locale, "text": f"{locale}:{item['source']}"}
+                    {"locale": locale, "text": f"{locale}:{item['source']}", "confidence": 88}
                     for locale in item["locales"]
                 ],
             }
@@ -92,7 +94,12 @@ def test_translate_batch_single_item_uses_tool_choice(converse):
         "vi",
         [TranslateItem(id="s1", source_text="Lưu", locales=("en", "ja"), context="button")],
     )
-    assert result == {"s1": {"en": "Save", "ja": "保存"}}
+    assert result == {
+        "s1": {
+            "en": TranslatedCell(text="Save", confidence=None),
+            "ja": TranslatedCell(text="保存", confidence=None),
+        }
+    }
     converse.assert_called_once()
     kwargs = converse.call_args.kwargs
     assert kwargs["toolConfig"]["toolChoice"]["tool"]["name"] == TOOL_NAME
@@ -104,6 +111,12 @@ def test_translate_batch_single_item_uses_tool_choice(converse):
     assert "button" in prompt
     assert "instructions" in prompt
     assert "mandatory" in prompt.lower()
+    assert "confidence" in prompt.lower()
+    tool_schema = kwargs["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"]
+    cell_props = tool_schema["properties"]["items"]["items"]["properties"]["translations"]["items"][
+        "properties"
+    ]
+    assert "confidence" in cell_props
 
 
 def test_translate_batch_prompt_treats_description_as_override(converse):
@@ -149,8 +162,10 @@ def test_translate_batch_chunks_over_batch_size(converse):
     result = translate_batch("vi", items)
     assert converse.call_count == 2
     assert len(result) == BATCH_SIZE + 1
-    assert result["0"]["en"] == "en:s0"
-    assert result[str(BATCH_SIZE)]["en"] == f"en:s{BATCH_SIZE}"
+    assert result["0"]["en"] == TranslatedCell(text="en:s0", confidence=88)
+    assert result[str(BATCH_SIZE)]["en"] == TranslatedCell(
+        text=f"en:s{BATCH_SIZE}", confidence=88
+    )
 
 
 def test_translate_batch_retries_missing_locale_once(converse):
@@ -188,7 +203,12 @@ def test_translate_batch_retries_missing_locale_once(converse):
     )
     assert converse.call_count == 2
     assert calls[1][0]["locales"] == ["ja"]
-    assert result == {"s1": {"en": "Save", "ja": "ja-retry"}}
+    assert result == {
+        "s1": {
+            "en": TranslatedCell(text="Save", confidence=None),
+            "ja": TranslatedCell(text="ja-retry", confidence=None),
+        }
+    }
 
 
 def test_translate_batch_does_not_retry_twice(converse):
@@ -206,7 +226,7 @@ def test_translate_batch_does_not_retry_twice(converse):
         [TranslateItem(id="s1", source_text="Lưu", locales=("en", "ja"))],
     )
     assert converse.call_count == 2
-    assert result == {"s1": {"en": "Save"}}
+    assert result == {"s1": {"en": TranslatedCell(text="Save", confidence=None)}}
     assert "ja" not in result["s1"]
 
 
@@ -290,3 +310,39 @@ def test_refresh_raises_when_no_auth(monkeypatch):
 
     with pytest.raises(ValueError, match="AWS Bedrock auth is not configured"):
         _refresh_bedrock_token()
+
+
+def test_clamp_confidence_bounds_and_rejects_junk():
+    assert clamp_confidence(0) == 0
+    assert clamp_confidence(100) == 100
+    assert clamp_confidence(140) == 100
+    assert clamp_confidence(-4) == 0
+    assert clamp_confidence(87.6) == 88
+    assert clamp_confidence("72") == 72
+    assert clamp_confidence("") is None
+    assert clamp_confidence(None) is None
+    assert clamp_confidence(True) is None
+
+
+def test_translate_batch_parses_and_clamps_confidence(converse):
+    converse.return_value = fake_converse_body(
+        [
+            {
+                "id": "s1",
+                "translations": [
+                    {"locale": "en", "text": "Save", "confidence": 140},
+                    {"locale": "ja", "text": "保存", "confidence": "61"},
+                ],
+            }
+        ]
+    )
+    result = translate_batch(
+        "vi",
+        [TranslateItem(id="s1", source_text="Lưu", locales=("en", "ja"))],
+    )
+    assert result == {
+        "s1": {
+            "en": TranslatedCell(text="Save", confidence=100),
+            "ja": TranslatedCell(text="保存", confidence=61),
+        }
+    }

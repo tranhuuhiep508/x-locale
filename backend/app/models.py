@@ -258,6 +258,7 @@ class Translation(Base):
     locale: Mapped[str] = mapped_column(String(10), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
     published_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

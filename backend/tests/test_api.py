@@ -971,6 +971,126 @@ def test_translate_apply_saves_description(client):
     assert by_locale["en"] == "Hello"
 
 
+def test_translate_stores_confidence_and_manual_edit_clears_it(client, monkeypatch):
+    from app.ai import TranslatedCell
+
+    project = _make_project(client, "Score Persist", targets=["en", "ja"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    def fake_batch(source_locale, items):
+        item = items[0]
+        return {
+            item.id: {
+                "en": TranslatedCell(text="Hello", confidence=92),
+                "ja": TranslatedCell(text="こんにちは", confidence=61),
+            }
+        }
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate",
+        json={"scope": "strings", "string_ids": [string["id"]], "locales": ["en", "ja"]},
+    )
+    assert r.status_code == 200, r.text
+    refreshed = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    by_locale = {t["locale"]: t for t in refreshed["translations"]}
+    assert by_locale["en"]["value"] == "Hello"
+    assert by_locale["en"]["confidence"] == 92
+    assert by_locale["ja"]["value"] == "こんにちは"
+    assert by_locale["ja"]["confidence"] == 61
+
+    client.put(
+        f"/api/projects/{pid}/strings/{string['id']}/translations/ja",
+        json={"value": "やあ"},
+    )
+    after_edit = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    edited = {t["locale"]: t for t in after_edit["translations"]}
+    assert edited["ja"]["value"] == "やあ"
+    assert edited["ja"]["confidence"] is None
+    assert edited["en"]["confidence"] == 92
+
+    listed = client.get(f"/api/projects/{pid}/strings", params={"max_confidence": 70})
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 0
+
+    listed_high = client.get(f"/api/projects/{pid}/strings", params={"max_confidence": 95})
+    assert listed_high.json()["total"] == 1
+
+
+def test_translate_preview_and_apply_include_scores(client, monkeypatch):
+    from app.ai import TranslatedCell
+
+    project = _make_project(client, "Score Preview", targets=["en"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+
+    def fake_batch(source_locale, items):
+        item = items[0]
+        return {item.id: {"en": TranslatedCell(text="Hello", confidence=74)}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    preview = client.post(
+        f"/api/projects/{pid}/translate/preview",
+        json={"source_text": "Xin chào", "locales": ["en"]},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["translations"]["en"] == "Hello"
+    assert preview.json()["scores"]["en"] == 74
+
+    proposed = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={"scope": "strings", "string_ids": [string["id"]], "locales": ["en"]},
+    ).json()["items"]
+    assert proposed[0]["translations"]["en"] == "Hello"
+    assert proposed[0]["scores"]["en"] == 74
+
+    applied = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={"items": proposed},
+    )
+    assert applied.status_code == 200, applied.text
+    stored = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    en = next(t for t in stored["translations"] if t["locale"] == "en")
+    assert en["value"] == "Hello"
+    assert en["confidence"] == 74
+
+    needs_review = client.get(f"/api/projects/{pid}/strings", params={"max_confidence": 79})
+    assert needs_review.json()["total"] == 1
+
+
+def test_save_with_translation_scores(client):
+    project = _make_project(client, "Score Save", targets=["en"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "translations": {"en": "Hello"},
+            "translation_scores": {"en": 81},
+        },
+    ).json()
+    en = next(t for t in created["translations"] if t["locale"] == "en")
+    assert en["confidence"] == 81
+
+    updated = client.patch(
+        f"/api/projects/{pid}/strings/{created['id']}",
+        json={"translations": {"en": "Hi there"}},
+    ).json()
+    en = next(t for t in updated["translations"] if t["locale"] == "en")
+    assert en["value"] == "Hi there"
+    assert en["confidence"] is None
+
+
 def test_translate_proposals_large_uses_job(client, monkeypatch):
     project = _make_project(client, "Propose Job", targets=["en"])
     pid = project["id"]

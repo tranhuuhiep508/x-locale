@@ -150,6 +150,7 @@ def _set_entry_translations(db: Session, entry: StringEntry, translations: dict[
             db.add(Translation(string_id=entry.id, locale=locale, value=value))
         else:
             existing.value = value
+            existing.confidence = None
 
 
 def _set_entry_published_translations(
@@ -395,6 +396,7 @@ def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any
                     )
                 else:
                     existing.value = value
+                    existing.confidence = None
             db.flush()
         else:
             _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))

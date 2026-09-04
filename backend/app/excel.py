@@ -286,6 +286,7 @@ def import_workbook(
                 else:
                     if value != t.value:
                         t.value = value
+                        t.confidence = None
 
             if created_this_row and status == TranslationStatus.public:
                 promote_string(entry)

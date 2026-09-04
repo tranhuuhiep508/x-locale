@@ -108,6 +108,7 @@ export interface Translation {
   locale: string
   value: string
   published_value: string | null
+  confidence: number | null
   updated_at: string | null
 }
 
@@ -140,6 +141,7 @@ export interface StringCreate {
   tag_ids?: string[]
   status?: TranslationStatus
   translations?: Record<string, string>
+  translation_scores?: Record<string, number>
 }
 
 export interface StringUpdate {
@@ -150,6 +152,7 @@ export interface StringUpdate {
   tag_ids?: string[]
   status?: TranslationStatus
   translations?: Record<string, string>
+  translation_scores?: Record<string, number>
 }
 
 export interface TranslationUpdate {
@@ -184,6 +187,7 @@ export interface BatchFilter {
   pending_delete?: boolean
   has_unpublished_changes?: boolean
   deleted?: boolean
+  max_confidence?: number
 }
 
 export interface BatchRequest {
@@ -222,6 +226,7 @@ export interface TranslatePreviewRequest {
 
 export interface TranslatePreviewResult {
   translations: Record<string, string>
+  scores: Record<string, number>
 }
 
 export interface TranslateProposalItem {
@@ -231,6 +236,7 @@ export interface TranslateProposalItem {
   status: TranslationStatus
   description?: string | null
   translations: Record<string, string>
+  scores?: Record<string, number>
 }
 
 export interface TranslateProposalsResult {
@@ -243,6 +249,7 @@ export interface TranslateApplyRequest {
   items: Array<{
     string_id: string
     translations: Record<string, string>
+    scores?: Record<string, number>
     description?: string | null
   }>
 }

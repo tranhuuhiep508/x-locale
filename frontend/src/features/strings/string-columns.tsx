@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
   ChangedValueHint,
   WorkingCopyCell,
@@ -283,11 +284,16 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       const entry = row.original
       const translation = entry.translations.find((item) => item.locale === locale)
       return (
-        <WorkingCopyCell
-          working={translation?.value ?? ''}
-          published={liveTranslation(entry, locale)}
-          released={isReleased(entry)}
-        />
+        <div className="flex flex-col gap-1">
+          <WorkingCopyCell
+            working={translation?.value ?? ''}
+            published={liveTranslation(entry, locale)}
+            released={isReleased(entry)}
+          />
+          <ConfidenceBadge
+            score={translation?.value?.trim() ? translation.confidence : null}
+          />
+        </div>
       )
     },
   }))

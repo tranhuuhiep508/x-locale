@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -130,12 +130,15 @@ class TagOut(BaseModel):
 
 # ── Strings / Translations ────────────────────────────────────────────
 
+ConfidenceScore = Annotated[int, Field(ge=0, le=100)]
+
 
 class TranslationOut(BaseModel):
     id: UUID | None = None
     locale: str
     value: str
     published_value: str | None = None
+    confidence: int | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -172,6 +175,7 @@ class StringCreate(BaseModel):
     tag_ids: list[UUID] = Field(default_factory=list)
     status: TranslationStatus = TranslationStatus.draft
     translations: dict[str, str] = Field(default_factory=dict)
+    translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
 
 class StringUpdate(BaseModel):
@@ -182,6 +186,7 @@ class StringUpdate(BaseModel):
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
     translations: dict[str, str] | None = None
+    translation_scores: dict[str, ConfidenceScore] | None = None
 
 
 class TranslationUpdate(BaseModel):
@@ -207,6 +212,7 @@ class BatchFilter(BaseModel):
     pending_delete: bool | None = None
     has_unpublished_changes: bool | None = None
     deleted: bool | None = None
+    max_confidence: ConfidenceScore | None = None
 
 
 class BatchRequest(BaseModel):
@@ -257,6 +263,7 @@ class TranslatePreviewRequest(BaseModel):
 
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
+    scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
 
 class TranslateProposalItem(BaseModel):
@@ -266,6 +273,7 @@ class TranslateProposalItem(BaseModel):
     status: str
     description: str | None = None
     translations: dict[str, str]
+    scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
 
 class TranslateProposalsResult(BaseModel):
@@ -277,6 +285,7 @@ class TranslateProposalsResult(BaseModel):
 class TranslateApplyItem(BaseModel):
     string_id: UUID
     translations: dict[str, str]
+    scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     description: str | None = None
 
 

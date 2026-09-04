@@ -24,6 +24,7 @@ export type StringListParams = {
   pending_delete?: boolean
   has_unpublished_changes?: boolean
   deleted?: boolean
+  max_confidence?: number
   page?: number
   page_size?: number
 }

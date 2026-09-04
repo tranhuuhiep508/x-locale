@@ -18,6 +18,7 @@ export const stringsSearchSchema = z.object({
     .union([z.boolean(), z.literal('true'), z.literal('false')])
     .optional()
     .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
+  max_confidence: z.coerce.number().int().min(0).max(100).optional(),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
 })

@@ -20,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
+import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,15 @@ function translationsFromEntry(entry: StringEntry, targetLocales: string[]) {
   return map
 }
 
+function scoresFromEntry(entry: StringEntry, targetLocales: string[]) {
+  const map: Record<string, number> = {}
+  for (const locale of targetLocales) {
+    const score = entry.translations.find((t) => t.locale === locale)?.confidence
+    if (typeof score === 'number') map[locale] = score
+  }
+  return map
+}
+
 function isFormDirty(
   entry: StringEntry,
   targetLocales: string[],
@@ -71,6 +81,7 @@ function isFormDirty(
     tagId: string
     status: TranslationStatus
     translations: Record<string, string>
+    scores: Record<string, number>
   },
 ): boolean {
   if (values.key !== entry.key) return true
@@ -80,8 +91,10 @@ function isFormDirty(
   if (values.tagId !== (entry.tags[0]?.id ?? '')) return true
   if (values.status !== entry.status) return true
   const saved = translationsFromEntry(entry, targetLocales)
+  const savedScores = scoresFromEntry(entry, targetLocales)
   for (const locale of targetLocales) {
     if ((values.translations[locale] ?? '') !== (saved[locale] ?? '')) return true
+    if ((values.scores[locale] ?? null) !== (savedScores[locale] ?? null)) return true
   }
   return false
 }
@@ -97,6 +110,7 @@ function applyEntryToForm(
     setTagId: (value: string) => void
     setStatus: (value: TranslationStatus) => void
     setTranslations: (value: Record<string, string>) => void
+    setScores: (value: Record<string, number>) => void
   },
 ) {
   setters.setKey(entry.key)
@@ -106,6 +120,7 @@ function applyEntryToForm(
   setters.setTagId(entry.tags[0]?.id ?? '')
   setters.setStatus(entry.status)
   setters.setTranslations(translationsFromEntry(entry, targetLocales))
+  setters.setScores(scoresFromEntry(entry, targetLocales))
 }
 
 export default function StringFormDialog({
@@ -134,6 +149,9 @@ export default function StringFormDialog({
     }
     return map
   })
+  const [scores, setScores] = useState<Record<string, number>>(() =>
+    entry ? scoresFromEntry(entry, targetLocales) : {},
+  )
   const [errors, setErrors] = useState<FormErrors>({})
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [createdModules, setCreatedModules] = useState<Module[]>([])
@@ -151,6 +169,7 @@ export default function StringFormDialog({
     tagId,
     status,
     translations,
+    scores,
   }
 
   const canAutoTranslate =
@@ -164,6 +183,7 @@ export default function StringFormDialog({
       module_id: string | null
       tag_ids: string[]
       translations: Record<string, string>
+      translation_scores?: Record<string, number>
       status?: TranslationStatus
     } = {
       key: key.trim(),
@@ -172,6 +192,9 @@ export default function StringFormDialog({
       module_id: moduleId || null,
       tag_ids: tagId ? [tagId] : [],
       translations,
+    }
+    if (Object.keys(scores).length > 0) {
+      body.translation_scores = scores
     }
     if (!isEdit || status !== originalStatus) {
       body.status = status
@@ -205,6 +228,7 @@ export default function StringFormDialog({
       }),
     onSuccess: (res, { overwrite }) => {
       setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
+      setScores((prev) => mergeScores(prev, res.scores, translations, res.translations, overwrite))
       toast.success('Review AI text, then Save')
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
@@ -234,6 +258,7 @@ export default function StringFormDialog({
         setTagId,
         setStatus,
         setTranslations,
+        setScores,
       })
       setErrors({})
       onSuccess()
@@ -498,10 +523,11 @@ export default function StringFormDialog({
                   <FieldGroup className="gap-3">
                     {targetLocales.map((locale) => (
                       <Field key={locale}>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <FieldLabel htmlFor={`translation-${locale}`} className="uppercase">
                             {locale}
                           </FieldLabel>
+                          <ConfidenceBadge score={scores[locale]} />
                           {released && baseline ? (
                             <PublishedChangeHint
                               published={
@@ -517,12 +543,14 @@ export default function StringFormDialog({
                           id={`translation-${locale}`}
                           className="min-h-16 resize-none"
                           value={translations[locale] ?? ''}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const value = e.target.value
                             setTranslations((prev) => ({
                               ...prev,
-                              [locale]: e.target.value,
+                              [locale]: value,
                             }))
-                          }
+                            setScores((prev) => dropScore(prev, locale))
+                          }}
                           rows={2}
                           autoComplete="off"
                           placeholder={`Translation for ${locale}…`}

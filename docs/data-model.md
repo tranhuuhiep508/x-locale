@@ -17,7 +17,7 @@ users ──< api_keys >── projects ──< modules
 
 - String uniqueness is `(project_id, module_id, key)` — the same key may exist in different modules.
 - `module_id` is nullable (`ON DELETE SET NULL`). Unassigned strings export under `_unassigned` (Excel) or at the top level (JSON modular).
-- Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
+- Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `translations.confidence` is an optional 0–100 AI self-score written by translate; manual edits, import, and CLI push clear it. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column.
 - `activities` is append-only. Content entities (`string`, `translation`) are revertible; structural ones (`module`, `tag`, `project`, `api_key`) are audit-only.
 
