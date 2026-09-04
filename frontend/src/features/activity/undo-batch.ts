@@ -1,16 +1,20 @@
 import { ApiError } from '@/lib/api/client'
 import type { ActivityFeedCard } from '@/lib/api/types'
 
+function stringNoun(count: number): string {
+  return count === 1 ? 'string' : 'strings'
+}
+
 export function undoDescription(card: ActivityFeedCard): string {
   const created = card.counts.created ?? 0
+  const total = card.children_count
   if (created > 0) {
-    const noun = created === 1 ? 'string' : 'strings'
     return (
-      `This undoes ${card.children_count} strings. ${created} new ${noun} will be moved to Deleted ` +
+      `This undoes ${total} ${stringNoun(total)}. ${created} new ${stringNoun(created)} will be moved to Deleted ` +
       '(or queued for public removal if already published).'
     )
   }
-  return `This restores ${card.children_count} strings to their values before this action.`
+  return `This restores ${total} ${stringNoun(total)} to their values before this action.`
 }
 
 export function undoOverwriteDescription(): string {

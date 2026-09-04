@@ -32,6 +32,13 @@ describe('undoDescription', () => {
     expect(undoDescription(card({ counts: { created: 2 } }))).not.toContain('overwritten')
   })
 
+  it('uses singular nouns for a one-string create undo', () => {
+    expect(undoDescription(card({ children_count: 1, counts: { created: 1 } }))).toBe(
+      'This undoes 1 string. 1 new string will be moved to Deleted ' +
+        '(or queued for public removal if already published).',
+    )
+  })
+
   it('describes a restore when nothing was created', () => {
     expect(undoDescription(card({ counts: { updated: 3 } }))).toContain('values before this action')
     expect(undoDescription(card({ counts: { updated: 3 } }))).not.toContain('overwritten')
