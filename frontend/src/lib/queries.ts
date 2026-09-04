@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
 import type { ActivityFeedParams } from '@/lib/api/activities'
 import { authApi } from '@/lib/api/auth'
@@ -72,8 +72,20 @@ export const activityFeedQuery = (projectId: string, params: ActivityFeedParams)
     queryFn: () => activitiesApi.feed(projectId, params),
   })
 
-export const stringActivitiesQuery = (projectId: string, stringId: string) =>
-  queryOptions({
+export const HISTORY_PAGE_SIZE = 50
+
+export const stringActivitiesInfiniteQuery = (projectId: string, stringId: string) =>
+  infiniteQueryOptions({
     queryKey: queryKeys.projects.activities.string(projectId, stringId),
-    queryFn: () => activitiesApi.forString(projectId, stringId, { page: 1, page_size: 50 }),
+    queryFn: ({ pageParam }) =>
+      activitiesApi.forString(projectId, stringId, {
+        page: pageParam,
+        page_size: HISTORY_PAGE_SIZE,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.items.length === 0) return undefined
+      const loaded = lastPage.page * lastPage.page_size
+      return loaded < lastPage.total ? lastPage.page + 1 : undefined
+    },
   })

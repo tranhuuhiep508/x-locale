@@ -157,7 +157,7 @@ See [.env.example](.env.example). Notable vars:
 | `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
 | `TMS_DEMO_API_KEY` | Seeded demo project key |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
-| `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (0 = keep forever). Runs on API startup and `python -m app.cli prune-activities`. Drops old feed/history, not strings. |
+| `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend auto-mints a short-term Bedrock API key before each request. |

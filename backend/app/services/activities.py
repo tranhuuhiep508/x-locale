@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, defer, joinedload
 
 from app.models import (
@@ -46,6 +47,7 @@ from app.services.activity_events import (
 )
 
 FEED_CHILD_LIMIT = 50
+_LOCALE_RE = re.compile(r"^[\w-]+$")
 
 
 def _changed_out(activity: Activity) -> list[ActivityChangeOut]:
@@ -176,7 +178,7 @@ def _apply_feed_filters(
     if actor:
         q = q.filter(Activity.actor_label.ilike(f"%{actor}%"))
     if locale:
-        q = q.filter(Activity.locale == locale)
+        q = q.filter(_locale_filter(locale))
     if since:
         q = q.filter(Activity.created_at >= since)
     if until:
@@ -191,6 +193,29 @@ def _apply_feed_filters(
         else:
             q = q.filter(Activity.event_type == event_type)
     return q
+
+
+def _locale_filter(locale: str):
+    if not _LOCALE_RE.fullmatch(locale):
+        return Activity.locale == locale
+    return or_(
+        Activity.locale == locale,
+        Activity.after["translations"][locale].isnot(None),
+        Activity.before["translations"][locale].isnot(None),
+    )
+
+
+def _feed_counts(type_n: dict[str, int]) -> dict[str, int]:
+    created = type_n.get(EVENT_CREATED, 0)
+    deleted = type_n.get(EVENT_DELETED, 0) + type_n.get(EVENT_PENDING_DELETE, 0)
+    published = type_n.get(EVENT_PUBLISHED, 0)
+    total = sum(type_n.values())
+    return {
+        "created": created,
+        "updated": total - created - deleted - published,
+        "deleted": deleted,
+        "published": published,
+    }
 
 
 def _feed_child(
@@ -221,6 +246,10 @@ def _sort_feed_rows(rows: list[Activity]) -> list[Activity]:
 def _feed_card(
     rows: list[Activity],
     snaps: dict[uuid.UUID, tuple[dict | None, dict | None]],
+    *,
+    type_counts: dict[str, int],
+    children_count: int,
+    any_undoable: bool,
 ) -> ActivityFeedCardOut:
     rows = _sort_feed_rows(rows)
     newest = rows[0]
@@ -231,33 +260,15 @@ def _feed_card(
     )
     is_batch = newest.batch_id is not None
     card_id = str(newest.batch_id or newest.id)
-    stored_types = [row.event_type or "string.updated" for row in rows]
+    stored_types = [event_type for event_type, n in type_counts.items() if n]
     if is_batch:
         event_type = batch_card_event_type(kind_val)
-        summary = batch_card_summary(kind_val, stored_types, len(rows))
+        summary = batch_card_summary(kind_val, stored_types, children_count)
     else:
         event_type = newest.event_type or "string.updated"
         summary = newest.summary
-    counts = {
-        "created": sum(1 for row in rows if (row.event_type or "") == EVENT_CREATED),
-        "updated": sum(
-            1
-            for row in rows
-            if (row.event_type or "")
-            not in {EVENT_CREATED, EVENT_DELETED, EVENT_PENDING_DELETE, EVENT_PUBLISHED}
-        ),
-        "deleted": sum(
-            1
-            for row in rows
-            if (row.event_type or "") in {EVENT_DELETED, EVENT_PENDING_DELETE}
-        ),
-        "published": sum(1 for row in rows if (row.event_type or "") == EVENT_PUBLISHED),
-    }
-    undoable = bool(
-        is_batch
-        and kind_val in UNDOABLE_BATCH_KINDS
-        and any(row.is_revertible and not row.reverted_by_id for row in rows)
-    )
+    counts = _feed_counts(type_counts)
+    undoable = bool(is_batch and kind_val in UNDOABLE_BATCH_KINDS and any_undoable)
     newest_before, newest_after = snaps.get(newest.id, (None, None))
     action = newest.action.value if hasattr(newest.action, "value") else newest.action
     changed = (
@@ -300,7 +311,7 @@ def _feed_card(
         locale=None if is_batch else newest.locale,
         batch_id=newest.batch_id,
         batch_kind=kind_val,
-        children_count=len(rows),
+        children_count=children_count,
         is_undoable=undoable,
         counts=counts,
         changed=changed,
@@ -343,16 +354,77 @@ def list_activity_feed(
     if not card_ids:
         return ActivityFeedOut(items=[], total=total, page=page, page_size=page_size)
 
-    children = (
-        db.query(Activity)
-        .options(defer(Activity.before), defer(Activity.after))
+    page_scope = or_(Activity.batch_id.in_(card_ids), Activity.id.in_(card_ids))
+    type_rows = (
+        db.query(
+            card_expr.label("card_id"),
+            Activity.event_type,
+            func.count().label("n"),
+        )
         .filter(Activity.project_id == project.id)
-        .filter(or_(Activity.batch_id.in_(card_ids), Activity.id.in_(card_ids)))
+        .filter(page_scope)
+        .group_by(card_expr, Activity.event_type)
         .all()
     )
+    types_by_card: dict[uuid.UUID, dict[str, int]] = {}
+    children_by_card: dict[uuid.UUID, int] = {}
+    for card_id, event_type, n in type_rows:
+        cid = _as_uuid(card_id)
+        key = event_type or "string.updated"
+        types_by_card.setdefault(cid, {})[key] = int(n or 0)
+        children_by_card[cid] = children_by_card.get(cid, 0) + int(n or 0)
+
+    undo_rows = (
+        db.query(
+            card_expr.label("card_id"),
+            func.max(
+                case(
+                    (
+                        and_(
+                            Activity.is_revertible.is_(True),
+                            Activity.reverted_by_id.is_(None),
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("undoable"),
+        )
+        .filter(Activity.project_id == project.id)
+        .filter(page_scope)
+        .group_by(card_expr)
+        .all()
+    )
+    undoable_by_card = {_as_uuid(card_id): bool(flag) for card_id, flag in undo_rows}
+
+    ranked = (
+        db.query(
+            Activity.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=card_expr,
+                order_by=(Activity.created_at.desc(), Activity.id.desc()),
+            )
+            .label("rn"),
+        )
+        .filter(Activity.project_id == project.id)
+        .filter(page_scope)
+        .subquery()
+    )
+    preview_ids = [
+        _as_uuid(row[0])
+        for row in db.query(ranked.c.id).filter(ranked.c.rn <= FEED_CHILD_LIMIT).all()
+    ]
     by_card: dict[uuid.UUID, list[Activity]] = {}
-    for row in children:
-        by_card.setdefault(row.batch_id or row.id, []).append(row)
+    if preview_ids:
+        preview_rows = (
+            db.query(Activity)
+            .options(defer(Activity.before), defer(Activity.after))
+            .filter(Activity.id.in_(preview_ids))
+            .all()
+        )
+        for row in preview_rows:
+            by_card.setdefault(row.batch_id or row.id, []).append(row)
 
     json_ids: list[uuid.UUID] = []
     for card_id in card_ids:
@@ -379,7 +451,15 @@ def list_activity_feed(
     for card_id in card_ids:
         rows = by_card.get(card_id)
         if rows:
-            items.append(_feed_card(rows, snaps))
+            items.append(
+                _feed_card(
+                    rows,
+                    snaps,
+                    type_counts=types_by_card.get(card_id, {}),
+                    children_count=children_by_card.get(card_id, len(rows)),
+                    any_undoable=undoable_by_card.get(card_id, False),
+                )
+            )
     return ActivityFeedOut(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -506,7 +586,7 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
     for entry in entries:
         if entry.deleted_at is not None:
             continue
-        latest = (
+        candidates = (
             db.query(Activity)
             .filter(
                 Activity.project_id == project.id,
@@ -514,12 +594,19 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
                 Activity.before.isnot(None),
             )
             .order_by(Activity.created_at.desc(), Activity.id.desc())
-            .first()
+            .all()
         )
+        latest = None
+        for activity in candidates:
+            action = (
+                activity.action.value
+                if hasattr(activity.action, "value")
+                else activity.action
+            )
+            if is_history_restorable(activity.event_type, action):
+                latest = activity
+                break
         if not latest or not latest.before:
-            continue
-        action = latest.action.value if hasattr(latest.action, "value") else latest.action
-        if action == "delete":
             continue
         _apply_working_copy_only(db, entry, latest.before, include_status=False)
         affected += 1

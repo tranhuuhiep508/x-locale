@@ -16,3 +16,15 @@ export function canRestoreHistoryVersion(activity: {
     !HISTORY_UNRESTORABLE_EVENT_TYPES.has(activity.event_type)
   )
 }
+
+export function shouldShowHistoryRestore(
+  index: number,
+  activity: {
+    after: unknown
+    action: string
+    event_type: string
+  },
+) {
+  return index > 0 && canRestoreHistoryVersion(activity)
+}
+

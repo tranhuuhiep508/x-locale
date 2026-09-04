@@ -187,6 +187,61 @@ def test_restore_last_history_batch(client):
     assert latest["event_type"] == "string.restored"
 
 
+def test_restore_last_history_skips_publish(client):
+    project = _make_project(client, "Restore Skip Publish")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "ok", "source_text": "OK", "translations": {"en": "OK"}},
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"translations": {"en": "Okay"}},
+    )
+    pub = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+    assert pub.status_code == 200, pub.text
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "restore_last_history", "string_ids": [sid]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["affected"] == 1
+
+    string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    by_locale = {t["locale"]: t["value"] for t in string["translations"]}
+    assert by_locale["en"] == "OK"
+    assert string["status"] == "public"
+
+
+def test_restore_last_history_noop_when_only_publish(client):
+    project = _make_project(client, "Restore Noop Publish")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "only", "source_text": "Only", "status": "draft"},
+    ).json()
+    sid = created["id"]
+    client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "publish", "string_ids": [sid]},
+    )
+
+    r = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "restore_last_history", "string_ids": [sid]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["affected"] == 0
+    string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert string["status"] == "public"
+    assert string["source_text"] == "Only"
+
+
 def test_pending_delete_event_type(client):
     project = _make_project(client, "Pending Delete Event")
     pid = project["id"]
@@ -374,6 +429,7 @@ def test_feed_caps_batch_children(client):
     card = feed.json()["items"][0]
     assert card["children_count"] == total
     assert len(card["children"]) == FEED_CHILD_LIMIT
+    assert card["counts"]["created"] == total
     assert "before" not in card["children"][0]
     assert "after" not in card["children"][0]
 
@@ -481,4 +537,40 @@ def test_prune_activities_deletes_old_rows_only(client):
             assert created_at > cutoff
     finally:
         db_gen.close()
+
+
+def test_activity_retention_default_is_90():
+    from app.config import Settings
+
+    assert Settings.model_fields["activity_retention_days"].default == 90
+
+
+def test_feed_locale_filter_matches_snapshot_keys(client):
+    project = _make_project(client, "Locale JSON", targets=["en", "fr"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "translations": {"en": "Hi", "fr": "Salut"},
+        },
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"translations": {"en": "Hello", "fr": "Bonjour"}},
+    )
+    history = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+    update = next(a for a in history if a["event_type"] == "translation.updated")
+    assert update["locale"] is None
+
+    feed = client.get(
+        f"/api/projects/{pid}/activities/feed",
+        params={"locale": "en", "event_type": "translation.updated"},
+    )
+    assert feed.status_code == 200, feed.text
+    assert feed.json()["total"] >= 1
+    keys = {card.get("string_key") for card in feed.json()["items"]}
+    assert "hi" in keys
 

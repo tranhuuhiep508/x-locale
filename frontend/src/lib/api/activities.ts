@@ -30,10 +30,10 @@ export const activitiesApi = {
     api.post<RestoreVersionResult>(`/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore`),
   revert: (projectId: string, activityId: string) =>
     api.post(`/projects/${projectId}/activities/${activityId}/revert`),
-  revertBatch: (projectId: string, batchId: string) =>
+  revertBatch: (projectId: string, batchId: string, force = false) =>
     api.post<{ reverted: number; batch_id: string }>(
       `/projects/${projectId}/activities/batch/${batchId}/revert`,
       undefined,
-      { force: true },
+      { force },
     ),
 }

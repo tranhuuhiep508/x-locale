@@ -41,7 +41,7 @@ Project setting chooses the default; export query param overrides.
 
 ## Version control
 
-`activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (0 = keep forever) deletes activity rows older than that many days on API startup and via `uv run python -m app.cli prune-activities`. Pruning removes feed, History, and Undo for those old events; it does not delete strings.
+`activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (default 90; 0 = keep forever) deletes activity rows older than that many days via `uv run python -m app.cli prune-activities`. Pruning is not run on API startup. Pruning removes feed, History, and Undo for those old events; it does not delete strings.
 
 Named project snapshots are not in this pass.
 
@@ -49,9 +49,9 @@ Named project snapshots are not in this pass.
 
 | Surface | Reads | Restore |
 |---------|--------|---------|
-| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card. Batch children are capped at 50; `children_count` is the full total. | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert`. API `force` defaults false; the UI passes `force=true`. Create-undo tombstones (never hard-deletes). |
-| **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string | **Restore this version** applies that row's working-copy **content** `after` (`key`, source, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Never 409s; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. **Not offered** for `string.published` / `string.unpublished` / `string.pending_delete` / `string.deleted` |
-| **Restore last edit** (grid batch) | Latest activity `before` per selected string | `POST /strings/batch` action `restore_last_history` |
+| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card. Counts are aggregated in SQL; batch children in the payload are capped at 50 while `children_count` is the full total. Locale filter matches `activity.locale` or a translation key in the snapshot JSON. | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert`. API and UI default `force=false`; a 409 (later edits) can be retried with `force=true` after a second confirm. Create-undo tombstones (never hard-deletes). |
+| **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string, paginated (UI loads 50 at a time) | **Restore this version** applies that row's working-copy **content** `after` (`key`, source, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Never 409s; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. **Not offered** for `string.published` / `string.unpublished` / `string.pending_delete` / `string.deleted` |
+| **Restore last edit** (grid batch) | Newest restorable activity `before` per selected string (skips publish / unpublish / pending_delete / deleted) | `POST /strings/batch` action `restore_last_history` |
 
 Restore always writes a **new** activity. History restore does not use the revert batch path (that path skips capture). Revert/undo markers use `event_type=string.restored` and summary `Restored previous value of 'key'` — no stacked `Reverted:` / `Redid` prefixes.
 

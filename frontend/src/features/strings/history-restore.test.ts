@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canRestoreHistoryVersion } from '@/features/strings/history-restore'
+import { canRestoreHistoryVersion, shouldShowHistoryRestore } from '@/features/strings/history-restore'
 
 describe('canRestoreHistoryVersion', () => {
   it('allows content snapshots', () => {
@@ -23,5 +23,27 @@ describe('canRestoreHistoryVersion', () => {
     expect(
       canRestoreHistoryVersion({ after, action: 'update', event_type: 'string.pending_delete' }),
     ).toBe(false)
+  })
+})
+
+describe('shouldShowHistoryRestore', () => {
+  it('hides restore on the newest event even when the snapshot is restorable', () => {
+    expect(
+      shouldShowHistoryRestore(0, {
+        after: { key: 'welcome' },
+        action: 'update',
+        event_type: 'translation.updated',
+      }),
+    ).toBe(false)
+  })
+
+  it('shows restore on older content snapshots', () => {
+    expect(
+      shouldShowHistoryRestore(1, {
+        after: { key: 'welcome' },
+        action: 'update',
+        event_type: 'translation.updated',
+      }),
+    ).toBe(true)
   })
 })

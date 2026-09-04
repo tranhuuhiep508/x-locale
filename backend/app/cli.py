@@ -34,7 +34,10 @@ def migrate() -> None:
 
 @app.command("prune-activities")
 def prune_activities_cmd() -> None:
-    """Delete activity rows older than ACTIVITY_RETENTION_DAYS. No-op when 0."""
+    """Delete activity rows older than ACTIVITY_RETENTION_DAYS. No-op when 0.
+
+    Run on a schedule (cron / after deploy). The API does not prune on startup.
+    """
     from app.config import settings
     from app.database import SessionLocal
     from app.services.activities import prune_activities
