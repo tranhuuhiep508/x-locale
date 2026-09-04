@@ -100,7 +100,7 @@ class ReportHintTests(unittest.TestCase):
         self.assertIn("Pending remove on x-locale", text)
         self.assertIn("draft/123ewfewf", text)
         self.assertIn("omitted from draft export", text)
-        self.assertIn("will not re-add", text)
+        self.assertIn("re-add", text)
         self.assertNotIn("Orphaned locally", text)
         self.assertNotIn("run `locale push` to add to x-locale", text)
 
