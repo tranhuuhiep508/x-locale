@@ -17,20 +17,13 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import {
-  Filter,
-  Plus,
-  Search,
-  Wand2,
-  X,
-} from 'lucide-react'
+import { Plus, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
-import { FilterPill } from '@/features/strings/FilterPill'
-import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
+import { StringsFilters, hasActiveStringFilters } from '@/features/strings/StringsFilters'
 import { getStringColumns } from '@/features/strings/string-columns'
 import { canDiscardWorkingCopy, releaseRowClassName, releaseState } from '@/features/strings/working-copy'
 import {
@@ -41,15 +34,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { jobsApi } from '@/lib/api/jobs'
 import { stringsApi } from '@/lib/api/strings'
@@ -85,7 +69,7 @@ export function StringsPage() {
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    created_by_label: false,
+    created_at: false,
   })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
@@ -294,20 +278,7 @@ export function StringsPage() {
           : proposalJobQuery.data?.status === 'failed'
             ? proposalJobQuery.data.error ?? 'Translation job failed'
             : null
-  const hasActiveFilters = Boolean(
-    search.q ||
-      search.module ||
-      search.tag ||
-      search.status ||
-      search.missing_locale ||
-      search.has_unpublished_changes ||
-      search.pending_delete ||
-      search.deleted ||
-      search.max_confidence != null,
-  )
-
-  const moduleById = new Map(modules.map((m) => [m.id, m]))
-  const tagById = new Map(tags.map((t) => [t.id, t]))
+  const hasActiveFilters = hasActiveStringFilters(search)
 
   const columns = useMemo(() => getStringColumns(locales), [locales])
   const pagination = useMemo<PaginationState>(
@@ -380,272 +351,49 @@ export function StringsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 px-5 py-3">
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              className="pl-8 w-56"
-              placeholder="Search strings…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              aria-label="Search strings"
-            />
-          </div>
-
-          {modules.length > 0 && (
-            <Select
-              value={search.module ?? 'all'}
-              onValueChange={(v) => setFilter({ module: v === 'all' ? undefined : v })}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All modules" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All modules</SelectItem>
-                  {modules.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          )}
-
-          {tags.length > 0 && (
-            <Select
-              value={search.tag ?? 'all'}
-              onValueChange={(v) => setFilter({ tag: v === 'all' ? undefined : v })}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="All tags" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All tags</SelectItem>
-                  {tags.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          )}
-
-          <Select
-            value={
-              search.deleted
-                ? 'deleted'
-                : search.has_unpublished_changes
-                  ? 'needs_publish'
-                  : (search.status ?? 'all')
-            }
-            onValueChange={(v) => {
-              if (v === 'all') {
-                setFilter({
-                  status: undefined,
-                  has_unpublished_changes: undefined,
-                  deleted: undefined,
-                })
-                return
-              }
-              if (v === 'needs_publish') {
-                setFilter({
-                  status: undefined,
-                  has_unpublished_changes: true,
-                  deleted: undefined,
-                })
-                return
-              }
-              if (v === 'deleted') {
-                setFilter({
-                  status: undefined,
-                  has_unpublished_changes: undefined,
-                  deleted: true,
-                })
-                return
-              }
-              setFilter({
-                status: v as StringsSearch['status'],
-                has_unpublished_changes: undefined,
-                deleted: undefined,
-              })
-            }}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Any status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">Any status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="public">Public</SelectItem>
-                <SelectItem value="needs_publish">Needs publish</SelectItem>
-                <SelectItem value="deleted">Deleted</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          {locales.length > 0 && (
-            <Select
-              value={search.missing_locale ?? 'all'}
-              onValueChange={(v) => setFilter({ missing_locale: v === 'all' ? undefined : v })}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All locales" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All locales</SelectItem>
-                  {locales.map((l) => (
-                    <SelectItem key={l} value={l}>
-                      Missing: {l}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          )}
-
-          <Select
-            value={
-              search.max_confidence === CONFIDENCE_LOW_MAX
-                ? 'low'
-                : search.max_confidence === CONFIDENCE_REVIEW_MAX
-                  ? 'review'
-                  : 'all'
-            }
-            onValueChange={(v) => {
-              if (v === 'low') {
-                setFilter({ max_confidence: CONFIDENCE_LOW_MAX })
-                return
-              }
-              if (v === 'review') {
-                setFilter({ max_confidence: CONFIDENCE_REVIEW_MAX })
-                return
-              }
-              setFilter({ max_confidence: undefined })
-            }}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Any AI score" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">Any AI score</SelectItem>
-                <SelectItem value="review">Needs review</SelectItem>
-                <SelectItem value="low">Low confidence</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setSearchInput('')
-                navigate({
-                  search: { page: 1, page_size: search.page_size },
-                })
-              }}
-              className="text-muted-foreground"
-            >
-              <X data-icon="inline-start" />
-              Clear
-            </Button>
-          )}
-
-          <div className="flex-1" />
-
-          <DataTableViewOptions table={table} />
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setProposalItems([])
-              setProposalJobId(null)
-              setProposalsReady(false)
-              setReviewOpen(true)
-              missingMut.mutate({ scope: 'missing', locales })
-            }}
-            disabled={missingMut.isPending || reviewOpen}
-          >
-            {missingMut.isPending ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <Wand2 data-icon="inline-start" />
-            )}
-            Translate missing
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => openEditor(null)}
-          >
-            <Plus data-icon="inline-start" />
-            Add string
-          </Button>
-        </div>
-
-        {hasActiveFilters && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-            {search.q && (
-              <FilterPill label={`"${search.q}"`} onRemove={() => {
-                setSearchInput('')
-                setFilter({ q: undefined })
-              }} />
-            )}
-            {search.module && (
-              <FilterPill
-                label={`module: ${moduleById.get(search.module)?.name ?? search.module}`}
-                onRemove={() => setFilter({ module: undefined })}
-              />
-            )}
-            {search.tag && (
-              <FilterPill
-                label={`tag: ${tagById.get(search.tag)?.name ?? search.tag}`}
-                onRemove={() => setFilter({ tag: undefined })}
-              />
-            )}
-            {search.status && (
-              <FilterPill
-                label={search.status}
-                onRemove={() => setFilter({ status: undefined })}
-              />
-            )}
-            {search.has_unpublished_changes && (
-              <FilterPill
-                label="needs publish"
-                onRemove={() => setFilter({ has_unpublished_changes: undefined })}
-              />
-            )}
-            {search.deleted && (
-              <FilterPill label="deleted" onRemove={() => setFilter({ deleted: undefined })} />
-            )}
-            {search.missing_locale && (
-              <FilterPill
-                label={`missing: ${search.missing_locale}`}
-                onRemove={() => setFilter({ missing_locale: undefined })}
-              />
-            )}
-            {search.max_confidence === CONFIDENCE_LOW_MAX ? (
-              <FilterPill
-                label="low confidence"
-                onRemove={() => setFilter({ max_confidence: undefined })}
-              />
-            ) : search.max_confidence != null ? (
-              <FilterPill
-                label="needs review"
-                onRemove={() => setFilter({ max_confidence: undefined })}
-              />
-            ) : null}
-          </div>
-        )}
+        <StringsFilters
+          search={search}
+          searchInput={searchInput}
+          modules={modules}
+          tags={tags}
+          locales={locales}
+          onSearchInputChange={setSearchInput}
+          onFilter={setFilter}
+          onClear={() => {
+            setSearchInput('')
+            navigate({
+              search: { page: 1, page_size: search.page_size },
+            })
+          }}
+          actions={
+            <>
+              <DataTableViewOptions table={table} />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setProposalItems([])
+                  setProposalJobId(null)
+                  setProposalsReady(false)
+                  setReviewOpen(true)
+                  missingMut.mutate({ scope: 'missing', locales })
+                }}
+                disabled={missingMut.isPending || reviewOpen}
+              >
+                {missingMut.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Wand2 data-icon="inline-start" />
+                )}
+                Translate missing
+              </Button>
+              <Button size="sm" onClick={() => openEditor(null)}>
+                <Plus data-icon="inline-start" />
+                Add string
+              </Button>
+            </>
+          }
+        />
       </div>
 
       <div className="min-h-0 flex-1">
@@ -678,7 +426,7 @@ export function StringsPage() {
             getRowClassName={(row) => releaseRowClassName(releaseState(row.original))}
             onRowClick={(row, event) => {
               const target = event.target as HTMLElement
-              if (target.closest('button, input, [role="checkbox"], [role="switch"], [role="radio"], a')) return
+              if (target.closest('button, input, [role="checkbox"], [role="switch"], [role="radio"], [role="menuitem"], a')) return
               openEditor(row.original)
             }}
           />
