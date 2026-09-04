@@ -85,6 +85,7 @@ export function StringsPage() {
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    created_at: false,
     created_by_label: false,
   })
   const [dialogOpen, setDialogOpen] = useState(false)
