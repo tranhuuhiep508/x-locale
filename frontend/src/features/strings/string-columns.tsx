@@ -22,7 +22,7 @@ import {
 import { stringsApi } from '@/lib/api/strings'
 import type { BatchRequest, StringEntry } from '@/lib/api/types'
 import { useToast } from '@/lib/toast'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 
 export type StringTableMeta = {
   projectId: string
@@ -421,6 +421,112 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             projectId={meta.projectId}
             onRefresh={meta.onRefresh}
           />
+        )
+      },
+    },
+    {
+      id: 'created_at',
+      accessorKey: 'created_at',
+      header: 'Created',
+      enableSorting: false,
+      meta: {
+        label: 'Created',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle whitespace-nowrap',
+      },
+      cell: ({ row }) => {
+        const createdAt = row.original.created_at
+        if (!createdAt) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {formatRelativeTime(createdAt)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{formatDate(createdAt)}</TooltipContent>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: 'updated_at',
+      accessorKey: 'updated_at',
+      header: 'Last updated',
+      enableSorting: false,
+      meta: {
+        label: 'Last updated',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle whitespace-nowrap',
+      },
+      cell: ({ row }) => {
+        const updatedAt = row.original.updated_at
+        if (!updatedAt) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {formatRelativeTime(updatedAt)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{formatDate(updatedAt)}</TooltipContent>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: 'author',
+      accessorKey: 'updated_by_label',
+      header: 'Author',
+      enableSorting: false,
+      meta: {
+        label: 'Author',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle max-w-[10rem] whitespace-normal',
+      },
+      cell: ({ row }) => {
+        const author = row.original.updated_by_label
+        const actorType = row.original.updated_by_type
+        if (!author) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-foreground truncate block">{author}</span>
+            </TooltipTrigger>
+            {actorType ? <TooltipContent>{actorType}</TooltipContent> : null}
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: 'created_by_label',
+      accessorKey: 'created_by_label',
+      header: 'Created by',
+      enableSorting: false,
+      meta: {
+        label: 'Created by',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle max-w-[10rem] whitespace-normal',
+      },
+      cell: ({ row }) => {
+        const author = row.original.created_by_label
+        const actorType = row.original.created_by_type
+        if (!author) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-foreground truncate block">{author}</span>
+            </TooltipTrigger>
+            {actorType ? <TooltipContent>{actorType}</TooltipContent> : null}
+          </Tooltip>
         )
       },
     },

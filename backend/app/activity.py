@@ -353,6 +353,7 @@ def _stamp_string_metadata(session: Session) -> None:
     actor_type, actor_id, actor_label, _, _ = _actor_from_session(session)
     string_ids: set[uuid.UUID] = set()
     new_string_ids: set[uuid.UUID] = set()
+    entries_by_id: dict[uuid.UUID, StringEntry] = {}
 
     for obj in list(session.new):
         if isinstance(obj, Activity):
@@ -360,6 +361,7 @@ def _stamp_string_metadata(session: Session) -> None:
         if isinstance(obj, StringEntry):
             _ensure_string_identity(obj)
             new_string_ids.add(obj.id)
+            entries_by_id[obj.id] = obj
             string_ids.add(obj.id)
         elif isinstance(obj, Translation) and obj.string_id:
             string_ids.add(obj.string_id)
@@ -368,6 +370,7 @@ def _stamp_string_metadata(session: Session) -> None:
         if isinstance(obj, Activity):
             continue
         if isinstance(obj, StringEntry):
+            entries_by_id[obj.id] = obj
             string_ids.add(obj.id)
         elif isinstance(obj, Translation) and obj.string_id:
             string_ids.add(obj.string_id)
@@ -377,12 +380,13 @@ def _stamp_string_metadata(session: Session) -> None:
             continue
         _, _, _, _, tags_changed = _tag_ids_before_after(session, obj)
         if tags_changed:
+            entries_by_id[obj.id] = obj
             string_ids.add(obj.id)
 
     for string_id in string_ids:
         if string_id is None:
             continue
-        entry = session.get(StringEntry, string_id)
+        entry = entries_by_id.get(string_id) or session.get(StringEntry, string_id)
         if entry is None:
             continue
         entry.updated_at = now

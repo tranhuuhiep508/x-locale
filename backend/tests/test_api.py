@@ -381,6 +381,9 @@ def test_list_strings_filters(client):
             "tag_ids": [tag["id"]],
         },
     ).json()
+    assert s1["created_at"]
+    assert s1["created_by_label"] == "dev@localhost"
+    assert s1["updated_by_label"] == "dev@localhost"
     client.post(
         f"/api/projects/{pid}/strings",
         json={"key": "welcome", "source_text": "Chào mừng", "module_id": m2["id"]},
@@ -435,6 +438,78 @@ def test_list_strings_filters(client):
     login = next(item for item in listed if item["key"] == "login")
     assert login["updated_at"] == updated_after_edit
     assert login["updated_by_label"] == "dev@localhost"
+
+
+def test_string_author_survives_activity_prune(client):
+    import uuid
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import Activity
+
+    project = _make_project(client, "Author Prune")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "greet", "source_text": "Xin chào"},
+    ).json()
+    assert created["created_by_label"] == "dev@localhost"
+
+    client.put(
+        f"/api/projects/{pid}/strings/{created['id']}/translations/en",
+        json={"value": "Hello"},
+    )
+
+    listed = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    entry = next(item for item in listed if item["id"] == created["id"])
+    assert entry["updated_by_label"] == "dev@localhost"
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        db.query(Activity).filter(Activity.string_id == uuid.UUID(created["id"])).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    finally:
+        db_gen.close()
+
+    listed = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    entry = next(item for item in listed if item["id"] == created["id"])
+    assert entry["updated_by_label"] == "dev@localhost"
+    assert entry["created_by_label"] == "dev@localhost"
+
+
+def test_stamp_string_metadata_preserves_created_by(client):
+    import uuid
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import StringEntry
+
+    project = _make_project(client, "Created By Immutability")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "immutable", "source_text": "Test"},
+    ).json()
+    original_created_by = created["created_by_label"]
+    assert original_created_by
+
+    client.patch(
+        f"/api/projects/{pid}/strings/{created['id']}",
+        json={"source_text": "Changed"},
+    )
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        entry = db.get(StringEntry, uuid.UUID(created["id"]))
+        assert entry is not None
+        assert entry.created_by_label == original_created_by
+        assert entry.updated_by_label == "dev@localhost"
+    finally:
+        db_gen.close()
 
 
 def _make_project(client, name="Act", targets=None):

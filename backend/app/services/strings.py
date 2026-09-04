@@ -137,6 +137,12 @@ def discard_working_changes(entry: StringEntry) -> bool:
     return changed
 
 
+def _actor_type_value(actor_type) -> str | None:
+    if actor_type is None:
+        return None
+    return actor_type.value if hasattr(actor_type, "value") else str(actor_type)
+
+
 def serialize_string(entry: StringEntry) -> StringOut:
     return StringOut(
         id=entry.id,
@@ -157,7 +163,12 @@ def serialize_string(entry: StringEntry) -> StringOut:
         tags=[
             TagOut(id=t.id, name=t.name, color=t.color, string_count=0) for t in (entry.tags or [])
         ],
+        created_at=entry.created_at,
+        created_by_type=_actor_type_value(entry.created_by_type),
+        created_by_label=entry.created_by_label,
         updated_at=entry.updated_at,
+        updated_by_type=_actor_type_value(entry.updated_by_type),
+        updated_by_label=entry.updated_by_label,
         translations=[
             TranslationOut(
                 id=t.id,

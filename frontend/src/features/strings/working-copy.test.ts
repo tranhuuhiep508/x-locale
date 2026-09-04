@@ -27,7 +27,12 @@ function entry(overrides: Partial<StringEntry> = {}): StringEntry {
     module_id: null,
     module_slug: null,
     tags: [],
+    created_at: '2026-01-01T00:00:00Z',
+    created_by_type: null,
+    created_by_label: null,
     updated_at: '2026-01-01T00:00:00Z',
+    updated_by_type: null,
+    updated_by_label: null,
     translations: [
       {
         id: 't1',
