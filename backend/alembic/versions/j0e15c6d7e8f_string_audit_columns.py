@@ -1,7 +1,7 @@
 """Denormalize string created/updated actor metadata.
 
 Revision ID: j0e15c6d7e8f
-Revises: h8c93a4b5d6e
+Revises: i9d04b5c6e7f
 Create Date: 2026-09-04
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "j0e15c6d7e8f"
-down_revision = "h8c93a4b5d6e"
+down_revision = "i9d04b5c6e7f"
 branch_labels = None
 depends_on = None
 
