@@ -161,7 +161,12 @@ class StringOut(BaseModel):
     module_id: UUID | None = None
     module_slug: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
+    created_at: UtcDateTime | None = None
+    created_by_type: str | None = None
+    created_by_label: str | None = None
     updated_at: UtcDateTime | None = None
+    updated_by_type: str | None = None
+    updated_by_label: str | None = None
     translations: list[TranslationOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

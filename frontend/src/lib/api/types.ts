@@ -129,7 +129,12 @@ export interface StringEntry {
   module_id: string | null
   module_slug: string | null
   tags: Tag[]
+  created_at: string | null
+  created_by_type: string | null
+  created_by_label: string | null
   updated_at: string | null
+  updated_by_type: string | null
+  updated_by_label: string | null
   translations: Translation[]
 }
 

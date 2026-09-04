@@ -232,9 +232,19 @@ class StringEntry(Base):
     pending_delete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by_type: Mapped[ActorType | None] = mapped_column(
+        Enum(ActorType, native_enum=False), nullable=True
+    )
+    created_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    updated_by_type: Mapped[ActorType | None] = mapped_column(
+        Enum(ActorType, native_enum=False), nullable=True
+    )
+    updated_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="strings")
     module: Mapped["Module | None"] = relationship(

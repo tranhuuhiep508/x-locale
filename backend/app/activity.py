@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import inspect as sa_inspect
@@ -333,9 +333,62 @@ def _load_entry(session: Session, string_id: uuid.UUID) -> StringEntry | None:
     return session.get(StringEntry, string_id)
 
 
+def _stamp_string_metadata(session: Session) -> None:
+    """Stamp string.updated_* and created_by_* from the current session actor."""
+    now = datetime.now(UTC)
+    actor_type, actor_id, actor_label, _, _ = _actor_from_session(session)
+    string_ids: set[uuid.UUID] = set()
+    new_string_ids: set[uuid.UUID] = set()
+    entries_by_id: dict[uuid.UUID, StringEntry] = {}
+
+    for obj in list(session.new):
+        if isinstance(obj, Activity):
+            continue
+        if isinstance(obj, StringEntry):
+            _ensure_string_identity(obj)
+            new_string_ids.add(obj.id)
+            entries_by_id[obj.id] = obj
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
+
+    for obj in list(session.dirty) + list(session.deleted):
+        if isinstance(obj, Activity):
+            continue
+        if isinstance(obj, StringEntry):
+            entries_by_id[obj.id] = obj
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
+
+    for obj in list(session.dirty):
+        if not isinstance(obj, StringEntry):
+            continue
+        _, _, tags_changed = _tag_ids_before_after(session, obj)
+        if tags_changed:
+            entries_by_id[obj.id] = obj
+            string_ids.add(obj.id)
+
+    for string_id in string_ids:
+        if string_id is None:
+            continue
+        entry = entries_by_id.get(string_id) or session.get(StringEntry, string_id)
+        if entry is None:
+            continue
+        entry.updated_at = now
+        entry.updated_by_type = actor_type
+        entry.updated_by_id = actor_id
+        entry.updated_by_label = actor_label
+        if string_id in new_string_ids and entry.created_by_label is None:
+            entry.created_by_type = actor_type
+            entry.created_by_id = actor_id
+            entry.created_by_label = actor_label
+
+
 def capture_activities(session: Session, flush_context: Any, instances: Any = None) -> None:
     """SQLAlchemy before_flush listener — one string snapshot per flushed string."""
     del flush_context, instances
+    _stamp_string_metadata(session)
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(session)
     intent = (session.info.get("activity") or {}).get("intent")
     if session.info.get(RESTORE_INTENT_KEY):
