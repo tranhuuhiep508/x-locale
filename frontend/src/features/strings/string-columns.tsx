@@ -1,10 +1,18 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
-import { CheckCircle, History, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { CheckCircle, EllipsisVertical, History, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -77,46 +85,6 @@ function PublishSwitch({
   )
 }
 
-function ActionIcon({
-  label,
-  onClick,
-  disabled,
-  pending,
-  children,
-  destructive = false,
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  pending?: boolean
-  children: ReactNode
-  destructive?: boolean
-}) {
-  return (
-    <Tooltip delayDuration={200}>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          title={label}
-          aria-label={label}
-          disabled={disabled || pending}
-          onClick={onClick}
-          className={
-            destructive
-              ? 'text-muted-foreground hover:text-destructive'
-              : 'text-muted-foreground hover:text-foreground'
-          }
-        >
-          {pending ? <Spinner /> : children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
-}
-
 function StringActionsCell({
   entry,
   projectId,
@@ -174,69 +142,97 @@ function StringActionsCell({
     onError: () => toast.error('Failed to delete string'),
   })
 
+  const pending = lifecycleMut.isPending || deleteMut.isPending
+  const deleteDisabled = entry.pending_delete || deleted
+  const deleteLabel = deleted
+    ? 'Already deleted'
+    : entry.pending_delete
+      ? 'Deletion already pending'
+      : 'Delete'
+
   return (
-    <div
-      className="flex items-center justify-end gap-0.5 opacity-70 group-hover:opacity-100"
-      onClick={(event) => event.stopPropagation()}
-    >
-      {dirty ? (
-        <ActionIcon
-          label="Publish working copy"
-          pending={lifecycleMut.isPending}
-          onClick={() => lifecycleMut.mutate('publish')}
-        >
-          <CheckCircle />
-        </ActionIcon>
-      ) : null}
-      {discardable ? (
-        <ActionIcon
-          label="Discard changes"
-          pending={lifecycleMut.isPending}
-          onClick={() => setConfirmDiscard(true)}
-        >
-          <Undo2 />
-        </ActionIcon>
-      ) : null}
-      {entry.pending_delete ? (
-        <ActionIcon
-          label="Publish delete"
-          pending={lifecycleMut.isPending}
-          destructive
-          onClick={() => setConfirmPublishDelete(true)}
-        >
-          <CheckCircle />
-        </ActionIcon>
-      ) : null}
-      {deleted ? (
-        <ActionIcon
-          label="Restore"
-          pending={lifecycleMut.isPending}
-          onClick={() => lifecycleMut.mutate('restore')}
-        >
-          <RotateCcw />
-        </ActionIcon>
-      ) : null}
-      <ActionIcon label="History" onClick={() => onHistory(entry)}>
-        <History />
-      </ActionIcon>
-      <ActionIcon label="Edit" onClick={() => onEdit(entry)}>
-        <Pencil />
-      </ActionIcon>
-      <ActionIcon
-        label={
-          deleted
-            ? 'Already deleted'
-            : entry.pending_delete
-              ? 'Deletion already pending'
-              : 'Delete'
-        }
-        disabled={entry.pending_delete || deleted}
-        pending={deleteMut.isPending}
-        destructive
-        onClick={() => setConfirmDelete(true)}
-      >
-        <Trash2 />
-      </ActionIcon>
+    <div onClick={(event) => event.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Row actions"
+            disabled={pending}
+            className="text-muted-foreground"
+          >
+            {pending ? <Spinner /> : <EllipsisVertical />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onSelect={() => onEdit(entry)}>
+              <Pencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onHistory(entry)}>
+              <History />
+              History
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          {dirty || discardable || entry.pending_delete || deleted ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                {dirty ? (
+                  <DropdownMenuItem
+                    disabled={lifecycleMut.isPending}
+                    onSelect={() => lifecycleMut.mutate('publish')}
+                  >
+                    <CheckCircle />
+                    Publish working copy
+                  </DropdownMenuItem>
+                ) : null}
+                {discardable ? (
+                  <DropdownMenuItem
+                    disabled={lifecycleMut.isPending}
+                    onSelect={() => setConfirmDiscard(true)}
+                  >
+                    <Undo2 />
+                    Discard changes
+                  </DropdownMenuItem>
+                ) : null}
+                {entry.pending_delete ? (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={lifecycleMut.isPending}
+                    onSelect={() => setConfirmPublishDelete(true)}
+                  >
+                    <CheckCircle />
+                    Publish delete
+                  </DropdownMenuItem>
+                ) : null}
+                {deleted ? (
+                  <DropdownMenuItem
+                    disabled={lifecycleMut.isPending}
+                    onSelect={() => lifecycleMut.mutate('restore')}
+                  >
+                    <RotateCcw />
+                    Restore
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuGroup>
+            </>
+          ) : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={deleteDisabled || deleteMut.isPending}
+              onSelect={() => setConfirmDelete(true)}
+            >
+              <Trash2 />
+              {deleteLabel}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ConfirmDialog
         open={confirmDiscard}
         onClose={() => setConfirmDiscard(false)}
@@ -558,10 +554,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       enableHiding: false,
-      meta: { headerClassName: 'w-40 text-right', className: 'align-middle text-right' },
+      meta: { headerClassName: 'w-10 text-right', className: 'align-middle text-right' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (

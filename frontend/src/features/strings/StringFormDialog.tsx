@@ -39,6 +39,15 @@ interface Props {
 
 const NONE_MODULE = '__none__'
 
+/** Portaled popover/select layers sit outside dialog content in the DOM. */
+function isNestedOverlayTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    (target.closest('[data-slot="popover-content"]') != null ||
+      target.closest('[data-slot="select-content"]') != null)
+  )
+}
+
 type FormErrors = Partial<Record<'key' | 'source_text', string>>
 
 function mergeTranslations(
@@ -296,6 +305,11 @@ export default function StringFormDialog({
           'flex w-full flex-col gap-0 overflow-hidden p-0',
           'max-h-[min(90dvh,760px)] sm:max-w-3xl',
         )}
+        onInteractOutside={(event) => {
+          if (isNestedOverlayTarget(event.target)) {
+            event.preventDefault()
+          }
+        }}
       >
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
