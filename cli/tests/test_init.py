@@ -96,6 +96,8 @@ class InitCommandTests(unittest.TestCase):
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Demo App", result.output)
+        self.assertTrue((self.root / ".x-locale" / "config.yaml").exists())
+        self.assertFalse((self.root / ".tms" / "config.yaml").exists())
         with chdir(self.root):
             config = load_config()
         self.assertEqual(config.api_key, "xl_secret")
