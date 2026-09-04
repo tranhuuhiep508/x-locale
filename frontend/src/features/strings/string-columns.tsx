@@ -421,33 +421,6 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       },
     },
     {
-      id: 'created_at',
-      accessorKey: 'created_at',
-      header: 'Created',
-      enableSorting: false,
-      meta: {
-        label: 'Created',
-        headerClassName: 'min-w-[7rem]',
-        className: 'align-middle whitespace-nowrap',
-      },
-      cell: ({ row }) => {
-        const createdAt = row.original.created_at
-        if (!createdAt) {
-          return <span className="text-xs text-muted-foreground">—</span>
-        }
-        return (
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {formatRelativeTime(createdAt)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{formatDate(createdAt)}</TooltipContent>
-          </Tooltip>
-        )
-      },
-    },
-    {
       id: 'updated_at',
       accessorKey: 'updated_at',
       header: 'Last updated',
@@ -470,6 +443,59 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
               </span>
             </TooltipTrigger>
             <TooltipContent>{formatDate(updatedAt)}</TooltipContent>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: 'updated_by_label',
+      accessorKey: 'updated_by_label',
+      header: 'Updated by',
+      enableSorting: false,
+      meta: {
+        label: 'Updated by',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle max-w-[10rem] whitespace-normal',
+      },
+      cell: ({ row }) => {
+        const author = row.original.updated_by_label
+        const actorType = row.original.updated_by_type
+        if (!author) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-foreground truncate block">{author}</span>
+            </TooltipTrigger>
+            {actorType ? <TooltipContent>{actorType}</TooltipContent> : null}
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: 'created_at',
+      accessorKey: 'created_at',
+      header: 'Created',
+      enableSorting: false,
+      meta: {
+        label: 'Created',
+        headerClassName: 'min-w-[7rem]',
+        className: 'align-middle whitespace-nowrap',
+      },
+      cell: ({ row }) => {
+        const createdAt = row.original.created_at
+        if (!createdAt) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        return (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {formatRelativeTime(createdAt)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{formatDate(createdAt)}</TooltipContent>
           </Tooltip>
         )
       },
