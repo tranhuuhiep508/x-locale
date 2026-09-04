@@ -1,5 +1,6 @@
 import {
   CheckCircle,
+  History,
   MoveRight,
   RotateCcw,
   Tag as TagIcon,
@@ -29,10 +30,12 @@ export function BatchActionBar({
   onDiscardChanges,
   onDiscardDelete,
   onRestore,
+  onRestoreLastEdit,
   onClear,
   showDiscardChanges,
   showDiscardDelete,
   showRestore,
+  showRestoreLastEdit,
 }: {
   selectedCount: number
   visible: boolean
@@ -42,6 +45,7 @@ export function BatchActionBar({
   showDiscardChanges: boolean
   showDiscardDelete: boolean
   showRestore: boolean
+  showRestoreLastEdit?: boolean
   onPublish: () => void
   onUnpublish: () => void
   onMove: () => void
@@ -50,6 +54,7 @@ export function BatchActionBar({
   onDiscardChanges: () => void
   onDiscardDelete: () => void
   onRestore: () => void
+  onRestoreLastEdit?: () => void
   onClear: () => void
 }) {
   const open = visible && selectedCount > 0
@@ -104,7 +109,7 @@ export function BatchActionBar({
           </Button>
         ) : null}
 
-        {showDiscardChanges || showDiscardDelete || showRestore ? (
+        {showDiscardChanges || showDiscardDelete || showRestore || showRestoreLastEdit ? (
           <Separator orientation="vertical" className="mx-0.5 h-5" />
         ) : null}
 
@@ -124,6 +129,12 @@ export function BatchActionBar({
           <Button variant="outline" size="sm" disabled={busy} onClick={onRestore}>
             <RotateCcw data-icon="inline-start" />
             Restore
+          </Button>
+        ) : null}
+        {showRestoreLastEdit && onRestoreLastEdit ? (
+          <Button variant="outline" size="sm" disabled={busy} onClick={onRestoreLastEdit}>
+            <History data-icon="inline-start" />
+            Restore last edit
           </Button>
         ) : null}
 

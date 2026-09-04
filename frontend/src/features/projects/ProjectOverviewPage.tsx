@@ -1,8 +1,9 @@
 import { getRouteApi, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AlignLeft, Boxes, Tags, Globe2, Clock } from 'lucide-react'
+import { ActivityCard } from '@/features/activity/ActivityCard'
 import {
-  activitiesQuery,
+  activityFeedQuery,
   modulesQuery,
   projectQuery,
   tagsQuery,
@@ -10,7 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
-import { formatDate } from '@/lib/utils'
+
 const routeApi = getRouteApi('/projects/$projectId/')
 
 
@@ -53,7 +54,7 @@ export function ProjectOverviewPage() {
 
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
 
-  const { data: activityData } = useQuery(activitiesQuery(projectId, 1, 5))
+  const { data: activityData } = useQuery(activityFeedQuery(projectId, { page: 1, page_size: 5 }))
 
   if (!project) return null
 
@@ -134,12 +135,14 @@ export function ProjectOverviewPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {activityData?.items?.length ? (
-              <div className="flex flex-col gap-2">
-                {activityData.items.map((a) => (
-                  <div key={a.id} className="text-sm">
-                    <p className="text-foreground">{a.summary}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{formatDate(a.created_at)}</p>
-                  </div>
+              <div className="flex flex-col gap-1">
+                {activityData.items.map((card) => (
+                  <ActivityCard
+                    key={card.id}
+                    card={card}
+                    projectId={projectId}
+                    compact
+                  />
                 ))}
               </div>
             ) : (

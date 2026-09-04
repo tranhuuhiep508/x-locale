@@ -22,6 +22,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
+import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -31,6 +32,7 @@ interface Props {
   modules: Module[]
   tags: Tag[]
   targetLocales: string[]
+  initialTab?: 'details' | 'history'
   onClose: () => void
   onSuccess: () => void
 }
@@ -129,11 +131,13 @@ export default function StringFormDialog({
   modules,
   tags,
   targetLocales,
+  initialTab = 'details',
   onClose,
   onSuccess,
 }: Props) {
   const toast = useToast()
   const isEdit = Boolean(entry?.id)
+  const [tab, setTab] = useState<'details' | 'history'>(initialTab)
   const [key, setKey] = useState(entry?.key ?? '')
   const [sourceText, setSourceText] = useState(entry?.source_text ?? '')
   const [description, setDescription] = useState(entry?.description ?? '')
@@ -297,11 +301,47 @@ export default function StringFormDialog({
           <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'Update metadata and translations. Changes save when you click Save.'
+              ? 'Update metadata and translations, or restore a previous version.'
               : 'Add metadata and translations. The string is created when you click Create.'}
           </DialogDescription>
+          {isEdit ? (
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={tab}
+              onValueChange={(value) => {
+                if (value === 'details' || value === 'history') setTab(value)
+              }}
+              className="mt-3 justify-start"
+            >
+              <ToggleGroupItem value="details">Details</ToggleGroupItem>
+              <ToggleGroupItem value="history">History</ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
         </DialogHeader>
 
+        {isEdit && tab === 'history' && entry ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <StringHistoryPanel
+              projectId={projectId}
+              stringId={entry.id}
+              onRestored={async () => {
+                const fresh = await stringsApi.get(projectId, entry.id)
+                setBaseline(fresh)
+                applyEntryToForm(fresh, targetLocales, {
+                  setKey,
+                  setSourceText,
+                  setDescription,
+                  setModuleId,
+                  setTagId,
+                  setStatus,
+                  setTranslations,
+                })
+              }}
+            />
+          </div>
+        ) : (
         <form
           onSubmit={handleSubmit}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -597,6 +637,7 @@ export default function StringFormDialog({
             </div>
           </DialogFooter>
         </form>
+        )}
         <ConfirmDialog
           open={confirmDiscard}
           onClose={() => setConfirmDiscard(false)}

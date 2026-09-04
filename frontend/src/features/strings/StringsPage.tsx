@@ -87,6 +87,8 @@ export function StringsPage() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
+  const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
+  const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
@@ -141,6 +143,7 @@ export function StringsPage() {
       setShowMoveModule(false)
       setShowAddTags(false)
       setDeleteConfirm(false)
+      setRestoreLastConfirm(false)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Batch action failed'),
   })
@@ -257,8 +260,9 @@ export function StringsPage() {
     previewItemsMut.reset()
   }
 
-  const openEditor = useCallback((entry: StringEntry | null) => {
+  const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
     setDialogEntry(entry)
+    setDialogTab(tab)
     setDialogOpen(true)
   }, [])
 
@@ -312,6 +316,7 @@ export function StringsPage() {
     () => ({
       projectId,
       onEdit: (entry: StringEntry) => openEditor(entry),
+      onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
       onRefresh: invalidateStrings,
     }),
     [projectId, openEditor, invalidateStrings],
@@ -701,9 +706,11 @@ export function StringsPage() {
                   batchMut.mutate({ action: 'discard_delete', string_ids: selectedList })
                 }
                 onRestore={() => batchMut.mutate({ action: 'restore', string_ids: selectedList })}
+                onRestoreLastEdit={() => setRestoreLastConfirm(true)}
                 showDiscardChanges={showDiscardChanges}
                 showDiscardDelete={showDiscardDelete}
                 showRestore={showRestore}
+                showRestoreLastEdit={!showRestore}
                 onClear={() => setRowSelection({})}
               />
             }
@@ -714,7 +721,7 @@ export function StringsPage() {
       {dialogOpen && (
         <Suspense fallback={null}>
           <StringFormDialog
-            key={dialogEntry?.id ?? 'new'}
+            key={`${dialogEntry?.id ?? 'new'}-${dialogTab}`}
             projectId={projectId}
             entry={dialogEntry}
             modules={modules}
@@ -723,7 +730,9 @@ export function StringsPage() {
             onClose={() => {
               setDialogOpen(false)
               setDialogEntry(null)
+              setDialogTab('details')
             }}
+            initialTab={dialogTab}
             onSuccess={() => {
               setDialogOpen(false)
               setDialogEntry(null)
@@ -793,6 +802,18 @@ export function StringsPage() {
             : 'Strings are hidden from the grid. Restore them from the Deleted filter.'
         }
         confirmLabel="Delete"
+        isLoading={batchMut.isPending}
+      />
+
+      <ConfirmDialog
+        open={restoreLastConfirm}
+        onClose={() => setRestoreLastConfirm(false)}
+        onConfirm={() =>
+          batchMut.mutate({ action: 'restore_last_history', string_ids: selectedList })
+        }
+        title="Restore last edit?"
+        description={`This restores the previous working copy for ${selectedCount} selected string${selectedCount === 1 ? '' : 's'}. Production snapshots are unchanged.`}
+        confirmLabel="Restore last edit"
         isLoading={batchMut.isPending}
       />
     </div>

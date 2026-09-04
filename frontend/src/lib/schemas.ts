@@ -33,6 +33,11 @@ export function resolveStringsSearch(s: StringsSearch) {
 export const activitySearchSchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional(),
+  event_type: z.string().optional(),
+  actor: z.string().optional(),
+  locale: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
 })
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>

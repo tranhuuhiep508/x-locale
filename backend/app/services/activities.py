@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from datetime import datetime
-
 from fastapi import HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
     Activity,
     ActivityAction,
+    BatchKind,
     EntityType,
     Module,
     Project,
@@ -21,7 +22,42 @@ from app.models import (
     Translation,
     TranslationStatus,
 )
-from app.schemas import ActivityListOut, ActivityOut
+from app.schemas import (
+    ActivityChangeOut,
+    ActivityFeedCardOut,
+    ActivityFeedChildOut,
+    ActivityFeedOut,
+    ActivityListOut,
+    ActivityOut,
+    RestoreVersionOut,
+)
+from app.services.activity_events import (
+    EVENT_CREATED,
+    EVENT_DELETED,
+    EVENT_PENDING_DELETE,
+    EVENT_PUBLISHED,
+    EVENT_UNPUBLISHED,
+    UNDOABLE_BATCH_KINDS,
+    batch_card_event_type,
+    batch_card_summary,
+    classify_event,
+    human_changed,
+    is_history_restorable,
+    snapshot_key,
+)
+
+
+def _changed_out(activity: Activity) -> list[ActivityChangeOut]:
+    action = activity.action.value if hasattr(activity.action, "value") else activity.action
+    return [
+        ActivityChangeOut(
+            field=row.field,
+            before=row.before,
+            after=row.after,
+            locale=row.locale,
+        )
+        for row in human_changed(activity.before, activity.after, action=str(action or "update"))
+    ]
 
 
 def serialize_activity(activity: Activity) -> ActivityOut:
@@ -41,6 +77,7 @@ def serialize_activity(activity: Activity) -> ActivityOut:
         locale=activity.locale,
         before=activity.before,
         after=activity.after,
+        event_type=activity.event_type or "string.updated",
         summary=activity.summary,
         batch_id=activity.batch_id,
         batch_kind=activity.batch_kind.value
@@ -50,6 +87,7 @@ def serialize_activity(activity: Activity) -> ActivityOut:
         reverted_by_id=activity.reverted_by_id,
         is_revertible=activity.is_revertible,
         created_at=activity.created_at,
+        changed=_changed_out(activity),
     )
 
 
@@ -61,6 +99,7 @@ def list_activities(
     string_id: uuid.UUID | None = None,
     actor: str | None = None,
     action: str | None = None,
+    event_type: str | None = None,
     batch_id: uuid.UUID | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
@@ -76,6 +115,8 @@ def list_activities(
         q = q.filter(Activity.actor_label.ilike(f"%{actor}%"))
     if action:
         q = q.filter(Activity.action == action)
+    if event_type:
+        q = q.filter(Activity.event_type == event_type)
     if batch_id:
         q = q.filter(Activity.batch_id == batch_id)
     if since:
@@ -112,6 +153,327 @@ def list_string_activities(
         page=page,
         page_size=page_size,
     )
+
+
+def _as_uuid(value: Any) -> uuid.UUID:
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+
+def _card_expr():
+    return func.coalesce(Activity.batch_id, Activity.id)
+
+
+def _apply_feed_filters(
+    q,
+    *,
+    actor: str | None,
+    event_type: str | None,
+    locale: str | None,
+    since: datetime | None,
+    until: datetime | None,
+):
+    if actor:
+        q = q.filter(Activity.actor_label.ilike(f"%{actor}%"))
+    if locale:
+        q = q.filter(Activity.locale == locale)
+    if since:
+        q = q.filter(Activity.created_at >= since)
+    if until:
+        q = q.filter(Activity.created_at <= until)
+    if event_type:
+        if event_type == "import":
+            q = q.filter(
+                Activity.batch_kind.in_([BatchKind.import_, BatchKind.excel_import])
+            )
+        elif event_type in {"excel_import", "translate", "batch", "revert"}:
+            q = q.filter(Activity.batch_kind == event_type)
+        else:
+            q = q.filter(Activity.event_type == event_type)
+    return q
+
+
+def _feed_child(activity: Activity) -> ActivityFeedChildOut:
+    return ActivityFeedChildOut(
+        id=activity.id,
+        event_type=activity.event_type or "string.updated",
+        summary=activity.summary,
+        string_id=activity.string_id,
+        string_key=snapshot_key(activity.before, activity.after),
+        locale=activity.locale,
+        changed=_changed_out(activity),
+    )
+
+
+def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
+    rows = sorted(
+        rows,
+        key=lambda item: (
+            item.created_at.timestamp() if item.created_at else 0.0,
+            str(item.id),
+        ),
+        reverse=True,
+    )
+    newest = rows[0]
+    kind_val = (
+        newest.batch_kind.value
+        if newest.batch_kind and hasattr(newest.batch_kind, "value")
+        else newest.batch_kind
+    )
+    is_batch = newest.batch_id is not None
+    card_id = str(newest.batch_id or newest.id)
+    classified = [
+        classify_event(
+            action=row.action.value if hasattr(row.action, "value") else str(row.action),
+            before=row.before,
+            after=row.after,
+            batch_kind=kind_val,
+        )
+        for row in rows
+    ]
+    if is_batch:
+        event_type = batch_card_event_type(kind_val)
+        summary = batch_card_summary(kind_val, classified, len(rows))
+    else:
+        event_type = newest.event_type or classified[0].event_type
+        summary = newest.summary
+    counts = {
+        "created": sum(1 for row in rows if (row.event_type or "") == EVENT_CREATED),
+        "updated": sum(
+            1
+            for row in rows
+            if (row.event_type or "")
+            not in {EVENT_CREATED, EVENT_DELETED, EVENT_PENDING_DELETE, EVENT_PUBLISHED}
+        ),
+        "deleted": sum(
+            1
+            for row in rows
+            if (row.event_type or "") in {EVENT_DELETED, EVENT_PENDING_DELETE}
+        ),
+        "published": sum(1 for row in rows if (row.event_type or "") == EVENT_PUBLISHED),
+    }
+    undoable = bool(
+        is_batch
+        and kind_val in UNDOABLE_BATCH_KINDS
+        and any(row.is_revertible and not row.reverted_by_id for row in rows)
+    )
+    changed = _changed_out(newest) if not is_batch else []
+    return ActivityFeedCardOut(
+        id=card_id,
+        kind="batch" if is_batch else "single",
+        event_type=event_type,
+        summary=summary,
+        actor_type=newest.actor_type.value
+        if hasattr(newest.actor_type, "value")
+        else str(newest.actor_type),
+        actor_label=newest.actor_label,
+        created_at=newest.created_at,
+        string_id=None if is_batch else newest.string_id,
+        string_key=None if is_batch else snapshot_key(newest.before, newest.after),
+        locale=None if is_batch else newest.locale,
+        batch_id=newest.batch_id,
+        batch_kind=kind_val,
+        children_count=len(rows),
+        is_undoable=undoable,
+        counts=counts,
+        changed=changed,
+        children=[_feed_child(row) for row in rows] if is_batch else [],
+    )
+
+
+def list_activity_feed(
+    db: Session,
+    project: Project,
+    *,
+    actor: str | None = None,
+    event_type: str | None = None,
+    locale: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> ActivityFeedOut:
+    card_expr = _card_expr()
+    base = db.query(Activity).filter(Activity.project_id == project.id)
+    base = _apply_feed_filters(
+        base, actor=actor, event_type=event_type, locale=locale, since=since, until=until
+    )
+    grouped = base.with_entities(
+        card_expr.label("card_id"),
+        func.max(Activity.created_at).label("ts"),
+        func.max(Activity.id).label("tie"),
+    ).group_by(card_expr)
+    sub = grouped.subquery()
+    total = db.query(func.count()).select_from(sub).scalar() or 0
+    page_rows = (
+        db.query(sub.c.card_id)
+        .order_by(sub.c.ts.desc(), sub.c.tie.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    card_ids = [_as_uuid(row[0]) for row in page_rows]
+    if not card_ids:
+        return ActivityFeedOut(items=[], total=total, page=page, page_size=page_size)
+
+    children = (
+        db.query(Activity)
+        .filter(Activity.project_id == project.id)
+        .filter(or_(Activity.batch_id.in_(card_ids), Activity.id.in_(card_ids)))
+        .all()
+    )
+    by_card: dict[uuid.UUID, list[Activity]] = {}
+    for row in children:
+        by_card.setdefault(row.batch_id or row.id, []).append(row)
+
+    items = []
+    for card_id in card_ids:
+        rows = by_card.get(card_id)
+        if rows:
+            items.append(_feed_card(rows))
+    return ActivityFeedOut(items=items, total=total, page=page, page_size=page_size)
+
+
+def restore_activity_version(
+    db: Session,
+    project: Project,
+    string_id: uuid.UUID,
+    activity_id: uuid.UUID,
+) -> RestoreVersionOut:
+    from app.activity import set_restore_intent
+    from app.services.strings import get_string
+
+    activity = (
+        db.query(Activity)
+        .filter(
+            Activity.id == activity_id,
+            Activity.project_id == project.id,
+            Activity.string_id == string_id,
+        )
+        .first()
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if not activity.after:
+        raise HTTPException(status_code=400, detail="This version cannot be restored")
+    action = activity.action.value if hasattr(activity.action, "value") else activity.action
+    if not is_history_restorable(activity.event_type, action):
+        raise HTTPException(status_code=400, detail=_history_restore_reject_detail(activity.event_type))
+    entry = get_string(db, project.id, string_id)
+    if entry.deleted_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Restore the string from Deleted before restoring a version",
+        )
+    still_pending = bool(entry.pending_delete)
+    if _working_copy_matches(entry, activity.after):
+        raise HTTPException(
+            status_code=400,
+            detail=_history_restore_noop_detail(still_pending),
+        )
+    set_restore_intent(db)
+    _apply_working_copy_only(db, entry, activity.after, include_status=False)
+    db.commit()
+    db.expire_all()
+    latest = (
+        db.query(Activity)
+        .filter(Activity.project_id == project.id, Activity.string_id == string_id)
+        .order_by(Activity.created_at.desc(), Activity.id.desc())
+        .first()
+    )
+    out = serialize_activity(latest or activity)
+    return RestoreVersionOut(
+        **out.model_dump(),
+        notice=_history_restore_notice(still_pending),
+        pending_delete=still_pending,
+    )
+
+
+def _history_restore_reject_detail(event_type: str | None) -> str:
+    if event_type == EVENT_PUBLISHED or event_type == EVENT_UNPUBLISHED:
+        return (
+            "Publish and unpublish cannot be restored from History. "
+            "Use Publish or Unpublish, or Undo a batch on the Activity feed."
+        )
+    if event_type == EVENT_PENDING_DELETE:
+        return (
+            "Pending deletes cannot be restored from History. "
+            "Use Restore on the strings grid to cancel the removal."
+        )
+    if event_type == EVENT_DELETED:
+        return "Deleted strings cannot be restored from History. Use Restore on the Deleted filter."
+    return "This version cannot be restored"
+
+
+def _history_restore_notice(pending_delete: bool) -> str:
+    if pending_delete:
+        return (
+            "Restored this version's text. Publish status is unchanged. "
+            "This string is still marked for deletion — use Restore on the grid to cancel the removal."
+        )
+    return "Restored this version's text. Publish status is unchanged."
+
+
+def _history_restore_noop_detail(pending_delete: bool) -> str:
+    if pending_delete:
+        return (
+            "Text already matches this version. "
+            "This string is still marked for deletion — use Restore on the grid to cancel the removal."
+        )
+    return "Working copy already matches this version. Publish status is unchanged."
+
+
+def _working_copy_matches(entry: StringEntry, snap: dict[str, Any]) -> bool:
+    if snap.get("key", entry.key) != entry.key:
+        return False
+    if snap.get("source_text", entry.source_text) != entry.source_text:
+        return False
+    if "description" in snap and snap.get("description") != entry.description:
+        return False
+    if "module_id" in snap:
+        current = str(entry.module_id) if entry.module_id else None
+        expected = snap.get("module_id")
+        if current != expected:
+            return False
+    if "tag_ids" in snap:
+        current_tags = sorted(str(t.id) for t in (entry.tags or []))
+        expected_tags = sorted(str(tid) for tid in (snap.get("tag_ids") or []))
+        if current_tags != expected_tags:
+            return False
+    if "translations" in snap:
+        expected = _translations_from_snapshot(snap.get("translations"))
+        current_map = {t.locale: t.value or "" for t in (entry.translations or [])}
+        for locale, value in expected.items():
+            if current_map.get(locale, "") != value:
+                return False
+    return True
+
+
+def restore_last_history(db: Session, project: Project, entries: list[StringEntry]) -> int:
+    from app.activity import set_restore_intent
+
+    set_restore_intent(db)
+    affected = 0
+    for entry in entries:
+        if entry.deleted_at is not None:
+            continue
+        latest = (
+            db.query(Activity)
+            .filter(
+                Activity.project_id == project.id,
+                Activity.string_id == entry.id,
+                Activity.before.isnot(None),
+            )
+            .order_by(Activity.created_at.desc(), Activity.id.desc())
+            .first()
+        )
+        if not latest or not latest.before:
+            continue
+        action = latest.action.value if hasattr(latest.action, "value") else latest.action
+        if action == "delete":
+            continue
+        _apply_working_copy_only(db, entry, latest.before, include_status=False)
+        affected += 1
+    return affected
 
 
 def _translations_from_snapshot(raw: Any) -> dict[str, str]:
@@ -213,7 +575,9 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
     if activity.entity_type == EntityType.string or activity.entity_type == "string":
         if activity.action == ActivityAction.delete or activity.action == "delete":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if after.get("deleted_at"):
                 return entry is not None and entry.deleted_at is not None
@@ -235,7 +599,9 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
             current = entry.status.value if hasattr(entry.status, "value") else entry.status
             if current != after["status"]:
                 return False
-        if "pending_delete" in after and bool(entry.pending_delete) != bool(after["pending_delete"]):
+        if "pending_delete" in after and bool(entry.pending_delete) != bool(
+            after["pending_delete"]
+        ):
             return False
         if "deleted_at" in after:
             current_deleted = entry.deleted_at.isoformat() if entry.deleted_at else None
@@ -244,7 +610,10 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
                 return False
         if "published_key" in after and entry.published_key != after["published_key"]:
             return False
-        if "published_source_text" in after and entry.published_source_text != after["published_source_text"]:
+        if (
+            "published_source_text" in after
+            and entry.published_source_text != after["published_source_text"]
+        ):
             return False
         if "published_module_id" in after:
             current_pub = str(entry.published_module_id) if entry.published_module_id else None
@@ -269,7 +638,11 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
 
     if activity.entity_type == EntityType.translation or activity.entity_type == "translation":
         if activity.action == ActivityAction.delete or activity.action == "delete":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             return t is None
         t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
         if t is None:
@@ -283,43 +656,8 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
     return False
 
 
-def _enum_val(val: Any) -> str:
-    return val.value if hasattr(val, "value") else str(val or "")
-
-
-def _original_activity(db: Session, activity: Activity) -> Activity:
-    current = activity
-    seen: set[uuid.UUID] = set()
-    while current.revert_of_id:
-        if current.id in seen:
-            break
-        seen.add(current.id)
-        parent = db.get(Activity, current.revert_of_id)
-        if parent is None:
-            break
-        current = parent
-    return current
-
-
-def _revert_depth(db: Session, activity: Activity) -> int:
-    depth = 0
-    current = activity
-    seen: set[uuid.UUID] = set()
-    while current.revert_of_id:
-        if current.id in seen:
-            break
-        seen.add(current.id)
-        parent = db.get(Activity, current.revert_of_id)
-        if parent is None:
-            break
-        current = parent
-        depth += 1
-    return depth
-
-
 def _entity_label(activity: Activity) -> str:
-    snap = activity.after or activity.before or {}
-    key = snap.get("key") if isinstance(snap, dict) else None
+    key = snapshot_key(activity.before, activity.after)
     if key:
         return f"'{key}'"
     if activity.locale:
@@ -327,12 +665,8 @@ def _entity_label(activity: Activity) -> str:
     return "item"
 
 
-def _revert_summary(db: Session, activity: Activity) -> str:
-    original = _original_activity(db, activity)
-    action = _enum_val(original.action)
-    label = _entity_label(original)
-    verb = "Redid" if _revert_depth(db, activity) % 2 == 1 else "Reverted"
-    return f"{verb} {action} of {label}"
+def _revert_summary(activity: Activity) -> str:
+    return f"Restored previous value of {_entity_label(activity)}"
 
 
 def _make_revert_marker(
@@ -343,6 +677,7 @@ def _make_revert_marker(
     existing: dict[str, Any],
     batch_id: uuid.UUID,
 ) -> Activity:
+    del db
     return Activity(
         project_id=project_id,
         actor_type=existing.get("actor_type", "user"),
@@ -355,7 +690,8 @@ def _make_revert_marker(
         locale=activity.locale,
         before=activity.after,
         after=activity.before,
-        summary=_revert_summary(db, activity),
+        event_type="string.restored",
+        summary=_revert_summary(activity),
         batch_id=batch_id,
         batch_kind="revert",
         revert_of_id=activity.id,
@@ -363,18 +699,22 @@ def _make_revert_marker(
     )
 
 
-def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+def _apply_working_copy_only(
+    db: Session, entry: StringEntry, snap: dict[str, Any], *, include_status: bool = False
+) -> None:
     entry.key = snap.get("key", entry.key)
     entry.source_text = snap.get("source_text", entry.source_text)
-    entry.description = snap.get("description")
-    if "status" in snap:
+    if "description" in snap:
+        entry.description = snap.get("description")
+    if include_status and "status" in snap:
         entry.status = TranslationStatus(snap["status"])
-    mid = snap.get("module_id")
-    if mid:
-        module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
-        entry.module_id = module.id if module else None
-    else:
-        entry.module_id = None
+    if "module_id" in snap:
+        mid = snap.get("module_id")
+        if mid:
+            module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
+            entry.module_id = module.id if module else None
+        else:
+            entry.module_id = None
     if "tag_ids" in snap:
         _set_entry_tags(db, entry, snap.get("tag_ids") or [])
     if "translations" in snap:
@@ -400,12 +740,15 @@ def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any
             db.flush()
         else:
             _set_entry_translations(db, entry, _translations_from_snapshot(trans_raw))
+
+
+def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+    _apply_working_copy_only(db, entry, snap, include_status=True)
     _apply_published_snapshot(db, entry, snap)
 
 
 def apply_revert(db: Session, activity: Activity) -> None:
     before = activity.before or {}
-    after = activity.after or {}
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     etype = (
         activity.entity_type.value
@@ -416,14 +759,18 @@ def apply_revert(db: Session, activity: Activity) -> None:
     if etype == "string":
         if action == "update":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if not entry:
                 raise HTTPException(status_code=404, detail="String no longer exists")
             _apply_working_snapshot(db, entry, before)
         elif action == "create":
             entry = (
-                db.query(StringEntry).filter(StringEntry.id == uuid.UUID(activity.entity_id)).first()
+                db.query(StringEntry)
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
             )
             if entry:
                 db.delete(entry)
@@ -471,12 +818,20 @@ def apply_revert(db: Session, activity: Activity) -> None:
 
     elif etype == "translation":
         if action == "update":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             if not t:
                 raise HTTPException(status_code=404, detail="Translation no longer exists")
             t.value = before.get("value", t.value)
         elif action == "create":
-            t = db.query(Translation).filter(Translation.id == uuid.UUID(activity.entity_id)).first()
+            t = (
+                db.query(Translation)
+                .filter(Translation.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
             if t:
                 db.delete(t)
         elif action == "delete":
@@ -511,7 +866,10 @@ def revert_activity(
     if not force and not current_matches_after(db, activity):
         raise HTTPException(
             status_code=409,
-            detail="Conflict: current state does not match activity after-state. Pass force=true to override.",
+            detail=(
+                "Conflict: current state does not match activity after-state. "
+                "Pass force=true to override."
+            ),
         )
 
     from app.activity import attach_batch

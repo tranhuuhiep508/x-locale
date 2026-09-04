@@ -41,4 +41,20 @@ Project setting chooses the default; export query param overrides.
 
 ## Version control
 
-Every content write emits `activities` rows (via SQLAlchemy `before_flush`). Revert one row or a whole `batch_id` (import, translate, batch ops). Optional `ACTIVITY_RETENTION_DAYS` can prune old rows.
+`activities` is append-only. Every content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). Optional `ACTIVITY_RETENTION_DAYS` can prune old rows.
+
+Named project snapshots are not in this pass.
+
+### Project feed vs string History vs bulk undo
+
+| Surface | Reads | Restore |
+|---------|--------|---------|
+| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert` with `force` default true |
+| **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string | **Restore this version** applies that row's working-copy **content** `after` (`key`, source, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Never 409s; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. **Not offered** for `string.published` / `string.unpublished` / `string.pending_delete` / `string.deleted` |
+| **Restore last edit** (grid batch) | Latest activity `before` per selected string | `POST /strings/batch` action `restore_last_history` |
+
+Restore always writes a **new** activity. History restore does not use the revert batch path (that path skips capture). Revert/undo markers use `event_type=string.restored` and summary `Restored previous value of 'key'` — no stacked `Reverted:` / `Redid` prefixes.
+
+`pending_delete` is still `action=update`; the classifier labels it `string.pending_delete`. Publish/unpublish are `action=update` labeled from `status` / `published_*` diffs. Public snapshots are rolled back only by Publish / Unpublish (or **batch** undo of a publish/unpublish event), not by History restore. Restoring an older **content** version while the string is pending-delete restores text only and leaves `pending_delete` set; the API `notice` tells the user to use grid **Restore** to cancel the removal.
+
+The UI `changed` list is working-copy fields only (`key`, `source_text`, translations, `status`). It does not dump `module_id`, `published_*`, or `deleted_at`.
