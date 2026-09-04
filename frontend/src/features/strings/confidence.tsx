@@ -19,10 +19,13 @@ export function confidenceLabel(score: number): string {
   return `AI confidence ${score} — re-translate if needed`
 }
 
-const TONE_CLASS: Record<ConfidenceTone, string> = {
-  high: 'text-muted-foreground',
-  medium: 'text-amber-700 dark:text-amber-400',
-  low: 'text-destructive',
+const TONE_STYLE: Record<ConfidenceTone, string> = {
+  high:
+    'border-emerald-600/25 bg-emerald-600/12 text-emerald-900 dark:border-emerald-400/35 dark:bg-emerald-500/20 dark:text-emerald-200',
+  medium:
+    'border-amber-600/35 bg-amber-500/15 text-amber-950 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-200',
+  low:
+    'border-red-600/35 bg-red-600/12 text-red-900 dark:border-red-400/40 dark:bg-red-500/20 dark:text-red-200',
 }
 
 export function ConfidenceBadge({
@@ -39,8 +42,9 @@ export function ConfidenceBadge({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            'inline-flex shrink-0 items-center tabular-nums text-[11px] font-medium leading-none',
-            TONE_CLASS[tone],
+            'inline-flex h-5 w-fit min-w-5 shrink-0 self-start items-center justify-center rounded-md border px-1.5',
+            'tabular-nums text-[11px] font-semibold leading-none tracking-tight',
+            TONE_STYLE[tone],
             className,
           )}
           aria-label={confidenceLabel(score)}
