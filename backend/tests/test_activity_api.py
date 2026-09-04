@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 
 def _make_project(client, name: str, targets=None):
     r = client.post(
@@ -139,7 +141,10 @@ def test_batch_undo_force_overwrites_later_edits(client):
     )
     assert conflict.status_code == 409, conflict.text
 
-    undo = client.post(f"/api/projects/{pid}/activities/batch/{batch_id}/revert")
+    undo = client.post(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        params={"force": True},
+    )
     assert undo.status_code == 200, undo.text
     assert undo.json()["reverted"] == 2
 
@@ -284,3 +289,196 @@ def test_restore_content_version_leaves_pending_delete(client):
     assert same.status_code == 400, same.text
     assert "already matches" in same.json()["detail"]
     assert "marked for deletion" in same.json()["detail"]
+
+
+def test_create_undo_tombstones_and_allows_recreate(client):
+    project = _make_project(client, "Create Undo Tombstone")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"welcome": "Chào"}},
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+    sid = client.get(f"/api/projects/{pid}/strings").json()["items"][0]["id"]
+
+    undo = client.post(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        params={"force": False},
+    )
+    assert undo.status_code == 200, undo.text
+    assert client.get(f"/api/projects/{pid}/strings").json()["items"] == []
+
+    tomb = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert tomb["deleted_at"] is not None
+
+    again = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "welcome", "source_text": "Chào"},
+    )
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] != sid
+
+
+def test_create_undo_conflicts_after_later_edit(client):
+    project = _make_project(client, "Create Undo Conflict")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"welcome": "Chào"}},
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+    sid = client.get(f"/api/projects/{pid}/strings").json()["items"][0]["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"source_text": "Xin chào"},
+    )
+
+    conflict = client.post(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        params={"force": False},
+    )
+    assert conflict.status_code == 409, conflict.text
+
+    default_force = client.post(f"/api/projects/{pid}/activities/batch/{batch_id}/revert")
+    assert default_force.status_code == 409, default_force.text
+
+    undo = client.post(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        params={"force": True},
+    )
+    assert undo.status_code == 200, undo.text
+    tomb = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert tomb["deleted_at"] is not None
+
+
+def test_feed_caps_batch_children(client):
+    from app.services.activities import FEED_CHILD_LIMIT
+
+    project = _make_project(client, "Feed Cap")
+    pid = project["id"]
+    total = FEED_CHILD_LIMIT + 5
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {f"k{i:02d}": f"N{i}" for i in range(total)}},
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["created"] == total
+
+    feed = client.get(
+        f"/api/projects/{pid}/activities/feed",
+        params={"event_type": "import"},
+    )
+    assert feed.status_code == 200, feed.text
+    card = feed.json()["items"][0]
+    assert card["children_count"] == total
+    assert len(card["children"]) == FEED_CHILD_LIMIT
+    assert "before" not in card["children"][0]
+    assert "after" not in card["children"][0]
+
+
+def test_tag_change_shows_names_in_changed(client):
+    project = _make_project(client, "Tag Names")
+    pid = project["id"]
+    tag = client.post(f"/api/projects/{pid}/tags", json={"name": "release"}).json()
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Hi"},
+    ).json()
+    client.patch(
+        f"/api/projects/{pid}/strings/{created['id']}",
+        json={"tag_ids": [tag["id"]]},
+    )
+    items = client.get(
+        f"/api/projects/{pid}/strings/{created['id']}/activities"
+    ).json()["items"]
+    tagged = next(a for a in items if a["event_type"] == "string.tagged")
+    tags_changed = [row for row in tagged["changed"] if row["field"] == "tags"]
+    assert tags_changed
+    assert "release" in (tags_changed[0]["after"] or "")
+    assert tag["id"] not in (tags_changed[0]["after"] or "")
+
+
+def test_translate_job_payload_stamps_actor(client, monkeypatch):
+    project = _make_project(client, "Translate Actor", targets=["en"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+    me = client.get("/api/auth/me").json()
+    monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
+    monkeypatch.setattr("app.routers.translate.run_translate_job", lambda *args, **kwargs: None)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate",
+        json={"scope": "strings", "string_ids": [created["id"]], "locales": ["en"]},
+    )
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    assert job_id
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import Job
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        job = db.query(Job).filter(Job.id == uuid.UUID(job_id)).first()
+        assert job is not None
+        actor = (job.payload or {}).get("actor") or {}
+        assert actor["actor_type"] == "user"
+        assert actor["actor_id"] == me["id"]
+        assert actor["actor_label"] == me["email"]
+    finally:
+        db_gen.close()
+
+
+def test_prune_activities_deletes_old_rows_only(client):
+    from datetime import UTC, datetime, timedelta
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import Activity
+    from app.services.activities import prune_activities
+
+    project = _make_project(client, "Prune")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "old", "source_text": "Old"},
+    )
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "new", "source_text": "New"},
+    )
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        rows = (
+            db.query(Activity)
+            .filter(Activity.project_id == uuid.UUID(pid))
+            .order_by(Activity.created_at.asc(), Activity.id.asc())
+            .all()
+        )
+        assert len(rows) >= 2
+        rows[0].created_at = datetime.now(UTC) - timedelta(days=10)
+        db.commit()
+        assert prune_activities(db, days=0) == 0
+        deleted = prune_activities(db, days=7)
+        db.commit()
+        assert deleted >= 1
+        remaining = db.query(Activity).filter(Activity.project_id == uuid.UUID(pid)).all()
+        assert remaining
+        cutoff = datetime.now(UTC) - timedelta(days=7)
+        for row in remaining:
+            created_at = row.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=UTC)
+            assert created_at > cutoff
+    finally:
+        db_gen.close()
+

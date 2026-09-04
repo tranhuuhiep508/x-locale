@@ -141,6 +141,27 @@ def test_human_changed_skips_published_fields():
     assert any(row.locale == "en" for row in rows)
 
 
+def test_human_changed_prefers_tag_names():
+    rows = human_changed(
+        {
+            "key": "welcome",
+            "status": "draft",
+            "tag_ids": ["uuid-old"],
+            "tag_names": ["old"],
+        },
+        {
+            "key": "welcome",
+            "status": "draft",
+            "tag_ids": ["uuid-new"],
+            "tag_names": ["release"],
+        },
+        action="update",
+    )
+    tag = next(row for row in rows if row.field == "tags")
+    assert tag.before == "old"
+    assert tag.after == "release"
+
+
 def test_classify_moved_and_tagged():
     moved = classify_event(
         action="update",

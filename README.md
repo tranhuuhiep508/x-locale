@@ -124,7 +124,7 @@ commit client IDs or secrets.
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export shape; modules are always stored.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `tms pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
-- **Activity log** records content changes; revert undoes one change (or a whole batch).
+- **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string.
 
 More detail: [docs/](docs/).
 
@@ -157,7 +157,7 @@ See [.env.example](.env.example). Notable vars:
 | `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
 | `TMS_DEMO_API_KEY` | Seeded demo project key |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
-| `ACTIVITY_RETENTION_DAYS` | Optional pruning of append-only activity log |
+| `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (0 = keep forever). Runs on API startup and `python -m app.cli prune-activities`. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend auto-mints a short-term Bedrock API key before each request. |

@@ -119,6 +119,6 @@ def revert_batch_endpoint(
     batch_id: uuid.UUID,
     project: ProjectAccess,
     db: DbSession,
-    force: Annotated[bool, Query()] = True,
+    force: Annotated[bool, Query()] = False,
 ) -> dict:
     return revert_batch(db, project, batch_id, force=force)

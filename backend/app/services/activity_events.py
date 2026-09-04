@@ -223,6 +223,13 @@ def _fmt(value: Any) -> str | None:
     return str(value)
 
 
+def _tag_labels(snap: dict[str, Any]) -> list[str]:
+    names = snap.get("tag_names")
+    if names:
+        return list(names)
+    return list(snap.get("tag_ids") or [])
+
+
 def human_changed(
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
@@ -248,7 +255,7 @@ def human_changed(
     add("source_text", left.get("source_text"), right.get("source_text"))
     add("description", left.get("description"), right.get("description"))
     add("status", left.get("status"), right.get("status"))
-    add("tags", left.get("tag_ids") or [], right.get("tag_ids") or [])
+    add("tags", _tag_labels(left), _tag_labels(right))
 
     trans_left = translations_map(left.get("translations"))
     trans_right = translations_map(right.get("translations"))

@@ -19,7 +19,7 @@ users ──< api_keys >── projects ──< modules
 - `module_id` is nullable (`ON DELETE SET NULL`). Unassigned strings export under `_unassigned` (Excel) or at the top level (JSON modular).
 - Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `translations.confidence` is an optional 0–100 AI self-score written by translate; manual edits, import, and CLI push clear it. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column.
-- `activities` is append-only. Content entities (`string`, `translation`) are revertible; structural ones (`module`, `tag`, `project`, `api_key`) are audit-only.
+- `activities` is append-only. Only **string** content writes are logged (keys, source, translations, tags, publish, delete). Module, tag, project, and API key changes are not. Content rows are revertible.
 
 ## Flat vs modular export
 
@@ -41,7 +41,7 @@ Project setting chooses the default; export query param overrides.
 
 ## Version control
 
-`activities` is append-only. Every content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). Optional `ACTIVITY_RETENTION_DAYS` can prune old rows.
+`activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (0 = keep forever) deletes activity rows older than that many days on API startup and via `uv run python -m app.cli prune-activities`. Pruning removes feed, History, and Undo for those old events; it does not delete strings.
 
 Named project snapshots are not in this pass.
 
@@ -49,7 +49,7 @@ Named project snapshots are not in this pass.
 
 | Surface | Reads | Restore |
 |---------|--------|---------|
-| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert` with `force` default true |
+| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card. Batch children are capped at 50; `children_count` is the full total. | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert`. API `force` defaults false; the UI passes `force=true`. Create-undo tombstones (never hard-deletes). |
 | **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string | **Restore this version** applies that row's working-copy **content** `after` (`key`, source, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Never 409s; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. **Not offered** for `string.published` / `string.unpublished` / `string.pending_delete` / `string.deleted` |
 | **Restore last edit** (grid batch) | Latest activity `before` per selected string | `POST /strings/batch` action `restore_last_history` |
 

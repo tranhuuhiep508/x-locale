@@ -151,15 +151,15 @@ def test_api_key_auth(client):
     assert r.status_code == 200
 
 
-def test_api_key_write_activity_uses_owner(client):
-    me = client.get("/api/auth/me").json()
+def test_api_key_write_activity_uses_key_not_owner(client):
     pid = _make_project(client, "Keyed Owner")["id"]
-    r = client.post(
+    created_key = client.post(
         f"/api/projects/{pid}/api-keys",
         json={"name": "alice-laptop"},
     )
-    assert r.status_code == 201, r.text
-    raw_key = r.json()["key"]
+    assert created_key.status_code == 201, created_key.text
+    raw_key = created_key.json()["key"]
+    key_id = created_key.json()["id"]
 
     r = client.post(
         f"/api/projects/{pid}/strings/import",
@@ -173,9 +173,9 @@ def test_api_key_write_activity_uses_owner(client):
         a for a in items if a["action"] == "create" and a["entity_type"] == "string"
     ]
     assert created
-    assert created[0]["actor_type"] == "user"
-    assert created[0]["actor_label"] == me["email"]
-    assert created[0]["actor_id"] == me["id"]
+    assert created[0]["actor_type"] == "api_key"
+    assert created[0]["actor_label"] == "alice-laptop"
+    assert created[0]["actor_id"] == key_id
 
 
 def test_generate_api_key_revokes_previous_personal_key(client):
@@ -395,6 +395,12 @@ def test_list_strings_filters(client):
         json={"value": "Log in"},
     )
 
+    listed = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    login = next(item for item in listed if item["key"] == "login")
+    updated_after_edit = login["updated_at"]
+    assert updated_after_edit
+    assert updated_after_edit != s1["updated_at"]
+
     # module filter uses `module` query param
     r = client.get(f"/api/projects/{pid}/strings", params={"module": m1["id"]})
     assert r.status_code == 200
@@ -424,6 +430,11 @@ def test_list_strings_filters(client):
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "welcome"
+
+    listed = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    login = next(item for item in listed if item["key"] == "login")
+    assert login["updated_at"] == updated_after_edit
+    assert login["updated_by_label"] == "dev@localhost"
 
 
 def _make_project(client, name="Act", targets=None):
@@ -481,6 +492,7 @@ def test_string_create_activity_snapshot(client):
     assert after["status"] == "public"
     assert after["key"] == "save"
     assert after["tag_ids"] == [tag["id"]]
+    assert after["tag_names"] == ["ui"]
     assert after["translations"]["en"] == "Save"
     assert creates[0]["event_type"] == "string.created"
     assert creates[0]["summary"] == "Created 'save'"
@@ -616,8 +628,11 @@ def test_revert_create_and_update_tags_translations(client):
     ]
     r = client.post(f"/api/projects/{pid}/activities/{creates[0]['id']}/revert")
     assert r.status_code == 200, r.text
-    r = client.get(f"/api/projects/{pid}/strings/{sid}")
-    assert r.status_code == 404
+    tomb = client.get(f"/api/projects/{pid}/strings/{sid}")
+    assert tomb.status_code == 200, tomb.text
+    assert tomb.json()["deleted_at"] is not None
+    listed = client.get(f"/api/projects/{pid}/strings").json()
+    assert listed["total"] == 0
 
 
 def test_revert_redo_summaries_do_not_stack(client):

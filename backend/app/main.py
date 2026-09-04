@@ -25,6 +25,16 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     register_activity_listener()
+    if settings.activity_retention_days > 0:
+        from app.database import SessionLocal
+        from app.services.activities import prune_activities
+
+        db = SessionLocal()
+        try:
+            prune_activities(db, days=settings.activity_retention_days)
+            db.commit()
+        finally:
+            db.close()
     yield
 
 
