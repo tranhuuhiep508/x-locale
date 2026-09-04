@@ -1,11 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
 import type { Activity } from '@/lib/api/types'
-import { stringActivitiesQuery } from '@/lib/queries'
+import { stringActivitiesInfiniteQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { canRestoreHistoryVersion } from '@/features/strings/history-restore'
+import { shouldShowHistoryRestore } from '@/features/strings/history-restore'
 import { useToast } from '@/lib/toast'
 import { formatRelativeTime } from '@/lib/utils'
 
@@ -30,7 +30,9 @@ export function StringHistoryPanel({
 }) {
   const toast = useToast()
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery(stringActivitiesQuery(projectId, stringId))
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
+    stringActivitiesInfiniteQuery(projectId, stringId),
+  )
 
   const restoreMut = useMutation({
     mutationFn: (activityId: string) =>
@@ -48,7 +50,7 @@ export function StringHistoryPanel({
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Restore failed'),
   })
 
-  const items = data?.items ?? []
+  const items = data?.pages.flatMap((page) => page.items) ?? []
 
   if (isLoading) {
     return (
@@ -63,33 +65,47 @@ export function StringHistoryPanel({
   }
 
   return (
-    <ol className="flex flex-col gap-3">
-      {items.map((activity, index) => (
-        <li key={activity.id} className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm text-foreground">{activity.summary}</p>
-            <p className="text-xs text-muted-foreground">
-              {activity.actor_label} · {formatRelativeTime(activity.created_at)}
-            </p>
-            {changePreview(activity) ? (
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {changePreview(activity)}
+    <div className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-3">
+        {items.map((activity, index) => (
+          <li key={activity.id} className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-foreground">{activity.summary}</p>
+              <p className="text-xs text-muted-foreground">
+                {activity.actor_label} · {formatRelativeTime(activity.created_at)}
               </p>
+              {changePreview(activity) ? (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {changePreview(activity)}
+                </p>
+              ) : null}
+            </div>
+            {shouldShowHistoryRestore(index, activity) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={restoreMut.isPending}
+                onClick={() => restoreMut.mutate(activity.id)}
+              >
+                Restore
+              </Button>
             ) : null}
-          </div>
-          {index > 0 && canRestoreHistoryVersion(activity) ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={restoreMut.isPending}
-              onClick={() => restoreMut.mutate(activity.id)}
-            >
-              Restore
-            </Button>
-          ) : null}
-        </li>
-      ))}
-    </ol>
+          </li>
+        ))}
+      </ol>
+      {hasNextPage ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          disabled={isFetchingNextPage}
+          onClick={() => fetchNextPage()}
+        >
+          {isFetchingNextPage ? 'Loading…' : 'Load older'}
+        </Button>
+      ) : null}
+    </div>
   )
 }

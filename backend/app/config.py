@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     auth_dev_bypass: bool = True
 
     # Optional retention for append-only activity log (0 = keep forever)
-    activity_retention_days: int = 0
+    activity_retention_days: int = 90
 
     # Optional. Set only when the frontend runs on a different origin (not needed with Vite /api proxy).
     cors_origins: str = ""

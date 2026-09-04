@@ -7,6 +7,11 @@ import type { ActivityFeedCard } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { activityFeedQuery, projectQuery } from '@/lib/queries'
 import { ActivityCard } from '@/features/activity/ActivityCard'
+import {
+  isUndoConflict,
+  undoDescription,
+  undoOverwriteDescription,
+} from '@/features/activity/undo-batch'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
@@ -28,18 +33,6 @@ import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
-
-function undoDescription(card: ActivityFeedCard): string {
-  const created = card.counts.created ?? 0
-  if (created > 0) {
-    const noun = created === 1 ? 'string' : 'strings'
-    return (
-      `This undoes ${card.children_count} strings. ${created} new ${noun} will be moved to Deleted ` +
-      '(or queued for public removal if already published). Later edits to those strings will be overwritten.'
-    )
-  }
-  return `This restores ${card.children_count} strings to their values before this action. Later edits to those strings will be overwritten.`
-}
 
 const EVENT_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -68,6 +61,7 @@ export function ActivityPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
+  const [undoOverwrite, setUndoOverwrite] = useState(false)
 
   const { data: project } = useQuery(projectQuery(projectId))
   const { data, isLoading } = useQuery(
@@ -82,15 +76,27 @@ export function ActivityPage() {
     }),
   )
 
+  function closeUndo() {
+    setUndoTarget(null)
+    setUndoOverwrite(false)
+  }
+
   const undoMut = useMutation({
-    mutationFn: (batchId: string) => activitiesApi.revertBatch(projectId, batchId),
+    mutationFn: ({ batchId, force }: { batchId: string; force: boolean }) =>
+      activitiesApi.revertBatch(projectId, batchId, force),
     onSuccess: (result) => {
       toast.success(`Restored ${result.reverted} strings`)
       qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
       qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
-      setUndoTarget(null)
+      closeUndo()
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Undo failed'),
+    onError: (e) => {
+      if (isUndoConflict(e) && !undoOverwrite) {
+        setUndoOverwrite(true)
+        return
+      }
+      toast.error(e instanceof Error ? e.message : 'Undo failed')
+    },
   })
 
   const items = data?.items ?? []
@@ -235,12 +241,21 @@ export function ActivityPage() {
 
       <ConfirmDialog
         open={undoTarget !== null}
-        onClose={() => setUndoTarget(null)}
-        onConfirm={() => undoTarget?.batch_id && undoMut.mutate(undoTarget.batch_id)}
-        title="Undo this batch?"
-        description={undoTarget ? undoDescription(undoTarget) : ''}
-        confirmLabel="Undo"
-        variant="default"
+        onClose={closeUndo}
+        onConfirm={() =>
+          undoTarget?.batch_id &&
+          undoMut.mutate({ batchId: undoTarget.batch_id, force: undoOverwrite })
+        }
+        title={undoOverwrite ? 'Overwrite later edits?' : 'Undo this batch?'}
+        description={
+          undoOverwrite
+            ? undoOverwriteDescription()
+            : undoTarget
+              ? undoDescription(undoTarget)
+              : ''
+        }
+        confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
+        variant={undoOverwrite ? 'destructive' : 'default'}
         isLoading={undoMut.isPending}
       />
     </div>
