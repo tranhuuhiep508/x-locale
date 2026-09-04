@@ -35,6 +35,15 @@ from app.services.translate import (
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
 
 
+def _actor_from_session(db: DbSession) -> dict[str, str | None]:
+    info = db.info.get("activity") or {}
+    return {
+        "actor_type": info.get("actor_type") or "user",
+        "actor_id": info.get("actor_id"),
+        "actor_label": info.get("actor_label") or "user",
+    }
+
+
 def _ai_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ValueError):
         return HTTPException(status_code=503, detail=str(exc))
@@ -64,6 +73,7 @@ def translate(
                 "locales": locales,
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
+                "actor": _actor_from_session(db),
             },
         )
         db.add(job)

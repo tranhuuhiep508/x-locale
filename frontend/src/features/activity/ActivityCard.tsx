@@ -97,7 +97,11 @@ export function ActivityCard({
               onClick={() => setOpen((value) => !value)}
             >
               {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-              {open ? 'Hide strings' : `Show ${card.children_count} strings`}
+              {open
+                ? 'Hide strings'
+                : card.children.length < card.children_count
+                  ? `Show ${card.children.length} of ${card.children_count} strings`
+                  : `Show ${card.children_count} strings`}
             </button>
             {open ? (
               <ul className="mt-1 flex flex-col gap-1 border-l pl-3">

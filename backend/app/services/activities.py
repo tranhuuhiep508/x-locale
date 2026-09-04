@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, joinedload
 
 from app.models import (
     Activity,
@@ -40,11 +40,12 @@ from app.services.activity_events import (
     UNDOABLE_BATCH_KINDS,
     batch_card_event_type,
     batch_card_summary,
-    classify_event,
     human_changed,
     is_history_restorable,
     snapshot_key,
 )
+
+FEED_CHILD_LIMIT = 50
 
 
 def _changed_out(activity: Activity) -> list[ActivityChangeOut]:
@@ -192,20 +193,22 @@ def _apply_feed_filters(
     return q
 
 
-def _feed_child(activity: Activity) -> ActivityFeedChildOut:
+def _feed_child(
+    activity: Activity, *, before: dict | None, after: dict | None
+) -> ActivityFeedChildOut:
     return ActivityFeedChildOut(
         id=activity.id,
         event_type=activity.event_type or "string.updated",
         summary=activity.summary,
         string_id=activity.string_id,
-        string_key=snapshot_key(activity.before, activity.after),
+        string_key=snapshot_key(before, after),
         locale=activity.locale,
-        changed=_changed_out(activity),
+        changed=[],
     )
 
 
-def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
-    rows = sorted(
+def _sort_feed_rows(rows: list[Activity]) -> list[Activity]:
+    return sorted(
         rows,
         key=lambda item: (
             item.created_at.timestamp() if item.created_at else 0.0,
@@ -213,6 +216,13 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
         ),
         reverse=True,
     )
+
+
+def _feed_card(
+    rows: list[Activity],
+    snaps: dict[uuid.UUID, tuple[dict | None, dict | None]],
+) -> ActivityFeedCardOut:
+    rows = _sort_feed_rows(rows)
     newest = rows[0]
     kind_val = (
         newest.batch_kind.value
@@ -221,20 +231,12 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
     )
     is_batch = newest.batch_id is not None
     card_id = str(newest.batch_id or newest.id)
-    classified = [
-        classify_event(
-            action=row.action.value if hasattr(row.action, "value") else str(row.action),
-            before=row.before,
-            after=row.after,
-            batch_kind=kind_val,
-        )
-        for row in rows
-    ]
+    stored_types = [row.event_type or "string.updated" for row in rows]
     if is_batch:
         event_type = batch_card_event_type(kind_val)
-        summary = batch_card_summary(kind_val, classified, len(rows))
+        summary = batch_card_summary(kind_val, stored_types, len(rows))
     else:
-        event_type = newest.event_type or classified[0].event_type
+        event_type = newest.event_type or "string.updated"
         summary = newest.summary
     counts = {
         "created": sum(1 for row in rows if (row.event_type or "") == EVENT_CREATED),
@@ -256,7 +258,33 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
         and kind_val in UNDOABLE_BATCH_KINDS
         and any(row.is_revertible and not row.reverted_by_id for row in rows)
     )
-    changed = _changed_out(newest) if not is_batch else []
+    newest_before, newest_after = snaps.get(newest.id, (None, None))
+    action = newest.action.value if hasattr(newest.action, "value") else newest.action
+    changed = (
+        []
+        if is_batch
+        else [
+            ActivityChangeOut(
+                field=row.field,
+                before=row.before,
+                after=row.after,
+                locale=row.locale,
+            )
+            for row in human_changed(
+                newest_before, newest_after, action=str(action or "update")
+            )
+        ]
+    )
+    children = []
+    if is_batch:
+        children = [
+            _feed_child(
+                row,
+                before=snaps.get(row.id, (None, None))[0],
+                after=snaps.get(row.id, (None, None))[1],
+            )
+            for row in rows[:FEED_CHILD_LIMIT]
+        ]
     return ActivityFeedCardOut(
         id=card_id,
         kind="batch" if is_batch else "single",
@@ -268,7 +296,7 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
         actor_label=newest.actor_label,
         created_at=newest.created_at,
         string_id=None if is_batch else newest.string_id,
-        string_key=None if is_batch else snapshot_key(newest.before, newest.after),
+        string_key=None if is_batch else snapshot_key(newest_before, newest_after),
         locale=None if is_batch else newest.locale,
         batch_id=newest.batch_id,
         batch_kind=kind_val,
@@ -276,7 +304,7 @@ def _feed_card(rows: list[Activity]) -> ActivityFeedCardOut:
         is_undoable=undoable,
         counts=counts,
         changed=changed,
-        children=[_feed_child(row) for row in rows] if is_batch else [],
+        children=children,
     )
 
 
@@ -317,6 +345,7 @@ def list_activity_feed(
 
     children = (
         db.query(Activity)
+        .options(defer(Activity.before), defer(Activity.after))
         .filter(Activity.project_id == project.id)
         .filter(or_(Activity.batch_id.in_(card_ids), Activity.id.in_(card_ids)))
         .all()
@@ -325,11 +354,32 @@ def list_activity_feed(
     for row in children:
         by_card.setdefault(row.batch_id or row.id, []).append(row)
 
+    json_ids: list[uuid.UUID] = []
+    for card_id in card_ids:
+        rows = by_card.get(card_id)
+        if not rows:
+            continue
+        ordered = _sort_feed_rows(rows)
+        newest = ordered[0]
+        if newest.batch_id is not None:
+            json_ids.extend(item.id for item in ordered[:FEED_CHILD_LIMIT])
+        else:
+            json_ids.append(newest.id)
+
+    snaps: dict[uuid.UUID, tuple[dict | None, dict | None]] = {}
+    if json_ids:
+        for aid, before, after in (
+            db.query(Activity.id, Activity.before, Activity.after)
+            .filter(Activity.id.in_(json_ids))
+            .all()
+        ):
+            snaps[_as_uuid(aid)] = (before, after)
+
     items = []
     for card_id in card_ids:
         rows = by_card.get(card_id)
         if rows:
-            items.append(_feed_card(rows))
+            items.append(_feed_card(rows, snaps))
     return ActivityFeedOut(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -590,8 +640,8 @@ def current_matches_after(db: Session, activity: Activity) -> bool:
         )
         if entry is None:
             return False
-        if activity.action == ActivityAction.create or activity.action == "create":
-            return True
+        if entry.deleted_at is not None:
+            return False
         for field in ("key", "source_text", "description"):
             if field in after and getattr(entry, field) != after[field]:
                 return False
@@ -767,13 +817,15 @@ def apply_revert(db: Session, activity: Activity) -> None:
                 raise HTTPException(status_code=404, detail="String no longer exists")
             _apply_working_snapshot(db, entry, before)
         elif action == "create":
+            from app.services.strings import queue_or_soft_delete
+
             entry = (
                 db.query(StringEntry)
                 .filter(StringEntry.id == uuid.UUID(activity.entity_id))
                 .first()
             )
             if entry:
-                db.delete(entry)
+                queue_or_soft_delete(entry)
         elif action == "delete":
             existing = (
                 db.query(StringEntry).filter(StringEntry.id == uuid.UUID(before["id"])).first()
@@ -944,3 +996,16 @@ def revert_batch(
 
     db.commit()
     return {"reverted": reverted, "batch_id": str(new_batch)}
+
+
+def prune_activities(db: Session, *, days: int, now: datetime | None = None) -> int:
+    """Delete activity rows older than `days`. 0 or less keeps everything."""
+    if days <= 0:
+        return 0
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
+    deleted = (
+        db.query(Activity)
+        .filter(Activity.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    return int(deleted or 0)

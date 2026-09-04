@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import inspect as sa_inspect
@@ -122,31 +122,42 @@ def _rel_loaded(obj: Any, name: str) -> bool:
         return False
 
 
-def _tag_ids_before_after(session: Session, obj: StringEntry) -> tuple[list[str], list[str], bool]:
+def _tag_pairs(tags: list[Tag]) -> tuple[list[str], list[str]]:
+    pairs = sorted(((str(tag.id), tag.name or "") for tag in tags), key=lambda item: item[0])
+    return [item[0] for item in pairs], [item[1] for item in pairs]
+
+
+def _tag_ids_before_after(
+    session: Session, obj: StringEntry
+) -> tuple[list[str], list[str], list[str], list[str], bool]:
     if _rel_loaded(obj, "tags"):
         current = list(obj.tags or [])
-        after = sorted(str(t.id) for t in current)
+        after_ids, after_names = _tag_pairs(current)
         try:
             hist = sa_inspect(obj).attrs.tags.history
         except Exception:
-            return after, after, False
+            return after_ids, after_ids, after_names, after_names, False
         if not hist.has_changes():
-            return after, after, False
-        before_ids = {str(t.id) for t in current}
+            return after_ids, after_ids, after_names, after_names, False
+        before_map = {str(tag.id): (tag.name or "") for tag in current}
         for tag in hist.added or []:
-            before_ids.discard(str(tag.id))
+            before_map.pop(str(tag.id), None)
         for tag in hist.deleted or []:
-            before_ids.add(str(tag.id))
-        return sorted(before_ids), after, True
+            before_map[str(tag.id)] = tag.name or ""
+        before_ids = sorted(before_map)
+        before_names = [before_map[tid] for tid in before_ids]
+        return before_ids, after_ids, before_names, after_names, True
 
     rows = (
-        session.query(Tag.id)
+        session.query(Tag.id, Tag.name)
         .join(StringTag, StringTag.tag_id == Tag.id)
         .filter(StringTag.string_id == obj.id)
         .all()
     )
-    ids = sorted(str(row[0]) for row in rows)
-    return ids, ids, False
+    pairs = sorted(((str(row[0]), row[1] or "") for row in rows), key=lambda item: item[0])
+    ids = [item[0] for item in pairs]
+    names = [item[1] for item in pairs]
+    return ids, ids, names, names, False
 
 
 def _string_fields_changed(obj: StringEntry) -> bool:
@@ -306,6 +317,8 @@ def _snapshot(
     trans_after: dict[str, str],
     tags_before: list[str],
     tags_after: list[str],
+    tag_names_before: list[str],
+    tag_names_after: list[str],
 ) -> dict[str, Any]:
     _ensure_string_identity(obj)
     pub_before, pub_after = _published_translation_maps(session, obj.id, obj)
@@ -324,6 +337,7 @@ def _snapshot(
         "pending_delete": bool(_field_value(obj, "pending_delete", before=before)),
         "deleted_at": _field_value(obj, "deleted_at", before=before),
         "tag_ids": tags_before if before else tags_after,
+        "tag_names": tag_names_before if before else tag_names_after,
         "translations": trans_before if before else trans_after,
         "published_translations": pub_before if before else pub_after,
     }
@@ -333,9 +347,58 @@ def _load_entry(session: Session, string_id: uuid.UUID) -> StringEntry | None:
     return session.get(StringEntry, string_id)
 
 
+def _stamp_string_metadata(session: Session) -> None:
+    """Stamp string.updated_* and created_by_* from the current session actor."""
+    now = datetime.now(UTC)
+    actor_type, actor_id, actor_label, _, _ = _actor_from_session(session)
+    string_ids: set[uuid.UUID] = set()
+    new_string_ids: set[uuid.UUID] = set()
+
+    for obj in list(session.new):
+        if isinstance(obj, Activity):
+            continue
+        if isinstance(obj, StringEntry):
+            _ensure_string_identity(obj)
+            new_string_ids.add(obj.id)
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
+
+    for obj in list(session.dirty) + list(session.deleted):
+        if isinstance(obj, Activity):
+            continue
+        if isinstance(obj, StringEntry):
+            string_ids.add(obj.id)
+        elif isinstance(obj, Translation) and obj.string_id:
+            string_ids.add(obj.string_id)
+
+    for obj in list(session.dirty):
+        if not isinstance(obj, StringEntry):
+            continue
+        _, _, _, _, tags_changed = _tag_ids_before_after(session, obj)
+        if tags_changed:
+            string_ids.add(obj.id)
+
+    for string_id in string_ids:
+        if string_id is None:
+            continue
+        entry = session.get(StringEntry, string_id)
+        if entry is None:
+            continue
+        entry.updated_at = now
+        entry.updated_by_type = actor_type
+        entry.updated_by_id = actor_id
+        entry.updated_by_label = actor_label
+        if string_id in new_string_ids and entry.created_by_label is None:
+            entry.created_by_type = actor_type
+            entry.created_by_id = actor_id
+            entry.created_by_label = actor_label
+
+
 def capture_activities(session: Session, flush_context: Any, instances: Any = None) -> None:
     """SQLAlchemy before_flush listener — one string snapshot per flushed string."""
     del flush_context, instances
+    _stamp_string_metadata(session)
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(session)
     intent = (session.info.get("activity") or {}).get("intent")
     if session.info.get(RESTORE_INTENT_KEY):
@@ -381,7 +444,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
     for string_id in string_ids:
         if string_id in deleted_strings:
             entry = deleted_strings[string_id]
-            tags_before, tags_after, _ = _tag_ids_before_after(session, entry)
+            tags_before, tags_after, names_before, names_after, _ = _tag_ids_before_after(
+                session, entry
+            )
             trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
             before = _snapshot(
                 session,
@@ -391,6 +456,8 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 trans_after=trans_after,
                 tags_before=tags_before,
                 tags_after=tags_after,
+                tag_names_before=names_before,
+                tag_names_after=names_after,
             )
             classified = classify_event(
                 action=ActivityAction.delete.value,
@@ -423,7 +490,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
 
         if string_id in new_strings:
             entry = new_strings[string_id]
-            tags_before, tags_after, _ = _tag_ids_before_after(session, entry)
+            tags_before, tags_after, names_before, names_after, _ = _tag_ids_before_after(
+                session, entry
+            )
             trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
             after = _snapshot(
                 session,
@@ -433,6 +502,8 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 trans_after=trans_after,
                 tags_before=tags_before,
                 tags_after=tags_after,
+                tag_names_before=names_before,
+                tag_names_after=names_after,
             )
             classified = classify_event(
                 action=ActivityAction.create.value,
@@ -468,7 +539,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             continue
 
         field_changed = string_id in dirty_strings and _string_fields_changed(entry)
-        tags_before, tags_after, tags_changed = _tag_ids_before_after(session, entry)
+        tags_before, tags_after, names_before, names_after, tags_changed = _tag_ids_before_after(
+            session, entry
+        )
         trans_before, trans_after, trans_changed = _translation_maps(session, string_id, entry)
         if not field_changed and not tags_changed:
             if not trans_changed or _only_empty_new_translations(session, string_id):
@@ -482,6 +555,8 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             trans_after=trans_after,
             tags_before=tags_before,
             tags_after=tags_after,
+            tag_names_before=names_before,
+            tag_names_after=names_after,
         )
         after = _snapshot(
             session,
@@ -491,6 +566,8 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             trans_after=trans_after,
             tags_before=tags_before,
             tags_after=tags_after,
+            tag_names_before=names_before,
+            tag_names_after=names_after,
         )
         if before == after:
             continue
