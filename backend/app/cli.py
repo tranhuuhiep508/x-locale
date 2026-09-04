@@ -32,5 +32,27 @@ def migrate() -> None:
     raise SystemExit(subprocess.call([sys.executable, "-m", "alembic", "upgrade", "head"]))
 
 
+@app.command("prune-activities")
+def prune_activities_cmd() -> None:
+    """Delete activity rows older than ACTIVITY_RETENTION_DAYS. No-op when 0."""
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.services.activities import prune_activities
+
+    db = SessionLocal()
+    try:
+        deleted = prune_activities(db, days=settings.activity_retention_days)
+        db.commit()
+        if settings.activity_retention_days <= 0:
+            typer.echo("ACTIVITY_RETENTION_DAYS=0; nothing pruned")
+        else:
+            typer.echo(
+                f"Pruned {deleted} activity rows older than "
+                f"{settings.activity_retention_days} days"
+            )
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()

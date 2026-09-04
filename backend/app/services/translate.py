@@ -278,19 +278,21 @@ def run_translate_job(
 ) -> int:
     db = SessionLocal()
     try:
+        actor: dict[str, str | None] = {}
         if job_id:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = JobStatus.running
+                actor = ((job.payload or {}).get("actor") or {})
 
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
             return 0
 
         db.info["activity"] = {
-            "actor_type": "system",
-            "actor_id": None,
-            "actor_label": "AI translate",
+            "actor_type": actor.get("actor_type") or "user",
+            "actor_id": actor.get("actor_id"),
+            "actor_label": actor.get("actor_label") or "user",
             "batch_id": str(batch_id),
             "batch_kind": "translate",
         }

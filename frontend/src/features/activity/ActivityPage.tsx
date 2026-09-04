@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -27,6 +28,18 @@ import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
+
+function undoDescription(card: ActivityFeedCard): string {
+  const created = card.counts.created ?? 0
+  if (created > 0) {
+    const noun = created === 1 ? 'string' : 'strings'
+    return (
+      `This undoes ${card.children_count} strings. ${created} new ${noun} will be moved to Deleted ` +
+      '(or queued for public removal if already published). Later edits to those strings will be overwritten.'
+    )
+  }
+  return `This restores ${card.children_count} strings to their values before this action. Later edits to those strings will be overwritten.`
+}
 
 const EVENT_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -163,23 +176,11 @@ export function ActivityPage() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <Input
-            type="date"
-            className="w-36"
-            value={search.since?.slice(0, 10) ?? ''}
-            onChange={(event) =>
-              setSearch({ since: event.target.value ? `${event.target.value}T00:00:00` : undefined })
-            }
-            aria-label="From date"
-          />
-          <Input
-            type="date"
-            className="w-36"
-            value={search.until?.slice(0, 10) ?? ''}
-            onChange={(event) =>
-              setSearch({ until: event.target.value ? `${event.target.value}T23:59:59` : undefined })
-            }
-            aria-label="To date"
+          <DateRangePicker
+            value={{ since: search.since, until: search.until }}
+            onChange={({ since, until }) => setSearch({ since, until })}
+            placeholder="Date range"
+            disabled={{ after: new Date() }}
           />
           {search.event_type || search.actor || search.locale || search.since || search.until ? (
             <Button variant="ghost" size="sm" onClick={() => navigate({ search: { page: 1 } })}>
@@ -237,11 +238,7 @@ export function ActivityPage() {
         onClose={() => setUndoTarget(null)}
         onConfirm={() => undoTarget?.batch_id && undoMut.mutate(undoTarget.batch_id)}
         title="Undo this batch?"
-        description={
-          undoTarget
-            ? `This restores ${undoTarget.children_count} strings to their values before this action. Later edits to those strings will be overwritten.`
-            : ''
-        }
+        description={undoTarget ? undoDescription(undoTarget) : ''}
         confirmLabel="Undo"
         variant="default"
         isLoading={undoMut.isPending}
