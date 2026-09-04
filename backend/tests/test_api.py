@@ -19,6 +19,16 @@ def test_auth_me_dev_bypass(client):
     assert data["email"] == "dev@localhost"
 
 
+def test_login_sets_x_locale_session_cookie(client):
+    from app.auth import SESSION_COOKIE
+
+    assert SESSION_COOKIE == "x_locale_session"
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers.get("location") == "/"
+    assert f"{SESSION_COOKIE}=" in r.headers.get("set-cookie", "")
+
+
 def test_auth_me_unauthorized_without_bypass(client, monkeypatch):
     from app.config import settings
 

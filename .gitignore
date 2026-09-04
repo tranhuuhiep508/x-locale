@@ -6,6 +6,7 @@ venv/
 node_modules/
 dist/
 backend/static/
+.tms/
 .x-locale/
 cli/build/
 *.egg-info/

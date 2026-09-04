@@ -92,13 +92,13 @@ class InitCommandTests(unittest.TestCase):
     def test_flag_mode_writes_project_config(self) -> None:
         with fake_bootstrap():
             result = self._invoke(
-                ["init", "-k", "tms_secret", "-u", "https://x-locale.example.com", "-o", "./src/locales"]
+                ["init", "-k", "xl_secret", "-u", "https://x-locale.example.com", "-o", "./src/locales"]
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Demo App", result.output)
         with chdir(self.root):
             config = load_config()
-        self.assertEqual(config.api_key, "tms_secret")
+        self.assertEqual(config.api_key, "xl_secret")
         self.assertEqual(config.api_url, "https://x-locale.example.com")
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.base_language, "vi")
@@ -110,16 +110,16 @@ class InitCommandTests(unittest.TestCase):
 
     def test_flag_mode_skips_wizard_on_tty(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            result = self._invoke(["init", "-k", "tms_secret"])
+            result = self._invoke(["init", "-k", "xl_secret"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("API URL", result.output)
         self.assertNotIn("x-locale init", result.output)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_secret")
+            self.assertEqual(load_config().api_key, "xl_secret")
 
     def test_layout_flag_overrides_project(self) -> None:
         with fake_bootstrap():
-            result = self._invoke(["init", "-k", "tms_secret", "--layout", "flat", "-y"])
+            result = self._invoke(["init", "-k", "xl_secret", "--layout", "flat", "-y"])
         self.assertEqual(result.exit_code, 0, result.output)
         with chdir(self.root):
             config = load_config()
@@ -127,27 +127,27 @@ class InitCommandTests(unittest.TestCase):
 
     def test_existing_config_requires_yes_when_not_a_tty(self) -> None:
         with fake_bootstrap():
-            first = self._invoke(["init", "-k", "tms_secret"])
+            first = self._invoke(["init", "-k", "xl_secret"])
             self.assertEqual(first.exit_code, 0, first.output)
-            second = self._invoke(["init", "-k", "tms_other"])
+            second = self._invoke(["init", "-k", "xl_other"])
         self.assertEqual(second.exit_code, 1, second.output)
         self.assertIn("already exists", second.output)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_secret")
+            self.assertEqual(load_config().api_key, "xl_secret")
 
     def test_yes_overwrites_existing_config(self) -> None:
         with fake_bootstrap():
-            self._invoke(["init", "-k", "tms_secret"])
-            result = self._invoke(["init", "-k", "tms_rotated", "--yes"])
+            self._invoke(["init", "-k", "xl_secret"])
+            result = self._invoke(["init", "-k", "xl_rotated", "--yes"])
         self.assertEqual(result.exit_code, 0, result.output)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_rotated")
+            self.assertEqual(load_config().api_key, "xl_rotated")
 
     def test_wizard_prompts_for_omitted_values(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(
                 ["init"],
-                input="https://x-locale.example.com\ntms_wizard_key\n./src/locales\npublic\n",
+                input="https://x-locale.example.com\nxl_wizard_key\n./src/locales\npublic\n",
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("x-locale init", result.output)
@@ -159,41 +159,41 @@ class InitCommandTests(unittest.TestCase):
         with chdir(self.root):
             config = load_config()
         self.assertEqual(config.api_url, "https://x-locale.example.com")
-        self.assertEqual(config.api_key, "tms_wizard_key")
+        self.assertEqual(config.api_key, "xl_wizard_key")
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.stage, Stage.public)
         self.assertEqual(config.layout, Layout.modular)
 
     def test_wizard_accepts_defaults_and_confirms_overwrite(self) -> None:
         with fake_bootstrap():
-            seeded = self._invoke(["init", "-k", "tms_old"])
+            seeded = self._invoke(["init", "-k", "xl_old"])
         self.assertEqual(seeded.exit_code, 0, seeded.output)
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            cancelled = self._invoke(["init"], input="\ntms_new\n\n\nn\n")
+            cancelled = self._invoke(["init"], input="\nxl_new\n\n\nn\n")
         self.assertEqual(cancelled.exit_code, 1, cancelled.output)
         self.assertIn("Cancelled", cancelled.output)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_old")
+            self.assertEqual(load_config().api_key, "xl_old")
 
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            overwritten = self._invoke(["init"], input="\ntms_new\n\n\ny\n")
+            overwritten = self._invoke(["init"], input="\nxl_new\n\n\ny\n")
         self.assertEqual(overwritten.exit_code, 0, overwritten.output)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_new")
+            self.assertEqual(load_config().api_key, "xl_new")
             self.assertEqual(load_config().api_url, "http://localhost:8000")
             self.assertEqual(load_config().output_dir, "./locales")
 
     def test_wizard_rejects_empty_api_key_then_accepts_retry(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            result = self._invoke(["init"], input="\n\ntms_ok\n\n\n")
+            result = self._invoke(["init"], input="\n\nxl_ok\n\n\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertGreaterEqual(result.output.count("API key:"), 2)
         with chdir(self.root):
-            self.assertEqual(load_config().api_key, "tms_ok")
+            self.assertEqual(load_config().api_key, "xl_ok")
 
     def test_wizard_stage_is_case_insensitive_and_rejects_unknown(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            result = self._invoke(["init"], input="\ntms_ok\n\nnope\nPUBLIC\n")
+            result = self._invoke(["init"], input="\nxl_ok\n\nnope\nPUBLIC\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Stage must be", result.output)
         with chdir(self.root):
