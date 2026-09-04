@@ -1,4 +1,4 @@
-"""Load, save, and override ``.tms/config.yaml``."""
+"""Load, save, and override ``.x-locale/config.yaml``."""
 
 from __future__ import annotations
 
@@ -6,16 +6,16 @@ from pathlib import Path
 
 import yaml
 
-from tms_cli.errors import TmsError
-from tms_cli.models import Config, Layout, Stage, parse_locales
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.models import Config, Layout, Stage, parse_locales
 
-CONFIG_DIR = Path(".tms")
+CONFIG_DIR = Path(".x-locale")
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 
 
 def load_config(path: Path = CONFIG_FILE) -> Config:
     if not path.exists():
-        raise TmsError("No config found. Run `tms init` first.")
+        raise XLocaleError("No config found. Run `locale init` first.")
     with path.open("r", encoding="utf-8") as fh:
         return Config.from_dict(yaml.safe_load(fh) or {})
 
@@ -28,7 +28,7 @@ def save_config(config: Config, path: Path = CONFIG_FILE) -> None:
 
 def require_project_id(config: Config) -> str:
     if not config.project_id:
-        raise TmsError("project_id missing from config. Run `tms init` first.")
+        raise XLocaleError("project_id missing from config. Run `locale init` first.")
     return config.project_id
 
 

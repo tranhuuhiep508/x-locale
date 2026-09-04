@@ -1,4 +1,4 @@
-# TMS — Translation Management System
+# x-locale
 
 Self-hosted translation management with multi-project dashboard, modules/tags,
 activity log, AI auto-translate, Excel round-trip, and CLI sync.
@@ -37,7 +37,7 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-SQLite (`backend/tms.db`) is the default. Delete it and re-run migrate + seed to reset.
+SQLite (`backend/x-locale.db`) is the default. Delete it and re-run migrate + seed to reset.
 
 ## Quick start (Docker)
 
@@ -61,11 +61,11 @@ docker compose -f docker-compose.prod.yml up --build
 ```bash
 uv tool install -e ./cli
 
-tms init
-# or: tms init -k <api-key> -u http://localhost:8000 -o ./locales -y
-tms push
-tms pull
-tms status
+locale init
+# or: locale init -k <api-key> -u http://localhost:8000 -o ./locales -y
+locale push
+locale pull
+locale status
 ```
 
 See [cli/README.md](cli/README.md) for modular vs flat layouts and override flags.
@@ -82,7 +82,7 @@ keys under **Project → Settings**.
 
 ### Microsoft Entra ID (work + personal)
 
-TMS uses the **`/common`** v2 endpoint so both **work/school** and **personal** Microsoft
+x-locale uses the **`/common`** v2 endpoint so both **work/school** and **personal** Microsoft
 accounts (Outlook, Hotmail, Xbox) can sign in. That also allows work accounts from
 **any** Entra tenant, not only yours.
 
@@ -100,7 +100,7 @@ accounts (Outlook, Hotmail, Xbox) can sign in. That also allows work accounts fr
    `OIDC_REDIRECT_URL=https://<your-host>/api/auth/callback` (or `http://localhost:8000/api/auth/callback` locally).
 
 2. Create an app registration in [Entra ID → App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade):
-   1. **New registration**, name e.g. `TMS`
+   1. **New registration**, name e.g. `x-locale`
    2. Supported accounts: **Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant) and personal Microsoft accounts**
    3. Platform: **Web** (confidential/server-side — not SPA)
    4. Redirect URIs (exact match):
@@ -109,20 +109,20 @@ accounts (Outlook, Hotmail, Xbox) can sign in. That also allows work accounts fr
       - your production HTTPS callback when you have it
    5. **Certificates & secrets** → New client secret → `OIDC_CLIENT_SECRET`
    6. Overview → **Application (client) ID** → `OIDC_CLIENT_ID`
-   7. Token configuration → optional ID-token claim **email** (TMS still falls back to UPN / `preferred_username`)
+   7. Token configuration → optional ID-token claim **email** (x-locale still falls back to UPN / `preferred_username`)
    8. API permissions: delegated Microsoft Graph `openid`, `profile`, `email`
 
    `http://localhost` redirects are allowed for development. If the app was first created as single-tenant, switch **Authentication → Supported account types** (or manifest `signInAudience` to `AzureADandPersonalMicrosoftAccount`) and keep `OIDC_ISSUER` on `/common`, not `{tenant-id}`.
 
 3. Start backend then frontend, open http://localhost:5173 → **Continue with Microsoft**.
 
-Logout clears the TMS session cookie only (you stay signed into Microsoft). Do not
+Logout clears the x-locale session cookie only (you stay signed into Microsoft). Do not
 commit client IDs or secrets.
 
 ## Concepts
 
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export shape; modules are always stored.
-- **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `tms pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
+- **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `locale pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
 - **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string.
 
@@ -150,12 +150,12 @@ See [.env.example](.env.example). Notable vars:
 
 | Var | Purpose |
 |-----|---------|
-| `TMS_SECRET` | Signs session JWTs |
+| `X_LOCALE_SECRET` | Signs session JWTs |
 | `AUTH_DEV_BYPASS` | Local Dev User when OIDC is unset. Ignored once `OIDC_*` is filled |
 | `OIDC_ISSUER` | Entra discovery base (`https://login.microsoftonline.com/common/v2.0`) |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Entra app registration credentials |
 | `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
-| `TMS_DEMO_API_KEY` | Seeded demo project key |
+| `X_LOCALE_DEMO_API_KEY` | Seeded demo project key |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |

@@ -1,4 +1,4 @@
-"""Interactive and flag-mode ``tms init``."""
+"""Interactive and flag-mode ``locale init``."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from tms_cli.app import app
-from tms_cli.commands.init import _normalize_api_url
-from tms_cli.config import load_config
-from tms_cli.errors import TmsError
-from tms_cli.models import Layout, Stage
+from x_locale_cli.app import app
+from x_locale_cli.commands.init import _normalize_api_url
+from x_locale_cli.config import load_config
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.models import Layout, Stage
 
 DEMO_PROJECT = {
     "id": "11111111-1111-1111-1111-111111111111",
@@ -49,8 +49,8 @@ def fake_bootstrap(project: dict[str, Any] | None = None) -> Iterator[None]:
 
     payload = project if project is not None else DEMO_PROJECT
     with (
-        patch("tms_cli.commands.init.api_client", return_value=_Client()),
-        patch("tms_cli.commands.init.request_json", return_value=payload),
+        patch("x_locale_cli.commands.init.api_client", return_value=_Client()),
+        patch("x_locale_cli.commands.init.request_json", return_value=payload),
     ):
         yield
 
@@ -60,7 +60,7 @@ class NormalizeApiUrlTests(unittest.TestCase):
         self.assertEqual(_normalize_api_url("localhost:8000/"), "http://localhost:8000")
 
     def test_keeps_https(self) -> None:
-        self.assertEqual(_normalize_api_url(" https://tms.example.com "), "https://tms.example.com")
+        self.assertEqual(_normalize_api_url(" https://x-locale.example.com "), "https://x-locale.example.com")
 
 
 class InitCommandTests(unittest.TestCase):
@@ -92,14 +92,14 @@ class InitCommandTests(unittest.TestCase):
     def test_flag_mode_writes_project_config(self) -> None:
         with fake_bootstrap():
             result = self._invoke(
-                ["init", "-k", "tms_secret", "-u", "https://tms.example.com", "-o", "./src/locales"]
+                ["init", "-k", "tms_secret", "-u", "https://x-locale.example.com", "-o", "./src/locales"]
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Demo App", result.output)
         with chdir(self.root):
             config = load_config()
         self.assertEqual(config.api_key, "tms_secret")
-        self.assertEqual(config.api_url, "https://tms.example.com")
+        self.assertEqual(config.api_url, "https://x-locale.example.com")
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.base_language, "vi")
         self.assertEqual(config.locales, ["vi", "en", "ko", "ja"])
@@ -109,11 +109,11 @@ class InitCommandTests(unittest.TestCase):
         self.assertIn("Layout: modular", result.output)
 
     def test_flag_mode_skips_wizard_on_tty(self) -> None:
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(["init", "-k", "tms_secret"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("API URL", result.output)
-        self.assertNotIn("TMS init", result.output)
+        self.assertNotIn("x-locale init", result.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "tms_secret")
 
@@ -144,13 +144,13 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().api_key, "tms_rotated")
 
     def test_wizard_prompts_for_omitted_values(self) -> None:
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(
                 ["init"],
-                input="https://tms.example.com\ntms_wizard_key\n./src/locales\npublic\n",
+                input="https://x-locale.example.com\ntms_wizard_key\n./src/locales\npublic\n",
             )
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("TMS init", result.output)
+        self.assertIn("x-locale init", result.output)
         self.assertIn("API URL", result.output)
         self.assertIn("API key", result.output)
         self.assertIn("Output directory", result.output)
@@ -158,7 +158,7 @@ class InitCommandTests(unittest.TestCase):
         self.assertIn("Found:", result.output)
         with chdir(self.root):
             config = load_config()
-        self.assertEqual(config.api_url, "https://tms.example.com")
+        self.assertEqual(config.api_url, "https://x-locale.example.com")
         self.assertEqual(config.api_key, "tms_wizard_key")
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.stage, Stage.public)
@@ -168,14 +168,14 @@ class InitCommandTests(unittest.TestCase):
         with fake_bootstrap():
             seeded = self._invoke(["init", "-k", "tms_old"])
         self.assertEqual(seeded.exit_code, 0, seeded.output)
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             cancelled = self._invoke(["init"], input="\ntms_new\n\n\nn\n")
         self.assertEqual(cancelled.exit_code, 1, cancelled.output)
         self.assertIn("Cancelled", cancelled.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "tms_old")
 
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             overwritten = self._invoke(["init"], input="\ntms_new\n\n\ny\n")
         self.assertEqual(overwritten.exit_code, 0, overwritten.output)
         with chdir(self.root):
@@ -184,7 +184,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().output_dir, "./locales")
 
     def test_wizard_rejects_empty_api_key_then_accepts_retry(self) -> None:
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(["init"], input="\n\ntms_ok\n\n\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertGreaterEqual(result.output.count("API key:"), 2)
@@ -192,7 +192,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().api_key, "tms_ok")
 
     def test_wizard_stage_is_case_insensitive_and_rejects_unknown(self) -> None:
-        with fake_bootstrap(), patch("tms_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(["init"], input="\ntms_ok\n\nnope\nPUBLIC\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Stage must be", result.output)
@@ -208,13 +208,13 @@ class InitCommandTests(unittest.TestCase):
                 return False
 
         with (
-            patch("tms_cli.commands.init.api_client", return_value=_Client()),
+            patch("x_locale_cli.commands.init.api_client", return_value=_Client()),
             patch(
-                "tms_cli.commands.init.request_json",
-                side_effect=TmsError("Bootstrap failed (401): Invalid API key"),
+                "x_locale_cli.commands.init.request_json",
+                side_effect=XLocaleError("Bootstrap failed (401): Invalid API key"),
             ),
         ):
             result = self._invoke(["init", "-k", "bad"])
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("Invalid API key", result.output)
-        self.assertFalse((self.root / ".tms" / "config.yaml").exists())
+        self.assertFalse((self.root / ".x-locale" / "config.yaml").exists())

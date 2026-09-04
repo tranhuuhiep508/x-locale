@@ -14,8 +14,8 @@ from sqlalchemy.pool import StaticPool
 # Cloud/dev hosts may inject OIDC_*; bypass is ignored when OIDC is configured.
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["AUTH_DEV_BYPASS"] = "true"
-os.environ["TMS_SECRET"] = "test-secret"
-os.environ["TMS_DEMO_API_KEY"] = "test-demo-key"
+os.environ["X_LOCALE_SECRET"] = "test-secret"
+os.environ["X_LOCALE_DEMO_API_KEY"] = "test-demo-key"
 os.environ["OIDC_ISSUER"] = ""
 os.environ["OIDC_CLIENT_ID"] = ""
 os.environ["OIDC_CLIENT_SECRET"] = ""

@@ -1,7 +1,7 @@
 [project]
-name = "tms-backend"
+name = "x-locale-backend"
 version = "0.2.0"
-description = "TMS FastAPI backend"
+description = "x-locale FastAPI backend"
 requires-python = ">=3.14"
 dependencies = [
   "fastapi>=0.140",
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-tms-backend = "app.cli:app"
+x-locale-backend = "app.cli:app"
 
 [tool.fastapi]
 entrypoint = "app.main:app"

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-TMS (Translation Management System) — a monorepo with a FastAPI backend, a
+x-locale — a monorepo with a FastAPI backend, a
 React/Vite frontend, and a Python CLI. See `README.md` for the product overview
 and `docs/` for the data model and draft/public workflow.
 
@@ -17,16 +17,16 @@ missing.
 |----------|------------|-------------------------------------------------------------------------|------|-------|
 | Backend | `backend/` | `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + SQLite/Postgres. Schema via Alembic (not `create_all`). |
 | Frontend | `frontend/`| `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
-| CLI | `cli/` | `uv run --project cli tms <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.tms/config.yaml`. |
+| CLI | `cli/` | `uv run --project cli locale <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
 
 Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 
 ### Config / auth
 
 - Root `.env` (from `.env.example`) is shared by backend and Vite (`envDir` = repo root).
-- UI auth: session cookie (`tms_session` JWT signed with `TMS_SECRET`). Microsoft Entra ID via `OIDC_*` (`/common` = work + personal accounts). `AUTH_DEV_BYPASS=true` mints a Dev User only when OIDC is not configured.
+- UI auth: session cookie (`x_locale_session` JWT signed with `X_LOCALE_SECRET`). Microsoft Entra ID via `OIDC_*` (`/common` = work + personal accounts). `AUTH_DEV_BYPASS=true` mints a Dev User only when OIDC is not configured.
 - CLI/runtime auth: `X-API-Key` (or `?api_key=`). Keys are hashed in `api_keys`; create them in Project Settings.
-- Demo seed: `uv run python -m app.cli seed-demo` creates a Vietnamese-base modular "Demo App" with `auth`/`home`/`common` modules and key `TMS_DEMO_API_KEY`.
+- Demo seed: `uv run python -m app.cli seed-demo` creates a Vietnamese-base modular "Demo App" with `auth`/`home`/`common` modules and key `X_LOCALE_DEMO_API_KEY`.
 
 ### Non-obvious behavior
 

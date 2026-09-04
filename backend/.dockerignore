@@ -5,5 +5,5 @@ __pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
-tms.db
+x-locale.db
 *.db

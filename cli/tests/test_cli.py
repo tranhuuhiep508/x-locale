@@ -9,7 +9,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from tms_cli.app import app
+from x_locale_cli.app import app
 
 
 class AppHelpTests(unittest.TestCase):

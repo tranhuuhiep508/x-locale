@@ -1,4 +1,4 @@
-"""HTTP client for the TMS API."""
+"""HTTP client for the x-locale API."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from typing import Any
 
 import httpx
 
-from tms_cli.errors import TmsError
-from tms_cli.models import Config
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.models import Config
 
 HTTP_TIMEOUT = 60.0
 
@@ -56,13 +56,13 @@ def request_json(
     params: dict[str, Any] | None = None,
     payload: Any = None,
 ) -> Any:
-    """Send a request and return JSON, or raise ``TmsError`` on failure."""
+    """Send a request and return JSON, or raise ``XLocaleError`` on failure."""
     try:
         response = client.request(method, path, params=params, json=payload)
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         detail = parse_api_error(exc.response)
-        raise TmsError(f"{action} failed ({exc.response.status_code}): {detail}") from exc
+        raise XLocaleError(f"{action} failed ({exc.response.status_code}): {detail}") from exc
     except httpx.RequestError as exc:
-        raise TmsError(f"{action} failed: cannot reach server ({exc})") from exc
+        raise XLocaleError(f"{action} failed: cannot reach server ({exc})") from exc
     return response.json()

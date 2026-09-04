@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tms-cli"
+name = "x-locale-cli"
 version = "0.1.0"
-description = "CLI for TMS translation sync (tms init | push | pull)"
+description = "CLI for x-locale translation sync (locale init | push | pull)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -23,11 +23,11 @@ dependencies = [
 ]
 
 [project.scripts]
-tms = "tms_cli.main:app"
+locale = "x_locale_cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tms_cli*"]
+include = ["x_locale_cli*"]
 
 [tool.setuptools.package-data]
-tms_cli = ["tms.cmd"]
+x_locale_cli = ["locale.cmd"]

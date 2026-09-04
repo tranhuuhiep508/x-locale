@@ -17,9 +17,9 @@ from app.config import settings
 from app.database import get_db
 from app.models import ApiKey, Project, User
 
-SESSION_COOKIE = "tms_session"
+SESSION_COOKIE = "x_locale_session"
 SESSION_TTL_HOURS = 72
-DEV_ISSUER = "tms-dev"
+DEV_ISSUER = "x-locale-dev"
 DEV_SUB = "dev-user"
 
 
@@ -39,7 +39,7 @@ def hash_api_key(raw_key: str) -> str:
 
 def generate_api_key() -> tuple[str, str, str]:
     """Return (raw_key, prefix, hash)."""
-    raw = f"tms_{secrets.token_urlsafe(32)}"
+    raw = f"xlocale_{secrets.token_urlsafe(32)}"
     prefix = raw[:12]
     return raw, prefix, hash_api_key(raw)
 
@@ -53,12 +53,12 @@ def create_session_token(user: User) -> str:
         "iat": now,
         "exp": now + timedelta(hours=SESSION_TTL_HOURS),
     }
-    return jwt.encode(payload, settings.tms_secret, algorithm="HS256")
+    return jwt.encode(payload, settings.x_locale_secret, algorithm="HS256")
 
 
 def decode_session_token(token: str) -> dict:
     try:
-        return jwt.decode(token, settings.tms_secret, algorithms=["HS256"])
+        return jwt.decode(token, settings.x_locale_secret, algorithms=["HS256"])
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired session") from exc
 
@@ -100,11 +100,11 @@ def set_activity_context(db: Session, ctx: AuthContext, *, batch_id: uuid.UUID |
 def current_user(
     request: Request,
     db: Session = Depends(get_db),
-    tms_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> User:
     """Require an authenticated UI session (or AUTH_DEV_BYPASS)."""
-    if tms_session:
-        payload = decode_session_token(tms_session)
+    if x_locale_session:
+        payload = decode_session_token(x_locale_session)
         user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
@@ -138,11 +138,11 @@ def current_user(
 
 def optional_user(
     db: Session = Depends(get_db),
-    tms_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> User | None:
-    if tms_session:
+    if x_locale_session:
         try:
-            payload = decode_session_token(tms_session)
+            payload = decode_session_token(x_locale_session)
             return db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
         except HTTPException:
             return None

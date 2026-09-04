@@ -142,7 +142,7 @@ def test_api_key_auth(client):
     )
     assert r.status_code == 201, r.text
     raw_key = r.json()["key"]
-    assert raw_key.startswith("tms_")
+    assert raw_key.startswith("xlocale_")
 
     r = client.get(
         f"/api/projects/{pid}/strings",

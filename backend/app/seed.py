@@ -39,7 +39,7 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
     db = SessionLocal()
     try:
         # Check if demo project already exists via api key hash
-        demo_hash = hash_api_key(settings.tms_demo_api_key)
+        demo_hash = hash_api_key(settings.x_locale_demo_api_key)
         existing_key = db.query(ApiKey).filter(ApiKey.key_hash == demo_hash).first()
         if existing_key and not force:
             return db.query(Project).filter(Project.id == existing_key.project_id).first()
@@ -61,7 +61,7 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
         db.flush()
 
         # API key — use the configured demo key (not randomly generated) so docs stay valid
-        raw = settings.tms_demo_api_key
+        raw = settings.x_locale_demo_api_key
         prefix = raw[:12] if len(raw) >= 12 else raw
         db.add(
             ApiKey(

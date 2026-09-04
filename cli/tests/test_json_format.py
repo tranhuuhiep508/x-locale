@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from tms_cli.client import parse_api_error
-from tms_cli.errors import TmsError
-from tms_cli.io import (
+from x_locale_cli.client import parse_api_error
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.io import (
     build_modular_push_body,
     collect_modular_local_keys,
     collect_modular_remote_keys,
@@ -23,7 +23,7 @@ from tms_cli.io import (
     scoped_key,
     write_locale_file_reported,
 )
-from tms_cli.models import (
+from x_locale_cli.models import (
     UNASSIGNED_SLUG,
     ChangeItem,
     Config,
@@ -32,7 +32,7 @@ from tms_cli.models import (
     Stage,
     parse_locales,
 )
-from tms_cli.report import group_pull_changes
+from x_locale_cli.report import group_pull_changes
 
 
 class LocaleJsonTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class LocaleJsonTests(unittest.TestCase):
         self.assertEqual(parse_locale_json(data), data)
 
     def test_parse_locale_json_rejects_nested_values(self) -> None:
-        with self.assertRaises(TmsError):
+        with self.assertRaises(XLocaleError):
             parse_locale_json({"auth": {"sign_in": "Sign in"}})
 
     def test_locale_json_from_strings_sorts_keys(self) -> None:
@@ -83,12 +83,12 @@ class ResolvePushSourceTests(unittest.TestCase):
         self.assertEqual(path, self.locales_dir / "en.json")
 
     def test_resolve_rejects_translation_file(self) -> None:
-        with self.assertRaises(TmsError) as ctx:
+        with self.assertRaises(XLocaleError) as ctx:
             resolve_push_source(self.config, self.locales_dir / "vi.json")
         self.assertIn("Cannot push translation file", str(ctx.exception))
 
     def test_resolve_rejects_directory(self) -> None:
-        with self.assertRaises(TmsError) as ctx:
+        with self.assertRaises(XLocaleError) as ctx:
             resolve_push_source(self.config, self.locales_dir)
         self.assertIn("got directory", str(ctx.exception))
 
@@ -168,7 +168,7 @@ class ScanModularBaseTests(unittest.TestCase):
 
     def test_rejects_non_string_values_in_module_file(self) -> None:
         self._make_module("auth", "en", {"key": {"nested": "bad"}})
-        with self.assertRaises(TmsError):
+        with self.assertRaises(XLocaleError):
             scan_modular_base(self.root, "en")
 
 

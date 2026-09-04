@@ -1,4 +1,4 @@
-"""``tms init`` — discover the project and write ``.tms/config.yaml``."""
+"""``locale init`` — discover the project and write ``.x-locale/config.yaml``."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from typing import Annotated, Any
 import typer
 from rich.markup import escape
 
-from tms_cli.client import api_client, request_json
-from tms_cli.config import CONFIG_FILE, save_config
-from tms_cli.console import console
-from tms_cli.errors import TmsError
-from tms_cli.models import (
+from x_locale_cli.client import api_client, request_json
+from x_locale_cli.config import CONFIG_FILE, save_config
+from x_locale_cli.console import console
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.models import (
     DEFAULT_API_URL,
     DEFAULT_BASE_LANGUAGE,
     DEFAULT_OUTPUT_DIR,
@@ -29,11 +29,11 @@ _STAGE_CHOICES = ", ".join(item.value for item in Stage)
 def init(
     api_key: Annotated[
         str | None,
-        typer.Option("-k", "--api-key", help="Project API key (tms_…). Prompted if omitted."),
+        typer.Option("-k", "--api-key", help="Project API key (xlocale_…). Prompted if omitted."),
     ] = None,
     api_url: Annotated[
         str | None,
-        typer.Option("-u", "--api-url", help="TMS server base URL"),
+        typer.Option("-u", "--api-url", help="x-locale server base URL"),
     ] = None,
     output_dir: Annotated[
         str | None,
@@ -56,11 +56,11 @@ def init(
         typer.Option("-y", "--yes", help="Skip prompts and overwrite existing config"),
     ] = False,
 ) -> None:
-    """Initialise TMS config from the project linked to an API key.
+    """Initialise x-locale config from the project linked to an API key.
 
     Run with no flags in a terminal for an interactive wizard. Flags skip the
     matching prompt; ``-y/--yes`` uses defaults and overwrites
-    ``.tms/config.yaml`` without asking. Layout, locales, and base language
+    ``.x-locale/config.yaml`` without asking. Layout, locales, and base language
     come from the server unless overridden.
     """
     wizard = _use_wizard(
@@ -74,7 +74,7 @@ def init(
     )
     if wizard:
         console.print(
-            "[bold]TMS init[/bold] — connect this directory to a project",
+            "[bold]x-locale init[/bold] — connect this directory to a project",
             highlight=False,
         )
 
@@ -154,7 +154,7 @@ def _use_wizard(
     stage: Stage | None,
     base_language: str | None,
 ) -> bool:
-    """Prompt for omitted values only when `tms init` is run with no flags."""
+    """Prompt for omitted values only when `locale init` is run with no flags."""
     if yes or not _stdin_is_tty():
         return False
     return all(
@@ -166,7 +166,7 @@ def _use_wizard(
 def _normalize_api_url(url: str) -> str:
     cleaned = url.strip()
     if not cleaned:
-        raise TmsError("API URL is required.")
+        raise XLocaleError("API URL is required.")
     if "://" not in cleaned:
         cleaned = f"http://{cleaned}"
     return cleaned.rstrip("/")
@@ -190,7 +190,7 @@ def _require_api_key(value: str | None, *, prompt: bool) -> str:
     if value is not None and value.strip():
         return value.strip()
     if not prompt:
-        raise TmsError("API key is required. Pass -k/--api-key or run `tms init` in a terminal.")
+        raise XLocaleError("API key is required. Pass -k/--api-key or run `locale init` in a terminal.")
     hide_input = sys.stdin.isatty()
     while True:
         typed = str(typer.prompt("API key", hide_input=hide_input)).strip()
@@ -217,7 +217,7 @@ def _discover_project(api_url: str, api_key: str) -> dict[str, Any]:
     with api_client(bootstrap) as client:
         project = request_json(client, "GET", "/api/bootstrap", action="Bootstrap")
     if not isinstance(project, dict) or not project.get("id"):
-        raise TmsError("Bootstrap failed: server did not return a project.")
+        raise XLocaleError("Bootstrap failed: server did not return a project.")
     return project
 
 
@@ -242,5 +242,5 @@ def _confirm_write(*, yes: bool) -> None:
     if _stdin_is_tty():
         if typer.confirm(f"{CONFIG_FILE} already exists. Overwrite?", default=False):
             return
-        raise TmsError("Cancelled — existing config was not changed.")
-    raise TmsError(f"{CONFIG_FILE} already exists. Re-run with --yes to overwrite.")
+        raise XLocaleError("Cancelled — existing config was not changed.")
+    raise XLocaleError(f"{CONFIG_FILE} already exists. Re-run with --yes to overwrite.")
