@@ -3,13 +3,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: tms
-      POSTGRES_PASSWORD: tms
-      POSTGRES_DB: tms
+      POSTGRES_USER: xlocale
+      POSTGRES_PASSWORD: xlocale
+      POSTGRES_DB: xlocale
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tms -d tms"]
+      test: ["CMD-SHELL", "pg_isready -U xlocale -d xlocale"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,15 +21,15 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://tms:tms@postgres:5432/tms
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
-      TMS_SECRET: ${TMS_SECRET:-dev-secret-change-me}
-      TMS_DEMO_API_KEY: ${TMS_DEMO_API_KEY:-demo-api-key-change-me}
+      X_LOCALE_SECRET: ${X_LOCALE_SECRET:-change-me}
+      X_LOCALE_DEMO_API_KEY: ${X_LOCALE_DEMO_API_KEY:-demo-local-key}
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
       OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}

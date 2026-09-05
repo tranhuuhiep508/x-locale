@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import typer
 
-app = typer.Typer(help="TMS backend management commands", no_args_is_help=True)
+app = typer.Typer(help="x-locale backend management commands", no_args_is_help=True)
 
 
 @app.callback()
 def _root() -> None:
-    """TMS backend management commands."""
+    """x-locale backend management commands."""
 
 
 @app.command("seed-demo")

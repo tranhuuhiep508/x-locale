@@ -19,6 +19,19 @@ def test_auth_me_dev_bypass(client):
     assert data["email"] == "dev@localhost"
 
 
+def test_login_sets_x_locale_session_cookie(client):
+    from app.auth import SESSION_COOKIE
+
+    assert SESSION_COOKIE == "x_locale_session"
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers.get("location") == "/"
+    cookie = r.headers.get("set-cookie", "")
+    assert f"{SESSION_COOKIE}=" in cookie
+    assert "tms_session=" not in cookie
+    assert "httponly" in cookie.lower()
+
+
 def test_auth_me_unauthorized_without_bypass(client, monkeypatch):
     from app.config import settings
 
@@ -142,7 +155,7 @@ def test_api_key_auth(client):
     )
     assert r.status_code == 201, r.text
     raw_key = r.json()["key"]
-    assert raw_key.startswith("tms_")
+    assert raw_key.startswith("xlocale_")
 
     r = client.get(
         f"/api/projects/{pid}/strings",
@@ -186,6 +199,8 @@ def test_generate_api_key_revokes_previous_personal_key(client):
     )
     assert first.status_code == 201, first.text
     old_key = first.json()["key"]
+    assert old_key.startswith("xlocale_")
+    assert not old_key.startswith("tms_")
 
     second = client.post(
         f"/api/projects/{pid}/api-keys",
@@ -193,6 +208,7 @@ def test_generate_api_key_revokes_previous_personal_key(client):
     )
     assert second.status_code == 201, second.text
     new_key = second.json()["key"]
+    assert new_key.startswith("xlocale_")
     assert new_key != old_key
 
     stale = client.get(

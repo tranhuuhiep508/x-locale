@@ -1,11 +1,11 @@
-"""Classify local vs TMS export mismatches for status, pull, and sync."""
+"""Classify local vs x-locale export mismatches for status, pull, and sync."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from tms_cli.models import UNASSIGNED_SLUG
+from x_locale_cli.models import UNASSIGNED_SLUG
 
 UNASSIGNED_PREFIX = f"{UNASSIGNED_SLUG}/"
 
@@ -87,9 +87,9 @@ def removed_key_reason(
 ) -> str:
     """Short label for a key pull dropped from a locale file."""
     if key in set(pending_remove):
-        return "pending remove on TMS"
+        return "pending remove on x-locale"
     if key in set(tombstones):
-        return "tombstone on TMS"
+        return "tombstone on x-locale"
     if key.startswith(UNASSIGNED_PREFIX):
         return "_unassigned (CLI will not push)"
-    return "local only — not on TMS"
+    return "local only — not on x-locale"

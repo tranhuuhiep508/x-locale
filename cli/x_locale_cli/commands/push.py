@@ -1,16 +1,16 @@
-"""``tms push`` — upload base-language source strings."""
+"""``locale push`` — upload base-language source strings."""
 
 from __future__ import annotations
 
-from tms_cli.commands.options import (
+from x_locale_cli.commands.options import (
     DryRunOption,
     LayoutOption,
     LocalesOption,
     OutputDirOption,
     StageOption,
 )
-from tms_cli.config import runtime_config
-from tms_cli.ops import push_strings
+from x_locale_cli.config import runtime_config
+from x_locale_cli.ops import push_strings
 
 
 def push(
@@ -20,7 +20,7 @@ def push(
     locales: LocalesOption = None,
     dry_run: DryRunOption = False,
 ) -> None:
-    """Push base-language source strings to TMS.
+    """Push base-language source strings to x-locale.
 
     Flat layout:    reads  {output_dir}/{base_language}.json
     Modular layout: scans  {output_dir}/*/{base_language}.json

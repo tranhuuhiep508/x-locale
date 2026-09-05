@@ -1,4 +1,4 @@
-"""Typer application: register commands and convert ``TmsError`` to exit 1."""
+"""Typer application: register commands and convert ``XLocaleError`` to exit 1."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Any
 
 import typer
 
-from tms_cli.commands import COMMANDS
-from tms_cli.console import console
-from tms_cli.errors import TmsError, TmsExit
+from x_locale_cli.commands import COMMANDS
+from x_locale_cli.console import console
+from x_locale_cli.errors import XLocaleError, XLocaleExit
 
 app = typer.Typer(
-    help="TMS CLI — sync translations with your TMS server",
+    help="x-locale CLI — sync translations with your x-locale server",
     no_args_is_help=True,
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -25,10 +25,10 @@ def _register(command: Callable[..., Any]) -> None:
     def wrapped(*args: Any, **kwargs: Any) -> Any:
         try:
             return command(*args, **kwargs)
-        except TmsError as exc:
+        except XLocaleError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(1) from exc
-        except TmsExit as exc:
+        except XLocaleExit as exc:
             raise typer.Exit(exc.code) from exc
 
     app.command()(wrapped)

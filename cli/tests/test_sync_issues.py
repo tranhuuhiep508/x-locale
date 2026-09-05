@@ -1,4 +1,4 @@
-"""Classification and hint copy for local vs TMS mismatches."""
+"""Classification and hint copy for local vs x-locale mismatches."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from tms_cli.issues import (
+from x_locale_cli.issues import (
     StatusSnapshot,
     SyncIssues,
     classify_sync_issues,
     removed_key_reason,
 )
-from tms_cli.models import PulledFileReport
-from tms_cli.report import print_pull_report, print_status, print_sync_summary
+from x_locale_cli.models import PulledFileReport
+from x_locale_cli.report import print_pull_report, print_status, print_sync_summary
 
 
 class ClassifySyncIssuesTests(unittest.TestCase):
@@ -68,7 +68,7 @@ class RemovedKeyReasonTests(unittest.TestCase):
     def test_pending_remove(self) -> None:
         self.assertEqual(
             removed_key_reason("draft/123ewfewf", pending_remove=["draft/123ewfewf"]),
-            "pending remove on TMS",
+            "pending remove on x-locale",
         )
 
     def test_unassigned(self) -> None:
@@ -82,7 +82,7 @@ class ReportHintTests(unittest.TestCase):
     def _capture(self, fn) -> str:
         buf = io.StringIO()
         fake = Console(file=buf, width=120, color_system=None)
-        with patch("tms_cli.report.console", fake):
+        with patch("x_locale_cli.report.console", fake):
             fn()
         return buf.getvalue()
 
@@ -97,12 +97,12 @@ class ReportHintTests(unittest.TestCase):
             untranslated={"en": 0},
         )
         text = self._capture(lambda: print_status(snapshot))
-        self.assertIn("Pending remove on TMS", text)
+        self.assertIn("Pending remove on x-locale", text)
         self.assertIn("draft/123ewfewf", text)
         self.assertIn("omitted from draft export", text)
-        self.assertIn("will not re-add", text)
+        self.assertIn("re-add", text)
         self.assertNotIn("Orphaned locally", text)
-        self.assertNotIn("run `tms push` to add to TMS", text)
+        self.assertNotIn("run `locale push` to add to x-locale", text)
 
     def test_sync_summary_counts_remaining_issues(self) -> None:
         snapshot = StatusSnapshot(

@@ -97,7 +97,7 @@ echo "==> Starting frontend ($FRONTEND_URL)..."
 FRONTEND_PID=$!
 
 echo ""
-echo "TMS dev stack is running:"
+echo "x-locale dev stack is running:"
 echo "  Dashboard: $FRONTEND_URL"
 echo "  API docs:  $BACKEND_URL/docs"
 echo "Press Ctrl+C to stop both services."

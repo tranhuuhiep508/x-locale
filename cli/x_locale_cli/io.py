@@ -7,9 +7,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from tms_cli.console import console
-from tms_cli.errors import TmsError
-from tms_cli.models import (
+from x_locale_cli.console import console
+from x_locale_cli.errors import XLocaleError
+from x_locale_cli.models import (
     DEFAULT_BASE_LANGUAGE,
     UNASSIGNED_SLUG,
     Config,
@@ -26,7 +26,7 @@ def load_json_file(path: Path) -> Any:
     try:
         return json.loads(_TRAILING_COMMA_RE.sub(r"\1", text))
     except json.JSONDecodeError as exc:
-        raise TmsError(
+        raise XLocaleError(
             f"Invalid JSON in {path}: {exc.msg} (line {exc.lineno}, column {exc.colno})"
         ) from exc
 
@@ -36,7 +36,7 @@ def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
     strings: dict[str, str] = {}
     for key, value in data.items():
         if not isinstance(value, str):
-            raise TmsError(
+            raise XLocaleError(
                 f"Locale JSON requires string values; got {type(value).__name__} for key {key!r}"
             )
         strings[key] = value
@@ -79,23 +79,23 @@ def resolve_push_source(config: Config, source_file: Path | None) -> Path:
     path = default_path if source_file is None else source_file
 
     if path.is_dir():
-        raise TmsError(
+        raise XLocaleError(
             f"Expected a JSON file, got directory '{path}'. "
-            f"Run `tms push` without arguments to push {default_path}"
+            f"Run `locale push` without arguments to push {default_path}"
         )
 
     if path.suffix.lower() != ".json":
-        raise TmsError(f"Expected a JSON file, got '{path}'")
+        raise XLocaleError(f"Expected a JSON file, got '{path}'")
 
     if path.stem != base_language:
-        raise TmsError(
+        raise XLocaleError(
             f"Cannot push translation file '{path.name}'. "
             f"Push only accepts the base language file ({base_language}.json). "
-            f"Run `tms push` without arguments to use {default_path}"
+            f"Run `locale push` without arguments to use {default_path}"
         )
 
     if not path.exists():
-        raise TmsError(f"File not found: {path}")
+        raise XLocaleError(f"File not found: {path}")
 
     return path
 
@@ -105,7 +105,7 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
 
     Returns ``{module_slug: {key: value}}`` for every module directory that
     contains a base-language file. Directories whose names start with ``_``
-    or ``.`` are skipped (e.g. ``_unassigned``, ``.tms``).
+    or ``.`` are skipped (e.g. ``_unassigned``, ``.x-locale``).
     """
     modules: dict[str, dict[str, str]] = {}
     if not output_dir.is_dir():

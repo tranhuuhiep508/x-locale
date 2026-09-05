@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from tms_cli.client import api_client, request_json
-from tms_cli.config import require_project_id
-from tms_cli.errors import TmsError, TmsExit
-from tms_cli.io import (
+from x_locale_cli.client import api_client, request_json
+from x_locale_cli.config import require_project_id
+from x_locale_cli.errors import XLocaleError, XLocaleExit
+from x_locale_cli.io import (
     build_modular_push_body,
     collect_modular_local_keys,
     collect_modular_remote_keys,
@@ -23,9 +23,9 @@ from tms_cli.io import (
     string_map,
     write_locale_file_reported,
 )
-from tms_cli.issues import StatusSnapshot, classify_sync_issues
-from tms_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport
-from tms_cli.report import (
+from x_locale_cli.issues import StatusSnapshot, classify_sync_issues
+from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport
+from x_locale_cli.report import (
     print_pull_report,
     print_push_report,
     print_status,
@@ -124,7 +124,7 @@ def load_status_snapshot(config: Config) -> StatusSnapshot:
 
 def _exit_if_blocking(snapshot: StatusSnapshot) -> None:
     if snapshot.issues.has_blocking():
-        raise TmsExit(1)
+        raise XLocaleExit(1)
 
 
 def push_strings(config: Config, *, dry_run: bool = False) -> None:
@@ -137,7 +137,7 @@ def push_strings(config: Config, *, dry_run: bool = False) -> None:
     if config.layout is Layout.modular:
         modules = scan_modular_base(output_dir, base_language)
         if not modules:
-            raise TmsError(
+            raise XLocaleError(
                 f"No module directories with {base_language}.json found in {output_dir}. "
                 "Create at least one module directory or switch to flat layout."
             )
@@ -152,7 +152,7 @@ def push_strings(config: Config, *, dry_run: bool = False) -> None:
         source_path = resolve_push_source(config, None)
         raw = load_json_file(source_path)
         if not isinstance(raw, dict):
-            raise TmsError("Locale JSON must be a top-level object")
+            raise XLocaleError("Locale JSON must be a top-level object")
         strings = parse_locale_json(raw)
         payload = {"strings": strings}
         local_key_count = len(strings)

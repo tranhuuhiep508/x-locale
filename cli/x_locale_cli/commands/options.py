@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from tms_cli.models import Layout, Stage
+from x_locale_cli.models import Layout, Stage
 
 OutputDirOption = Annotated[
     str | None,

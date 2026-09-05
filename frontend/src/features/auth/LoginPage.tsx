@@ -12,9 +12,9 @@ export function LoginPage() {
           <div className="mb-8 flex flex-col items-center">
             <div className="mb-3 flex items-center gap-2">
               <Layers className="size-8 text-primary" />
-              <span className="text-2xl font-bold text-foreground">TMS</span>
+              <span className="text-2xl font-bold text-foreground">x-locale</span>
             </div>
-            <p className="text-sm text-muted-foreground">Translation Management System</p>
+            <p className="text-sm text-muted-foreground">Translation management</p>
           </div>
 
           <Card className="p-4">

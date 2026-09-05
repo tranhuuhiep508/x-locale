@@ -7,10 +7,10 @@ from typing import Any
 
 from rich.table import Table
 
-from tms_cli.console import console
-from tms_cli.io import file_module_locale, scoped_key
-from tms_cli.issues import StatusSnapshot, SyncIssues, removed_key_reason
-from tms_cli.models import ChangeItem, PulledFileReport
+from x_locale_cli.console import console
+from x_locale_cli.io import file_module_locale, scoped_key
+from x_locale_cli.issues import StatusSnapshot, SyncIssues, removed_key_reason
+from x_locale_cli.models import ChangeItem, PulledFileReport
 
 _KEY_LIST_LIMIT = 100
 _STATUS_KEY_LIMIT = 20
@@ -21,33 +21,33 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
         "missing_local",
         "Missing locally",
         "Missing locally",
-        "On TMS export, absent from local files.",
-        "→ Run `tms pull` to add them.",
+        "On x-locale export, absent from local files.",
+        "→ Run `locale pull` to add them.",
         "red",
     ),
     (
         "extra_local",
-        "Local only (not on TMS)",
-        "Local only (not on TMS)",
-        "In local files, not on TMS. Push can create them.",
-        "→ Run `tms push` to add them to TMS.",
+        "Local only (not on x-locale)",
+        "Local only (not on x-locale)",
+        "In local files, not on x-locale. Push can create them.",
+        "→ Run `locale push` to add them to x-locale.",
         "yellow",
     ),
     (
         "pending_remove",
-        "Pending remove on TMS",
-        "Pending remove on TMS",
-        "These keys exist on TMS but are omitted from draft export. Push will not re-add them.",
-        "→ In TMS: Restore or publish the delete.\n"
+        "Pending remove on x-locale",
+        "Pending remove on x-locale",
+        "These keys exist on x-locale but are omitted from draft export. Push will not re-add them.",
+        "→ In x-locale: Restore or publish the delete.\n"
         "  → Locally: remove the key if files should match export.",
         "yellow",
     ),
     (
         "tombstone",
-        "Removed on TMS (tombstone)",
-        "Removed on TMS (tombstone)",
-        "Soft-deleted on TMS. Export omits them; push will not restore them.",
-        "→ In TMS: Restore the string.\n"
+        "Removed on x-locale (tombstone)",
+        "Removed on x-locale (tombstone)",
+        "Soft-deleted on x-locale. Export omits them; push will not restore them.",
+        "→ In x-locale: Restore the string.\n"
         "  → Locally: remove the key if files should match export.",
         "yellow",
     ),
@@ -56,15 +56,15 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
         "Source text differs",
         "Source text differs",
         "Same key on both sides, base-language text is different.",
-        "→ Run `tms push` to send local text, or `tms pull` to take TMS.",
+        "→ Run `locale push` to send local text, or `locale pull` to take x-locale.",
         "yellow",
     ),
     (
         "unassigned_local",
         "_unassigned (CLI will not push)",
         "_unassigned (CLI will not push)",
-        "Keys under _unassigned/ are counted locally but skipped by `tms push`.",
-        "→ Assign a module in TMS, or import with `unassigned`.",
+        "Keys under _unassigned/ are counted locally but skipped by `locale push`.",
+        "→ Assign a module in x-locale, or import with `unassigned`.",
         "yellow",
     ),
 ]
@@ -123,7 +123,7 @@ def _print_counts(rows: list[tuple[str, int]]) -> None:
     for label, count in rows:
         if label in {"Created", "Updated"} and count:
             style = "green" if label == "Created" else "cyan"
-        elif label in {"On TMS, not in local files", "Pending remove (unchanged)"} and count:
+        elif label in {"On x-locale, not in local files", "Pending remove (unchanged)"} and count:
             style = "yellow"
         elif label == "Removed" and count:
             style = "yellow"
@@ -238,7 +238,7 @@ def print_pull_report(
         removed_labeled,
         style="yellow",
         hint="Dropped because they are not in this stage's export.",
-        action="→ Leftover keys in folders pull did not rewrite still show in `tms status`.",
+        action="→ Leftover keys in folders pull did not rewrite still show in `locale status`.",
     )
 
     if not created and not updated and not removed_labeled:
@@ -272,7 +272,7 @@ def print_push_report(
         ("Unchanged", unchanged_count),
     ]
     if remote_only:
-        counts.append(("On TMS, not in local files", len(remote_only)))
+        counts.append(("On x-locale, not in local files", len(remote_only)))
     if pending_items:
         counts.append(("Pending remove (unchanged)", len(pending_items)))
     _print_counts(counts)
@@ -280,27 +280,27 @@ def print_push_report(
         "Created",
         created,
         style="green",
-        hint="New strings on TMS.",
+        hint="New strings on x-locale.",
     )
     _print_change_section(
         "Updated",
         updated,
         style="cyan",
-        hint="Base-language text changed on TMS.",
+        hint="Base-language text changed on x-locale.",
     )
     _print_change_section(
-        "On TMS, not in local files",
+        "On x-locale, not in local files",
         remote_only,
         style="yellow",
-        hint="Present in TMS export for the modules you pushed — not deleted.",
-        action="→ Run `tms pull` to add them locally. Push never deletes remote keys.",
+        hint="Present in x-locale export for the modules you pushed — not deleted.",
+        action="→ Run `locale pull` to add them locally. Push never deletes remote keys.",
     )
     _print_change_section(
         "Pending remove (unchanged)",
         pending_items,
         style="yellow",
-        hint="Local keys match TMS rows queued for removal. They are omitted from draft export.",
-        action="→ In TMS: Restore or publish the delete. Push will not re-create them.",
+        hint="Local keys match x-locale rows queued for removal. They are omitted from draft export.",
+        action="→ In x-locale: Restore or publish the delete. Push will not re-create them.",
     )
 
     if dry_run:
@@ -312,7 +312,7 @@ def print_push_report(
 def print_status(snapshot: StatusSnapshot) -> None:
     issues = snapshot.issues
     console.print(
-        f"\n[bold]TMS Status[/bold]  project={snapshot.project_id}  "
+        f"\n[bold]x-locale Status[/bold]  project={snapshot.project_id}  "
         f"layout={snapshot.layout}  stage={snapshot.stage}\n"
     )
 
@@ -348,4 +348,4 @@ def print_sync_summary(snapshot: StatusSnapshot) -> None:
     noun = "issue" if count == 1 else "issues"
     console.print(f"\n[yellow]{count} {noun} remain after push + pull[/yellow]")
     print_issue_sections(issues, limit=_STATUS_KEY_LIMIT)
-    console.print("\n[dim]Full breakdown: tms status[/dim]")
+    console.print("\n[dim]Full breakdown: locale status[/dim]")

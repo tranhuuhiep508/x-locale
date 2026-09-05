@@ -6,11 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    database_url: str = "sqlite:///./tms.db"
+    database_url: str = "sqlite:///./x-locale.db"
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
-    tms_secret: str = "dev-secret-change-me"
-    tms_demo_api_key: str = "demo-api-key-change-me"
+    x_locale_secret: str = "change-me"
+    x_locale_demo_api_key: str = "demo-local-key"
     default_base_language: str = "vi"
 
     # OIDC

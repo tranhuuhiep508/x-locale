@@ -28,10 +28,10 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="TMS API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="x-locale API", version="0.2.0", lifespan=lifespan)
 
 # SessionMiddleware required by Authlib OIDC authorize_redirect
-app.add_middleware(SessionMiddleware, secret_key=settings.tms_secret)
+app.add_middleware(SessionMiddleware, secret_key=settings.x_locale_secret)
 
 if settings.cors_origin_list:
     app.add_middleware(

@@ -49,7 +49,7 @@ def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict
     return existing
 
 
-RESTORE_INTENT_KEY = "_tms_restore_intent"
+RESTORE_INTENT_KEY = "_x_locale_restore_intent"
 
 
 def set_restore_intent(session: Session) -> None:

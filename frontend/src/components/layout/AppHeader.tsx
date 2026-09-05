@@ -29,7 +29,7 @@ export function AppHeader({
           <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/15">
             <Layers className="size-4 text-primary" />
           </span>
-          <span className="text-sm font-semibold tracking-tight">TMS</span>
+          <span className="text-sm font-semibold tracking-tight">x-locale</span>
         </Link>
         {title ? (
           <span

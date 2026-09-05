@@ -65,7 +65,7 @@ def parse_stage(value: Any, default: Stage = DEFAULT_STAGE) -> Stage:
 
 @dataclass(frozen=True)
 class Config:
-    """Project config from ``.tms/config.yaml``, with optional CLI overrides."""
+    """Project config from ``.x-locale/config.yaml``, with optional CLI overrides."""
 
     api_url: str
     api_key: str

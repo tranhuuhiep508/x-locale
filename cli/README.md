@@ -1,6 +1,6 @@
-# tms-cli
+# x-locale-cli
 
-Sync locale files with a [TMS](https://github.com/your-org/tms) server.
+Sync locale files with an [x-locale](https://github.com/your-org/x-locale) server.
 
 ## Install
 
@@ -13,7 +13,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 **From PyPI**
 
 ```bash
-uv tool install tms-cli
+uv tool install x-locale-cli
 ```
 
 **From this repo**
@@ -22,9 +22,13 @@ uv tool install tms-cli
 uv tool install -e ./cli
 ```
 
-**Windows:** After install, run `python -m tms_cli.windows` once to replace the
-unsigned `tms.exe` shim with `tms.cmd` so Smart App Control does not block the
+**Windows:** After install, run `python -m x_locale_cli.windows` once to replace the
+unsigned `locale.exe` shim with `locale.cmd` so Smart App Control does not block the
 command.
+
+The `locale` command can shadow the system `/usr/bin/locale` tool if the uv/pip
+scripts directory is first on `PATH`. Use `uv run --project cli locale` from this
+repo, or invoke `python -m x_locale_cli`, if you still need the OS command.
 
 ---
 
@@ -32,36 +36,36 @@ command.
 
 ```bash
 # 1. Initialise — interactive wizard, or pass flags for CI
-tms init
-# tms init -k tms_your_api_key -u https://tms.example.com -o ./src/locales
+locale init
+# locale init -k xlocale_your_api_key -u https://x-locale.example.com -o ./src/locales
 
-# 2. Push base-language source strings to TMS
-tms push
+# 2. Push base-language source strings to x-locale
+locale push
 
 # 3. Pull all translations back to disk
-tms pull
+locale pull
 
 # 4. Or do both in one step
-tms sync
+locale sync
 
 # 5. Check what is out of sync without changing anything
-tms status
+locale status
 ```
 
 ---
 
-## Config — `.tms/config.yaml`
+## Config — `.x-locale/config.yaml`
 
-`tms init` creates this file automatically.  You can edit it by hand.
+`locale init` creates this file automatically.  You can edit it by hand.
 
 ```yaml
-api_url: http://localhost:8000   # TMS server base URL
+api_url: http://localhost:8000   # x-locale server base URL
 project_id: <uuid>               # Auto-discovered from the API key
-api_key: tms_xxx                 # Project-scoped API key
+api_key: xlocale_xxx                 # Project-scoped API key
 output_dir: ./src/locales        # Root directory for locale files
 layout: modular                  # flat | modular
 stage: draft                     # draft | public  (used by pull/sync)
-base_language: vi                # Source language pushed by `tms push`
+base_language: vi                # Source language pushed by `locale push`
 locales: [vi, en, ko, ja]        # Locales to pull (all if omitted)
 manifest: true                   # Write manifest.json on modular pull
 ```
@@ -99,13 +103,13 @@ locales/
 Every command accepts override flags that take precedence over the config file.
 The shared flags are: `--output-dir`, `--layout`, `--stage`, `--locales`.
 
-### `tms init`
+### `locale init`
 
-Initialise `.tms/config.yaml`. Calls `GET /api/bootstrap` with the API key to
+Initialise `.x-locale/config.yaml`. Calls `GET /api/bootstrap` with the API key to
 discover the linked project, its locales, base language, and layout so those
 values are not retyped.
 
-Run `tms init` with no flags in a terminal for the interactive wizard (API URL,
+Run `locale init` with no flags in a terminal for the interactive wizard (API URL,
 API key, output directory, pull stage). Passing any of those flags skips the
 wizard and uses defaults for the rest. Existing config is not overwritten
 unless you confirm or pass `--yes`.
@@ -113,7 +117,7 @@ unless you confirm or pass `--yes`.
 ```
 Options:
   -k, --api-key TEXT       Project API key (prompted if omitted)
-  -u, --api-url TEXT       TMS server base URL  [default: http://localhost:8000]
+  -u, --api-url TEXT       x-locale server base URL  [default: http://localhost:8000]
   -o, --output-dir TEXT    Directory for locale files  [default: ./locales]
   --base-language TEXT     Base/source language override (otherwise from project)
   --layout TEXT            flat | modular (otherwise from project)
@@ -121,9 +125,9 @@ Options:
   -y, --yes                Skip prompts; overwrite existing config
 ```
 
-### `tms push`
+### `locale push`
 
-Push base-language strings to TMS.
+Push base-language strings to x-locale.
 
 - **Flat** — reads `{output_dir}/{base_language}.json`
 - **Modular** — scans `{output_dir}/*/{base_language}.json`; derives module
@@ -131,7 +135,7 @@ Push base-language strings to TMS.
   `{ modules: { slug: { locale: { key: value } } } }`. Keys in each file are
   stored as-is and are **not** prefixed with the folder name.
 
-Orphaned remote keys (present on TMS but absent locally) are **reported but
+Orphaned remote keys (present on x-locale but absent locally) are **reported but
 never deleted**. Keys queued for removal (`pending_delete`) are listed as
 **Pending remove (unchanged)** — push will not re-create them.
 
@@ -144,9 +148,9 @@ Options:
   --dry-run            Preview changes without applying
 ```
 
-### `tms pull`
+### `locale pull`
 
-Pull translations from TMS to local files.
+Pull translations from x-locale to local files.
 
 - **Flat** — writes `{output_dir}/{locale}.json`
 - **Modular** — writes `{output_dir}/{module}/{locale}.json` and, when
@@ -166,33 +170,33 @@ Options:
   --locales TEXT       Comma-separated locale list
 ```
 
-### `tms sync`
+### `locale sync`
 
 Runs `push` then `pull` in one step.  Accepts the same override flags as
 `push`/`pull`. After both phases, a **Sync summary** lists leftover mismatches
 with reasons and next steps. Exit code `1` if any blocking issue remains
 (untranslated counts alone do not fail).
 
-### `tms status`
+### `locale status`
 
-Show a diff between local files and TMS without making any changes.
+Show a diff between local files and x-locale without making any changes.
 
 Compares local base-language keys to this stage’s **export**, then classifies
-keys that exist on TMS but are hidden from export.
+keys that exist on x-locale but are hidden from export.
 
 Displays:
 
 - **Keys in export** — base-language keys in the stage export
 - **Local keys** — total base-language keys found locally
-- **Missing locally** — in export, absent locally → `tms pull`
-- **Local only** — in local files, not on TMS → `tms push`
-- **Pending remove on TMS** — local key is queued for deletion; omitted from
-  draft export. Push will not re-add it. Restore or publish the delete in TMS,
+- **Missing locally** — in export, absent locally → `locale pull`
+- **Local only** — in local files, not on x-locale → `locale push`
+- **Pending remove on x-locale** — local key is queued for deletion; omitted from
+  draft export. Push will not re-add it. Restore or publish the delete in x-locale,
   or remove the key locally.
-- **Removed on TMS (tombstone)** — soft-deleted on TMS
+- **Removed on x-locale (tombstone)** — soft-deleted on x-locale
 - **Source text differs** — same key, different base-language text
 - **`_unassigned` (CLI will not push)** — extra keys under `_unassigned/`
-- **Untranslated (locale)** — base-language keys with no translation on TMS
+- **Untranslated (locale)** — base-language keys with no translation on x-locale
   (informational; does not fail the command)
 
 Draft export omits pending-remove keys and tombstones. Exit code `1` when any
@@ -202,7 +206,7 @@ blocking mismatch above remains.
 
 ## Auth
 
-The CLI sends the API key in the `X-API-Key` header.  The TMS server also
+The CLI sends the API key in the `X-API-Key` header.  The x-locale server also
 accepts it as a `?api_key=` query parameter for back-compat.
 
 ---
@@ -228,5 +232,5 @@ Nested objects and non-string values are rejected.
 
 ```bash
 # Pull only public-stage translations for a subset of locales
-tms pull --stage public --locales en,ja
+locale pull --stage public --locales en,ja
 ```
