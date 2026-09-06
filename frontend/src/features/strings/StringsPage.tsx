@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCoreRowModel,
   useReactTable,
+  type ColumnPinningState,
   type PaginationState,
   type RowSelectionState,
   type VisibilityState,
@@ -57,6 +58,11 @@ import { useToast } from '@/lib/toast'
 const StringFormDialog = lazy(() => import('@/features/strings/StringFormDialog'))
 
 const stringsRoute = getRouteApi('/projects/$projectId/strings')
+
+const STRING_COLUMN_PINNING: ColumnPinningState = {
+  left: ['select', 'key'],
+  right: ['actions'],
+}
 
 export function StringsPage() {
   const { projectId } = stringsRoute.useParams()
@@ -300,6 +306,8 @@ export function StringsPage() {
     data,
     columns,
     state: { pagination, rowSelection, columnVisibility },
+    initialState: { columnPinning: STRING_COLUMN_PINNING },
+    enableColumnPinning: true,
     onRowSelectionChange: setRowSelection,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: (updater) => {
