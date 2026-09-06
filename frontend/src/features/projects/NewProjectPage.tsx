@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { LocaleChip, LanguageName } from '@/components/brand/LocaleChip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
@@ -156,7 +157,7 @@ export function NewProjectPage() {
                         <SelectGroup>
                           {languages.map((l) => (
                             <SelectItem key={l.code} value={l.code}>
-                              {l.name} ({l.code})
+                              <LanguageName language={l} />
                             </SelectItem>
                           ))}
                         </SelectGroup>
@@ -191,25 +192,22 @@ export function NewProjectPage() {
 
                   {form.target_languages.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      {form.target_languages.map((code) => {
-                        const lang = languages.find((l) => l.code === code)
-                        return (
-                          <Button
-                            key={code}
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => toggleTargetLang(code)}
-                          >
-                            {lang?.name ?? code}
-                            <X data-icon="inline-end" />
-                          </Button>
-                        )
-                      })}
+                      {form.target_languages.map((code) => (
+                        <Button
+                          key={code}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => toggleTargetLang(code)}
+                        >
+                          <LocaleChip code={code} languages={languages} variant="plain" />
+                          <X data-icon="inline-end" />
+                        </Button>
+                      ))}
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+                  <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-3">
                     {targetLangs.map((l) => {
                       const selected = form.target_languages.includes(l.code)
                       return (
@@ -221,10 +219,7 @@ export function NewProjectPage() {
                           className="justify-start"
                           onClick={() => toggleTargetLang(l.code)}
                         >
-                          <span className="font-mono text-[10px] text-muted-foreground w-5">
-                            {l.code}
-                          </span>
-                          {l.name}
+                          <LanguageName language={l} />
                         </Button>
                       )
                     })}

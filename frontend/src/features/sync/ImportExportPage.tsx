@@ -4,7 +4,9 @@ import { useState, useRef } from 'react'
 import { Download, FileSpreadsheet, FileText, Upload } from 'lucide-react'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
-import { modulesQuery, projectQuery } from '@/lib/queries'
+import { LanguageName } from '@/components/brand/LocaleChip'
+import { languageOf } from '@/lib/locale'
+import { languagesQuery, modulesQuery, projectQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
@@ -41,6 +43,7 @@ export function ImportExportPage() {
   const queryClient = useQueryClient()
 
   const { data: project } = useQuery(projectQuery(projectId))
+  const { data: languages = [] } = useQuery(languagesQuery())
   const isModularProject = project?.layout === 'modular'
   const { data: modules = [] } = useQuery({
     ...modulesQuery(projectId),
@@ -165,7 +168,7 @@ export function ImportExportPage() {
         description="Download a snapshot of this catalog, or bring strings in from JSON or Excel."
       />
 
-      <Card className="sky-panel">
+      <Card>
         <CardHeader>
           <p className="eyebrow">Outbound</p>
           <CardTitle>Export</CardTitle>
@@ -238,7 +241,7 @@ export function ImportExportPage() {
                     <SelectItem value="all">All locales</SelectItem>
                     {locales.map((l) => (
                       <SelectItem key={l} value={l}>
-                        {l}
+                        <LanguageName language={languageOf(languages, l)} />
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -262,7 +265,7 @@ export function ImportExportPage() {
         </CardContent>
       </Card>
 
-      <Card className="sky-panel">
+      <Card>
         <CardHeader>
           <p className="eyebrow">Format</p>
           <CardTitle>Import template</CardTitle>
@@ -324,7 +327,7 @@ export function ImportExportPage() {
         </CardContent>
       </Card>
 
-      <Card className="sky-panel">
+      <Card>
         <CardHeader>
           <p className="eyebrow">Inbound</p>
           <CardTitle>Import</CardTitle>
@@ -342,7 +345,7 @@ export function ImportExportPage() {
                   <SelectGroup>
                     {locales.map((l) => (
                       <SelectItem key={l} value={l}>
-                        {l}
+                        <LanguageName language={languageOf(languages, l)} />
                       </SelectItem>
                     ))}
                   </SelectGroup>

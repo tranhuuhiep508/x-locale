@@ -42,6 +42,7 @@ describe('x-locale branding', () => {
     const html = readFileSync(path.join(frontendRoot, '../index.html'), 'utf8')
     expect(html).toContain('<title>x-locale — Translation Management</title>')
     expect(html).toContain('x-locale-theme:v1')
+    expect(html).toContain('href="/favicon.svg"')
     expect(html).not.toContain('TMS')
     expect(html).not.toContain('tms-theme')
     expect(THEME_STORAGE_KEY).toBe('x-locale-theme:v1')
@@ -59,5 +60,7 @@ describe('x-locale branding', () => {
   it('names the frontend package x-locale-frontend', () => {
     const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'frontend/package.json'), 'utf8'))
     expect(pkg.name).toBe('x-locale-frontend')
+    expect(pkg.dependencies['@fontsource/ibm-plex-sans']).toBeTruthy()
+    expect(pkg.dependencies['@fontsource-variable/geist']).toBeUndefined()
   })
 })

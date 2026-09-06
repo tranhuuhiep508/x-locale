@@ -1,7 +1,6 @@
-import { Link } from '@tanstack/react-router'
-import { Layers } from 'lucide-react'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { Wordmark } from '@/components/brand/Wordmark'
 import { cn } from '@/lib/utils'
 
 export function AppHeader({
@@ -14,7 +13,7 @@ export function AppHeader({
   contained?: boolean
 }) {
   return (
-    <header className="sky-chrome relative z-30 shrink-0">
+    <header className="relative z-30 shrink-0 border-b border-border bg-card">
       <div
         className={cn(
           'flex h-14 items-center gap-3',
@@ -22,15 +21,7 @@ export function AppHeader({
         )}
       >
         {leading ? <div className="flex items-center">{leading}</div> : null}
-        <Link
-          to="/"
-          className="flex shrink-0 items-center gap-2.5 text-foreground"
-        >
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/15">
-            <Layers className="size-4 text-primary" />
-          </span>
-          <span className="text-sm font-semibold tracking-tight">x-locale</span>
-        </Link>
+        <Wordmark />
         {title ? (
           <span
             className="min-w-0 max-w-48 truncate rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground"
@@ -45,6 +36,15 @@ export function AppHeader({
           <UserMenu />
         </div>
       </div>
+    </header>
+  )
+}
+
+export function GuestHeader() {
+  return (
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5 lg:hidden">
+      <Wordmark className="text-foreground" />
+      <ThemeToggle />
     </header>
   )
 }

@@ -15,6 +15,7 @@ export interface User {
 export interface Language {
   code: string
   name: string
+  native: string
 }
 
 // ── Projects ───────────────────────────────────────────────────────────

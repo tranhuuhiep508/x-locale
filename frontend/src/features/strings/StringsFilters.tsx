@@ -1,5 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { LanguageName } from '@/components/brand/LocaleChip'
 import { Button } from '@/components/ui/button'
 import {
   InputGroup,
@@ -23,6 +25,8 @@ import {
 import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
 import type { Module, Tag } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
+import { languageOf } from '@/lib/locale'
+import { languagesQuery } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 const STATUS_ALL = 'all'
@@ -234,6 +238,7 @@ export function StringsFilters({
   onFilter,
   onClear,
 }: StringsFiltersProps) {
+  const { data: languages = [] } = useQuery(languagesQuery())
   const hasFilters = hasActiveStringFilters(search)
   const moduleOptions = useMemo<FilterOption[]>(
     () => [
@@ -374,7 +379,7 @@ export function StringsFilters({
             <SelectItem value="all">All</SelectItem>
             {locales.map((locale) => (
               <SelectItem key={locale} value={locale}>
-                {locale}
+                <LanguageName language={languageOf(languages, locale)} />
               </SelectItem>
             ))}
           </FilterSelect>

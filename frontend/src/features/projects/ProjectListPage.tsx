@@ -1,23 +1,25 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Layers, Globe, Calendar, Trash2 } from 'lucide-react'
+import { Plus, Calendar, Trash2 } from 'lucide-react'
+import { BrandMark } from '@/components/brand/BrandMark'
+import { LocalePair } from '@/components/brand/LocaleChip'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { projectsApi } from '@/lib/api/projects'
 import type { Project } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
-import { projectsQuery } from '@/lib/queries'
+import { languagesQuery, projectsQuery } from '@/lib/queries'
 import { useToast } from '@/lib/toast'
 import { formatDateShort } from '@/lib/utils'
 import { useState } from 'react'
 
 export function ProjectListPage() {
   const { data: projects = [] } = useQuery(projectsQuery())
+  const { data: languages = [] } = useQuery(languagesQuery())
 
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const qc = useQueryClient()
@@ -40,7 +42,7 @@ export function ProjectListPage() {
         <PageHeader
           eyebrow="Workspace"
           title="Projects"
-          description={`${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+          description={`${projects.length} catalog${projects.length !== 1 ? 's' : ''}`}
           actions={
             <Link to="/projects/new">
               <Button>
@@ -53,7 +55,7 @@ export function ProjectListPage() {
 
         {projects.length === 0 ? (
           <EmptyState
-            icon={<Layers />}
+            icon={<BrandMark className="size-4" />}
             title="No projects yet"
             description="Create your first translation project to get started."
             action={
@@ -70,7 +72,7 @@ export function ProjectListPage() {
             {projects.map((p) => (
               <Card
                 key={p.id}
-                className="sky-panel group transition-shadow hover:shadow-sm hover:ring-primary/25"
+                className="group transition-shadow hover:shadow-sm"
               >
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-2">
@@ -80,7 +82,7 @@ export function ProjectListPage() {
                       search={{}}
                       className="min-w-0 flex-1"
                     >
-                      <h2 className="truncate font-semibold tracking-tight text-foreground group-hover:text-primary">
+                      <h2 className="truncate font-heading text-lg font-medium tracking-tight text-foreground group-hover:text-primary">
                         {p.name}
                       </h2>
                       <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
@@ -100,20 +102,11 @@ export function ProjectListPage() {
                     </Button>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5">
-                    <Badge className="font-mono">
-                      <Globe data-icon="inline-start" />
-                      {p.base_language}
-                    </Badge>
-                    {p.target_languages.slice(0, 3).map((lang) => (
-                      <Badge key={lang} variant="outline" className="font-mono">
-                        {lang}
-                      </Badge>
-                    ))}
-                    {p.target_languages.length > 3 && (
-                      <Badge variant="outline">+{p.target_languages.length - 3}</Badge>
-                    )}
-                  </div>
+                  <LocalePair
+                    base={p.base_language}
+                    targets={p.target_languages}
+                    languages={languages}
+                  />
 
                   <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
                     <span>{p.string_count} strings</span>

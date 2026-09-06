@@ -1,14 +1,15 @@
 import { getRouteApi, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AlignLeft, Boxes, Tags, Globe2, Clock } from 'lucide-react'
+import { AlignLeft, Boxes, Tags, Clock } from 'lucide-react'
 import { ActivityCard } from '@/features/activity/ActivityCard'
+import { LocaleChip } from '@/components/brand/LocaleChip'
 import {
   activityFeedQuery,
+  languagesQuery,
   modulesQuery,
   projectQuery,
   tagsQuery,
 } from '@/lib/queries'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 
@@ -28,13 +29,13 @@ function StatCard({
 }) {
   return (
     <Link to={href} className="group">
-      <Card className="sky-panel h-full transition-shadow hover:shadow-sm hover:ring-primary/25">
+      <Card className="h-full transition-shadow hover:shadow-sm">
         <CardContent className="flex items-start gap-4">
-          <MarkWell className="group-hover:bg-primary/15">
+          <MarkWell>
             <Icon className="size-4" />
           </MarkWell>
           <div>
-            <p className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+            <p className="font-heading text-2xl font-medium tracking-tight tabular-nums text-foreground">
               {value}
             </p>
             <p className="text-sm text-muted-foreground">{label}</p>
@@ -49,11 +50,9 @@ export function ProjectOverviewPage() {
   const { projectId } = routeApi.useParams()
 
   const { data: project } = useQuery(projectQuery(projectId))
-
+  const { data: languages = [] } = useQuery(languagesQuery())
   const { data: modules = [] } = useQuery(modulesQuery(projectId))
-
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
-
   const { data: activityData } = useQuery(activityFeedQuery(projectId, { page: 1, page_size: 5 }))
 
   if (!project) return null
@@ -64,10 +63,11 @@ export function ProjectOverviewPage() {
         eyebrow="Catalog"
         title="Overview"
         description={
-          <>
-            {project.layout} layout · base{' '}
-            <span className="font-mono font-medium text-foreground">{project.base_language}</span>
-          </>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="capitalize">{project.layout} layout</span>
+            <span aria-hidden>·</span>
+            <LocaleChip code={project.base_language} languages={languages} variant="base" />
+          </span>
         }
       />
 
@@ -96,22 +96,16 @@ export function ProjectOverviewPage() {
         <Card>
           <CardHeader>
             <p className="eyebrow">Locales</p>
-            <CardTitle className="flex items-center gap-2">
-              <Globe2 className="size-4 text-primary" />
-              Languages
-            </CardTitle>
+            <CardTitle>Languages</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                <Badge>base</Badge>
-                <span className="font-mono">{project.base_language}</span>
-              </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <LocaleChip code={project.base_language} languages={languages} variant="base" />
               <span className="font-mono text-muted-foreground">{project.string_count} strings</span>
             </div>
             {project.target_languages.map((locale) => (
-              <div key={locale} className="flex items-center justify-between text-sm">
-                <span className="font-mono text-foreground">{locale}</span>
+              <div key={locale} className="flex items-center justify-between gap-3 text-sm">
+                <LocaleChip code={locale} languages={languages} />
                 <Link
                   to="/projects/$projectId/strings"
                   params={{ projectId }}

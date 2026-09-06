@@ -10,7 +10,7 @@ export function MarkWell({
   return (
     <span
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15',
+        'flex size-8 shrink-0 items-center justify-center rounded-md bg-lagoon-50 text-lagoon-800 ring-1 ring-lagoon-200 dark:bg-lagoon-950 dark:text-lagoon-200 dark:ring-lagoon-800',
         className,
       )}
     >
@@ -38,7 +38,7 @@ export function PageHeader({
     <div className={cn('flex items-start justify-between gap-4', className)}>
       <div className="min-w-0">
         {eyebrow ? <p className="eyebrow mb-1.5">{eyebrow}</p> : null}
-        <TitleTag className="text-xl font-semibold tracking-tight text-foreground">
+        <TitleTag className="font-heading text-2xl font-medium tracking-tight text-foreground">
           {title}
         </TitleTag>
         {description ? (

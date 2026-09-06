@@ -12,6 +12,18 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
+def test_languages_include_native_names(client):
+    r = client.get("/api/languages")
+    assert r.status_code == 200
+    languages = r.json()
+    by_code = {item["code"]: item for item in languages}
+    assert by_code["vi"]["name"] == "Vietnamese"
+    assert by_code["vi"]["native"] == "Tiếng Việt"
+    assert by_code["ja"]["native"] == "日本語"
+    assert by_code["ar"]["native"] == "العربية"
+    assert by_code["he"]["native"] == "עברית"
+
+
 def test_auth_me_dev_bypass(client):
     r = client.get("/api/auth/me")
     assert r.status_code == 200

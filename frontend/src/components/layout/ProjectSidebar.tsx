@@ -65,10 +65,8 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
         <div className="px-2 py-1 group-data-[collapsible=icon]:hidden">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Project
-          </p>
-          <h2 className="mt-0.5 truncate text-sm font-semibold" title={project.name}>
+          <p className="eyebrow">Project</p>
+          <h2 className="mt-1 truncate font-heading text-base font-medium" title={project.name}>
             {project.name}
           </h2>
           <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">

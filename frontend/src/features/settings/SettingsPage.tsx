@@ -23,6 +23,7 @@ import {
   projectApiKeysQuery,
   projectQuery,
 } from '@/lib/queries'
+import { LanguageName } from '@/components/brand/LocaleChip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -195,7 +196,7 @@ export function SettingsPage() {
                       <SelectGroup>
                         {languages.map((l) => (
                           <SelectItem key={l.code} value={l.code}>
-                            {l.name} ({l.code})
+                            <LanguageName language={l} />
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -229,7 +230,7 @@ export function SettingsPage() {
 
               <Field>
                 <FieldLabel>Target languages</FieldLabel>
-                <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+                <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-3">
                   {targetLangs.map((l) => {
                     const selected = form.target_languages.includes(l.code)
                     return (
@@ -241,10 +242,7 @@ export function SettingsPage() {
                         className="justify-start"
                         onClick={() => toggleTargetLang(l.code)}
                       >
-                        <span className="font-mono text-[10px] text-muted-foreground w-5">
-                          {l.code}
-                        </span>
-                        {l.name}
+                        <LanguageName language={l} />
                       </Button>
                     )
                   })}
