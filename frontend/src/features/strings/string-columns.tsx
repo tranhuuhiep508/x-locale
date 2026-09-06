@@ -305,7 +305,13 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       id: 'select',
       enableSorting: false,
       enableHiding: false,
-      meta: { className: 'align-middle' },
+      size: 40,
+      minSize: 40,
+      maxSize: 40,
+      meta: {
+        headerClassName: 'w-10 min-w-10 max-w-10',
+        className: 'align-middle w-10 min-w-10 max-w-10',
+      },
       header: ({ table }) => (
         <Checkbox
           checked={
@@ -330,9 +336,11 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       accessorKey: 'key',
       header: 'Key',
       enableSorting: false,
+      size: 220,
+      minSize: 180,
       meta: {
         headerClassName: 'min-w-[180px]',
-        className: 'align-middle whitespace-normal max-w-[240px]',
+        className: 'align-middle whitespace-normal min-w-[180px] max-w-[240px]',
       },
       cell: ({ row }) => {
         const entry = row.original
@@ -557,7 +565,13 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       enableHiding: false,
-      meta: { headerClassName: 'w-10 text-right', className: 'align-middle text-right' },
+      size: 44,
+      minSize: 44,
+      maxSize: 44,
+      meta: {
+        headerClassName: 'w-11 min-w-11 max-w-11 text-right',
+        className: 'align-middle w-11 min-w-11 max-w-11 text-right',
+      },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (
