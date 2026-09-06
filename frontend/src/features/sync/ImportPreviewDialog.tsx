@@ -124,7 +124,7 @@ export function ImportPreviewDialog({
         </DialogHeader>
 
         {diff ? (
-          <div className="flex max-h-[min(60vh,28rem)] flex-col gap-3 overflow-y-auto">
+          <div className="flex max-h-[min(60vh,28rem)] flex-col gap-3 overflow-y-auto overflow-x-hidden">
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-muted p-3">
                 <p className="text-2xl font-bold text-foreground">{diff.create_count}</p>
