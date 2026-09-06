@@ -103,6 +103,33 @@ def export_translations_compat(
     return build_flat_export(project, entries, normalize_export_stage(stage))
 
 
+@router.get("/import-template")
+def download_import_template(
+    project: ProjectAccess,
+    format: Annotated[str, Query(pattern="^(json|xlsx)$")] = "json",
+):
+    """Demo file for the project's layout so importers can copy the expected shape."""
+    if format == "xlsx":
+        from app.excel import build_template_workbook
+
+        data = build_template_workbook(project)
+        filename = f"{project.slug}-import-template.xlsx"
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    from app.excel import DEMO_IMPORT_ROWS
+
+    payload = {key: source for rows in DEMO_IMPORT_ROWS.values() for key, source in rows}
+    filename = f"{project.base_language}.json"
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/import", response_model=ImportResult)
 async def import_project(
     project: ProjectAccess,
@@ -111,6 +138,7 @@ async def import_project(
     dry_run: Annotated[bool, Query()] = False,
     status: Annotated[str, Query(pattern="^(draft|public)$")] = "draft",
     locale: Annotated[str | None, Query()] = None,
+    module_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> ImportResult:
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
@@ -139,7 +167,13 @@ async def import_project(
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON file") from exc
         result = import_json_data(
-            db, project, data, dry_run=dry_run, locale=locale, status=import_status
+            db,
+            project,
+            data,
+            dry_run=dry_run,
+            locale=locale,
+            status=import_status,
+            module_id=module_id,
         )
         if not dry_run:
             db.commit()

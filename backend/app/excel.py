@@ -4,13 +4,49 @@ from __future__ import annotations
 
 import io
 from typing import Any
+from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session
 
-from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import (
+    Module,
+    Project,
+    ProjectLayout,
+    StringEntry,
+    Tag,
+    Translation,
+    TranslationStatus,
+)
 from app.schemas import ImportDiff, ImportResult
 from app.services.strings import promote_string, restore_string
+
+UNASSIGNED_SHEET = "_unassigned"
+FLAT_SHEET = "strings"
+
+DEMO_IMPORT_ROWS: dict[str, list[tuple[str, str]]] = {
+    "auth": [("auth.email", "Địa chỉ email"), ("auth.sign_in", "Đăng nhập")],
+    "common": [("common.save", "Lưu"), ("common.cancel", "Hủy")],
+    UNASSIGNED_SHEET: [("hello", "Xin chào")],
+}
+
+
+def _layout_value(project: Project) -> str:
+    layout = project.layout
+    return layout.value if hasattr(layout, "value") else str(layout)
+
+
+def _is_modular(project: Project) -> bool:
+    return _layout_value(project) == ProjectLayout.modular.value
+
+
+def _export_locales(project: Project, locale: str | None) -> list[str]:
+    locales = [project.base_language, *project.target_languages]
+    if not locale:
+        return locales
+    if locale not in locales:
+        raise ValueError(f"Unknown locale '{locale}'")
+    return [locale]
 
 
 def build_workbook(
@@ -20,32 +56,51 @@ def build_workbook(
     locale: str | None = None,
 ) -> bytes:
     wb = Workbook()
-    # Remove default sheet
     default = wb.active
     wb.remove(default)
 
+    locales = _export_locales(project, locale)
+    if _is_modular(project):
+        by_module: dict[str | None, list[StringEntry]] = {}
+        for e in entries:
+            if stage == "public":
+                slug = e.published_module.slug if e.published_module else None
+            else:
+                slug = e.module.slug if e.module else None
+            by_module.setdefault(slug, []).append(e)
+        for slug in sorted(k for k in by_module if k is not None):
+            _write_sheet(wb, slug, by_module[slug], locales, project, stage)
+        if None in by_module or not by_module:
+            _write_sheet(wb, UNASSIGNED_SHEET, by_module.get(None, []), locales, project, stage)
+    else:
+        _write_sheet(wb, FLAT_SHEET, entries, locales, project, stage)
+
+    _write_meta_sheet(wb, project, stage)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_template_workbook(project: Project) -> bytes:
+    """Demo workbook matching the project's layout so users can see the import format."""
+    wb = Workbook()
+    default = wb.active
+    wb.remove(default)
     locales = [project.base_language, *project.target_languages]
-    if locale:
-        if locale not in locales:
-            raise ValueError(f"Unknown locale '{locale}'")
-        locales = [locale]
-    by_module: dict[str | None, list[StringEntry]] = {}
-    for e in entries:
-        if stage == "public":
-            slug = e.published_module.slug if e.published_module else None
-        else:
-            slug = e.module.slug if e.module else None
-        by_module.setdefault(slug, []).append(e)
+    if _is_modular(project):
+        for slug, rows in DEMO_IMPORT_ROWS.items():
+            _write_template_sheet(wb, slug, rows, locales, project.base_language)
+    else:
+        flat_rows = [row for rows in DEMO_IMPORT_ROWS.values() for row in rows]
+        _write_template_sheet(wb, FLAT_SHEET, flat_rows, locales, project.base_language)
+    _write_meta_sheet(wb, project, "draft")
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
-    # Module sheets
-    for slug in sorted(k for k in by_module if k is not None):
-        _write_sheet(wb, slug, by_module[slug], locales, project, stage)
 
-    # Unassigned
-    if None in by_module or not by_module:
-        _write_sheet(wb, "_unassigned", by_module.get(None, []), locales, project, stage)
-
-    # Meta sheet (hidden)
+def _write_meta_sheet(wb: Workbook, project: Project, stage: str) -> None:
     meta = wb.create_sheet("_meta")
     meta.append(["key", "value"])
     meta.append(["project_id", str(project.id)])
@@ -53,11 +108,24 @@ def build_workbook(
     meta.append(["base_language", project.base_language])
     meta.append(["stage", stage])
     meta.append(["target_languages", ",".join(project.target_languages)])
+    meta.append(["layout", _layout_value(project)])
     meta.sheet_state = "hidden"
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+
+def _write_template_sheet(
+    wb: Workbook,
+    name: str,
+    rows: list[tuple[str, str]],
+    locales: list[str],
+    base_language: str,
+) -> None:
+    ws = wb.create_sheet(name[:31])
+    ws.append(["key", "description", "tags", *locales])
+    for key, source in rows:
+        row: list[Any] = [key, "", ""]
+        for locale in locales:
+            row.append(source if locale == base_language else "")
+        ws.append(row)
 
 
 def _write_sheet(
@@ -111,6 +179,61 @@ def _write_sheet(
         ws.append(row)
 
 
+def _find_excel_entry(
+    db: Session,
+    project: Project,
+    key: str,
+    module_id: UUID | None,
+    *,
+    match_any_module: bool,
+) -> tuple[StringEntry | None, bool]:
+    """Return (entry, revived). Prefer live rows, then tombstones."""
+    live_exact = (
+        db.query(StringEntry)
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.module_id == module_id,
+            StringEntry.key == key,
+            StringEntry.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if live_exact is not None:
+        return live_exact, False
+    if match_any_module:
+        live_any = (
+            db.query(StringEntry)
+            .filter(
+                StringEntry.project_id == project.id,
+                StringEntry.key == key,
+                StringEntry.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if live_any is not None:
+            return live_any, False
+    tomb_exact = (
+        db.query(StringEntry)
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.module_id == module_id,
+            StringEntry.key == key,
+        )
+        .first()
+    )
+    if tomb_exact is not None:
+        return tomb_exact, True
+    if match_any_module:
+        tomb_any = (
+            db.query(StringEntry)
+            .filter(StringEntry.project_id == project.id, StringEntry.key == key)
+            .first()
+        )
+        if tomb_any is not None:
+            return tomb_any, True
+    return None, False
+
+
 def import_workbook(
     db: Session,
     project: Project,
@@ -137,6 +260,7 @@ def import_workbook(
     created = 0
     updated = 0
     total = 0
+    modular = _is_modular(project)
 
     for sheet_name in wb.sheetnames:
         if sheet_name == "_meta":
@@ -154,7 +278,7 @@ def import_workbook(
         tags_idx = headers.index("tags") if "tags" in headers else None
 
         module_id = None
-        if sheet_name != "_unassigned":
+        if modular and sheet_name != UNASSIGNED_SHEET:
             mod = (
                 db.query(Module)
                 .filter(Module.project_id == project.id, Module.slug == sheet_name)
@@ -183,7 +307,11 @@ def import_workbook(
             if not key:
                 continue
             total += 1
-            description = str(row[desc_idx]).strip() if desc_idx is not None and row[desc_idx] else None
+            description = (
+                str(row[desc_idx]).strip()
+                if desc_idx is not None and row[desc_idx]
+                else None
+            )
             tag_names = []
             if tags_idx is not None and row[tags_idx]:
                 tag_names = [t.strip() for t in str(row[tags_idx]).split(",") if t.strip()]
@@ -195,33 +323,17 @@ def import_workbook(
             if not source_text:
                 source_text = key  # fallback
 
-            revived = False
-            entry = (
-                db.query(StringEntry)
-                .filter(
-                    StringEntry.project_id == project.id,
-                    StringEntry.module_id == module_id,
-                    StringEntry.key == key,
-                    StringEntry.deleted_at.is_(None),
-                )
-                .first()
+            entry, revived = _find_excel_entry(
+                db,
+                project,
+                key,
+                module_id,
+                match_any_module=not modular,
             )
-            if entry is None:
-                entry = (
-                    db.query(StringEntry)
-                    .filter(
-                        StringEntry.project_id == project.id,
-                        StringEntry.module_id == module_id,
-                        StringEntry.key == key,
-                    )
-                    .first()
-                )
-                if entry is not None:
-                    revived = True
-                    if not dry_run:
-                        restore_string(entry)
+            if revived and entry is not None and not dry_run:
+                restore_string(entry)
 
-            label = f"{sheet_name}.{key}" if sheet_name != "_unassigned" else key
+            label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
             created_this_row = False
             if entry:
                 if revived or entry.source_text != source_text or (

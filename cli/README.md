@@ -129,7 +129,9 @@ Options:
 
 Push base-language strings to x-locale.
 
-- **Flat** — reads `{output_dir}/{base_language}.json`
+- **Flat** — reads `{output_dir}/{base_language}.json`. Keys are stored as-is
+  (a file key `common.save` stays `common.save`; dots are not treated as a
+  module prefix). Flat push never creates or assigns modules.
 - **Modular** — scans `{output_dir}/*/{base_language}.json`; derives module
   slugs from directory names. Push sends
   `{ modules: { slug: { locale: { key: value } } } }`. Keys in each file are

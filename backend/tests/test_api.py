@@ -132,8 +132,8 @@ def test_create_project_and_string(client):
     assert r.status_code == 200
     data = r.json()
     assert "en" in data
-    assert data["en"]["common.save"] == "Save"
-    assert data["vi"]["common.save"] == "Lưu"
+    assert data["en"]["save"] == "Save"
+    assert data["vi"]["save"] == "Lưu"
 
     # Activities recorded
     r = client.get(f"/api/projects/{pid}/activities")
@@ -528,14 +528,14 @@ def test_stamp_string_metadata_preserves_created_by(client):
         db_gen.close()
 
 
-def _make_project(client, name="Act", targets=None):
+def _make_project(client, name="Act", targets=None, layout="modular"):
     r = client.post(
         "/api/projects",
         json={
             "name": name,
             "base_language": "vi",
             "target_languages": targets or ["en"],
-            "layout": "modular",
+            "layout": layout,
         },
     )
     assert r.status_code == 201, r.text
@@ -1287,7 +1287,7 @@ def test_json_file_import_roundtrip_and_locale_overlay(client):
     assert r.status_code == 200, r.text
     assert r.json()["dry_run"] is True
 
-    overlay = json.dumps({"common.save": "Saved"}).encode()
+    overlay = json.dumps({"save": "Saved"}).encode()
     r = client.post(
         f"/api/projects/{pid}/import",
         params={"locale": "en", "dry_run": False},
@@ -1697,3 +1697,144 @@ def test_list_filter_unpublished_changes(client):
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["key"] == "a"
+
+
+def test_flat_json_import_keeps_dotted_key_unassigned(client):
+    project = _make_project(client, "Flat No Split", layout="flat")
+    pid = project["id"]
+    client.post(f"/api/projects/{pid}/modules", json={"slug": "common", "name": "Common"})
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi"},
+        files={
+            "file": (
+                "vi.json",
+                json.dumps({"common.save": "Lưu"}).encode(),
+                "application/json",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 1
+    item = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert item["key"] == "common.save"
+    assert item["module_id"] is None
+    assert item["source_text"] == "Lưu"
+
+
+def test_modular_json_import_assigns_selected_module(client):
+    project = _make_project(client, "Modular Pick")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules", json={"slug": "auth", "name": "Auth"}
+    ).json()
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "module_id": module["id"]},
+        files={
+            "file": (
+                "vi.json",
+                json.dumps({"common.save": "Lưu"}).encode(),
+                "application/json",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    item = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert item["key"] == "common.save"
+    assert item["module_slug"] == "auth"
+
+
+def test_flat_json_import_rejects_module_id(client):
+    project = _make_project(client, "Flat Reject Module", layout="flat")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules", json={"slug": "auth", "name": "Auth"}
+    ).json()
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "module_id": module["id"]},
+        files={
+            "file": (
+                "vi.json",
+                json.dumps({"hello": "Xin chào"}).encode(),
+                "application/json",
+            )
+        },
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_strings_import_does_not_split_dotted_key(client):
+    project = _make_project(client, "Push No Split")
+    pid = project["id"]
+    client.post(f"/api/projects/{pid}/modules", json={"slug": "common", "name": "Common"})
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"common.save": "Lưu"}},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 1
+    item = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert item["key"] == "common.save"
+    assert item["module_id"] is None
+
+
+def test_excel_flat_import_does_not_create_modules(client):
+    project = _make_project(client, "Excel Flat", layout="flat")
+    pid = project["id"]
+    tmpl = client.get(f"/api/projects/{pid}/import-template", params={"format": "xlsx"})
+    assert tmpl.status_code == 200, tmpl.text
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        files={
+            "file": (
+                "t.xlsx",
+                tmpl.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert client.get(f"/api/projects/{pid}/modules").json() == []
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    keys = {s["key"] for s in items}
+    assert "common.save" in keys
+    assert "hello" in keys
+    assert all(s["module_id"] is None for s in items)
+
+
+def test_excel_modular_import_uses_sheet_slug(client):
+    project = _make_project(client, "Excel Modular")
+    pid = project["id"]
+    tmpl = client.get(f"/api/projects/{pid}/import-template", params={"format": "xlsx"})
+    assert tmpl.status_code == 200, tmpl.text
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        files={
+            "file": (
+                "t.xlsx",
+                tmpl.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    slugs = {m["slug"] for m in client.get(f"/api/projects/{pid}/modules").json()}
+    assert {"auth", "common"} <= slugs
+    by_key = {s["key"]: s for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert by_key["auth.email"]["module_slug"] == "auth"
+    assert by_key["common.save"]["module_slug"] == "common"
+    assert by_key["hello"]["module_id"] is None
+
+
+def test_import_template_json_is_flat_key_map(client):
+    project = _make_project(client, "Template Json", layout="flat")
+    pid = project["id"]
+    r = client.get(f"/api/projects/{pid}/import-template", params={"format": "json"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["common.save"] == "Lưu"
+    assert data["hello"] == "Xin chào"
+    assert all(isinstance(v, str) for v in data.values())
+

@@ -25,8 +25,8 @@ users ──< api_keys >── projects ──< modules
 
 | Layout | Shape |
 |--------|-------|
-| `flat` | `{ locale: { "module.key": value, "orphan": value } }` — module-scoped keys are prefixed |
-| `modular` | `{ modules: { login: { vi: {...}, en: {...} } }, unassigned: {...}, manifest: {...} }` |
+| `flat` | `{ locale: { "common.save": value, "hello": value } }` — stored keys as-is, never `module.key` prefixed |
+| `modular` | `{ modules: { login: { vi: {...}, en: {...} } }, unassigned: {...}, manifest: {...} }` — keys inside each locale map are stored as-is; the module is the folder/slug |
 
 Project setting chooses the default; export query param overrides.
 
