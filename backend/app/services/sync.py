@@ -98,7 +98,7 @@ def build_flat_export(
                 continue
         elif entry.pending_delete:
             continue
-        key = export_key(entry, "flat", published=stage == "public")
+        key = export_key(entry, published=stage == "public")
         for locale in locales:
             val = translation_value(entry, locale, project, stage)
             if val is not None:
@@ -167,7 +167,7 @@ def build_modular_export(
 def _cli_identity(entry: StringEntry, layout: str, *, published: bool = False) -> str:
     """Key label matching CLI status identity (modular ``module/key``, flat export key)."""
     if layout == "flat":
-        return export_key(entry, "flat", published=published)
+        return export_key(entry, published=published)
     if published:
         module = entry.published_module
         key = entry.published_key or entry.key
@@ -237,6 +237,11 @@ def build_sync_state(
     )
 
 
+def _layout_value(project: Project) -> str:
+    layout = project.layout
+    return layout.value if hasattr(layout, "value") else str(layout)
+
+
 def _is_str_map(value: Any) -> bool:
     return isinstance(value, dict) and all(isinstance(v, str) for v in value.values())
 
@@ -283,48 +288,54 @@ def _get_or_create_module(
     return mod
 
 
-def _resolve_prefixed_key(
-    db: Session, project: Project, key: str
-) -> tuple[UUID | None, str]:
-    if "." not in key:
-        return None, key
-    prefix, rest = key.split(".", 1)
+def resolve_json_import_module(
+    db: Session, project: Project, module_id: UUID | None
+) -> UUID | None:
+    """Validate optional JSON import module. Flat projects cannot assign a module."""
+    if module_id is None:
+        return None
+    if _layout_value(project) != "modular":
+        raise HTTPException(
+            status_code=400,
+            detail="Flat projects do not assign modules on JSON import",
+        )
     mod = (
         db.query(Module)
-        .filter(Module.project_id == project.id, Module.slug == prefix)
+        .filter(Module.project_id == project.id, Module.id == module_id)
         .first()
     )
     if not mod:
-        return None, key
-    return mod.id, rest
+        raise HTTPException(status_code=400, detail="Unknown module")
+    return mod.id
 
 
 class _ImportIndex:
     def __init__(self, entries: list[StringEntry]) -> None:
-        self.by_export_key: dict[str, StringEntry] = {}
         self.by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
-        self.deleted_by_export_key: dict[str, StringEntry] = {}
         self.deleted_by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
+        self.by_key: dict[str, StringEntry] = {}
+        self.deleted_by_key: dict[str, StringEntry] = {}
         for entry in entries:
             self.add(entry)
 
     def add(self, entry: StringEntry) -> None:
-        label = export_key(entry, "flat")
-        dest_export = self.deleted_by_export_key if entry.deleted_at else self.by_export_key
         dest_module = self.deleted_by_module_key if entry.deleted_at else self.by_module_key
-        dest_export[label] = entry
+        dest_key = self.deleted_by_key if entry.deleted_at else self.by_key
         dest_module[(entry.module_id, entry.key)] = entry
-        if entry.module_id is None:
-            dest_export[entry.key] = entry
+        existing = dest_key.get(entry.key)
+        if existing is None or entry.module_id is None:
+            dest_key[entry.key] = entry
 
-    def lookup(
-        self, key: str, *, prefixed: bool, module_id: UUID | None
-    ) -> StringEntry | None:
-        if prefixed:
-            return self.by_export_key.get(key) or self.deleted_by_export_key.get(key)
-        return self.by_module_key.get((module_id, key)) or self.deleted_by_module_key.get(
-            (module_id, key)
-        )
+    def lookup(self, key: str, *, module_id: UUID | None) -> StringEntry | None:
+        live = self.by_module_key.get((module_id, key))
+        if live is not None:
+            return live
+        deleted = self.deleted_by_module_key.get((module_id, key))
+        if deleted is not None:
+            return deleted
+        if module_id is None:
+            return self.by_key.get(key) or self.deleted_by_key.get(key)
+        return None
 
 
 def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
@@ -348,22 +359,17 @@ def _upsert_imported_string(
     *,
     dry_run: bool,
     status: TranslationStatus,
-    prefixed: bool,
     module_id: UUID | None,
 ) -> str:
     """Return 'create', 'update', or 'unchanged'."""
-    entry = index.lookup(key, prefixed=prefixed, module_id=module_id)
+    entry = index.lookup(key, module_id=module_id)
     if entry is None:
         if not dry_run:
-            resolved_module_id = module_id
-            actual_key = key
-            if prefixed:
-                resolved_module_id, actual_key = _resolve_prefixed_key(db, project, key)
             source_text = values.get(project.base_language, "") or key
             entry = StringEntry(
                 project_id=project.id,
-                module_id=resolved_module_id,
-                key=actual_key,
+                module_id=module_id,
+                key=key,
                 source_text=source_text,
                 status=status,
             )
@@ -403,7 +409,6 @@ def _import_locale_maps(
     *,
     dry_run: bool,
     status: TranslationStatus,
-    prefixed: bool,
     module_id: UUID | None,
     report_orphans: bool,
     index: _ImportIndex,
@@ -427,7 +432,6 @@ def _import_locale_maps(
             values,
             dry_run=dry_run,
             status=status,
-            prefixed=prefixed,
             module_id=module_id,
         )
         if action == "create":
@@ -436,8 +440,8 @@ def _import_locale_maps(
             update_keys.append(key)
     orphan_keys: set[str] = set()
     if report_orphans:
-        if prefixed:
-            orphan_keys = {k for k in index.by_export_key if k not in seen}
+        if module_id is None:
+            orphan_keys = {k for (_mid, k) in index.by_module_key if k not in seen}
         else:
             orphan_keys = {
                 k
@@ -479,15 +483,16 @@ def import_flat_strings(
     *,
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
+    module_id: UUID | None = None,
 ) -> ImportResult:
-    """CLI / source-locale import: `{ key: source_text }` with optional `module.key` prefixes."""
+    """CLI / source-locale import: `{ key: source_text }` stored as-is."""
     return import_locale_payload(
         db,
         project,
         {project.base_language: strings},
         dry_run=dry_run,
         status=status,
-        prefixed=True,
+        module_id=module_id,
         report_orphans=True,
     )
 
@@ -499,7 +504,6 @@ def import_locale_payload(
     *,
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
-    prefixed: bool = True,
     module_id: UUID | None = None,
     report_orphans: bool = True,
 ) -> ImportResult:
@@ -516,7 +520,6 @@ def import_locale_payload(
         locale_maps,
         dry_run=dry_run,
         status=status,
-        prefixed=prefixed,
         module_id=module_id,
         report_orphans=report_orphans,
         index=index,
@@ -561,7 +564,6 @@ def import_modular_payload(
             locale_maps,
             dry_run=dry_run,
             status=status,
-            prefixed=False,
             module_id=mod.id if mod else None,
             report_orphans=True,
             index=index,
@@ -578,7 +580,6 @@ def import_modular_payload(
             unassigned,
             dry_run=dry_run,
             status=status,
-            prefixed=False,
             module_id=None,
             report_orphans=True,
             index=index,
@@ -605,9 +606,12 @@ def import_json_data(
     dry_run: bool,
     locale: str | None = None,
     status: TranslationStatus = TranslationStatus.draft,
+    module_id: UUID | None = None,
 ) -> ImportResult:
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="JSON import must be an object")
+
+    target_module_id = resolve_json_import_module(db, project, module_id)
 
     modules = data.get("modules")
     if isinstance(modules, dict) and modules and all(
@@ -628,7 +632,9 @@ def import_json_data(
 
     strings = data.get("strings")
     if _is_str_map(strings):
-        return import_flat_strings(db, project, strings, dry_run=dry_run, status=status)
+        return import_flat_strings(
+            db, project, strings, dry_run=dry_run, status=status, module_id=target_module_id
+        )
 
     if _is_locale_maps(data) and set(data).issubset(project_locales(project)):
         # Exported `{ locale: { key: value } }` — import every locale in the file.
@@ -638,7 +644,7 @@ def import_json_data(
             data,
             dry_run=dry_run,
             status=status,
-            prefixed=True,
+            module_id=target_module_id,
             report_orphans=True,
         )
 
@@ -652,7 +658,7 @@ def import_json_data(
             {target: data},
             dry_run=dry_run,
             status=status,
-            prefixed=True,
+            module_id=target_module_id,
             report_orphans=target == project.base_language,
         )
 

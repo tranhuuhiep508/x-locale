@@ -121,7 +121,7 @@ commit client IDs or secrets.
 
 ## Concepts
 
-- **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export shape; modules are always stored.
+- **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export/CLI shape. File keys are stored as-is (dots are not a module prefix). Flat import never creates modules; modular Excel uses sheet names as slugs and CLI uses folders.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `locale pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
 - **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string.

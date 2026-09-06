@@ -36,7 +36,7 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 - Translation inputs save on **blur**.
 - Content writes are audited via `before_flush` → `activities`. Batch/import/translate set `batch_id` for grouped revert.
 - Modules are always stored; project `layout` only affects export/CLI pull shape.
-- Flat export prefixes keys as `{module_slug}.{key}` (public export uses `published_key` / published module).
+- Flat export uses the stored key as-is (public export uses `published_key`). Modular export groups by module slug; keys inside each file are never prefixed.
 
 ### Lint / test / build
 

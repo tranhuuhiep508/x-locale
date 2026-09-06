@@ -1,10 +1,10 @@
 import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
-import { Upload, FileText, FileSpreadsheet } from 'lucide-react'
+import { Download, FileSpreadsheet, FileText, Upload } from 'lucide-react'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
-import { projectQuery } from '@/lib/queries'
+import { modulesQuery, projectQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
@@ -14,8 +14,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Spinner } from '@/components/ui/spinner'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
+import { DEMO_JSON_TEMPLATE, demoJsonFilename, demoJsonText } from '@/features/sync/import-templates'
 
 const routeApi = getRouteApi('/projects/$projectId/import-export')
+const NONE_MODULE = '__none__'
 
 function triggerDownload(blob: Blob, filename: string) {
   const href = URL.createObjectURL(blob)
@@ -29,12 +31,21 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(href)
 }
 
+function isExcelFile(file: File | null) {
+  return Boolean(file && /\.xlsx$/i.test(file.name))
+}
+
 export function ImportExportPage() {
   const { projectId } = routeApi.useParams()
   const toast = useToast()
   const queryClient = useQueryClient()
 
   const { data: project } = useQuery(projectQuery(projectId))
+  const isModularProject = project?.layout === 'modular'
+  const { data: modules = [] } = useQuery({
+    ...modulesQuery(projectId),
+    enabled: isModularProject,
+  })
 
   const [exportFormat, setExportFormat] = useState<'json' | 'xlsx'>('json')
   const [exportLayout, setExportLayout] = useState<ProjectLayout | null>(null)
@@ -45,25 +56,35 @@ export function ImportExportPage() {
   const pendingFileRef = useRef<File | null>(null)
   const [dryRun, setDryRun] = useState(true)
   const [importLocale, setImportLocale] = useState<string | null>(null)
+  const [importModuleId, setImportModuleId] = useState('')
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
 
   const layout = exportLayout ?? project?.layout ?? 'flat'
   const targetLocale = importLocale ?? project?.base_language ?? 'en'
 
+  function importParams(file: File, dry: boolean) {
+    const params: { locale: string; dry_run: string; module_id?: string } = {
+      locale: targetLocale,
+      dry_run: String(dry),
+    }
+    if (isModularProject && !isExcelFile(file) && importModuleId) {
+      params.module_id = importModuleId
+    }
+    return params
+  }
+
   const importMut = useMutation({
     mutationFn: async ({
       file,
-      locale,
       dry,
     }: {
       file: File
-      locale: string
       dry: boolean
     }) => {
       const fd = new FormData()
       fd.append('file', file)
-      return syncApi.importFile(projectId, fd, { locale, dry_run: String(dry) })
+      return syncApi.importFile(projectId, fd, importParams(file, dry))
     },
     onSuccess: (res) => {
       if (res.dry_run) {
@@ -77,6 +98,7 @@ export function ImportExportPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
@@ -95,11 +117,28 @@ export function ImportExportPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Export failed'),
   })
 
+  const templateMut = useMutation({
+    mutationFn: (format: 'json' | 'xlsx') => {
+      if (format === 'json') {
+        const blob = new Blob([demoJsonText()], { type: 'application/json' })
+        return Promise.resolve({
+          blob,
+          filename: demoJsonFilename(project?.base_language ?? 'vi'),
+        })
+      }
+      return syncApi.importTemplate(projectId, 'xlsx')
+    },
+    onSuccess: ({ blob, filename }) => {
+      triggerDownload(blob, filename)
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not download template'),
+  })
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     pendingFileRef.current = file
-    importMut.mutate({ file, locale: targetLocale, dry: dryRun })
+    importMut.mutate({ file, dry: dryRun })
     e.target.value = ''
   }
 
@@ -110,11 +149,7 @@ export function ImportExportPage() {
       setShowPreview(false)
       return
     }
-    importMut.mutate({
-      file,
-      locale: targetLocale,
-      dry: false,
-    })
+    importMut.mutate({ file, dry: false })
     setShowPreview(false)
   }
 
@@ -229,6 +264,68 @@ export function ImportExportPage() {
 
       <Card className="sky-panel">
         <CardHeader>
+          <p className="eyebrow">Format</p>
+          <CardTitle>Import template</CardTitle>
+          <CardDescription>
+            {isModularProject
+              ? 'JSON keys are stored exactly as written. Pick a module below when you upload JSON. For Excel, each sheet name is the module slug.'
+              : 'JSON keys are stored exactly as written. Excel uses one strings sheet; sheet names are not modules.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-relaxed">
+            {demoJsonText().trimEnd()}
+          </pre>
+          {isModularProject ? (
+            <p className="text-xs text-muted-foreground">
+              CLI modular layout uses folders instead:{' '}
+              <code className="rounded bg-muted px-1 py-0.5">auth/{project?.base_language ?? 'vi'}.json</code>
+              . Keys inside that file stay as-is; the folder name is the module.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              One file per language (for example{' '}
+              <code className="rounded bg-muted px-1 py-0.5">
+                {demoJsonFilename(project?.base_language ?? 'vi')}
+              </code>
+              ). Choose the matching target locale when you import.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => templateMut.mutate('json')}
+              disabled={templateMut.isPending}
+            >
+              {templateMut.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Download data-icon="inline-start" />
+              )}
+              JSON example
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => templateMut.mutate('xlsx')}
+              disabled={templateMut.isPending}
+            >
+              {templateMut.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <FileSpreadsheet data-icon="inline-start" />
+              )}
+              Excel example
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your app copy
+            before importing.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="sky-panel">
+        <CardHeader>
           <p className="eyebrow">Inbound</p>
           <CardTitle>Import</CardTitle>
           <CardDescription>Preview first, then apply. Secrets stay in the file you choose.</CardDescription>
@@ -270,6 +367,34 @@ export function ImportExportPage() {
                 </SelectContent>
               </Select>
             </Field>
+
+            {isModularProject ? (
+              <Field className="col-span-2">
+                <FieldLabel htmlFor="import_module">Module (JSON only)</FieldLabel>
+                <Select
+                  value={importModuleId || NONE_MODULE}
+                  onValueChange={(v) => setImportModuleId(v === NONE_MODULE ? '' : v)}
+                >
+                  <SelectTrigger id="import_module" className="w-full">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NONE_MODULE}>Unassigned</SelectItem>
+                      {modules.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name} ({m.slug})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Applied to JSON uploads. Excel ignores this and uses each sheet name as the module
+                  slug.
+                </p>
+              </Field>
+            ) : null}
           </div>
 
           <input
@@ -296,7 +421,8 @@ export function ImportExportPage() {
 
             <p className="text-xs text-muted-foreground mt-2">
               Accepted formats: .json, .xlsx — max 10 MB. A single-locale JSON file is applied to
-              the target locale; exported multi-locale files import every locale they contain.
+              the target locale; exported multi-locale files import every locale they contain. Keys
+              are never split on dots.
             </p>
           </div>
         </CardContent>
