@@ -1513,7 +1513,7 @@ def test_sync_state_lists_pending_remove_hidden_from_draft_export(client):
     assert body["stage"] == "draft"
     assert body["layout"] == "modular"
     assert body["base_language"] == "vi"
-    assert "draft/123ewfewf" not in body["exported"]
+    assert body["exported"] == []
     assert body["pending_remove"] == ["draft/123ewfewf"]
     assert body["tombstones"] == []
 
@@ -1837,4 +1837,22 @@ def test_import_template_json_is_flat_key_map(client):
     assert data["common.save"] == "Lưu"
     assert data["hello"] == "Xin chào"
     assert all(isinstance(v, str) for v in data.values())
+
+
+def test_import_diff_key_lists_are_capped(client):
+    project = _make_project(client, "Cap Diff", layout="flat")
+    pid = project["id"]
+    strings = {f"k{i:03d}": f"v{i}" for i in range(120)}
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": strings},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 120
+    diff = body["diff"]
+    assert diff["create_count"] == 120
+    assert len(diff["create"]) == 100
+    listed = client.get(f"/api/projects/{pid}/strings", params={"page_size": 200}).json()
+    assert listed["total"] == 120
 
