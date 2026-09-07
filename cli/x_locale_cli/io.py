@@ -166,51 +166,6 @@ def collect_modular_remote_keys(export: dict[str, Any], base_language: str) -> d
     return result
 
 
-def modular_export_locales(export: dict[str, Any]) -> list[str]:
-    manifest = export.get("manifest") or {}
-    if isinstance(manifest, dict):
-        locales = manifest.get("locales")
-        if isinstance(locales, list) and locales:
-            return [str(lc) for lc in locales]
-    seen: list[str] = []
-    modules = export.get("modules") or {}
-    buckets: list[Any] = [modules] if isinstance(modules, dict) else []
-    if isinstance(export.get("unassigned"), dict):
-        buckets.append({"_": export["unassigned"]})
-    for bucket in buckets:
-        if not isinstance(bucket, dict):
-            continue
-        for locale_map in bucket.values():
-            if not isinstance(locale_map, dict):
-                continue
-            for locale in locale_map:
-                if locale not in seen:
-                    seen.append(str(locale))
-    return seen
-
-
-def count_modular_untranslated(
-    export: dict[str, Any],
-    *,
-    base_language: str,
-    target_locales: list[str],
-) -> dict[str, int]:
-    counts = {lc: 0 for lc in target_locales}
-    buckets: list[dict[str, Any]] = []
-    modules = export.get("modules") or {}
-    if isinstance(modules, dict):
-        buckets.extend(v for v in modules.values() if isinstance(v, dict))
-    unassigned = export.get("unassigned")
-    if isinstance(unassigned, dict):
-        buckets.append(unassigned)
-    for locale_map in buckets:
-        base_map = string_map(locale_map.get(base_language))
-        for locale in target_locales:
-            target_map = string_map(locale_map.get(locale))
-            counts[locale] += sum(1 for key in base_map if not target_map.get(key, "").strip())
-    return counts
-
-
 def build_modular_push_body(
     modules: dict[str, dict[str, str]],
     base_language: str,
@@ -235,13 +190,16 @@ def write_locale_file_reported(path: Path, strings: dict[str, str]) -> PulledFil
             old_strings = {k: v for k, v in existing.items() if isinstance(v, str)}
 
     new_keys, updated_keys, removed_keys = diff_locale_maps(old_strings, strings)
-    write_locale_file(path, strings)
+    unchanged = not new_keys and not updated_keys and not removed_keys and path.exists()
+    if not unchanged:
+        write_locale_file(path, strings)
     return PulledFileReport(
         path=path,
         keys=sorted(strings),
         new_keys=new_keys,
         updated_keys=updated_keys,
         removed_keys=removed_keys,
+        written=not unchanged,
     )
 
 

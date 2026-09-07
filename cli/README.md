@@ -138,8 +138,9 @@ Push base-language strings to x-locale.
   stored as-is and are **not** prefixed with the folder name.
 
 Orphaned remote keys (present on x-locale but absent locally) are **reported but
-never deleted**. Keys queued for removal (`pending_delete`) are listed as
-**Pending remove (unchanged)** — push will not re-create them.
+never deleted**. Keys queued for removal (`pending_delete`) stay on x-locale;
+`locale status` lists them as **Pending remove on x-locale**. Push will not
+re-create them.
 
 ```
 Options:
@@ -176,8 +177,7 @@ Options:
 
 Runs `push` then `pull` in one step.  Accepts the same override flags as
 `push`/`pull`. After both phases, a **Sync summary** lists leftover mismatches
-with reasons and next steps. Exit code `1` if any blocking issue remains
-(untranslated counts alone do not fail).
+with reasons and next steps. Exit code `1` if any blocking issue remains.
 
 ### `locale status`
 
@@ -198,8 +198,6 @@ Displays:
 - **Removed on x-locale (tombstone)** — soft-deleted on x-locale
 - **Source text differs** — same key, different base-language text
 - **`_unassigned` (CLI will not push)** — extra keys under `_unassigned/`
-- **Untranslated (locale)** — base-language keys with no translation on x-locale
-  (informational; does not fail the command)
 
 Draft export omits pending-remove keys and tombstones. Exit code `1` when any
 blocking mismatch above remains.

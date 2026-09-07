@@ -10,7 +10,7 @@ import httpx
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.models import Config
 
-HTTP_TIMEOUT = 60.0
+HTTP_TIMEOUT = 120.0
 
 
 def api_client(config: Config) -> httpx.Client:

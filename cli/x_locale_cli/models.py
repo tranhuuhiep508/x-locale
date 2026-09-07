@@ -140,6 +140,15 @@ class PulledFileReport:
     new_keys: list[str] = field(default_factory=list)
     updated_keys: list[str] = field(default_factory=list)
     removed_keys: list[str] = field(default_factory=list)
+    written: bool = True
+
+
+@dataclass
+class PullResult:
+    """Export payload and sync-state from a pull, reusable by ``locale sync``."""
+
+    export: Any
+    state: dict[str, Any]
 
 
 @dataclass(frozen=True)
