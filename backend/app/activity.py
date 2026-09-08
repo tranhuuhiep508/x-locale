@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,34 @@ STRING_FIELDS = (
     "pending_delete",
     "deleted_at",
 )
+
+
+@dataclass
+class _FlushTranslationIndex:
+    """Per-flush indexes so activity capture stays O(changed rows), not O(n²)."""
+
+    new_by_string: dict[uuid.UUID, list[Translation]] = field(default_factory=dict)
+    dirty_by_string: dict[uuid.UUID, list[Translation]] = field(default_factory=dict)
+    deleted_by_string: dict[uuid.UUID, list[Translation]] = field(default_factory=dict)
+    deleted_ids: set[int] = field(default_factory=set)
+
+    @classmethod
+    def build(cls, session: Session) -> _FlushTranslationIndex:
+        index = cls()
+        for obj in list(session.new):
+            if isinstance(obj, Translation) and obj.string_id:
+                index.new_by_string.setdefault(obj.string_id, []).append(obj)
+        for obj in list(session.dirty):
+            if isinstance(obj, Translation) and obj.string_id:
+                index.dirty_by_string.setdefault(obj.string_id, []).append(obj)
+        for obj in list(session.deleted):
+            index.deleted_ids.add(id(obj))
+            if isinstance(obj, Translation) and obj.string_id:
+                index.deleted_by_string.setdefault(obj.string_id, []).append(obj)
+        return index
+
+    def is_deleted(self, obj: Any) -> bool:
+        return id(obj) in self.deleted_ids
 
 
 def attach_batch(session: Session, batch_id: uuid.UUID, batch_kind: str) -> dict[str, Any]:
@@ -185,15 +214,19 @@ def _field_value(obj: StringEntry, field: str, *, before: bool) -> Any:
 
 
 def _translation_maps(
-    session: Session, string_id: uuid.UUID, entry: StringEntry | None
+    session: Session,
+    string_id: uuid.UUID,
+    entry: StringEntry | None,
+    flush_index: _FlushTranslationIndex | None = None,
 ) -> tuple[dict[str, str], dict[str, str], bool]:
+    index = flush_index or _FlushTranslationIndex.build(session)
     before: dict[str, str] = {}
     after: dict[str, str] = {}
     changed = False
 
     if entry is not None and _rel_loaded(entry, "translations"):
         for translation in list(entry.translations or []):
-            if translation in session.deleted:
+            if index.is_deleted(translation):
                 continue
             after[translation.locale] = translation.value or ""
             before[translation.locale] = translation.value or ""
@@ -201,110 +234,112 @@ def _translation_maps(
         for translation in (
             session.query(Translation).filter(Translation.string_id == string_id).all()
         ):
-            if translation in session.deleted:
+            if index.is_deleted(translation):
                 continue
             after[translation.locale] = translation.value or ""
             before[translation.locale] = translation.value or ""
 
-    for obj in list(session.new):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            after[obj.locale] = obj.value or ""
-            before.setdefault(obj.locale, "")
-            changed = True
+    for obj in index.new_by_string.get(string_id, ()):
+        after[obj.locale] = obj.value or ""
+        before.setdefault(obj.locale, "")
+        changed = True
 
-    for obj in list(session.dirty):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            after[obj.locale] = obj.value or ""
-            try:
-                hist = sa_inspect(obj).attrs.value.history
-            except Exception:
-                before[obj.locale] = obj.value or ""
-                continue
-            if hist.has_changes():
-                changed = True
-                before[obj.locale] = (hist.deleted[0] if hist.deleted else "") or ""
-            else:
-                before.setdefault(obj.locale, obj.value or "")
-            try:
-                pub_hist = sa_inspect(obj).attrs.published_value.history
-            except Exception:
-                pass
-            else:
-                if pub_hist.has_changes():
-                    changed = True
-
-    for obj in list(session.deleted):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
+    for obj in index.dirty_by_string.get(string_id, ()):
+        after[obj.locale] = obj.value or ""
+        try:
+            hist = sa_inspect(obj).attrs.value.history
+        except Exception:
             before[obj.locale] = obj.value or ""
-            after.pop(obj.locale, None)
+            continue
+        if hist.has_changes():
             changed = True
+            before[obj.locale] = (hist.deleted[0] if hist.deleted else "") or ""
+        else:
+            before.setdefault(obj.locale, obj.value or "")
+        try:
+            pub_hist = sa_inspect(obj).attrs.published_value.history
+        except Exception:
+            pass
+        else:
+            if pub_hist.has_changes():
+                changed = True
+
+    for obj in index.deleted_by_string.get(string_id, ()):
+        before[obj.locale] = obj.value or ""
+        after.pop(obj.locale, None)
+        changed = True
 
     return before, after, changed
 
 
 def _published_translation_maps(
-    session: Session, string_id: uuid.UUID, entry: StringEntry | None
+    session: Session,
+    string_id: uuid.UUID,
+    entry: StringEntry | None,
+    flush_index: _FlushTranslationIndex | None = None,
 ) -> tuple[dict[str, str | None], dict[str, str | None]]:
+    index = flush_index or _FlushTranslationIndex.build(session)
     before: dict[str, str | None] = {}
     after: dict[str, str | None] = {}
 
     translations: list[Translation] = []
     if entry is not None and _rel_loaded(entry, "translations"):
-        translations = [t for t in list(entry.translations or []) if t not in session.deleted]
+        translations = [
+            t for t in list(entry.translations or []) if not index.is_deleted(t)
+        ]
     elif entry is not None and entry.id:
         translations = [
             t
             for t in session.query(Translation).filter(Translation.string_id == string_id).all()
-            if t not in session.deleted
+            if not index.is_deleted(t)
         ]
 
     for translation in translations:
         after[translation.locale] = translation.published_value
         before[translation.locale] = translation.published_value
 
-    for obj in list(session.new):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            after[obj.locale] = obj.published_value
-            before.setdefault(obj.locale, None)
+    for obj in index.new_by_string.get(string_id, ()):
+        after[obj.locale] = obj.published_value
+        before.setdefault(obj.locale, None)
 
-    for obj in list(session.dirty):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            after[obj.locale] = obj.published_value
-            try:
-                hist = sa_inspect(obj).attrs.published_value.history
-            except Exception:
-                before[obj.locale] = obj.published_value
-                continue
-            if hist.has_changes():
-                before[obj.locale] = hist.deleted[0] if hist.deleted else None
-            else:
-                before.setdefault(obj.locale, obj.published_value)
-
-    for obj in list(session.deleted):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
+    for obj in index.dirty_by_string.get(string_id, ()):
+        after[obj.locale] = obj.published_value
+        try:
+            hist = sa_inspect(obj).attrs.published_value.history
+        except Exception:
             before[obj.locale] = obj.published_value
-            after.pop(obj.locale, None)
+            continue
+        if hist.has_changes():
+            before[obj.locale] = hist.deleted[0] if hist.deleted else None
+        else:
+            before.setdefault(obj.locale, obj.published_value)
+
+    for obj in index.deleted_by_string.get(string_id, ()):
+        before[obj.locale] = obj.published_value
+        after.pop(obj.locale, None)
 
     return before, after
 
 
-def _only_empty_new_translations(session: Session, string_id: uuid.UUID) -> bool:
+def _only_empty_new_translations(
+    session: Session,
+    string_id: uuid.UUID,
+    flush_index: _FlushTranslationIndex | None = None,
+) -> bool:
+    index = flush_index or _FlushTranslationIndex.build(session)
     saw_empty_create = False
-    for obj in list(session.new):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            if (obj.value or "").strip():
-                return False
-            saw_empty_create = True
-    for obj in list(session.dirty):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
-            try:
-                if sa_inspect(obj).attrs.value.history.has_changes():
-                    return False
-            except Exception:
-                return False
-    for obj in list(session.deleted):
-        if isinstance(obj, Translation) and obj.string_id == string_id:
+    for obj in index.new_by_string.get(string_id, ()):
+        if (obj.value or "").strip():
             return False
+        saw_empty_create = True
+    for obj in index.dirty_by_string.get(string_id, ()):
+        try:
+            if sa_inspect(obj).attrs.value.history.has_changes():
+                return False
+        except Exception:
+            return False
+    if index.deleted_by_string.get(string_id):
+        return False
     return saw_empty_create
 
 
@@ -319,9 +354,12 @@ def _snapshot(
     tags_after: list[str],
     tag_names_before: list[str],
     tag_names_after: list[str],
+    flush_index: _FlushTranslationIndex | None = None,
 ) -> dict[str, Any]:
     _ensure_string_identity(obj)
-    pub_before, pub_after = _published_translation_maps(session, obj.id, obj)
+    pub_before, pub_after = _published_translation_maps(
+        session, obj.id, obj, flush_index=flush_index
+    )
     return {
         "id": str(obj.id),
         "project_id": str(obj.project_id),
@@ -415,6 +453,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
     dirty_strings: dict[uuid.UUID, StringEntry] = {}
     deleted_strings: dict[uuid.UUID, StringEntry] = {}
     string_ids: set[uuid.UUID] = set()
+    flush_index = _FlushTranslationIndex.build(session)
 
     for obj in list(session.new):
         if isinstance(obj, Activity):
@@ -451,7 +490,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             tags_before, tags_after, names_before, names_after, _ = _tag_ids_before_after(
                 session, entry
             )
-            trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
+            trans_before, trans_after, _ = _translation_maps(
+                session, string_id, entry, flush_index=flush_index
+            )
             before = _snapshot(
                 session,
                 entry,
@@ -462,6 +503,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 tags_after=tags_after,
                 tag_names_before=names_before,
                 tag_names_after=names_after,
+                flush_index=flush_index,
             )
             classified = classify_event(
                 action=ActivityAction.delete.value,
@@ -497,7 +539,9 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             tags_before, tags_after, names_before, names_after, _ = _tag_ids_before_after(
                 session, entry
             )
-            trans_before, trans_after, _ = _translation_maps(session, string_id, entry)
+            trans_before, trans_after, _ = _translation_maps(
+                session, string_id, entry, flush_index=flush_index
+            )
             after = _snapshot(
                 session,
                 entry,
@@ -508,6 +552,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
                 tags_after=tags_after,
                 tag_names_before=names_before,
                 tag_names_after=names_after,
+                flush_index=flush_index,
             )
             classified = classify_event(
                 action=ActivityAction.create.value,
@@ -546,9 +591,13 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
         tags_before, tags_after, names_before, names_after, tags_changed = _tag_ids_before_after(
             session, entry
         )
-        trans_before, trans_after, trans_changed = _translation_maps(session, string_id, entry)
+        trans_before, trans_after, trans_changed = _translation_maps(
+            session, string_id, entry, flush_index=flush_index
+        )
         if not field_changed and not tags_changed:
-            if not trans_changed or _only_empty_new_translations(session, string_id):
+            if not trans_changed or _only_empty_new_translations(
+                session, string_id, flush_index=flush_index
+            ):
                 continue
 
         before = _snapshot(
@@ -561,6 +610,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             tags_after=tags_after,
             tag_names_before=names_before,
             tag_names_after=names_after,
+            flush_index=flush_index,
         )
         after = _snapshot(
             session,
@@ -572,6 +622,7 @@ def capture_activities(session: Session, flush_context: Any, instances: Any = No
             tags_after=tags_after,
             tag_names_before=names_before,
             tag_names_after=names_after,
+            flush_index=flush_index,
         )
         if before == after:
             continue
