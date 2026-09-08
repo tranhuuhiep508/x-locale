@@ -229,12 +229,8 @@ export function StringsPage() {
     if (applyMut.isPending || proposeMut.isPending) return
     setReviewOpen(false)
     setProposalJobId(null)
-    setProposalItems([])
     setProposalsReady(false)
-    setReviewPage(1)
-    setReviewTotal(0)
     proposeMut.reset()
-    missingMut.reset()
   }
 
   function loadMissingPage(page: number) {
