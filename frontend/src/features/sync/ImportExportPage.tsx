@@ -469,9 +469,9 @@ export function ImportExportPage() {
                         + {k}
                       </code>
                     ))}
-                    {previewResult.diff.create.length > 10 && (
+                    {previewResult.diff.create_count > 10 && (
                       <p className="text-xs text-muted-foreground">
-                        and {previewResult.diff.create.length - 10} more…
+                        and {previewResult.diff.create_count - 10} more…
                       </p>
                     )}
                   </div>

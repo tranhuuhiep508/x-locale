@@ -344,7 +344,7 @@ class ImportResult(BaseModel):
 
 
 class SyncStateOut(BaseModel):
-    """CLI snapshot of export keys plus rows hidden from draft export."""
+    """Pending-remove and tombstone identities for CLI status."""
 
     stage: str
     layout: str

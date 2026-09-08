@@ -21,6 +21,7 @@ from app.services.sync import (
     import_flat_strings,
     import_json_data,
     load_export_entries,
+    load_sync_state_entries,
     normalize_export_stage,
 )
 
@@ -83,12 +84,12 @@ def project_sync_state(
     layout: Annotated[str | None, Query(pattern="^(flat|modular)$")] = None,
     stage: Annotated[str, Query(pattern="^(draft|public|all)$")] = "draft",
 ) -> SyncStateOut:
-    """Export keys plus pending-remove and tombstone identities for CLI status."""
+    """Pending-remove and tombstone identities for CLI status."""
     effective_layout = layout or (
         project.layout.value if hasattr(project.layout, "value") else project.layout
     )
     effective_stage = normalize_export_stage(stage)
-    entries = load_export_entries(db, project.id)
+    entries = load_sync_state_entries(db, project.id)
     return build_sync_state(project, entries, effective_layout, effective_stage)
 
 

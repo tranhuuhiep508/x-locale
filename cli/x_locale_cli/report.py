@@ -123,7 +123,7 @@ def _print_counts(rows: list[tuple[str, int]]) -> None:
     for label, count in rows:
         if label in {"Created", "Updated"} and count:
             style = "green" if label == "Created" else "cyan"
-        elif label in {"On x-locale, not in local files", "Pending remove (unchanged)"} and count:
+        elif label == "On x-locale, not in local files" and count:
             style = "yellow"
         elif label == "Removed" and count:
             style = "yellow"
@@ -143,10 +143,12 @@ def _print_change_section(
     hint: str = "",
     action: str = "",
     limit: int = _KEY_LIST_LIMIT,
+    total: int | None = None,
 ) -> None:
-    if not items:
+    count = total if total is not None else len(items)
+    if not items and count == 0:
         return
-    heading = f"{title} ({len(items)})"
+    heading = f"{title} ({count})"
     console.print()
     if style:
         console.print(f"[{style}]{heading}[/]")
@@ -155,14 +157,16 @@ def _print_change_section(
     if hint:
         console.print(f"[dim]{hint}[/dim]")
     shown = items[:limit]
-    key_width = max(len(item.key) for item in shown)
-    for item in shown:
-        if item.extra:
-            console.print(f"    {item.key:<{key_width}}  [dim]{item.extra}[/dim]")
-        else:
-            console.print(f"    {item.key}")
-    if len(items) > limit:
-        console.print(f"    … and {len(items) - limit} more")
+    if shown:
+        key_width = max(len(item.key) for item in shown)
+        for item in shown:
+            if item.extra:
+                console.print(f"    {item.key:<{key_width}}  [dim]{item.extra}[/dim]")
+            else:
+                console.print(f"    {item.key}")
+    remaining = count - len(shown)
+    if remaining > 0:
+        console.print(f"    … and {remaining} more")
     if action:
         for line in action.split("\n"):
             console.print(f"  [dim]{line}[/dim]")
@@ -243,7 +247,11 @@ def print_pull_report(
 
     if not created and not updated and not removed_labeled:
         console.print("\n[green]Local files are already up to date.[/green]")
-    footer = f"Wrote {len(reports)} files to {output_dir}"
+    written_count = sum(1 for report in reports if report.written)
+    if written_count:
+        footer = f"Wrote {written_count} files to {output_dir}"
+    else:
+        footer = f"Checked {len(reports)} files in {output_dir}"
     if manifest_written is not None:
         footer += f"  ·  manifest {manifest_written.name}"
     console.print(f"\n[dim]{footer}[/dim]")
@@ -253,40 +261,43 @@ def print_push_report(
     *,
     result: dict[str, Any],
     local_key_count: int,
-    orphans: list[str],
     details: list[str],
     dry_run: bool,
-    pending_remove: list[str] | None = None,
 ) -> None:
     diff = result.get("diff") or {}
-    created = change_items(diff.get("create", []))
-    updated = change_items(diff.get("update", []))
-    remote_only = change_items(orphans)
-    pending_items = change_items(pending_remove or [])
-    unchanged_count = max(0, local_key_count - len(created) - len(updated))
+    create_keys = diff.get("create") or []
+    update_keys = diff.get("update") or []
+    orphan_keys = diff.get("orphan") or []
+    create_count = int(diff.get("create_count") if diff.get("create_count") is not None else len(create_keys))
+    update_count = int(diff.get("update_count") if diff.get("update_count") is not None else len(update_keys))
+    orphan_count = int(diff.get("orphan_count") if diff.get("orphan_count") is not None else len(orphan_keys))
+    created = change_items(create_keys)
+    updated = change_items(update_keys)
+    remote_only = change_items(orphan_keys)
+    unchanged_count = max(0, local_key_count - create_count - update_count)
 
     print_report_header("Push", details)
     counts: list[tuple[str, int]] = [
-        ("Created", len(created)),
-        ("Updated", len(updated)),
+        ("Created", create_count),
+        ("Updated", update_count),
         ("Unchanged", unchanged_count),
     ]
-    if remote_only:
-        counts.append(("On x-locale, not in local files", len(remote_only)))
-    if pending_items:
-        counts.append(("Pending remove (unchanged)", len(pending_items)))
+    if orphan_count:
+        counts.append(("On x-locale, not in local files", orphan_count))
     _print_counts(counts)
     _print_change_section(
         "Created",
         created,
         style="green",
         hint="New strings on x-locale.",
+        total=create_count,
     )
     _print_change_section(
         "Updated",
         updated,
         style="cyan",
         hint="Base-language text changed on x-locale.",
+        total=update_count,
     )
     _print_change_section(
         "On x-locale, not in local files",
@@ -294,18 +305,12 @@ def print_push_report(
         style="yellow",
         hint="Present in x-locale export for the modules you pushed — not deleted.",
         action="→ Run `locale pull` to add them locally. Push never deletes remote keys.",
-    )
-    _print_change_section(
-        "Pending remove (unchanged)",
-        pending_items,
-        style="yellow",
-        hint="Local keys match x-locale rows queued for removal. They are omitted from draft export.",
-        action="→ In x-locale: Restore or publish the delete. Push will not re-create them.",
+        total=orphan_count,
     )
 
     if dry_run:
         console.print("\n[dim]Dry run — no changes were saved.[/dim]")
-    elif not created and not updated and not remote_only and not pending_items:
+    elif not create_count and not update_count and not orphan_count:
         console.print("\n[green]Everything is already up to date.[/green]")
 
 
@@ -325,9 +330,6 @@ def print_status(snapshot: StatusSnapshot) -> None:
         count = len(getattr(issues, field))
         if count:
             summary.add_row(f"[{style}]{label}[/{style}]", str(count))
-    for locale, count in snapshot.untranslated.items():
-        color = "red" if count > 0 else "green"
-        summary.add_row(f"[{color}]Untranslated ({locale})[/{color}]", str(count))
     console.print(summary)
 
     if snapshot.stage == "draft":

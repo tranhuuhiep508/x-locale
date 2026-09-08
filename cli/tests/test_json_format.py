@@ -10,7 +10,6 @@ from x_locale_cli.io import (
     build_modular_push_body,
     collect_modular_local_keys,
     collect_modular_remote_keys,
-    count_modular_untranslated,
     default_source_file,
     diff_locale_maps,
     file_module_locale,
@@ -338,20 +337,17 @@ class ModularStatusHelpersTests(unittest.TestCase):
             {"auth/auth.email": "Email", f"{UNASSIGNED_SLUG}/loose": "Hi"},
         )
 
-    def test_count_untranslated_walks_modules(self) -> None:
-        export = {
-            "modules": {
-                "auth": {
-                    "vi": {"auth.email": "Email", "password": "Mật khẩu"},
-                    "en": {"auth.email": "Email", "password": ""},
-                }
-            },
-            "unassigned": {"vi": {"loose": "Hi"}, "en": {"loose": ""}},
-        }
-        counts = count_modular_untranslated(
-            export, base_language="vi", target_locales=["en"]
-        )
-        self.assertEqual(counts, {"en": 2})
+    def test_identical_pull_does_not_rewrite(self) -> None:
+        path = self.root / "en.json"
+        first = write_locale_file_reported(path, {"keep": "A", "other": "B"})
+        self.assertTrue(first.written)
+        mtime = path.stat().st_mtime_ns
+        second = write_locale_file_reported(path, {"other": "B", "keep": "A"})
+        self.assertFalse(second.written)
+        self.assertEqual(second.new_keys, [])
+        self.assertEqual(second.updated_keys, [])
+        self.assertEqual(second.removed_keys, [])
+        self.assertEqual(path.stat().st_mtime_ns, mtime)
 
 
 class ParseApiErrorTests(unittest.TestCase):

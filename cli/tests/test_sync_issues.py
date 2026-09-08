@@ -16,7 +16,7 @@ from x_locale_cli.issues import (
     removed_key_reason,
 )
 from x_locale_cli.models import PulledFileReport
-from x_locale_cli.report import print_pull_report, print_status, print_sync_summary
+from x_locale_cli.report import print_pull_report, print_push_report, print_status, print_sync_summary
 
 
 class ClassifySyncIssuesTests(unittest.TestCase):
@@ -94,7 +94,6 @@ class ReportHintTests(unittest.TestCase):
             remote_count=1,
             local_count=2,
             issues=SyncIssues(pending_remove=["draft/123ewfewf"]),
-            untranslated={"en": 0},
         )
         text = self._capture(lambda: print_status(snapshot))
         self.assertIn("Pending remove on x-locale", text)
@@ -102,6 +101,7 @@ class ReportHintTests(unittest.TestCase):
         self.assertIn("omitted from draft export", text)
         self.assertIn("re-add", text)
         self.assertNotIn("Orphaned locally", text)
+        self.assertNotIn("Untranslated", text)
         self.assertNotIn("run `locale push` to add to x-locale", text)
 
     def test_sync_summary_counts_remaining_issues(self) -> None:
@@ -112,7 +112,6 @@ class ReportHintTests(unittest.TestCase):
             remote_count=1,
             local_count=1,
             issues=SyncIssues(pending_remove=["draft/123ewfewf"]),
-            untranslated={},
         )
         text = self._capture(lambda: print_sync_summary(snapshot))
         self.assertIn("1 issue remain", text)
@@ -139,3 +138,27 @@ class ReportHintTests(unittest.TestCase):
         self.assertIn("Removed from local files", text)
         self.assertIn("_unassigned/123ewfewf", text)
         self.assertIn("_unassigned (CLI will not push)", text)
+
+    def test_push_report_omits_pending_remove_and_uses_counts(self) -> None:
+        text = self._capture(
+            lambda: print_push_report(
+                result={
+                    "diff": {
+                        "create": ["a"],
+                        "update": [],
+                        "orphan": ["old"],
+                        "create_count": 1,
+                        "update_count": 0,
+                        "orphan_count": 5,
+                    }
+                },
+                local_key_count=10,
+                details=["flat"],
+                dry_run=False,
+            )
+        )
+        self.assertIn("Created", text)
+        self.assertIn("On x-locale, not in local files", text)
+        self.assertIn("and 4 more", text)
+        self.assertNotIn("Pending remove", text)
+        self.assertNotIn("Untranslated", text)

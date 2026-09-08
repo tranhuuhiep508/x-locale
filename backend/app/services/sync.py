@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -19,6 +19,7 @@ from app.services.strings import (
 )
 
 CLI_UNASSIGNED = "_unassigned"
+IMPORT_DIFF_SAMPLE = 100
 
 
 def load_export_entries(db: Session, project_id) -> list[StringEntry]:
@@ -28,10 +29,19 @@ def load_export_entries(db: Session, project_id) -> list[StringEntry]:
             joinedload(StringEntry.translations),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
-            joinedload(StringEntry.tags),
         )
         .filter(StringEntry.project_id == project_id)
         .order_by(StringEntry.key)
+        .all()
+    )
+
+
+def load_sync_state_entries(db: Session, project_id) -> list[StringEntry]:
+    """Pending-remove / tombstone labels only — skip translations and tags."""
+    return (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.module))
+        .filter(StringEntry.project_id == project_id)
         .all()
     )
 
@@ -41,6 +51,7 @@ def translation_value(
     locale: str,
     project: Project,
     stage: str,
+    by_locale: dict[str, Any] | None = None,
 ) -> str | None:
     """Return value for locale given stage, or None to omit."""
     if locale == project.base_language:
@@ -50,15 +61,16 @@ def translation_value(
             return entry.source_text
         return entry.source_text
 
+    translations = by_locale if by_locale is not None else {t.locale: t for t in entry.translations}
     if stage == "public":
         if entry.status != TranslationStatus.public:
             return None
-        translation = next((t for t in entry.translations if t.locale == locale), None)
+        translation = translations.get(locale)
         if translation is not None and translation.published_value is not None:
             return translation.published_value
         return ""
 
-    translation = next((t for t in entry.translations if t.locale == locale), None)
+    translation = translations.get(locale)
     if translation and translation.value.strip():
         return translation.value
     return None
@@ -99,8 +111,9 @@ def build_flat_export(
         elif entry.pending_delete:
             continue
         key = export_key(entry, published=stage == "public")
+        by_locale = {t.locale: t for t in entry.translations}
         for locale in locales:
-            val = translation_value(entry, locale, project, stage)
+            val = translation_value(entry, locale, project, stage, by_locale)
             if val is not None:
                 result[locale][key] = val
             elif locale == project.base_language:
@@ -143,8 +156,9 @@ def build_modular_export(
         else:
             target = unassigned
 
+        by_locale = {t.locale: t for t in entry.translations}
         for locale in locales:
-            val = translation_value(entry, locale, project, stage)
+            val = translation_value(entry, locale, project, stage, by_locale)
             if val is not None:
                 target[locale][key] = val
             elif locale == project.base_language:
@@ -179,34 +193,6 @@ def _cli_identity(entry: StringEntry, layout: str, *, published: bool = False) -
     return f"{CLI_UNASSIGNED}/{key}"
 
 
-def _exported_cli_keys(
-    project: Project,
-    entries: list[StringEntry],
-    layout: str,
-    stage: str,
-) -> list[str]:
-    if layout == "modular":
-        payload = build_modular_export(project, entries, stage)
-        keys: list[str] = []
-        modules = payload.get("modules") or {}
-        if isinstance(modules, dict):
-            for slug, locale_map in modules.items():
-                if not isinstance(locale_map, dict):
-                    continue
-                base_map = locale_map.get(project.base_language) or {}
-                if isinstance(base_map, dict):
-                    keys.extend(f"{slug}/{k}" for k in base_map)
-        unassigned = payload.get("unassigned") or {}
-        if isinstance(unassigned, dict):
-            base_map = unassigned.get(project.base_language) or {}
-            if isinstance(base_map, dict):
-                keys.extend(f"{CLI_UNASSIGNED}/{k}" for k in base_map)
-        return sorted(keys)
-    payload = build_flat_export(project, entries, stage)
-    base_map = payload.get(project.base_language) or {}
-    return sorted(base_map.keys()) if isinstance(base_map, dict) else []
-
-
 def build_sync_state(
     project: Project,
     entries: list[StringEntry],
@@ -231,7 +217,7 @@ def build_sync_state(
         stage=stage,
         layout=layout,
         base_language=project.base_language,
-        exported=_exported_cli_keys(project, entries, layout, stage),
+        exported=[],
         pending_remove=sorted(pending_remove),
         tombstones=sorted(tombstones),
     )
@@ -367,6 +353,7 @@ def _upsert_imported_string(
         if not dry_run:
             source_text = values.get(project.base_language, "") or key
             entry = StringEntry(
+                id=uuid4(),
                 project_id=project.id,
                 module_id=module_id,
                 key=key,
@@ -374,7 +361,6 @@ def _upsert_imported_string(
                 status=status,
             )
             db.add(entry)
-            db.flush()
             ensure_translation_rows(db, entry, project)
             apply_translation_values(
                 db,
@@ -460,9 +446,9 @@ def _result(
     dry_run: bool,
 ) -> ImportResult:
     diff = ImportDiff(
-        create=create_keys,
-        update=update_keys,
-        orphan=orphan_keys,
+        create=create_keys[:IMPORT_DIFF_SAMPLE],
+        update=update_keys[:IMPORT_DIFF_SAMPLE],
+        orphan=orphan_keys[:IMPORT_DIFF_SAMPLE],
         create_count=len(create_keys),
         update_count=len(update_keys),
         orphan_count=len(orphan_keys),

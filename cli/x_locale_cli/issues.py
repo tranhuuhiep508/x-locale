@@ -41,7 +41,6 @@ class StatusSnapshot:
     remote_count: int
     local_count: int
     issues: SyncIssues
-    untranslated: dict[str, int]
 
 
 def classify_sync_issues(
@@ -86,9 +85,11 @@ def removed_key_reason(
     tombstones: Iterable[str] = (),
 ) -> str:
     """Short label for a key pull dropped from a locale file."""
-    if key in set(pending_remove):
+    pending_set = pending_remove if isinstance(pending_remove, set) else set(pending_remove)
+    tombstone_set = tombstones if isinstance(tombstones, set) else set(tombstones)
+    if key in pending_set:
         return "pending remove on x-locale"
-    if key in set(tombstones):
+    if key in tombstone_set:
         return "tombstone on x-locale"
     if key.startswith(UNASSIGNED_PREFIX):
         return "_unassigned (CLI will not push)"
