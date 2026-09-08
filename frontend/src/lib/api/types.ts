@@ -216,6 +216,10 @@ export interface TranslateRequest {
   tag_id?: string
   locales?: string[]
   overwrite?: boolean
+  q?: string
+  page?: number
+  page_size?: number
+  descriptions?: Record<string, string>
 }
 
 export interface TranslateResult {
@@ -249,6 +253,9 @@ export interface TranslateProposalsResult {
   locales: string[]
   items: TranslateProposalItem[]
   job_id: string | null
+  total: number
+  page: number
+  page_size: number
 }
 
 export interface TranslateApplyRequest {

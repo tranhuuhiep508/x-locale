@@ -930,6 +930,9 @@ def test_translate_missing_lists_empty_locales_without_ai(client, monkeypatch):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["job_id"] is None
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 50
     by_key = {item["key"]: item for item in body["items"]}
     assert "en" not in by_key["hi"]["translations"]
     assert by_key["hi"]["translations"]["ja"] == ""
@@ -943,6 +946,173 @@ def test_translate_missing_lists_empty_locales_without_ai(client, monkeypatch):
     stored = {s["key"]: s for s in client.get(f"/api/projects/{pid}/strings").json()["items"]}
     assert {t["locale"]: t["value"] for t in stored["hi"]["translations"]}["en"] == "Hello"
     assert all(t["value"] == "" for t in stored["bye"]["translations"])
+
+
+def test_translate_missing_paginates_and_honors_filters(client, monkeypatch):
+    project = _make_project(client, "Missing Page", targets=["en", "ja"])
+    pid = project["id"]
+    auth = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    ).json()
+    home = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "home", "name": "Home"},
+    ).json()
+    tag = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "login", "color": "#111"},
+    ).json()
+
+    def fail_batch(*args, **kwargs):
+        raise AssertionError("AI should not run when listing missing translations")
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fail_batch)
+
+    a = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "a.login",
+            "source_text": "Đăng nhập",
+            "module_id": auth["id"],
+            "tag_ids": [tag["id"]],
+        },
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "b.home", "source_text": "Trang chủ", "module_id": home["id"]},
+    )
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "c.search", "source_text": "Tìm", "module_id": auth["id"]},
+    )
+    whitespace = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "d.spaces",
+            "source_text": "Khoảng trắng",
+            "module_id": auth["id"],
+            "translations": {"en": "   ", "ja": "こんにちは"},
+        },
+    ).json()
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "e.full",
+            "source_text": "Đủ",
+            "module_id": auth["id"],
+            "translations": {"en": "Full", "ja": "全部"},
+        },
+    )
+
+    first = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "page": 1, "page_size": 2},
+    )
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["total"] == 4
+    assert body["page"] == 1
+    assert body["page_size"] == 2
+    assert [item["key"] for item in body["items"]] == ["a.login", "b.home"]
+
+    second = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "page": 2, "page_size": 2},
+    ).json()
+    assert [item["key"] for item in second["items"]] == ["c.search", "d.spaces"]
+    spaces = {item["key"]: item for item in second["items"]}["d.spaces"]
+    assert spaces["string_id"] == whitespace["id"]
+    assert spaces["translations"] == {"en": ""}
+    assert "ja" not in spaces["translations"]
+
+    clamped = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "page": 99, "page_size": 2},
+    ).json()
+    assert clamped["page"] == 2
+    assert [item["key"] for item in clamped["items"]] == ["c.search", "d.spaces"]
+
+    too_big = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en"], "page_size": 101},
+    )
+    assert too_big.status_code == 422
+
+    by_q = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "q": "login"},
+    ).json()
+    assert by_q["total"] == 1
+    assert by_q["items"][0]["string_id"] == a["id"]
+
+    by_module = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "module_id": home["id"]},
+    ).json()
+    assert by_module["total"] == 1
+    assert by_module["items"][0]["key"] == "b.home"
+
+    by_tag = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en", "ja"], "tag_id": tag["id"]},
+    ).json()
+    assert by_tag["total"] == 1
+    assert by_tag["items"][0]["string_id"] == a["id"]
+
+
+def test_translate_proposals_use_request_descriptions(client, monkeypatch):
+    project = _make_project(client, "Propose Desc", targets=["en"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "description": "stored context",
+        },
+    ).json()
+
+    def fake_batch(source_locale, items):
+        assert items[0].context == "login button label"
+        item = items[0]
+        return {item.id: {"en": "Hello"}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    r = client.post(
+        f"/api/projects/{pid}/translate/proposals",
+        json={
+            "scope": "strings",
+            "string_ids": [string["id"]],
+            "locales": ["en"],
+            "descriptions": {string["id"]: "login button label"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    item = r.json()["items"][0]
+    assert item["description"] == "login button label"
+    stored = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
+    assert stored["description"] == "stored context"
+
+
+def test_translate_apply_rejects_oversized_payload(client):
+    project = _make_project(client, "Apply Cap", targets=["en"])
+    pid = project["id"]
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "Xin chào"},
+    ).json()
+    r = client.post(
+        f"/api/projects/{pid}/translate/apply",
+        json={
+            "items": [
+                {"string_id": string["id"], "translations": {"en": f"v{i}"}}
+                for i in range(101)
+            ]
+        },
+    )
+    assert r.status_code == 422
 
 
 def test_translate_proposals_omit_filled_locales(client, monkeypatch):

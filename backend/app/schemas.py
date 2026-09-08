@@ -253,6 +253,10 @@ class TranslateRequest(BaseModel):
     tag_id: UUID | None = None
     locales: list[str] | None = None
     overwrite: bool = False
+    q: str | None = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=50, ge=1, le=100)
+    descriptions: dict[UUID, str] | None = None
 
 
 class TranslateResult(BaseModel):
@@ -286,6 +290,9 @@ class TranslateProposalsResult(BaseModel):
     locales: list[str]
     items: list[TranslateProposalItem]
     job_id: UUID | None = None
+    total: int = 0
+    page: int = 1
+    page_size: int = 50
 
 
 class TranslateApplyItem(BaseModel):
@@ -296,7 +303,7 @@ class TranslateApplyItem(BaseModel):
 
 
 class TranslateApplyRequest(BaseModel):
-    items: list[TranslateApplyItem]
+    items: list[TranslateApplyItem] = Field(max_length=100)
 
 
 class TranslateApplyResult(BaseModel):
