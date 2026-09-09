@@ -1438,6 +1438,31 @@ def test_translate_proposals_job_progress_updates_without_payload(client, monkey
     assert "payload" not in job
 
 
+def test_load_entries_by_ids_preserves_request_order(client):
+    project = _make_project(client, "Entry Order")
+    pid = project["id"]
+    first = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "zeta", "source_text": "Z"},
+    ).json()
+    second = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "alpha", "source_text": "A"},
+    ).json()
+
+    from app.database import get_db
+    from app.main import app
+    from app.services.translate import _load_entries_by_ids
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        ids = [uuid.UUID(second["id"]), uuid.UUID(first["id"])]
+        entries = _load_entries_by_ids(db, ids)
+        assert [str(entry.id) for entry in entries] == [second["id"], first["id"]]
+    finally:
+        db.close()
+
+
 def test_export_stage_all_and_locale_filter(client):
     project = _make_project(client, "Export All")
     pid = project["id"]

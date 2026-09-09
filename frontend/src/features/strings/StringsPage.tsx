@@ -35,7 +35,10 @@ import {
 import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
+  applySuccessMessage,
   descriptionsFromDrafts,
+  filledStringCount,
+  mergeProposalResults,
 } from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -181,7 +184,7 @@ export function StringsPage() {
         setProposalJobId(res.job_id)
         return
       }
-      setProposalItems(res.items)
+      setProposalItems((prev) => mergeProposalResults(prev, res.items))
       setProposalsReady(true)
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
@@ -197,7 +200,7 @@ export function StringsPage() {
 
   const acceptJobResult = useEffectEvent((job: NonNullable<typeof proposalJobQuery.data>) => {
     if (job.status === 'completed') {
-      setProposalItems(proposalsFromJobResult(job.result))
+      setProposalItems((prev) => mergeProposalResults(prev, proposalsFromJobResult(job.result)))
       setProposalsReady(true)
       setProposalJobId(null)
     }
@@ -214,8 +217,8 @@ export function StringsPage() {
       stringsApi.translateApply(projectId, {
         items: applyPayloadFromDrafts(items),
       }),
-    onSuccess: (res) => {
-      toast.success(`Filled ${res.translated_count} empty translation(s)`)
+    onSuccess: (res, items) => {
+      toast.success(applySuccessMessage(res.translated_count, filledStringCount(items)))
       setProposalJobId(null)
       setProposalsReady(false)
       proposeMut.reset()
@@ -236,7 +239,6 @@ export function StringsPage() {
   function loadMissingPage(page: number) {
     if (applyMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
     setProposalJobId(null)
-    setProposalsReady(false)
     missingMut.mutate(missingRequest(page))
   }
 
