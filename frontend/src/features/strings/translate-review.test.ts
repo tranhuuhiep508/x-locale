@@ -6,6 +6,8 @@ import {
   descriptionsFromDrafts,
   draftsFromItems,
   filledCount,
+  translateProgressLabel,
+  translateProgressPercent,
   updateDraftDescription,
   updateDraftTranslation,
 } from './translate-review'
@@ -106,5 +108,42 @@ describe('clampPage', () => {
     expect(clampPage(2, 80, 50)).toBe(2)
     expect(clampPage(0, 80, 50)).toBe(1)
     expect(clampPage(1, 0, 50)).toBe(1)
+  })
+})
+
+describe('translateProgressPercent', () => {
+  it('maps chunks_done over chunks_total to a percent', () => {
+    expect(translateProgressPercent({ phase: 'translating', chunks_done: 2, chunks_total: 3 })).toBe(
+      67,
+    )
+    expect(translateProgressPercent({ phase: 'queued', chunks_done: 0, chunks_total: 3 })).toBe(0)
+    expect(translateProgressPercent(null)).toBeUndefined()
+    expect(translateProgressPercent({ phase: 'translating', chunks_done: 0, chunks_total: 0 })).toBe(
+      undefined,
+    )
+  })
+})
+
+describe('translateProgressLabel', () => {
+  it('describes queued, translating, retrying, and filling gaps', () => {
+    expect(translateProgressLabel({ phase: 'queued', chunks_done: 0, chunks_total: 3 })).toBe(
+      'Queued…',
+    )
+    expect(translateProgressLabel({ phase: 'translating', chunks_done: 0, chunks_total: 3 })).toBe(
+      'Translating batch 1 of 3…',
+    )
+    expect(translateProgressLabel({ phase: 'translating', chunks_done: 1, chunks_total: 3 })).toBe(
+      'Translating batch 2 of 3…',
+    )
+    expect(translateProgressLabel({ phase: 'translating', chunks_done: 3, chunks_total: 3 })).toBe(
+      'Translating batch 3 of 3…',
+    )
+    expect(translateProgressLabel({ phase: 'retrying', chunks_done: 1, chunks_total: 3 })).toBe(
+      'Bedrock is busy, retrying…',
+    )
+    expect(translateProgressLabel({ phase: 'filling_gaps', chunks_done: 1, chunks_total: 3 })).toBe(
+      'Filling missing locales…',
+    )
+    expect(translateProgressLabel(null)).toBe('Generating translations…')
   })
 })

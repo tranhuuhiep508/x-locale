@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Literal
 
 import boto3
 from aws_bedrock_token_generator import provide_token
@@ -18,9 +23,18 @@ _AUTH_ERROR = (
 _token_lock = threading.Lock()
 
 BATCH_SIZE = 20
+MAX_CHUNK_WORKERS = 5
 MAX_TOKENS = 4096
 TEMPERATURE = 0.2
 TOOL_NAME = "submit_translations"
+MAX_CONVERSE_ATTEMPTS = 3
+THROTTLE_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
+THROTTLE_CODES = frozenset(
+    {"ThrottlingException", "TooManyRequestsException", "ServiceUnavailableException"}
+)
+
+ProgressPhase = Literal["translating", "retrying", "filling_gaps"]
+ProgressCallback = Callable[[ProgressPhase, int, int], None]
 
 SUBMIT_TRANSLATIONS_TOOL = {
     "toolSpec": {
@@ -177,7 +191,19 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
     )
 
 
-def _converse_tool(prompt: str) -> dict:
+def _client_error_code(exc: ClientError) -> str:
+    response = exc.response if isinstance(exc.response, dict) else {}
+    error = response.get("Error")
+    if not isinstance(error, dict):
+        return ""
+    return str(error.get("Code") or "")
+
+
+def _is_throttle_error(exc: BaseException) -> bool:
+    return isinstance(exc, ClientError) and _client_error_code(exc) in THROTTLE_CODES
+
+
+def _converse_once(prompt: str) -> dict:
     _refresh_bedrock_token()
     client = boto3.Session().client("bedrock-runtime", region_name=settings.aws_region)
     try:
@@ -192,8 +218,28 @@ def _converse_tool(prompt: str) -> dict:
         )
     except NoCredentialsError as exc:
         raise ValueError(_AUTH_ERROR) from exc
-    except (BotoCoreError, ClientError) as exc:
+    except ClientError as exc:
+        if _is_throttle_error(exc):
+            raise
         raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+    except BotoCoreError as exc:
+        raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+
+
+def _converse_tool(prompt: str, on_retry: Callable[[], None] | None = None) -> dict:
+    last_error: BaseException | None = None
+    for attempt in range(MAX_CONVERSE_ATTEMPTS):
+        try:
+            return _converse_once(prompt)
+        except ClientError as exc:
+            last_error = exc
+            if not _is_throttle_error(exc) or attempt >= MAX_CONVERSE_ATTEMPTS - 1:
+                raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+            if on_retry is not None:
+                on_retry()
+            delay = THROTTLE_BACKOFF_SECONDS[attempt] + random.uniform(0, 0.25)
+            time.sleep(delay)
+    raise RuntimeError(f"Bedrock request failed: {last_error}") from last_error
 
 
 def _parse_tool_input(response: dict) -> dict[str, dict[str, TranslatedCell]]:
@@ -264,10 +310,21 @@ def _filter_chunk_result(
 
 
 def _translate_chunk(
-    source_locale: str, items: list[TranslateItem]
+    source_locale: str,
+    items: list[TranslateItem],
+    on_retry: Callable[[], None] | None = None,
+    on_filling: Callable[[], None] | None = None,
 ) -> dict[str, dict[str, TranslatedCell]]:
-    response = _converse_tool(_build_prompt(source_locale, items))
-    return _filter_chunk_result(items, _parse_tool_input(response))
+    prompt = _build_prompt(source_locale, items)
+    parsed = _filter_chunk_result(items, _parse_tool_input(_converse_tool(prompt, on_retry)))
+    missing = _missing_items(items, parsed)
+    if missing:
+        if on_filling is not None:
+            on_filling()
+        retry_prompt = _build_prompt(source_locale, missing)
+        retry_parsed = _parse_tool_input(_converse_tool(retry_prompt, on_retry))
+        _merge_results(parsed, _filter_chunk_result(missing, retry_parsed))
+    return parsed
 
 
 def _merge_results(
@@ -304,7 +361,9 @@ def _missing_items(
 
 
 def translate_batch(
-    source_locale: str, items: list[TranslateItem]
+    source_locale: str,
+    items: list[TranslateItem],
+    on_progress: ProgressCallback | None = None,
 ) -> dict[str, dict[str, TranslatedCell]]:
     """Return {item_id: {locale: TranslatedCell}} for every filled cell."""
     if not items:
@@ -314,12 +373,44 @@ def translate_batch(
 
     _refresh_bedrock_token()
 
+    chunks = [items[index : index + BATCH_SIZE] for index in range(0, len(items), BATCH_SIZE)]
+    chunks_total = len(chunks)
+    chunks_done = 0
+    done_lock = threading.Lock()
     merged: dict[str, dict[str, TranslatedCell]] = {}
-    for index in range(0, len(items), BATCH_SIZE):
-        chunk = items[index : index + BATCH_SIZE]
-        _merge_results(merged, _translate_chunk(source_locale, chunk))
 
-    missing = _missing_items(items, merged)
-    if missing:
-        _merge_results(merged, _translate_chunk(source_locale, missing))
+    def report(phase: ProgressPhase, done: int | None = None) -> None:
+        if on_progress is None:
+            return
+        current = chunks_done if done is None else done
+        on_progress(phase, current, chunks_total)
+
+    report("translating", 0)
+
+    def run_chunk(chunk: list[TranslateItem]) -> dict[str, dict[str, TranslatedCell]]:
+        nonlocal chunks_done
+
+        def on_retry() -> None:
+            with done_lock:
+                report("retrying")
+
+        def on_filling() -> None:
+            with done_lock:
+                report("filling_gaps")
+
+        result = _translate_chunk(source_locale, chunk, on_retry=on_retry, on_filling=on_filling)
+        with done_lock:
+            chunks_done += 1
+            report("translating")
+        return result
+
+    workers = min(MAX_CHUNK_WORKERS, len(chunks))
+    if workers == 1:
+        _merge_results(merged, run_chunk(chunks[0]))
+        return merged
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(run_chunk, chunk) for chunk in chunks]
+        for future in as_completed(futures):
+            _merge_results(merged, future.result())
     return merged

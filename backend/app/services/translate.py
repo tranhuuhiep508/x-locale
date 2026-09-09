@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 
-from app.ai import TranslatedCell, TranslateItem, as_translated_cell, translate_batch
+from app.ai import (
+    BATCH_SIZE,
+    ProgressCallback,
+    ProgressPhase,
+    TranslatedCell,
+    TranslateItem,
+    as_translated_cell,
+    translate_batch,
+)
 from app.database import SessionLocal
 from app.models import Job, JobStatus, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
 from app.services.strings import string_query
 
 SYNC_THRESHOLD = 20
+_progress_lock = threading.Lock()
 
 
 def _search_q(payload: TranslateRequest) -> str | None:
@@ -295,18 +306,58 @@ def list_missing_items(
     return items
 
 
+def chunk_count(work: int) -> int:
+    if work <= 0:
+        return 0
+    return (work + BATCH_SIZE - 1) // BATCH_SIZE
+
+
+def queued_progress(work: int) -> dict[str, int | str]:
+    return {
+        "phase": "queued",
+        "chunks_done": 0,
+        "chunks_total": chunk_count(work),
+    }
+
+
+def write_job_progress(
+    job_id: uuid.UUID,
+    phase: ProgressPhase | str,
+    chunks_done: int,
+    chunks_total: int,
+) -> None:
+    with _progress_lock:
+        db = SessionLocal()
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job is None:
+                return
+            payload = dict(job.payload or {})
+            payload["progress"] = {
+                "phase": phase,
+                "chunks_done": chunks_done,
+                "chunks_total": chunks_total,
+            }
+            job.payload = payload
+            flag_modified(job, "payload")
+            db.commit()
+        finally:
+            db.close()
+
+
 def propose_translations(
     project: Project,
     entries: list[StringEntry],
     locales: list[str],
     overwrite: bool,
     descriptions: dict[uuid.UUID, str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> list[dict[str, Any]]:
     items = work_items(entries, locales, overwrite, descriptions)
     if not items:
         return []
 
-    results = translate_batch(project.base_language, items)
+    results = translate_batch(project.base_language, items, on_progress=on_progress)
     by_id = {str(entry.id): entry for entry in entries}
     proposals: list[dict[str, Any]] = []
     for item in items:
@@ -462,14 +513,25 @@ def run_propose_job(
         if not project:
             return
 
+        db.commit()
+
         entries = (
             db.query(StringEntry)
             .options(joinedload(StringEntry.translations))
             .filter(StringEntry.id.in_(entry_ids))
             .all()
         )
+
+        def on_progress(phase: ProgressPhase, chunks_done: int, chunks_total: int) -> None:
+            write_job_progress(job_id, phase, chunks_done, chunks_total)
+
         items = propose_translations(
-            project, entries, locales, overwrite, parse_descriptions(descriptions)
+            project,
+            entries,
+            locales,
+            overwrite,
+            parse_descriptions(descriptions),
+            on_progress=on_progress,
         )
 
         job = db.query(Job).filter(Job.id == job_id).first()

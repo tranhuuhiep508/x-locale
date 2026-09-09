@@ -496,6 +496,7 @@ export function StringsPage() {
         page={reviewPage}
         pageSize={reviewPageSize}
         total={reviewTotal}
+        progress={proposalJobQuery.data?.progress}
         onPageChange={loadMissingPage}
         onClose={closeReview}
         onTranslate={(items) => {

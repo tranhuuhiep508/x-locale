@@ -353,3 +353,11 @@ class Job(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def progress(self) -> dict | None:
+        payload = self.payload
+        if not isinstance(payload, dict):
+            return None
+        raw = payload.get("progress")
+        return raw if isinstance(raw, dict) else None

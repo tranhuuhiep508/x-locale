@@ -28,6 +28,7 @@ from app.services.translate import (
     parse_descriptions,
     preview_translations,
     propose_translations,
+    queued_progress,
     run_propose_job,
     run_translate_job,
     select_entries,
@@ -168,6 +169,7 @@ def translate_proposals(
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
                 "descriptions": desc_payload,
+                "progress": queued_progress(work),
             },
         )
         db.add(job)

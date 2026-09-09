@@ -312,6 +312,12 @@ class TranslateApplyResult(BaseModel):
     locales: list[str]
 
 
+class TranslateJobProgress(BaseModel):
+    phase: str
+    chunks_done: int = 0
+    chunks_total: int = 0
+
+
 class JobOut(BaseModel):
     id: UUID
     kind: str
@@ -320,6 +326,7 @@ class JobOut(BaseModel):
     error: str | None = None
     created_at: UtcDateTime | None = None
     completed_at: UtcDateTime | None = None
+    progress: TranslateJobProgress | None = None
 
     model_config = {"from_attributes": True}
 

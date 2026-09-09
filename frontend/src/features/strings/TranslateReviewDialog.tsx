@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
-import type { Job, TranslateProposalItem } from '@/lib/api/types'
+import type { Job, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
@@ -21,6 +22,8 @@ import {
   draftsFromItems,
   filledCount,
   localeCount,
+  translateProgressLabel,
+  translateProgressPercent,
   updateDraftDescription,
   updateDraftTranslation,
 } from '@/features/strings/translate-review'
@@ -138,6 +141,7 @@ export function TranslateReviewDialog({
   onClose,
   onTranslate,
   onApply,
+  progress,
 }: {
   open: boolean
   loadingQueue: boolean
@@ -149,6 +153,7 @@ export function TranslateReviewDialog({
   page: number
   pageSize: number
   total: number
+  progress?: TranslateJobProgress | null
   onPageChange: (page: number) => void
   onClose: () => void
   onTranslate: (items: TranslateProposalItem[]) => void
@@ -174,12 +179,14 @@ export function TranslateReviewDialog({
   const canTranslate = !busy && draftList.length > 0
   const canApply = review && !applying && applyCount > 0 && !error
   const canPage = !busy && total > pageSize
+  const generatingLabel = translateProgressLabel(progress)
+  const generatingPercent = translateProgressPercent(progress)
 
   let description = 'Empty locales only. Existing text was not changed.'
   if (loadingQueue) {
     description = 'Finding empty locales…'
   } else if (generating) {
-    description = 'Generating translations…'
+    description = generatingLabel
   } else if (total === 0) {
     description = 'Every target locale already has text.'
   } else if (review && applyCount > 0) {
@@ -199,6 +206,14 @@ export function TranslateReviewDialog({
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <DialogTitle>{review ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
+          {generating ? (
+            <Progress
+              value={generatingPercent}
+              aria-label={generatingLabel}
+              aria-valuetext={generatingLabel}
+              className={generatingPercent == null ? 'animate-pulse' : undefined}
+            />
+          ) : null}
           {error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : publicCount > 0 && !loadingQueue ? (

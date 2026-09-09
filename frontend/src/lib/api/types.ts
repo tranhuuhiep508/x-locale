@@ -274,6 +274,12 @@ export interface TranslateApplyResult {
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────
+export interface TranslateJobProgress {
+  phase: string
+  chunks_done: number
+  chunks_total: number
+}
+
 export interface Job {
   id: string
   kind: string
@@ -282,6 +288,7 @@ export interface Job {
   error: string | null
   created_at: string | null
   completed_at: string | null
+  progress: TranslateJobProgress | null
 }
 
 // ── Activities ─────────────────────────────────────────────────────────

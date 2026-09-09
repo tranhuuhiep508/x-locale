@@ -86,6 +86,35 @@ export function descriptionsFromDrafts(
   return Object.fromEntries(items.map((item) => [item.string_id, item.description ?? '']))
 }
 
+export type TranslateJobProgress = {
+  phase?: string
+  chunks_done?: number
+  chunks_total?: number
+}
+
+export function translateProgressPercent(
+  progress?: TranslateJobProgress | null,
+): number | undefined {
+  const total = progress?.chunks_total ?? 0
+  if (total <= 0) return undefined
+  const done = Math.min(Math.max(progress?.chunks_done ?? 0, 0), total)
+  return Math.round((done / total) * 100)
+}
+
+export function translateProgressLabel(progress?: TranslateJobProgress | null): string {
+  const phase = progress?.phase
+  const done = progress?.chunks_done ?? 0
+  const total = progress?.chunks_total ?? 0
+  if (phase === 'retrying') return 'Bedrock is busy, retrying…'
+  if (phase === 'filling_gaps') return 'Filling missing locales…'
+  if (phase === 'translating' && total > 0) {
+    const current = Math.min(Math.max(done < total ? done + 1 : total, 1), total)
+    return `Translating batch ${current} of ${total}…`
+  }
+  if (phase === 'queued') return 'Queued…'
+  return 'Generating translations…'
+}
+
 export function clampPage(page: number, total: number, pageSize: number): number {
   const size = Math.max(1, pageSize)
   const maxPage = Math.max(1, Math.ceil(total / size) || 1)
