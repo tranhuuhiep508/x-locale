@@ -2,6 +2,8 @@ import { api } from '@/lib/api/client'
 import type {
   BatchRequest,
   BatchResult,
+  PublishPreviewEntries,
+  PublishPreviewRequest,
   StringCreate,
   StringEntry,
   StringListResponse,
@@ -42,6 +44,8 @@ export const stringsApi = {
     api.delete(`/projects/${projectId}/strings/${id}`),
   batch: (projectId: string, body: BatchRequest) =>
     api.post<BatchResult>(`/projects/${projectId}/strings/batch`, body),
+  publishPreview: (projectId: string, body: PublishPreviewRequest) =>
+    api.post<PublishPreviewEntries>(`/projects/${projectId}/strings/publish-preview`, body),
   translate: (projectId: string, body: TranslateRequest) =>
     api.post<TranslateResult>(`/projects/${projectId}/translate`, body),
   translatePreview: (projectId: string, body: TranslatePreviewRequest) =>

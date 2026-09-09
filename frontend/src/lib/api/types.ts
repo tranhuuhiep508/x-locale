@@ -208,6 +208,15 @@ export interface BatchResult {
   batch_id: string
 }
 
+export interface PublishPreviewRequest {
+  string_ids?: string[]
+  filter?: BatchFilter
+}
+
+export interface PublishPreviewEntries {
+  items: StringEntry[]
+}
+
 // ── Translate ──────────────────────────────────────────────────────────
 export interface TranslateRequest {
   scope?: 'missing' | 'strings' | 'module' | 'tag'

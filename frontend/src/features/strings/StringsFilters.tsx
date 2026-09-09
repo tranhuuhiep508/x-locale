@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { Check, ChevronDown, GitCompareArrows, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   InputGroup,
@@ -221,6 +221,7 @@ type StringsFiltersProps = {
   onSearchInputChange: (value: string) => void
   onFilter: (updates: Partial<StringsSearch>) => void
   onClear: () => void
+  onReviewPublish?: () => void
 }
 
 export function StringsFilters({
@@ -233,6 +234,7 @@ export function StringsFilters({
   onSearchInputChange,
   onFilter,
   onClear,
+  onReviewPublish,
 }: StringsFiltersProps) {
   const hasFilters = hasActiveStringFilters(search)
   const moduleOptions = useMemo<FilterOption[]>(
@@ -342,6 +344,12 @@ export function StringsFilters({
           <SelectItem value="needs_publish">Needs publish</SelectItem>
           <SelectItem value="deleted">Deleted</SelectItem>
         </FilterSelect>
+        {onReviewPublish ? (
+          <Button size="sm" variant="outline" onClick={onReviewPublish}>
+            <GitCompareArrows data-icon="inline-start" />
+            Review publish changes
+          </Button>
+        ) : null}
 
         {modules.length > 0 ? (
           <FilterSearchSelect

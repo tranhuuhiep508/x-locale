@@ -243,6 +243,15 @@ class BatchResult(BaseModel):
     batch_id: UUID
 
 
+class PublishPreviewRequest(BaseModel):
+    string_ids: list[UUID] | None = None
+    filter: BatchFilter | None = None
+
+
+class PublishPreviewEntriesOut(BaseModel):
+    items: list[StringOut]
+
+
 # ── Translate ─────────────────────────────────────────────────────────
 
 

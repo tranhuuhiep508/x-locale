@@ -37,6 +37,7 @@ export type StringTableMeta = {
   onEdit: (entry: StringEntry) => void
   onHistory: (entry: StringEntry) => void
   onRefresh: () => void
+  onPublishPreview: (entry: StringEntry) => void
 }
 
 function metaOf(table: Table<StringEntry>) {
@@ -47,24 +48,26 @@ function PublishSwitch({
   entry,
   projectId,
   onRefresh,
+  onPublishPreview,
 }: {
   entry: StringEntry
   projectId: string
   onRefresh: () => void
+  onPublishPreview: (entry: StringEntry) => void
 }) {
   const toast = useToast()
   const locked = entry.pending_delete || Boolean(entry.deleted_at)
   const isPublic = entry.status === 'public' && !entry.deleted_at
 
-  const publishMut = useMutation({
-    mutationFn: (action: 'publish' | 'unpublish') =>
+  const unpublishMut = useMutation({
+    mutationFn: () =>
       stringsApi.batch(projectId, {
-        action,
+        action: 'unpublish',
         string_ids: [entry.id],
       } satisfies BatchRequest),
-    onSuccess: (_data, action) => {
+    onSuccess: () => {
       onRefresh()
-      toast.success(action === 'publish' ? 'Published' : 'Moved to draft')
+      toast.success('Moved to draft')
     },
     onError: () => toast.error('Failed to update status'),
   })
@@ -74,10 +77,11 @@ function PublishSwitch({
       <Switch
         size="sm"
         checked={isPublic}
-        disabled={publishMut.isPending || locked}
+        disabled={unpublishMut.isPending || locked}
         onCheckedChange={(checked) => {
           if (locked) return
-          publishMut.mutate(checked ? 'publish' : 'unpublish')
+          if (checked) onPublishPreview(entry)
+          else unpublishMut.mutate()
         }}
         aria-label={isPublic ? 'Public' : 'Draft'}
       />
@@ -91,16 +95,17 @@ function StringActionsCell({
   onEdit,
   onHistory,
   onRefresh,
+  onPublishPreview,
 }: {
   entry: StringEntry
   projectId: string
   onEdit: (entry: StringEntry) => void
   onHistory: (entry: StringEntry) => void
   onRefresh: () => void
+  onPublishPreview: (entry: StringEntry) => void
 }) {
   const toast = useToast()
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [confirmPublishDelete, setConfirmPublishDelete] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const released = isReleased(entry)
   const dirty = entry.has_unpublished_changes && !entry.pending_delete && !entry.deleted_at
@@ -108,23 +113,18 @@ function StringActionsCell({
   const deleted = Boolean(entry.deleted_at)
 
   const lifecycleMut = useMutation({
-    mutationFn: (action: 'publish' | 'restore' | 'discard_changes') =>
+    mutationFn: (action: 'restore' | 'discard_changes') =>
       stringsApi.batch(projectId, {
         action,
         string_ids: [entry.id],
       } satisfies BatchRequest),
     onSuccess: (_data, action) => {
-      setConfirmPublishDelete(false)
       setConfirmDiscard(false)
       onRefresh()
       if (action === 'restore') {
         toast.success('Restored')
-      } else if (action === 'discard_changes') {
-        toast.success('Working copy discarded')
-      } else if (entry.pending_delete) {
-        toast.success('Published deletion')
       } else {
-        toast.success('Published')
+        toast.success('Working copy discarded')
       }
     },
     onError: () => toast.error('Failed to update string'),
@@ -176,17 +176,16 @@ function StringActionsCell({
               History
             </DropdownMenuItem>
           </DropdownMenuGroup>
-          {dirty || discardable || entry.pending_delete || deleted ? (
+          {dirty || discardable || entry.pending_delete || deleted || !released ? (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                {dirty ? (
+                {dirty || (!released && !deleted) ? (
                   <DropdownMenuItem
-                    disabled={lifecycleMut.isPending}
-                    onSelect={() => lifecycleMut.mutate('publish')}
+                    onSelect={() => onPublishPreview(entry)}
                   >
                     <CheckCircle />
-                    Publish working copy
+                    {dirty ? 'Publish working copy' : 'Publish'}
                   </DropdownMenuItem>
                 ) : null}
                 {discardable ? (
@@ -201,8 +200,7 @@ function StringActionsCell({
                 {entry.pending_delete ? (
                   <DropdownMenuItem
                     variant="destructive"
-                    disabled={lifecycleMut.isPending}
-                    onSelect={() => setConfirmPublishDelete(true)}
+                    onSelect={() => onPublishPreview(entry)}
                   >
                     <CheckCircle />
                     Publish delete
@@ -258,15 +256,6 @@ function StringActionsCell({
         }
         confirmLabel={released ? 'Queue deletion' : 'Delete'}
         isLoading={deleteMut.isPending}
-      />
-      <ConfirmDialog
-        open={confirmPublishDelete}
-        onClose={() => setConfirmPublishDelete(false)}
-        onConfirm={() => lifecycleMut.mutate('publish')}
-        title="Publish this deletion?"
-        description="Production will drop this key on the next public pull."
-        confirmLabel="Publish delete"
-        isLoading={lifecycleMut.isPending}
       />
     </div>
   )
@@ -424,6 +413,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             entry={row.original}
             projectId={meta.projectId}
             onRefresh={meta.onRefresh}
+            onPublishPreview={meta.onPublishPreview}
           />
         )
       },
@@ -581,6 +571,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             onEdit={meta.onEdit}
             onHistory={meta.onHistory}
             onRefresh={meta.onRefresh}
+            onPublishPreview={meta.onPublishPreview}
           />
         )
       },
