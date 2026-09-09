@@ -24,12 +24,15 @@ from app.services.translate import (
     apply_translations,
     commit_proposals,
     count_work,
-    list_missing_items,
+    list_missing_page,
+    parse_descriptions,
     preview_translations,
     propose_translations,
+    queued_progress,
     run_propose_job,
     run_translate_job,
     select_entries,
+    serialize_descriptions,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
@@ -131,9 +134,14 @@ def translate_missing(
     db: DbSession,
 ) -> TranslateProposalsResult:
     locales = payload.locales or list(project.target_languages)
-    entries = select_entries(db, project, payload)
-    items = list_missing_items(entries, locales, payload.overwrite)
-    return TranslateProposalsResult(locales=locales, items=items)
+    items, total, page, page_size = list_missing_page(db, project, payload, locales)
+    return TranslateProposalsResult(
+        locales=locales,
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/translate/proposals", response_model=TranslateProposalsResult)
@@ -144,9 +152,11 @@ def translate_proposals(
     db: DbSession,
 ) -> TranslateProposalsResult:
     locales = payload.locales or list(project.target_languages)
-    entries = select_entries(db, project, payload)
-    work = count_work(entries, locales, payload.overwrite)
+    entries = select_entries(db, project, payload, locales)
+    descriptions = parse_descriptions(payload.descriptions)
+    work = count_work(entries, locales, payload.overwrite, descriptions)
     entry_ids = [e.id for e in entries]
+    desc_payload = serialize_descriptions(descriptions)
 
     if work > SYNC_THRESHOLD:
         job = Job(
@@ -158,6 +168,8 @@ def translate_proposals(
                 "locales": locales,
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
+                "descriptions": desc_payload,
+                "progress": queued_progress(work),
             },
         )
         db.add(job)
@@ -170,14 +182,30 @@ def translate_proposals(
             locales,
             payload.overwrite,
             job.id,
+            desc_payload,
         )
-        return TranslateProposalsResult(locales=locales, items=[], job_id=job.id)
+        return TranslateProposalsResult(
+            locales=locales,
+            items=[],
+            job_id=job.id,
+            total=work,
+            page=1,
+            page_size=max(work, 1),
+        )
 
     try:
-        items = propose_translations(project, entries, locales, payload.overwrite)
+        items = propose_translations(
+            project, entries, locales, payload.overwrite, descriptions
+        )
     except Exception as exc:
         raise _ai_http_error(exc) from exc
-    return TranslateProposalsResult(locales=locales, items=items)
+    return TranslateProposalsResult(
+        locales=locales,
+        items=items,
+        total=len(items),
+        page=1,
+        page_size=max(len(items), 1),
+    )
 
 
 @router.post("/translate/apply", response_model=TranslateApplyResult)

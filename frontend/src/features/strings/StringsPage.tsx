@@ -32,6 +32,11 @@ import {
   jobStillRunning,
   proposalsFromJobResult,
 } from '@/features/strings/TranslateReviewDialog'
+import {
+  TRANSLATE_MISSING_PAGE_SIZE,
+  applyPayloadFromDrafts,
+  descriptionsFromDrafts,
+} from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -83,6 +88,9 @@ export function StringsPage() {
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewPage, setReviewPage] = useState(1)
+  const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
+  const [reviewTotal, setReviewTotal] = useState(0)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
   const [proposalsReady, setProposalsReady] = useState(false)
@@ -122,6 +130,19 @@ export function StringsPage() {
   const { data: modules = [] } = useQuery(modulesQuery(projectId))
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
   const { data: project } = useQuery(projectQuery(projectId))
+  const locales = useMemo(() => project?.target_languages ?? [], [project?.target_languages])
+
+  function missingRequest(page: number): TranslateRequest {
+    return {
+      scope: 'missing',
+      locales,
+      page,
+      page_size: TRANSLATE_MISSING_PAGE_SIZE,
+      module_id: search.module,
+      tag_id: search.tag,
+      q: search.q?.trim() || undefined,
+    }
+  }
 
   const invalidateStrings = useCallback(() => {
     qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
@@ -145,6 +166,9 @@ export function StringsPage() {
     mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
     onSuccess: (res) => {
       setProposalItems(res.items)
+      setReviewTotal(res.total)
+      setReviewPage(res.page)
+      setReviewPageSize(res.page_size)
       setProposalsReady(false)
     },
     onError: () => toast.error('Failed to load missing translations'),
@@ -158,39 +182,6 @@ export function StringsPage() {
         return
       }
       setProposalItems(res.items)
-      setProposalsReady(true)
-    },
-    onError: () => toast.error('Translation failed — check Bedrock credentials'),
-  })
-
-  const previewItemsMut = useMutation({
-    mutationFn: async (items: TranslateProposalItem[]) => {
-      const next = await Promise.all(
-        items.map(async (item) => {
-          const locales = Object.keys(item.translations)
-          if (locales.length === 0) return item
-          const res = await stringsApi.translatePreview(projectId, {
-            source_text: item.source_text,
-            description: item.description?.trim() || undefined,
-            locales,
-          })
-          const translations = { ...item.translations }
-          const scores = { ...(item.scores ?? {}) }
-          for (const locale of locales) {
-            const value = res.translations[locale]
-            if (!value?.trim()) continue
-            translations[locale] = value
-            const score = res.scores?.[locale]
-            if (typeof score === 'number') scores[locale] = score
-            else delete scores[locale]
-          }
-          return { ...item, translations, scores }
-        }),
-      )
-      return next
-    },
-    onSuccess: (items) => {
-      setProposalItems(items)
       setProposalsReady(true)
     },
     onError: () => toast.error('Translation failed — check Bedrock credentials'),
@@ -221,36 +212,32 @@ export function StringsPage() {
   const applyMut = useMutation({
     mutationFn: (items: TranslateProposalItem[]) =>
       stringsApi.translateApply(projectId, {
-        items: items.map((item) => ({
-          string_id: item.string_id,
-          translations: item.translations,
-          scores: item.scores,
-          description: item.description ?? '',
-        })),
+        items: applyPayloadFromDrafts(items),
       }),
     onSuccess: (res) => {
       toast.success(`Filled ${res.translated_count} empty translation(s)`)
-      setReviewOpen(false)
       setProposalJobId(null)
-      setProposalItems([])
       setProposalsReady(false)
       proposeMut.reset()
-      missingMut.reset()
-      previewItemsMut.reset()
       invalidateStrings()
+      missingMut.mutate(missingRequest(reviewPage))
     },
     onError: () => toast.error('Failed to save translations'),
   })
 
   function closeReview() {
-    if (applyMut.isPending || proposeMut.isPending || previewItemsMut.isPending) return
+    if (applyMut.isPending || proposeMut.isPending) return
     setReviewOpen(false)
     setProposalJobId(null)
-    setProposalItems([])
     setProposalsReady(false)
     proposeMut.reset()
-    missingMut.reset()
-    previewItemsMut.reset()
+  }
+
+  function loadMissingPage(page: number) {
+    if (applyMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
+    setProposalJobId(null)
+    setProposalsReady(false)
+    missingMut.mutate(missingRequest(page))
   }
 
   const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
@@ -268,23 +255,18 @@ export function StringsPage() {
   const strings = stringsResult.data?.items
   const data = useMemo(() => strings ?? [], [strings])
   const total = stringsResult.data?.total ?? 0
-  const targetLocales = project?.target_languages
-  const locales = useMemo(() => targetLocales ?? [], [targetLocales])
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
-    previewItemsMut.isPending ||
     (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
   const reviewError =
     missingMut.error instanceof Error
       ? missingMut.error.message
       : proposeMut.error instanceof Error
         ? proposeMut.error.message
-        : previewItemsMut.error instanceof Error
-          ? previewItemsMut.error.message
-          : proposalJobQuery.data?.status === 'failed'
-            ? proposalJobQuery.data.error ?? 'Translation job failed'
-            : null
+        : proposalJobQuery.data?.status === 'failed'
+          ? proposalJobQuery.data.error ?? 'Translation job failed'
+          : null
   const hasActiveFilters = hasActiveStringFilters(search)
 
   const columns = useMemo(() => getStringColumns(locales), [locales])
@@ -384,8 +366,10 @@ export function StringsPage() {
                   setProposalItems([])
                   setProposalJobId(null)
                   setProposalsReady(false)
+                  setReviewPage(1)
+                  setReviewTotal(0)
                   setReviewOpen(true)
-                  missingMut.mutate({ scope: 'missing', locales })
+                  missingMut.mutate(missingRequest(1))
                 }}
                 disabled={missingMut.isPending || reviewOpen}
               >
@@ -509,13 +493,19 @@ export function StringsPage() {
         generated={proposalsReady}
         error={reviewError}
         items={reviewItems}
+        page={reviewPage}
+        pageSize={reviewPageSize}
+        total={reviewTotal}
+        progress={proposalJobQuery.data?.progress}
+        onPageChange={loadMissingPage}
         onClose={closeReview}
         onTranslate={(items) => {
-          if (proposalsReady || items.length === 1) {
-            previewItemsMut.mutate(items)
-            return
-          }
-          proposeMut.mutate({ scope: 'missing', locales })
+          proposeMut.mutate({
+            scope: 'strings',
+            string_ids: items.map((item) => item.string_id),
+            locales,
+            descriptions: descriptionsFromDrafts(items),
+          })
         }}
         onApply={(items) => applyMut.mutate(items)}
       />

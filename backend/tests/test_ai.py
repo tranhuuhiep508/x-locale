@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -346,3 +347,113 @@ def test_translate_batch_parses_and_clamps_confidence(converse):
             "ja": TranslatedCell(text="保存", confidence=61),
         }
     }
+
+
+def test_translate_batch_chunk_failure_fails_whole_batch(converse):
+    def fake_converse(**kwargs):
+        prompt_items = items_from_prompt(kwargs["messages"][0]["content"][0]["text"])
+        if any(item["id"] == str(BATCH_SIZE) for item in prompt_items):
+            raise RuntimeError("Bedrock request failed: boom")
+        return complete_tool_response(kwargs["messages"][0]["content"][0]["text"])
+
+    converse.side_effect = fake_converse
+    items = [
+        TranslateItem(id=str(index), source_text=f"s{index}", locales=("en",))
+        for index in range(BATCH_SIZE + 1)
+    ]
+    with pytest.raises(RuntimeError, match="Bedrock request failed"):
+        translate_batch("vi", items)
+
+
+def test_translate_batch_retries_throttling(converse, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr("app.ai.time.sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr("app.ai.random.uniform", lambda _low, _high: 0)
+    calls = {"count": 0}
+
+    def fake_converse(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ClientError(
+                {"Error": {"Code": "ThrottlingException", "Message": "slow"}},
+                "Converse",
+            )
+        return complete_tool_response(kwargs["messages"][0]["content"][0]["text"])
+
+    converse.side_effect = fake_converse
+    result = translate_batch(
+        "vi",
+        [TranslateItem(id="s1", source_text="Lưu", locales=("en",))],
+    )
+    assert converse.call_count == 2
+    assert sleeps == [0.5]
+    assert result["s1"]["en"].text == "en:Lưu"
+
+
+def test_translate_batch_runs_chunks_concurrently(converse):
+    started = threading.Barrier(2)
+    overlapping = threading.Event()
+    in_flight = 0
+    lock = threading.Lock()
+
+    def fake_converse(**kwargs):
+        nonlocal in_flight
+        with lock:
+            in_flight += 1
+            if in_flight >= 2:
+                overlapping.set()
+        started.wait(timeout=5)
+        with lock:
+            in_flight -= 1
+        return complete_tool_response(kwargs["messages"][0]["content"][0]["text"])
+
+    converse.side_effect = fake_converse
+    items = [
+        TranslateItem(id=str(index), source_text=f"s{index}", locales=("en",))
+        for index in range(BATCH_SIZE + 1)
+    ]
+    result = translate_batch("vi", items)
+    assert overlapping.is_set()
+    assert len(result) == BATCH_SIZE + 1
+
+
+def test_translate_batch_reports_progress(converse):
+    converse.side_effect = lambda **kwargs: complete_tool_response(
+        kwargs["messages"][0]["content"][0]["text"]
+    )
+    events: list[tuple[str, int, int]] = []
+    items = [
+        TranslateItem(id=str(index), source_text=f"s{index}", locales=("en",))
+        for index in range(BATCH_SIZE + 1)
+    ]
+    translate_batch(
+        "vi",
+        items,
+        on_progress=lambda phase, done, total: events.append((phase, done, total)),
+    )
+    assert events[0] == ("translating", 0, 2)
+    assert ("translating", 2, 2) in events
+
+
+def test_translate_batch_reports_filling_gaps(converse):
+    def fake_converse(**kwargs):
+        prompt_items = items_from_prompt(kwargs["messages"][0]["content"][0]["text"])
+        if len(prompt_items) == 1 and prompt_items[0]["locales"] == ["en", "ja"]:
+            return fake_converse_body(
+                [
+                    {
+                        "id": prompt_items[0]["id"],
+                        "translations": [{"locale": "en", "text": "Save"}],
+                    }
+                ]
+            )
+        return complete_tool_response(kwargs["messages"][0]["content"][0]["text"])
+
+    converse.side_effect = fake_converse
+    events: list[str] = []
+    translate_batch(
+        "vi",
+        [TranslateItem(id="s1", source_text="Lưu", locales=("en", "ja"))],
+        on_progress=lambda phase, done, total: events.append(phase),
+    )
+    assert "filling_gaps" in events

@@ -238,22 +238,22 @@ def string_query(
     tag_id: uuid.UUID | None = None,
     q: str | None = None,
     missing_locale: str | None = None,
+    missing_locales: Sequence[str] | None = None,
     status: TranslationStatus | None = None,
     pending_delete: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    eager: bool = True,
 ):
-    query = (
-        db.query(StringEntry)
-        .options(
+    query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
+    if eager:
+        query = query.options(
             joinedload(StringEntry.translations),
             joinedload(StringEntry.tags),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
-        .filter(StringEntry.project_id == project_id)
-    )
     if deleted is True:
         query = query.filter(StringEntry.deleted_at.isnot(None))
     else:
@@ -281,6 +281,18 @@ def string_query(
             .subquery()
         )
         query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
+    if missing_locales:
+        missing_any = [
+            ~StringEntry.id.in_(
+                db.query(Translation.string_id).filter(
+                    Translation.locale == locale,
+                    func.trim(Translation.value) != "",
+                )
+            )
+            for locale in missing_locales
+        ]
+        if missing_any:
+            query = query.filter(or_(*missing_any))
     if status is not None:
         query = query.filter(StringEntry.status == status)
     if pending_delete is not None:

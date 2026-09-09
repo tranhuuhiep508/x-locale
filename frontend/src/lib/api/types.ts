@@ -216,6 +216,10 @@ export interface TranslateRequest {
   tag_id?: string
   locales?: string[]
   overwrite?: boolean
+  q?: string
+  page?: number
+  page_size?: number
+  descriptions?: Record<string, string>
 }
 
 export interface TranslateResult {
@@ -249,6 +253,9 @@ export interface TranslateProposalsResult {
   locales: string[]
   items: TranslateProposalItem[]
   job_id: string | null
+  total: number
+  page: number
+  page_size: number
 }
 
 export interface TranslateApplyRequest {
@@ -267,6 +274,12 @@ export interface TranslateApplyResult {
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────
+export interface TranslateJobProgress {
+  phase: string
+  chunks_done: number
+  chunks_total: number
+}
+
 export interface Job {
   id: string
   kind: string
@@ -275,6 +288,7 @@ export interface Job {
   error: string | null
   created_at: string | null
   completed_at: string | null
+  progress: TranslateJobProgress | null
 }
 
 // ── Activities ─────────────────────────────────────────────────────────

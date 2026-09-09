@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
-import type { Job, TranslateProposalItem } from '@/lib/api/types'
+import type { Job, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataPagination } from '@/components/ui/data-pagination'
 import {
   Dialog,
   DialogContent,
@@ -13,9 +14,19 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
+import {
+  draftsFromItems,
+  filledCount,
+  localeCount,
+  translateProgressLabel,
+  translateProgressPercent,
+  updateDraftDescription,
+  updateDraftTranslation,
+} from '@/features/strings/translate-review'
 
 export function proposalsFromJobResult(
   result: Record<string, unknown> | null | undefined,
@@ -27,55 +38,6 @@ export function proposalsFromJobResult(
 export function jobStillRunning(job: Job | undefined): boolean {
   if (!job) return true
   return job.status !== 'completed' && job.status !== 'failed'
-}
-
-function cloneItems(items: TranslateProposalItem[]): TranslateProposalItem[] {
-  return items.map((item) => ({
-    ...item,
-    description: item.description ?? '',
-    translations: { ...item.translations },
-    scores: { ...(item.scores ?? {}) },
-  }))
-}
-
-function filledCount(items: TranslateProposalItem[]): number {
-  let count = 0
-  for (const item of items) {
-    for (const value of Object.values(item.translations)) {
-      if (value.trim()) count += 1
-    }
-  }
-  return count
-}
-
-function localeCount(items: TranslateProposalItem[]): number {
-  let count = 0
-  for (const item of items) {
-    count += Object.keys(item.translations).length
-  }
-  return count
-}
-
-function updateDraft(
-  prev: TranslateProposalItem[],
-  stringId: string,
-  locale: string,
-  value: string,
-): TranslateProposalItem[] {
-  return prev.map((row) => {
-    if (row.string_id !== stringId) return row
-    const scores = { ...(row.scores ?? {}) }
-    delete scores[locale]
-    return { ...row, translations: { ...row.translations, [locale]: value }, scores }
-  })
-}
-
-function updateDescription(
-  prev: TranslateProposalItem[],
-  stringId: string,
-  description: string,
-): TranslateProposalItem[] {
-  return prev.map((row) => (row.string_id === stringId ? { ...row, description } : row))
 }
 
 function ProposalTreeNode({
@@ -172,9 +134,14 @@ export function TranslateReviewDialog({
   generated,
   error,
   items,
+  page,
+  pageSize,
+  total,
+  onPageChange,
   onClose,
   onTranslate,
   onApply,
+  progress,
 }: {
   open: boolean
   loadingQueue: boolean
@@ -183,33 +150,49 @@ export function TranslateReviewDialog({
   generated: boolean
   error: string | null
   items: TranslateProposalItem[]
+  page: number
+  pageSize: number
+  total: number
+  progress?: TranslateJobProgress | null
+  onPageChange: (page: number) => void
   onClose: () => void
   onTranslate: (items: TranslateProposalItem[]) => void
   onApply: (items: TranslateProposalItem[]) => void
 }) {
-  const [drafts, setDrafts] = useState<TranslateProposalItem[]>(() => cloneItems(items))
+  const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
+    draftsFromItems(items),
+  )
 
   useEffect(() => {
-    setDrafts(cloneItems(items))
+    setDrafts(draftsFromItems(items))
   }, [items])
 
-  const publicCount = drafts.filter((item) => item.status === 'public').length
-  const missingCount = localeCount(drafts)
-  const applyCount = filledCount(drafts)
+  const draftList = items.flatMap((item) => {
+    const draft = drafts[item.string_id]
+    return draft ? [draft] : []
+  })
+  const publicCount = draftList.filter((item) => item.status === 'public').length
+  const missingCount = localeCount(draftList)
+  const applyCount = filledCount(draftList)
   const review = generated && !generating
   const busy = loadingQueue || generating || applying
-  const canTranslate = !busy && drafts.length > 0
+  const canTranslate = !busy && draftList.length > 0
   const canApply = review && !applying && applyCount > 0 && !error
+  const canPage = !busy && total > pageSize
+  const generatingLabel = translateProgressLabel(progress)
+  const generatingPercent = translateProgressPercent(progress)
 
   let description = 'Empty locales only. Existing text was not changed.'
   if (loadingQueue) {
     description = 'Finding empty locales…'
   } else if (generating) {
-    description = 'Generating translations…'
+    description = generatingLabel
+  } else if (total === 0) {
+    description = 'Every target locale already has text.'
   } else if (review && applyCount > 0) {
-    description = `${applyCount} empty ${applyCount === 1 ? 'translation' : 'translations'} across ${drafts.length} ${drafts.length === 1 ? 'string' : 'strings'}. Add description context and Translate again if the draft is off.`
+    description = `${applyCount} empty ${applyCount === 1 ? 'translation' : 'translations'} on this page (${draftList.length} of ${total} strings). Add description context and Translate again if the draft is off.`
   } else if (!generated && missingCount > 0) {
-    description = `${missingCount} empty ${missingCount === 1 ? 'locale' : 'locales'} across ${drafts.length} ${drafts.length === 1 ? 'string' : 'strings'}. Add description context, then Translate.`
+    description = `${missingCount} empty ${missingCount === 1 ? 'locale' : 'locales'} on this page (${draftList.length} of ${total} strings). Add description context, then Translate.`
   }
 
   return (
@@ -223,6 +206,14 @@ export function TranslateReviewDialog({
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <DialogTitle>{review ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
+          {generating ? (
+            <Progress
+              value={generatingPercent}
+              aria-label={generatingLabel}
+              aria-valuetext={generatingLabel}
+              className={generatingPercent == null ? 'animate-pulse' : undefined}
+            />
+          ) : null}
           {error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : publicCount > 0 && !loadingQueue ? (
@@ -230,6 +221,14 @@ export function TranslateReviewDialog({
               {publicCount} public {publicCount === 1 ? 'string is' : 'strings are'} in this list.
               Applied values stay in the working copy until you publish.
             </p>
+          ) : null}
+          {canPage ? (
+            <DataPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={onPageChange}
+            />
           ) : null}
         </DialogHeader>
 
@@ -242,26 +241,26 @@ export function TranslateReviewDialog({
               <Spinner />
               Loading missing strings…
             </div>
-          ) : error && drafts.length === 0 ? (
+          ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
-          ) : drafts.length === 0 ? (
+          ) : draftList.length === 0 ? (
             <EmptyState
               title="Nothing to translate"
               description="Every target locale already has text."
             />
           ) : (
             <ul className="flex flex-col gap-8">
-              {drafts.map((item) => (
+              {draftList.map((item) => (
                 <ProposalTreeNode
                   key={item.string_id}
                   item={item}
                   review={review}
                   disabled={applying || generating}
                   onChange={(stringId, locale, value) =>
-                    setDrafts((prev) => updateDraft(prev, stringId, locale, value))
+                    setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
                   }
-                  onDescriptionChange={(stringId, description) =>
-                    setDrafts((prev) => updateDescription(prev, stringId, description))
+                  onDescriptionChange={(stringId, nextDescription) =>
+                    setDrafts((prev) => updateDraftDescription(prev, stringId, nextDescription))
                   }
                 />
               ))}
@@ -278,12 +277,12 @@ export function TranslateReviewDialog({
           >
             Discard
           </Button>
-          <Button type="button" disabled={!canTranslate} onClick={() => onTranslate(drafts)}>
+          <Button type="button" disabled={!canTranslate} onClick={() => onTranslate(draftList)}>
             {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
             {review ? 'Translate again' : 'Translate'}
           </Button>
           {review ? (
-            <Button type="button" disabled={!canApply} onClick={() => onApply(drafts)}>
+            <Button type="button" disabled={!canApply} onClick={() => onApply(draftList)}>
               {applying ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
               Apply {applyCount === 1 ? '1 translation' : `${applyCount} translations`}
             </Button>
