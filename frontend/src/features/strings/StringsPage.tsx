@@ -35,6 +35,7 @@ import {
 import { PublishPreviewDialog } from '@/features/strings/PublishPreviewDialog'
 import {
   buildPublishPreview,
+  reviewPublishSource,
   searchToBatchFilter,
 } from '@/features/strings/publish-preview'
 import {
@@ -365,6 +366,20 @@ export function StringsPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [selectedCount, dialogOpen, reviewOpen, publishOpen, showMoveModule, showAddTags, deleteConfirm])
 
+  useEffect(() => {
+    setRowSelection({})
+  }, [
+    search.has_unpublished_changes,
+    search.status,
+    search.module,
+    search.tag,
+    search.deleted,
+    search.pending_delete,
+    search.q,
+    search.missing_locale,
+    search.max_confidence,
+  ])
+
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
   const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
   const showRestore = selectedEntries.some((entry) => Boolean(entry.deleted_at))
@@ -377,13 +392,28 @@ export function StringsPage() {
   )
 
   function openReviewPublishPreview() {
-    if (selectedCount > 0) {
-      openPublishPreview(selectedEntries)
+    const source = reviewPublishSource(selectedEntries, searchToBatchFilter(search))
+    if ('entries' in source) {
+      openPublishPreview(source.entries)
       return
     }
     setPublishEntries(null)
     setPublishOpen(true)
-    previewMut.mutate({ filter: searchToBatchFilter(search) })
+    previewMut.mutate({ filter: source.filter })
+  }
+
+  function openSelectedPublishPreview() {
+    if (selectedEntries.length > 0 && selectedEntries.length === selectedList.length) {
+      openPublishPreview(selectedEntries)
+      return
+    }
+    if (selectedList.length > 0) {
+      setPublishEntries(null)
+      setPublishOpen(true)
+      previewMut.mutate({ string_ids: selectedList })
+      return
+    }
+    openPublishPreview([])
   }
 
   function closePublishPreview() {
@@ -498,7 +528,7 @@ export function StringsPage() {
                 pending={batchMut.isPending}
                 modules={modules}
                 tags={tags}
-                onPublish={() => openPublishPreview(selectedEntries)}
+                onPublish={() => openSelectedPublishPreview()}
                 onUnpublish={() => batchMut.mutate({ action: 'unpublish', string_ids: selectedList })}
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}

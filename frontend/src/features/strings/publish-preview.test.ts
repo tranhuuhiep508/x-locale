@@ -6,6 +6,7 @@ import {
   contentFieldChanges,
   hasPublishableChanges,
   previewCountLabel,
+  reviewPublishSource,
   searchToBatchFilter,
 } from './publish-preview'
 
@@ -292,5 +293,18 @@ describe('searchToBatchFilter', () => {
       deleted: undefined,
       max_confidence: undefined,
     })
+  })
+})
+
+describe('reviewPublishSource', () => {
+  it('uses on-page selection when present', () => {
+    const selected = [entry({ id: 'save' })]
+    const filter = searchToBatchFilter({ has_unpublished_changes: true })
+    expect(reviewPublishSource(selected, filter)).toEqual({ entries: selected })
+  })
+
+  it('falls back to the active filter when nothing on the page is selected', () => {
+    const filter = searchToBatchFilter({ has_unpublished_changes: true, q: 'save' })
+    expect(reviewPublishSource([], filter)).toEqual({ filter })
   })
 })

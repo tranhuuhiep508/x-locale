@@ -294,3 +294,11 @@ export function searchToBatchFilter(
     max_confidence: search.max_confidence,
   }
 }
+
+export function reviewPublishSource(
+  selectedOnPage: StringEntry[],
+  filter: BatchFilter,
+): { entries: StringEntry[] } | { filter: BatchFilter } {
+  if (selectedOnPage.length > 0) return { entries: selectedOnPage }
+  return { filter }
+}
