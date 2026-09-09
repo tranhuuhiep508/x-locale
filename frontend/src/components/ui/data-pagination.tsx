@@ -6,10 +6,17 @@ interface DataPaginationProps {
   pageSize: number
   total: number
   onPageChange: (page: number) => void
+  disabled?: boolean
 }
 
 /** App-level page controls for list endpoints (page/pageSize/total). */
-export function DataPagination({ page, pageSize, total, onPageChange }: DataPaginationProps) {
+export function DataPagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  disabled = false,
+}: DataPaginationProps) {
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
 
@@ -25,7 +32,7 @@ export function DataPagination({ page, pageSize, total, onPageChange }: DataPagi
         <Button
           variant="outline"
           size="icon-sm"
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
           <ChevronLeftIcon />
@@ -36,7 +43,7 @@ export function DataPagination({ page, pageSize, total, onPageChange }: DataPagi
         <Button
           variant="outline"
           size="icon-sm"
-          disabled={page >= totalPages}
+          disabled={disabled || page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >
           <ChevronRightIcon />

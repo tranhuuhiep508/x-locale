@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 import type { TranslateProposalItem } from '@/lib/api/types'
 import {
   applyPayloadFromDrafts,
+  applySuccessMessage,
   clampPage,
   descriptionsFromDrafts,
   draftsFromItems,
   filledCount,
+  filledStringCount,
+  mergeProposalResults,
+  reviewStatusDescription,
   translateProgressLabel,
   translateProgressPercent,
   updateDraftDescription,
@@ -99,6 +103,89 @@ describe('filledCount', () => {
         item({ string_id: 'b', translations: { en: '  ' } }),
       ]),
     ).toBe(1)
+  })
+})
+
+describe('filledStringCount', () => {
+  it('counts strings with at least one filled locale', () => {
+    expect(
+      filledStringCount([
+        item({ string_id: 'a', translations: { en: 'Hi', ja: '' } }),
+        item({ string_id: 'b', translations: { en: '  ' } }),
+      ]),
+    ).toBe(1)
+  })
+})
+
+describe('applySuccessMessage', () => {
+  it('includes translation and string counts with pluralization', () => {
+    expect(applySuccessMessage(1, 1)).toBe('Filled 1 empty translation across 1 string')
+    expect(applySuccessMessage(12, 5)).toBe('Filled 12 empty translations across 5 strings')
+  })
+})
+
+describe('mergeProposalResults', () => {
+  it('keeps previous order, empty locales, and appends new ids', () => {
+    const previous = [
+      item({ string_id: 'b', key: 'bye', translations: { en: '', ja: '' } }),
+      item({ string_id: 'a', key: 'hi', translations: { en: '', ja: '' } }),
+    ]
+    const incoming = [
+      item({
+        string_id: 'a',
+        key: 'hi',
+        translations: { ja: 'こんにちは' },
+        scores: { ja: 90 },
+      }),
+      item({
+        string_id: 'c',
+        key: 'extra',
+        translations: { en: 'Extra' },
+      }),
+    ]
+    const merged = mergeProposalResults(previous, incoming)
+    expect(merged.map((row) => row.string_id)).toEqual(['b', 'a', 'c'])
+    expect(Object.keys(merged[1].translations)).toEqual(['en', 'ja'])
+    expect(merged[1].translations).toEqual({ en: '', ja: 'こんにちは' })
+    expect(merged[0].translations).toEqual({ en: '', ja: '' })
+    expect(merged[2].key).toBe('extra')
+  })
+})
+
+describe('reviewStatusDescription', () => {
+  it('leads with string count after generate and keeps queue copy while paging', () => {
+    expect(
+      reviewStatusDescription({
+        loadingInitial: true,
+        total: 0,
+        pageStringCount: 0,
+        missingCount: 0,
+        applyCount: 0,
+        generated: false,
+      }),
+    ).toBe('Finding empty locales…')
+    expect(
+      reviewStatusDescription({
+        loadingInitial: false,
+        total: 40,
+        pageStringCount: 5,
+        missingCount: 12,
+        applyCount: 0,
+        generated: false,
+      }),
+    ).toBe('5 of 40 strings · 12 empty locales. Add description context, then Translate.')
+    expect(
+      reviewStatusDescription({
+        loadingInitial: false,
+        total: 40,
+        pageStringCount: 5,
+        missingCount: 12,
+        applyCount: 12,
+        generated: true,
+      }),
+    ).toBe(
+      '5 of 40 strings · 12 translations filled. Add description context and Translate again if the draft is off.',
+    )
   })
 })
 

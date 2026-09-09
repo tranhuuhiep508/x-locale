@@ -515,12 +515,7 @@ def run_propose_job(
 
         db.commit()
 
-        entries = (
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.translations))
-            .filter(StringEntry.id.in_(entry_ids))
-            .all()
-        )
+        entries = _load_entries_by_ids(db, entry_ids)
 
         def on_progress(phase: ProgressPhase, chunks_done: int, chunks_total: int) -> None:
             write_job_progress(job_id, phase, chunks_done, chunks_total)

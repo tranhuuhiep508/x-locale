@@ -22,11 +22,13 @@ import {
   draftsFromItems,
   filledCount,
   localeCount,
+  reviewStatusDescription,
   translateProgressLabel,
   translateProgressPercent,
   updateDraftDescription,
   updateDraftTranslation,
 } from '@/features/strings/translate-review'
+import { cn } from '@/lib/utils'
 
 export function proposalsFromJobResult(
   result: Record<string, unknown> | null | undefined,
@@ -178,22 +180,19 @@ export function TranslateReviewDialog({
   const busy = loadingQueue || generating || applying
   const canTranslate = !busy && draftList.length > 0
   const canApply = review && !applying && applyCount > 0 && !error
-  const canPage = !busy && total > pageSize
+  const canPage = total > pageSize
+  const pagingInPlace = loadingQueue && draftList.length > 0
+  const showInitialSpinner = loadingQueue && draftList.length === 0
   const generatingLabel = translateProgressLabel(progress)
   const generatingPercent = translateProgressPercent(progress)
-
-  let description = 'Empty locales only. Existing text was not changed.'
-  if (loadingQueue) {
-    description = 'Finding empty locales…'
-  } else if (generating) {
-    description = generatingLabel
-  } else if (total === 0) {
-    description = 'Every target locale already has text.'
-  } else if (review && applyCount > 0) {
-    description = `${applyCount} empty ${applyCount === 1 ? 'translation' : 'translations'} on this page (${draftList.length} of ${total} strings). Add description context and Translate again if the draft is off.`
-  } else if (!generated && missingCount > 0) {
-    description = `${missingCount} empty ${missingCount === 1 ? 'locale' : 'locales'} on this page (${draftList.length} of ${total} strings). Add description context, then Translate.`
-  }
+  const description = reviewStatusDescription({
+    loadingInitial: showInitialSpinner,
+    total,
+    pageStringCount: draftList.length,
+    missingCount,
+    applyCount,
+    generated,
+  })
 
   return (
     <Dialog
@@ -204,15 +203,18 @@ export function TranslateReviewDialog({
     >
       <DialogContent className="flex max-h-[min(90dvh,840px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
-          <DialogTitle>{review ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
+          <DialogTitle>{generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
           {generating ? (
-            <Progress
-              value={generatingPercent}
-              aria-label={generatingLabel}
-              aria-valuetext={generatingLabel}
-              className={generatingPercent == null ? 'animate-pulse' : undefined}
-            />
+            <div className="flex flex-col gap-2" aria-live="polite">
+              <p className="text-sm text-muted-foreground">{generatingLabel}</p>
+              <Progress
+                value={generatingPercent}
+                aria-label={generatingLabel}
+                aria-valuetext={generatingLabel}
+                className={generatingPercent == null ? 'animate-pulse' : undefined}
+              />
+            </div>
           ) : null}
           {error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
@@ -227,13 +229,14 @@ export function TranslateReviewDialog({
               page={page}
               pageSize={pageSize}
               total={total}
+              disabled={busy}
               onPageChange={onPageChange}
             />
           ) : null}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
-          {loadingQueue ? (
+        <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {showInitialSpinner ? (
             <div
               className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
               aria-live="polite"
@@ -249,22 +252,34 @@ export function TranslateReviewDialog({
               description="Every target locale already has text."
             />
           ) : (
-            <ul className="flex flex-col gap-8">
-              {draftList.map((item) => (
-                <ProposalTreeNode
-                  key={item.string_id}
-                  item={item}
-                  review={review}
-                  disabled={applying || generating}
-                  onChange={(stringId, locale, value) =>
-                    setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
-                  }
-                  onDescriptionChange={(stringId, nextDescription) =>
-                    setDrafts((prev) => updateDraftDescription(prev, stringId, nextDescription))
-                  }
-                />
-              ))}
-            </ul>
+            <div className="relative" aria-busy={pagingInPlace || generating}>
+              {pagingInPlace ? (
+                <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16">
+                  <Spinner />
+                </div>
+              ) : null}
+              <ul
+                className={cn(
+                  'flex flex-col gap-8',
+                  pagingInPlace && 'pointer-events-none opacity-60',
+                )}
+              >
+                {draftList.map((item) => (
+                  <ProposalTreeNode
+                    key={item.string_id}
+                    item={item}
+                    review={review}
+                    disabled={applying || generating || pagingInPlace}
+                    onChange={(stringId, locale, value) =>
+                      setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
+                    }
+                    onDescriptionChange={(stringId, nextDescription) =>
+                      setDrafts((prev) => updateDraftDescription(prev, stringId, nextDescription))
+                    }
+                  />
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 
