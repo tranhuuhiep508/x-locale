@@ -64,7 +64,9 @@ Out of scope for v1: Translate Review, Activity, settings/API keys, Modules/Tags
 
 Workflow: `.github/workflows/e2e.yml` (job name: `e2e`).
 
-Runs on every pull request and on pushes to `master`. To block merges:
+Runs on every pull request and on pushes to `master`. CI installs Chromium via `npx playwright install chromium` plus Ubuntu-packaged OS libraries (avoids `playwright install --with-deps`, which can flake when Google's apt mirror has a hash mismatch).
+
+To block merges:
 
 1. GitHub → **Settings → Branches → Branch protection** for `master`
 2. Enable **Require status checks to pass**

@@ -30,11 +30,37 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm ci
 
-      - name: Install Playwright
+      # Install OS libs from Ubuntu mirrors only. `playwright install --with-deps`
+      # can fail when Google's chrome apt repo has a transient hash mismatch on GHA.
+      - name: Install Playwright OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2t64 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcairo2 \
+            libcups2 \
+            libdbus-1-3 \
+            libdrm2 \
+            libgbm1 \
+            libnspr4 \
+            libnss3 \
+            libpango-1.0-0 \
+            libx11-6 \
+            libxcb1 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxext6 \
+            libxfixes3 \
+            libxkbcommon0 \
+            libxrandr2
+
+      - name: Install Playwright browsers
         run: |
           cd e2e
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       - name: Run Playwright E2E
         run: cd e2e && npm test
