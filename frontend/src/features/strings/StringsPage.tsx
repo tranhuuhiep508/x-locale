@@ -32,6 +32,11 @@ import {
   jobStillRunning,
   proposalsFromJobResult,
 } from '@/features/strings/TranslateReviewDialog'
+import { PublishPreviewDialog } from '@/features/strings/PublishPreviewDialog'
+import {
+  buildPublishPreview,
+  searchToBatchFilter,
+} from '@/features/strings/publish-preview'
 import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
@@ -48,6 +53,7 @@ import { jobsApi } from '@/lib/api/jobs'
 import { stringsApi } from '@/lib/api/strings'
 import type {
   BatchRequest,
+  PublishPreviewRequest,
   StringEntry,
   TranslateProposalItem,
   TranslateRequest,
@@ -100,6 +106,8 @@ export function StringsPage() {
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishEntries, setPublishEntries] = useState<StringEntry[] | null>(null)
   const [searchInput, setSearchInput] = useState(search.q ?? '')
 
   useEffect(() => {
@@ -154,15 +162,32 @@ export function StringsPage() {
 
   const batchMut = useMutation({
     mutationFn: (req: BatchRequest) => stringsApi.batch(projectId, req),
-    onSuccess: () => {
+    onSuccess: (_data, req) => {
       invalidateStrings()
       setRowSelection({})
       setShowMoveModule(false)
       setShowAddTags(false)
       setDeleteConfirm(false)
       setRestoreLastConfirm(false)
+      if (req.action === 'publish') {
+        setPublishOpen(false)
+        setPublishEntries(null)
+        toast.success('Published')
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Batch action failed'),
+  })
+
+  const previewMut = useMutation({
+    mutationFn: (body: PublishPreviewRequest) => stringsApi.publishPreview(projectId, body),
+    onSuccess: (res) => {
+      setPublishEntries(res.items)
+    },
+    onError: () => {
+      toast.error('Failed to load publish preview')
+      setPublishOpen(false)
+      setPublishEntries(null)
+    },
   })
 
   const missingMut = useMutation({
@@ -248,6 +273,11 @@ export function StringsPage() {
     setDialogOpen(true)
   }, [])
 
+  const openPublishPreview = useCallback((entries: StringEntry[]) => {
+    setPublishEntries(entries)
+    setPublishOpen(true)
+  }, [])
+
   function setFilter(updates: Partial<StringsSearch>) {
     startTransition(() => {
       navigate({ search: (prev) => ({ ...prev, ...updates, page: 1 }) })
@@ -282,8 +312,9 @@ export function StringsPage() {
       onEdit: (entry: StringEntry) => openEditor(entry),
       onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
       onRefresh: invalidateStrings,
+      onPublishPreview: (entry: StringEntry) => openPublishPreview([entry]),
     }),
-    [projectId, openEditor, invalidateStrings],
+    [projectId, openEditor, openPublishPreview, invalidateStrings],
   )
 
   const table = useReactTable({
@@ -327,12 +358,12 @@ export function StringsPage() {
       if (event.key !== 'Escape') return
       if (event.defaultPrevented) return
       if (document.querySelector('[data-slot="alert-dialog-content"], [data-slot="dialog-content"]')) return
-      if (dialogOpen || reviewOpen || showMoveModule || showAddTags || deleteConfirm) return
+      if (dialogOpen || reviewOpen || publishOpen || showMoveModule || showAddTags || deleteConfirm) return
       setRowSelection({})
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedCount, dialogOpen, reviewOpen, showMoveModule, showAddTags, deleteConfirm])
+  }, [selectedCount, dialogOpen, reviewOpen, publishOpen, showMoveModule, showAddTags, deleteConfirm])
 
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
   const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
@@ -340,6 +371,31 @@ export function StringsPage() {
   const selectedReleased = selectedEntries.some(
     (entry) => entry.status === 'public' || entry.published_at,
   )
+  const publishPreview = useMemo(
+    () => (publishEntries ? buildPublishPreview(publishEntries) : null),
+    [publishEntries],
+  )
+
+  function openReviewPublishPreview() {
+    if (selectedCount > 0) {
+      openPublishPreview(selectedEntries)
+      return
+    }
+    setPublishEntries(null)
+    setPublishOpen(true)
+    previewMut.mutate({ filter: searchToBatchFilter(search) })
+  }
+
+  function closePublishPreview() {
+    if (batchMut.isPending || previewMut.isPending) return
+    setPublishOpen(false)
+    setPublishEntries(null)
+  }
+
+  function confirmPublishPreview() {
+    if (!publishPreview || publishPreview.publishableIds.length === 0) return
+    batchMut.mutate({ action: 'publish', string_ids: publishPreview.publishableIds })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -352,6 +408,9 @@ export function StringsPage() {
           locales={locales}
           onSearchInputChange={setSearchInput}
           onFilter={setFilter}
+          onReviewPublish={
+            search.has_unpublished_changes ? openReviewPublishPreview : undefined
+          }
           onClear={() => {
             setSearchInput('')
             navigate({
@@ -439,7 +498,7 @@ export function StringsPage() {
                 pending={batchMut.isPending}
                 modules={modules}
                 tags={tags}
-                onPublish={() => batchMut.mutate({ action: 'publish', string_ids: selectedList })}
+                onPublish={() => openPublishPreview(selectedEntries)}
                 onUnpublish={() => batchMut.mutate({ action: 'unpublish', string_ids: selectedList })}
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}
@@ -510,6 +569,15 @@ export function StringsPage() {
           })
         }}
         onApply={(items) => applyMut.mutate(items)}
+      />
+
+      <PublishPreviewDialog
+        open={publishOpen}
+        preview={publishPreview}
+        loading={previewMut.isPending && publishEntries == null}
+        confirming={batchMut.isPending && publishOpen}
+        onClose={closePublishPreview}
+        onConfirm={confirmPublishPreview}
       />
 
       <BatchMoveDialog
