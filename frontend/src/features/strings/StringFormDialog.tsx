@@ -48,6 +48,10 @@ function isNestedOverlayTarget(target: EventTarget | null) {
   )
 }
 
+function isFocusOutsideEvent(event: { detail?: { originalEvent?: Event } }) {
+  return event.detail?.originalEvent?.type === 'focusin'
+}
+
 type FormErrors = Partial<Record<'key' | 'source_text', string>>
 
 function mergeTranslations(
@@ -305,8 +309,13 @@ export default function StringFormDialog({
           'flex w-full flex-col gap-0 overflow-hidden p-0',
           'max-h-[min(90dvh,760px)] sm:max-w-3xl',
         )}
+        onFocusOutside={(event) => {
+          // Nested popovers unmount after Create; focus then lands on body, not the
+          // popover node. Blocking focus-outside keeps pointer-outside dismiss intact.
+          event.preventDefault()
+        }}
         onInteractOutside={(event) => {
-          if (isNestedOverlayTarget(event.target)) {
+          if (isFocusOutsideEvent(event) || isNestedOverlayTarget(event.target)) {
             event.preventDefault()
           }
         }}
@@ -469,12 +478,22 @@ export default function StringFormDialog({
                         setCreatedModules((prev) =>
                           prev.some((item) => item.id === created.id) ? prev : [...prev, created],
                         )
+                        setModuleId(created.id)
                       }}
                     />
                   </div>
                   <Select
                     value={moduleId || NONE_MODULE}
-                    onValueChange={(v) => setModuleId(v === NONE_MODULE ? '' : v)}
+                    onValueChange={(v) => {
+                      if (v === NONE_MODULE) {
+                        setModuleId('')
+                        return
+                      }
+                      // Native bubble <select> emits '' when the chosen id is not a
+                      // mounted <option> yet (dropdown closed after inline create).
+                      if (!v) return
+                      setModuleId(v)
+                    }}
                   >
                     <SelectTrigger id="string-module" className="w-full">
                       <SelectValue placeholder="— None —">
@@ -510,6 +529,7 @@ export default function StringFormDialog({
                         setCreatedTags((prev) =>
                           prev.some((item) => item.id === created.id) ? prev : [...prev, created],
                         )
+                        setTagId(created.id)
                       }}
                     />
                   </div>

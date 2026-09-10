@@ -62,6 +62,7 @@ function CreateModuleForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    e.stopPropagation()
     const result = moduleCreateSchema.safeParse(form)
     if (!result.success) {
       const next: ModuleErrors = {}
@@ -139,6 +140,7 @@ function CreateTagForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    e.stopPropagation()
     const result = tagCreateSchema.safeParse(form)
     if (!result.success) {
       const next: TagErrors = {}
