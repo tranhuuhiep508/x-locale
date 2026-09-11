@@ -40,7 +40,7 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
 
   await json.fill('{}')
   await dialog.getByRole('button', { name: 'Preview' }).click()
-  await expect(dialog.getByText('New strings')).toBeVisible()
+  await expect(dialog.getByText('New strings', { exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Apply' })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Back' }).click()
 
