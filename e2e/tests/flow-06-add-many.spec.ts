@@ -48,8 +48,9 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   await dialog.getByRole('combobox', { name: 'Module' }).click()
   await page.getByRole('option', { name: /Common/ }).click()
   await dialog.getByRole('button', { name: 'Preview' }).click()
+  await expect(dialog.getByRole('button', { name: 'Apply' })).toBeVisible()
   await expect(dialog.getByText(newKey)).toBeVisible()
-  await expect(dialog.getByText('save')).toBeVisible()
+  await expect(dialog.getByText('~ save')).toBeVisible()
 
   await dialog.getByRole('button', { name: 'Back' }).click()
   await dialog.getByRole('button', { name: 'Cancel' }).click()
@@ -64,6 +65,7 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   await applyDialog.getByRole('combobox', { name: 'Module' }).click()
   await page.getByRole('option', { name: /Common/ }).click()
   await applyDialog.getByRole('button', { name: 'Preview' }).click()
+  await expect(applyDialog.getByRole('button', { name: 'Apply' })).toBeVisible()
   await expect(applyDialog.getByText(newKey)).toBeVisible()
   await applyDialog.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByRole('heading', { name: 'Add many' })).toBeHidden()
@@ -77,5 +79,5 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   await expect(page.getByRole('row').filter({ hasText: 'Lưu (add many updated)' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Activity' }).click()
-  await expect(page.getByText(/imported/i).first()).toBeVisible()
+  await expect(page.getByText(/Imported · 2 strings/)).toBeVisible()
 })
