@@ -360,6 +360,29 @@ def _missing_items(
     return missing
 
 
+def _stub_translate_batch(
+    items: list[TranslateItem],
+    on_progress: ProgressCallback | None = None,
+) -> dict[str, dict[str, TranslatedCell]]:
+    chunks_total = max(1, (len(items) + BATCH_SIZE - 1) // BATCH_SIZE)
+    if on_progress is not None:
+        on_progress("translating", 0, chunks_total)
+    if settings.ai_translate_stub_delay_ms > 0:
+        time.sleep(settings.ai_translate_stub_delay_ms / 1000)
+    result: dict[str, dict[str, TranslatedCell]] = {}
+    for item in items:
+        dest: dict[str, TranslatedCell] = {}
+        for locale in item.locales:
+            dest[locale] = TranslatedCell(
+                text=f"[{locale}] {item.source_text}",
+                confidence=85,
+            )
+        result[item.id] = dest
+    if on_progress is not None:
+        on_progress("translating", chunks_total, chunks_total)
+    return result
+
+
 def translate_batch(
     source_locale: str,
     items: list[TranslateItem],
@@ -368,6 +391,8 @@ def translate_batch(
     """Return {item_id: {locale: TranslatedCell}} for every filled cell."""
     if not items:
         return {}
+    if settings.ai_translate_stub:
+        return _stub_translate_batch(items, on_progress=on_progress)
     if not settings.bedrock_model_id:
         raise ValueError("BEDROCK_MODEL_ID is not configured")
 

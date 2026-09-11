@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./x-locale.db"
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
+    # Deterministic AI translations for E2E / local dev (no Bedrock calls).
+    ai_translate_stub: bool = False
+    ai_translate_stub_delay_ms: int = 0
     x_locale_secret: str = "change-me"
     x_locale_demo_api_key: str = "demo-local-key"
     default_base_language: str = "vi"
