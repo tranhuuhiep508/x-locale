@@ -13,9 +13,7 @@ import yaml
 from .support import (
     api_key_client,
     combined_output,
-    create_module,
     create_string,
-    create_test_project,
     list_string_keys,
     publish_strings,
     run_locale,
@@ -411,6 +409,27 @@ class TestAuth:
         assert elapsed < 10.0
         assert "Invalid API key" in combined_output(result) or "401" in combined_output(result)
 
+    def test_missing_api_key_exits_nonzero_without_hanging(
+        self,
+        workspace: Path,
+        api_base_url: str,
+    ) -> None:
+        started = time.monotonic()
+        result = run_locale(
+            workspace,
+            "init",
+            "-u",
+            api_base_url,
+            "-y",
+            timeout=15.0,
+        )
+        elapsed = time.monotonic() - started
+
+        assert result.returncode == 1
+        assert elapsed < 10.0
+        assert "API key is required" in combined_output(result)
+        assert not (workspace / ".x-locale" / "config.yaml").exists()
+
 
 class TestShouldCoverage:
     def test_unassigned_not_pushed(
@@ -462,12 +481,15 @@ class TestShouldCoverage:
         run_locale(workspace, "sync")
 
         target = workspace / "locales" / "en.json"
-        mtime_before = target.stat().st_mtime
+        content_before = target.read_bytes()
 
         second = run_locale(workspace, "pull")
         assert second.returncode == 0, combined_output(second)
-        assert "already up to date" in second.stdout.lower() or "Checked" in second.stdout
-        assert target.stat().st_mtime == mtime_before
+        output = combined_output(second)
+        assert "already up to date" in output.lower()
+        assert "Checked" in output
+        assert "Wrote" not in output
+        assert target.read_bytes() == content_before
 
     def test_single_locale_pull_and_status_for_base(
         self,

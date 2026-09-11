@@ -9,7 +9,6 @@ import pytest
 
 from .support import (
     BackendServer,
-    TestProject,
     create_test_project,
     login_admin_client,
     start_backend_server,
