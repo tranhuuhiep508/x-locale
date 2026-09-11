@@ -1,0 +1,28 @@
+name: CLI E2E
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  cli-e2e:
+    name: cli-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install backend dependencies
+        run: cd backend && uv sync --all-extras
+
+      - name: Install CLI dependencies (with pytest)
+        run: cd cli && uv sync --extra dev
+
+      - name: Run CLI E2E ship-gate tests
+        run: cd cli && uv run pytest tests/e2e -m e2e -v --tb=short
+        env:
+          CI: true
