@@ -18,12 +18,13 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { Plus, Wand2 } from 'lucide-react'
+import { ListPlus, Plus, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
+import { AddManyStringsDialog } from '@/features/strings/AddManyStringsDialog'
 import { StringsFilters, hasActiveStringFilters } from '@/features/strings/StringsFilters'
 import { getStringColumns } from '@/features/strings/string-columns'
 import { canDiscardWorkingCopy, releaseRowClassName, releaseState } from '@/features/strings/working-copy'
@@ -94,6 +95,7 @@ export function StringsPage() {
     created_by_label: false,
   })
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [addManyOpen, setAddManyOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
@@ -471,6 +473,10 @@ export function StringsPage() {
                 )}
                 Translate missing
               </Button>
+              <Button size="sm" variant="outline" onClick={() => setAddManyOpen(true)}>
+                <ListPlus data-icon="inline-start" />
+                Add many
+              </Button>
               <Button size="sm" onClick={() => openEditor(null)}>
                 <Plus data-icon="inline-start" />
                 Add string
@@ -495,12 +501,16 @@ export function StringsPage() {
             }
             action={
               !hasActiveFilters ? (
-                <Button
-                  onClick={() => openEditor(null)}
-                >
-                  <Plus data-icon="inline-start" />
-                  Add string
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="outline" onClick={() => setAddManyOpen(true)}>
+                    <ListPlus data-icon="inline-start" />
+                    Add many
+                  </Button>
+                  <Button onClick={() => openEditor(null)}>
+                    <Plus data-icon="inline-start" />
+                    Add string
+                  </Button>
+                </div>
               ) : undefined
             }
           />
@@ -575,6 +585,19 @@ export function StringsPage() {
           />
         </Suspense>
       )}
+
+      <AddManyStringsDialog
+        open={addManyOpen}
+        projectId={projectId}
+        project={project}
+        modules={modules}
+        tags={tags}
+        onClose={() => setAddManyOpen(false)}
+        onSuccess={() => {
+          setAddManyOpen(false)
+          invalidateStrings()
+        }}
+      />
 
       <TranslateReviewDialog
         open={reviewOpen}

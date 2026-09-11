@@ -8,12 +8,18 @@ export type ExportParams = {
   locale?: string
 }
 
+export type ImportFileParams = {
+  locale?: string
+  dry_run?: string
+  module_id?: string
+  status?: string
+  partial?: string
+  tag_ids?: string[]
+}
+
 export const syncApi = {
-  importFile: (
-    projectId: string,
-    formData: FormData,
-    params: { locale?: string; dry_run?: string; module_id?: string },
-  ) => api.upload<ImportResult>(`/projects/${projectId}/import`, formData, params),
+  importFile: (projectId: string, formData: FormData, params: ImportFileParams) =>
+    api.upload<ImportResult>(`/projects/${projectId}/import`, formData, params),
 
   exportFile: (projectId: string, params: ExportParams) =>
     api.download(`/projects/${projectId}/export`, params, `export.${params.format}`),

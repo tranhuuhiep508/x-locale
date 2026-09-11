@@ -33,6 +33,11 @@ export async function openAddStringDialog(page: Page) {
   await expect(page.getByRole('heading', { name: 'Add string' })).toBeVisible()
 }
 
+export async function openAddManyDialog(page: Page) {
+  await page.getByRole('button', { name: 'Add many' }).click()
+  await expect(page.getByRole('heading', { name: 'Add many' })).toBeVisible()
+}
+
 export async function openStringEditor(page: Page, key: string) {
   await searchStrings(page, key)
   const row = page.getByRole('row').filter({ hasText: key }).first()

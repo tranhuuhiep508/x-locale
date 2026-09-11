@@ -2093,3 +2093,152 @@ def test_import_diff_key_lists_are_capped(client):
     listed = client.get(f"/api/projects/{pid}/strings", params={"page_size": 200}).json()
     assert listed["total"] == 120
 
+
+def _json_upload(payload: dict, name: str = "vi.json"):
+    return {"file": (name, json.dumps(payload).encode(), "application/json")}
+
+
+def test_json_import_rejects_invalid_and_nested_values(client):
+    project = _make_project(client, "Reject Nested")
+    pid = project["id"]
+
+    invalid = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b"{not json", "application/json")},
+    )
+    assert invalid.status_code == 400
+    assert "Invalid JSON" in invalid.json()["detail"]
+
+    nested = client.post(
+        f"/api/projects/{pid}/import",
+        files=_json_upload({"welcome": {"en": "Hi"}}),
+    )
+    assert nested.status_code == 400
+    assert "strings" in nested.json()["detail"]
+
+    array_value = client.post(
+        f"/api/projects/{pid}/import",
+        files=_json_upload({"welcome": ["Hi"]}),
+    )
+    assert array_value.status_code == 400
+    assert "strings" in array_value.json()["detail"]
+
+
+def test_partial_json_import_dry_run_and_apply_with_module_tags(client):
+    project = _make_project(client, "Paste Many")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules", json={"slug": "common", "name": "Common"}
+    ).json()
+    tag = client.post(
+        f"/api/projects/{pid}/tags", json={"name": "ios", "color": "#2563eb"}
+    ).json()
+    existing = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "save",
+            "source_text": "Lưu",
+            "module_id": module["id"],
+        },
+    ).json()
+
+    payload = {"save": "Lưu lại", "add_many_new": "Chuỗi mới"}
+    dry = client.post(
+        f"/api/projects/{pid}/import",
+        params={
+            "locale": "vi",
+            "dry_run": True,
+            "partial": True,
+            "status": "draft",
+            "module_id": module["id"],
+            "tag_ids": tag["id"],
+        },
+        files=_json_upload(payload),
+    )
+    assert dry.status_code == 200, dry.text
+    body = dry.json()
+    assert body["dry_run"] is True
+    assert body["created"] == 0
+    assert body["updated"] == 0
+    assert body["diff"]["create_count"] == 1
+    assert body["diff"]["update_count"] == 1
+    assert body["diff"]["orphan_count"] == 0
+    assert "add_many_new" in body["diff"]["create"]
+    assert "save" in body["diff"]["update"]
+
+    listed = client.get(f"/api/projects/{pid}/strings", params={"page_size": 50}).json()
+    keys = {item["key"] for item in listed["items"]}
+    assert "add_many_new" not in keys
+    save_row = next(item for item in listed["items"] if item["id"] == existing["id"])
+    assert save_row["source_text"] == "Lưu"
+    assert save_row["tags"] == []
+
+    empty = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "dry_run": True, "partial": True},
+        files=_json_upload({}),
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["diff"]["create_count"] == 0
+    assert empty.json()["diff"]["update_count"] == 0
+    assert empty.json()["diff"]["orphan_count"] == 0
+
+    applied = client.post(
+        f"/api/projects/{pid}/import",
+        params={
+            "locale": "vi",
+            "dry_run": False,
+            "partial": True,
+            "status": "draft",
+            "module_id": module["id"],
+            "tag_ids": tag["id"],
+        },
+        files=_json_upload(payload),
+    )
+    assert applied.status_code == 200, applied.text
+    result = applied.json()
+    assert result["dry_run"] is False
+    assert result["created"] == 1
+    assert result["updated"] == 1
+    assert result["batch_id"]
+
+    listed = client.get(
+        f"/api/projects/{pid}/strings", params={"page_size": 50}
+    ).json()
+    items = listed["items"]
+    by_key = {item["key"]: item for item in items}
+    created = by_key["add_many_new"]
+    updated = by_key["save"]
+    assert created["status"] == "draft"
+    assert created["module_id"] == module["id"]
+    assert created["source_text"] == "Chuỗi mới"
+    assert created["tags"][0]["id"] == tag["id"]
+    assert updated["source_text"] == "Lưu lại"
+    assert updated["tags"][0]["id"] == tag["id"]
+
+    feed = client.get(
+        f"/api/projects/{pid}/activities/feed",
+        params={"event_type": "import"},
+    )
+    assert feed.status_code == 200, feed.text
+    cards = [
+        card
+        for card in feed.json()["items"]
+        if card["batch_id"] == result["batch_id"]
+    ]
+    assert len(cards) == 1
+    assert cards[0]["kind"] == "batch"
+    assert cards[0]["children_count"] == 2
+
+
+def test_json_import_unknown_tag_is_rejected(client):
+    project = _make_project(client, "Bad Tag")
+    pid = project["id"]
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "tag_ids": str(uuid.uuid4()), "partial": True},
+        files=_json_upload({"hello": "Xin chào"}),
+    )
+    assert r.status_code == 400
+    assert "Unknown tag" in r.json()["detail"]
+

@@ -11,7 +11,8 @@ export class ApiError extends Error {
   }
 }
 
-type QueryParams = Record<string, string | number | boolean | undefined | null>
+type QueryValue = string | number | boolean
+type QueryParams = Record<string, QueryValue | QueryValue[] | undefined | null>
 
 function buildUrl(path: string, params?: QueryParams): string {
   const url = `${BASE_URL}${path}`
@@ -19,9 +20,16 @@ function buildUrl(path: string, params?: QueryParams): string {
 
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') {
-      sp.set(k, String(v))
+    if (v === undefined || v === null || v === '') continue
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (item !== undefined && item !== null && item !== '') {
+          sp.append(k, String(item))
+        }
+      }
+      continue
     }
+    sp.set(k, String(v))
   }
   const qs = sp.toString()
   return qs ? `${url}?${qs}` : url
