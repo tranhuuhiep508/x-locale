@@ -28,6 +28,8 @@ E2E uses an **isolated SQLite database** at `e2e/.data/e2e.db` (not `backend/x-l
 | `OIDC_*` | empty | Bypass is ignored when OIDC is configured |
 | `DATABASE_URL` | `sqlite:///…/e2e/.data/e2e.db` | Set by Playwright config |
 | `X_LOCALE_SECRET` | `e2e-test-secret` | JWT signing for session cookie |
+| `AI_TRANSLATE_STUB` | `true` | Deterministic translate responses (no Bedrock) |
+| `AI_TRANSLATE_STUB_DELAY_MS` | `400` | Keeps translate progress UI visible in specs |
 
 `global-setup.ts` runs `alembic upgrade head` and `seed-demo --force` on that database before the suite. Each spec file calls `resetDemoDatabase()` in `beforeAll` so flows stay independent while sharing one DB (workers are serialized).
 
@@ -50,8 +52,14 @@ npx playwright show-report  # last HTML report (traces on failure)
 | 3 — Publish preview | `e2e/tests/flow-03-publish-preview.spec.ts` | New to public, content updates, in-sync noop, needs-publish review |
 | 4 — Soft-delete / restore | `e2e/tests/flow-04-soft-delete.spec.ts` | Never-published delete/restore; published pending-delete + publish removal |
 | 5 — Import / export | `e2e/tests/flow-05-import-export.spec.ts` | Dry-run create/update/orphan, cancel, apply, export public JSON |
+| B — AI translate review | `e2e/tests/flow-06-ai-translate-review.spec.ts` | Translate missing → review dialog, progress, apply to working copy (stubbed AI) |
+| C — Unpublish selection | `e2e/tests/flow-07-unpublish-selection.spec.ts` | Batch unpublish returns published strings to draft |
+| D — Activity undo (batch) | `e2e/tests/flow-08-activity-undo.spec.ts` | Import apply → Activity → Undo restores catalog |
+| E — Settings / API key | `e2e/tests/flow-09-settings-api-key.spec.ts` | Generate key, one-time secret, revoke blocks bootstrap |
 
-Out of scope for v1: Translate Review, Activity, settings/API keys, Modules/Tags pages, Excel import, visual snapshots.
+Deferred: flow A (Add many / XLOCALE-9) until that feature ships.
+
+Out of scope: Modules/Tags pages, Excel import, visual snapshots.
 
 ## Conventions
 

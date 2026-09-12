@@ -14,6 +14,8 @@ const e2eEnv = {
   OIDC_CLIENT_SECRET: '',
   X_LOCALE_SECRET: process.env.X_LOCALE_SECRET ?? 'e2e-test-secret',
   X_LOCALE_DEMO_API_KEY: process.env.X_LOCALE_DEMO_API_KEY ?? 'demo-api-key-e2e',
+  AI_TRANSLATE_STUB: 'true',
+  AI_TRANSLATE_STUB_DELAY_MS: '400',
 }
 
 export default defineConfig({

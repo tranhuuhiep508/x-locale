@@ -457,3 +457,21 @@ def test_translate_batch_reports_filling_gaps(converse):
         on_progress=lambda phase, done, total: events.append(phase),
     )
     assert "filling_gaps" in events
+
+
+def test_translate_batch_stub_mode(monkeypatch):
+    monkeypatch.setattr(settings, "ai_translate_stub", True)
+    monkeypatch.setattr(settings, "ai_translate_stub_delay_ms", 0)
+    events: list[str] = []
+    result = translate_batch(
+        "vi",
+        [TranslateItem(id="s1", source_text="Lưu", locales=("en", "ja"))],
+        on_progress=lambda phase, done, total: events.append(phase),
+    )
+    assert result == {
+        "s1": {
+            "en": TranslatedCell(text="[en] Lưu", confidence=85),
+            "ja": TranslatedCell(text="[ja] Lưu", confidence=85),
+        }
+    }
+    assert events == ["translating", "translating"]
