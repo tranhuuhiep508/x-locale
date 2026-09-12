@@ -140,6 +140,8 @@ async def import_project(
     status: Annotated[str, Query(pattern="^(draft|public)$")] = "draft",
     locale: Annotated[str | None, Query()] = None,
     module_id: Annotated[uuid.UUID | None, Query()] = None,
+    tag_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    partial: Annotated[bool, Query()] = False,
 ) -> ImportResult:
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
@@ -175,6 +177,9 @@ async def import_project(
             locale=locale,
             status=import_status,
             module_id=module_id,
+            tag_ids=tag_ids,
+            report_orphans=False if partial else None,
+            full_diff=partial,
         )
         if not dry_run:
             db.commit()

@@ -54,9 +54,9 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
 
   await expect(page.getByRole('heading', { name: 'Import preview (dry run)' })).toBeVisible()
   const preview = page.getByRole('dialog').filter({ hasText: 'Import preview (dry run)' })
-  await expect(preview.getByText('New strings')).toBeVisible()
-  await expect(preview.getByText('Updated')).toBeVisible()
-  await expect(preview.getByText('Orphaned')).toBeVisible()
+  await expect(preview.getByText('New strings', { exact: true })).toBeVisible()
+  await expect(preview.getByText('Updated', { exact: true })).toBeVisible()
+  await expect(preview.getByText('Orphaned', { exact: true })).toBeVisible()
   await expect(preview.getByText(newKey)).toBeVisible()
 
   await preview.getByRole('button', { name: 'Cancel' }).click()

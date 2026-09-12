@@ -6,11 +6,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.helpers import content_hash, export_key
-from app.models import Module, Project, StringEntry, TranslationStatus
-from app.schemas import ImportDiff, ImportResult, SyncStateOut
+from app.models import Module, Project, StringEntry, Tag, TranslationStatus
+from app.schemas import ImportDiff, ImportDiffItem, ImportKeyLists, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
@@ -295,6 +295,44 @@ def resolve_json_import_module(
     return mod.id
 
 
+def resolve_json_import_tags(
+    db: Session, project: Project, tag_ids: list[UUID] | None
+) -> list[Tag]:
+    """Validate optional JSON import tags. Unknown ids are rejected."""
+    if not tag_ids:
+        return []
+    unique_ids = list(dict.fromkeys(tag_ids))
+    tags = (
+        db.query(Tag)
+        .filter(Tag.project_id == project.id, Tag.id.in_(unique_ids))
+        .all()
+    )
+    if len(tags) != len(unique_ids):
+        raise HTTPException(status_code=400, detail="Unknown tag")
+    by_id = {tag.id: tag for tag in tags}
+    return [by_id[tid] for tid in unique_ids]
+
+
+def _tags_would_change(entry: StringEntry, tags: list[Tag]) -> bool:
+    if not tags:
+        return False
+    existing = {tag.id for tag in (entry.tags or [])}
+    return any(tag.id not in existing for tag in tags)
+
+
+def _apply_import_tags(entry: StringEntry, tags: list[Tag]) -> bool:
+    if not tags:
+        return False
+    existing = {tag.id for tag in (entry.tags or [])}
+    changed = False
+    for tag in tags:
+        if tag.id not in existing:
+            entry.tags.append(tag)
+            existing.add(tag.id)
+            changed = True
+    return changed
+
+
 class _ImportIndex:
     def __init__(self, entries: list[StringEntry]) -> None:
         self.by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
@@ -336,6 +374,21 @@ def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]
     return False
 
 
+def _preview_source_text(
+    project: Project,
+    key: str,
+    values: dict[str, str],
+    entry: StringEntry | None = None,
+) -> str:
+    if project.base_language in values:
+        text = values[project.base_language]
+        if text:
+            return text
+    if entry is not None:
+        return entry.source_text
+    return key
+
+
 def _upsert_imported_string(
     db: Session,
     project: Project,
@@ -346,8 +399,9 @@ def _upsert_imported_string(
     dry_run: bool,
     status: TranslationStatus,
     module_id: UUID | None,
-) -> str:
-    """Return 'create', 'update', or 'unchanged'."""
+    tags: list[Tag],
+) -> tuple[str, StringEntry | None]:
+    """Return ('create'|'update'|'unchanged', entry_or_none)."""
     entry = index.lookup(key, module_id=module_id)
     if entry is None:
         if not dry_run:
@@ -369,12 +423,15 @@ def _upsert_imported_string(
             )
             if status == TranslationStatus.public:
                 promote_string(entry)
+            _apply_import_tags(entry, tags)
             index.add(entry)
-        return "create"
+        return "create", entry
 
     revived = bool(entry.deleted_at)
-    if not revived and not _values_changed(entry, project, values):
-        return "unchanged"
+    values_changed = revived or _values_changed(entry, project, values)
+    tags_changed = _tags_would_change(entry, tags)
+    if not values_changed and not tags_changed:
+        return "unchanged", entry
 
     if not dry_run:
         restore_string(entry)
@@ -385,7 +442,8 @@ def _upsert_imported_string(
             entry,
             {loc: val for loc, val in values.items() if loc != project.base_language},
         )
-    return "update"
+        _apply_import_tags(entry, tags)
+    return "update", entry
 
 
 def _import_locale_maps(
@@ -398,9 +456,11 @@ def _import_locale_maps(
     module_id: UUID | None,
     report_orphans: bool,
     index: _ImportIndex,
-) -> tuple[list[str], list[str], set[str], int]:
-    create_keys: list[str] = []
-    update_keys: list[str] = []
+    tags: list[Tag],
+) -> tuple[list[ImportDiffItem], list[ImportDiffItem], list[ImportDiffItem], list[str], int]:
+    create_items: list[ImportDiffItem] = []
+    update_items: list[ImportDiffItem] = []
+    noop_keys: list[str] = []
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
@@ -410,7 +470,7 @@ def _import_locale_maps(
             continue
         total += 1
         seen.add(key)
-        action = _upsert_imported_string(
+        action, entry = _upsert_imported_string(
             db,
             project,
             index,
@@ -419,43 +479,76 @@ def _import_locale_maps(
             dry_run=dry_run,
             status=status,
             module_id=module_id,
+            tags=tags,
         )
         if action == "create":
-            create_keys.append(key)
+            create_items.append(
+                ImportDiffItem(
+                    key=key,
+                    source_text=_preview_source_text(project, key, values, entry),
+                )
+            )
         elif action == "update":
-            update_keys.append(key)
-    orphan_keys: set[str] = set()
-    if report_orphans:
-        if module_id is None:
-            orphan_keys = {k for (_mid, k) in index.by_module_key if k not in seen}
+            update_items.append(
+                ImportDiffItem(
+                    key=key,
+                    source_text=_preview_source_text(project, key, values, entry),
+                )
+            )
         else:
-            orphan_keys = {
-                k
-                for (mid, k) in index.by_module_key
-                if mid == module_id and k not in seen
-            }
-    return create_keys, update_keys, orphan_keys, total
+            noop_keys.append(key)
+    orphan_items: list[ImportDiffItem] = []
+    if report_orphans:
+        seen_orphan: set[str] = set()
+        for (mid, k), entry in index.by_module_key.items():
+            if k in seen or k in seen_orphan:
+                continue
+            if module_id is not None and mid != module_id:
+                continue
+            seen_orphan.add(k)
+            orphan_items.append(ImportDiffItem(key=k, source_text=entry.source_text))
+        orphan_items.sort(key=lambda item: item.key)
+    return create_items, update_items, orphan_items, noop_keys, total
+
+
+def _scope_items(slug: str, items: list[ImportDiffItem]) -> list[ImportDiffItem]:
+    return [
+        ImportDiffItem(key=f"{slug}/{item.key}", source_text=item.source_text)
+        for item in items
+    ]
 
 
 def _result(
     *,
-    create_keys: list[str],
-    update_keys: list[str],
-    orphan_keys: list[str],
+    create_items: list[ImportDiffItem],
+    update_items: list[ImportDiffItem],
+    orphan_items: list[ImportDiffItem],
     total: int,
     dry_run: bool,
+    noop_keys: list[str] | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
+    unchanged = noop_keys or []
+    keys = None
+    if full_diff:
+        keys = ImportKeyLists(
+            create=[item.key for item in create_items],
+            update=[item.key for item in update_items],
+            noop=unchanged,
+        )
     diff = ImportDiff(
-        create=create_keys[:IMPORT_DIFF_SAMPLE],
-        update=update_keys[:IMPORT_DIFF_SAMPLE],
-        orphan=orphan_keys[:IMPORT_DIFF_SAMPLE],
-        create_count=len(create_keys),
-        update_count=len(update_keys),
-        orphan_count=len(orphan_keys),
+        create=create_items[:IMPORT_DIFF_SAMPLE],
+        update=update_items[:IMPORT_DIFF_SAMPLE],
+        orphan=orphan_items[:IMPORT_DIFF_SAMPLE],
+        create_count=len(create_items),
+        update_count=len(update_items),
+        orphan_count=len(orphan_items),
+        noop_count=len(unchanged) if full_diff else 0,
+        keys=keys,
     )
     return ImportResult(
-        created=0 if dry_run else len(create_keys),
-        updated=0 if dry_run else len(update_keys),
+        created=0 if dry_run else len(create_items),
+        updated=0 if dry_run else len(update_items),
         total=total,
         dry_run=dry_run,
         diff=diff,
@@ -470,6 +563,9 @@ def import_flat_strings(
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
     module_id: UUID | None = None,
+    tags: list[Tag] | None = None,
+    report_orphans: bool = True,
+    full_diff: bool = False,
 ) -> ImportResult:
     """CLI / source-locale import: `{ key: source_text }` stored as-is."""
     return import_locale_payload(
@@ -479,7 +575,9 @@ def import_flat_strings(
         dry_run=dry_run,
         status=status,
         module_id=module_id,
-        report_orphans=True,
+        tags=tags,
+        report_orphans=report_orphans,
+        full_diff=full_diff,
     )
 
 
@@ -491,16 +589,22 @@ def import_locale_payload(
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
     module_id: UUID | None = None,
+    tags: list[Tag] | None = None,
     report_orphans: bool = True,
+    full_diff: bool = False,
 ) -> ImportResult:
     entries = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.module), joinedload(StringEntry.translations))
+        .options(
+            joinedload(StringEntry.module),
+            joinedload(StringEntry.translations),
+            selectinload(StringEntry.tags),
+        )
         .filter(StringEntry.project_id == project.id)
         .all()
     )
     index = _ImportIndex(entries)
-    create_keys, update_keys, orphan_keys, total = _import_locale_maps(
+    create_items, update_items, orphan_items, noop_keys, total = _import_locale_maps(
         db,
         project,
         locale_maps,
@@ -509,13 +613,16 @@ def import_locale_payload(
         module_id=module_id,
         report_orphans=report_orphans,
         index=index,
+        tags=tags or [],
     )
     return _result(
-        create_keys=create_keys,
-        update_keys=update_keys,
-        orphan_keys=sorted(orphan_keys),
+        create_items=create_items,
+        update_items=update_items,
+        orphan_items=orphan_items,
+        noop_keys=noop_keys,
         total=total,
         dry_run=dry_run,
+        full_diff=full_diff,
     )
 
 
@@ -527,24 +634,32 @@ def import_modular_payload(
     *,
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
+    tags: list[Tag] | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
     entries = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.module), joinedload(StringEntry.translations))
+        .options(
+            joinedload(StringEntry.module),
+            joinedload(StringEntry.translations),
+            selectinload(StringEntry.tags),
+        )
         .filter(StringEntry.project_id == project.id)
         .all()
     )
+    import_tags = tags or []
     index = _ImportIndex(entries)
-    create_keys: list[str] = []
-    update_keys: list[str] = []
-    orphan_keys: set[str] = set()
+    create_items: list[ImportDiffItem] = []
+    update_items: list[ImportDiffItem] = []
+    orphan_items: list[ImportDiffItem] = []
+    noop_keys: list[str] = []
     total = 0
 
     for slug, locale_maps in modules.items():
         if not isinstance(locale_maps, dict):
             continue
         mod = _get_or_create_module(db, project, slug, dry_run=dry_run)
-        created, updated, orphans, count = _import_locale_maps(
+        created, updated, orphans, unchanged, count = _import_locale_maps(
             db,
             project,
             locale_maps,
@@ -553,14 +668,16 @@ def import_modular_payload(
             module_id=mod.id if mod else None,
             report_orphans=True,
             index=index,
+            tags=import_tags,
         )
-        create_keys.extend(f"{slug}/{k}" for k in created)
-        update_keys.extend(f"{slug}/{k}" for k in updated)
-        orphan_keys.update(f"{slug}/{k}" for k in orphans)
+        create_items.extend(_scope_items(slug, created))
+        update_items.extend(_scope_items(slug, updated))
+        orphan_items.extend(_scope_items(slug, orphans))
+        noop_keys.extend(f"{slug}/{k}" for k in unchanged)
         total += count
 
     if unassigned and _is_locale_maps(unassigned):
-        created, updated, orphans, count = _import_locale_maps(
+        created, updated, orphans, unchanged, count = _import_locale_maps(
             db,
             project,
             unassigned,
@@ -569,18 +686,23 @@ def import_modular_payload(
             module_id=None,
             report_orphans=True,
             index=index,
+            tags=import_tags,
         )
-        create_keys.extend(created)
-        update_keys.extend(updated)
-        orphan_keys.update(orphans)
+        create_items.extend(created)
+        update_items.extend(updated)
+        orphan_items.extend(orphans)
+        noop_keys.extend(unchanged)
         total += count
 
+    orphan_items.sort(key=lambda item: item.key)
     return _result(
-        create_keys=create_keys,
-        update_keys=update_keys,
-        orphan_keys=sorted(orphan_keys),
+        create_items=create_items,
+        update_items=update_items,
+        orphan_items=orphan_items,
+        noop_keys=noop_keys,
         total=total,
         dry_run=dry_run,
+        full_diff=full_diff,
     )
 
 
@@ -593,11 +715,15 @@ def import_json_data(
     locale: str | None = None,
     status: TranslationStatus = TranslationStatus.draft,
     module_id: UUID | None = None,
+    tag_ids: list[UUID] | None = None,
+    report_orphans: bool | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="JSON import must be an object")
 
     target_module_id = resolve_json_import_module(db, project, module_id)
+    tags = resolve_json_import_tags(db, project, tag_ids)
 
     modules = data.get("modules")
     if isinstance(modules, dict) and modules and all(
@@ -614,12 +740,22 @@ def import_json_data(
                 unassigned if isinstance(unassigned, dict) else None,
                 dry_run=dry_run,
                 status=status,
+                tags=tags,
+                full_diff=full_diff,
             )
 
     strings = data.get("strings")
     if _is_str_map(strings):
         return import_flat_strings(
-            db, project, strings, dry_run=dry_run, status=status, module_id=target_module_id
+            db,
+            project,
+            strings,
+            dry_run=dry_run,
+            status=status,
+            module_id=target_module_id,
+            tags=tags,
+            report_orphans=True if report_orphans is None else report_orphans,
+            full_diff=full_diff,
         )
 
     if _is_locale_maps(data) and set(data).issubset(project_locales(project)):
@@ -631,13 +767,20 @@ def import_json_data(
             dry_run=dry_run,
             status=status,
             module_id=target_module_id,
-            report_orphans=True,
+            tags=tags,
+            report_orphans=True if report_orphans is None else report_orphans,
+            full_diff=full_diff,
         )
 
     if _is_str_map(data):
         target = locale or project.base_language
         if target not in project_locales(project):
             raise HTTPException(status_code=400, detail=f"Unknown locale '{target}'")
+        orphans = (
+            report_orphans
+            if report_orphans is not None
+            else target == project.base_language
+        )
         return import_locale_payload(
             db,
             project,
@@ -645,7 +788,18 @@ def import_json_data(
             dry_run=dry_run,
             status=status,
             module_id=target_module_id,
-            report_orphans=target == project.base_language,
+            tags=tags,
+            report_orphans=orphans,
+            full_diff=full_diff,
+        )
+
+    if any(not isinstance(value, str) for value in data.values()):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "JSON import values must be strings "
+                "(nested objects and arrays are not supported)"
+            ),
         )
 
     raise HTTPException(status_code=400, detail="Unrecognized JSON import shape")

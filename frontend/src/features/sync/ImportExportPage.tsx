@@ -9,7 +9,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { ImportPreviewDialog } from '@/features/sync/ImportPreviewDialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
@@ -428,68 +428,13 @@ export function ImportExportPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={showPreview} onOpenChange={(o) => !o && setShowPreview(false)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Import preview (dry run)</DialogTitle>
-            <DialogDescription>Review changes before applying.</DialogDescription>
-          </DialogHeader>
-          {previewResult?.diff && (
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-2xl font-bold text-foreground">
-                    {previewResult.diff.create_count}
-                  </p>
-                  <p className="text-xs text-muted-foreground">New strings</p>
-                </div>
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-2xl font-bold text-foreground">
-                    {previewResult.diff.update_count}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Updated</p>
-                </div>
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-2xl font-bold text-foreground">
-                    {previewResult.diff.orphan_count}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Orphaned</p>
-                </div>
-              </div>
-
-              {previewResult.diff.create.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">New keys:</p>
-                  <div className="max-h-28 overflow-y-auto flex flex-col gap-0.5">
-                    {previewResult.diff.create.slice(0, 10).map((k) => (
-                      <code
-                        key={k}
-                        className="block text-xs text-foreground bg-muted px-2 py-0.5 rounded"
-                      >
-                        + {k}
-                      </code>
-                    ))}
-                    {previewResult.diff.create_count > 10 && (
-                      <p className="text-xs text-muted-foreground">
-                        and {previewResult.diff.create_count - 10} more…
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPreview(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmImport} disabled={importMut.isPending}>
-              {importMut.isPending && <Spinner data-icon="inline-start" />}
-              Apply import
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportPreviewDialog
+        open={showPreview}
+        result={previewResult}
+        pending={importMut.isPending}
+        onCancel={() => setShowPreview(false)}
+        onApply={confirmImport}
+      />
     </PageBody>
   )
 }
