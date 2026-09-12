@@ -24,8 +24,7 @@ import {
   PASTE_JSON_PLACEHOLDER,
   pasteImportParams,
 } from '@/features/strings/paste-json'
-import { PastePreviewPanel } from '@/features/strings/PastePreviewPanel'
-import { buildPastePreview, hasPasteWrites, pasteCountLabel } from '@/features/strings/paste-preview'
+import { hasImportWrites, ImportPreviewSummary } from '@/features/sync/ImportPreviewDialog'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -142,7 +141,7 @@ export function AddManyStringsDialog({
   }
 
   function handleApply() {
-    if (!pendingMap || !hasPasteWrites(buildPastePreview(preview))) return
+    if (!pendingMap || !hasImportWrites(preview)) return
     importMut.mutate(
       { map: pendingMap, dry: false },
       {
@@ -155,21 +154,14 @@ export function AddManyStringsDialog({
   }
 
   const busy = importMut.isPending
-  const pastePreview = buildPastePreview(preview)
-  const applyDisabled = !hasPasteWrites(pastePreview)
-  const countLabel = pasteCountLabel(pastePreview.counts)
-  const previewDescription = applyDisabled
-    ? 'Nothing in this paste would create or update strings.'
-    : countLabel
-      ? `${countLabel}. Apply writes a draft batch; Back or Cancel leaves the catalog unchanged.`
-      : 'Apply writes a draft batch; Back or Cancel leaves the catalog unchanged.'
+  const applyDisabled = !hasImportWrites(preview)
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
       <DialogContent
         className={cn(
           'flex w-full flex-col gap-0 overflow-hidden p-0',
-          'max-h-[min(90dvh,840px)] sm:max-w-2xl',
+          'max-h-[min(90dvh,720px)] sm:max-w-xl',
         )}
         onFocusOutside={(event) => {
           event.preventDefault()
@@ -185,11 +177,11 @@ export function AddManyStringsDialog({
           <DialogDescription>
             {step === 'paste'
               ? 'Paste a flat JSON object of key → source text. Preview runs a dry run before anything is written.'
-              : previewDescription}
+              : 'Review creates and updates, then apply as one draft batch.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {step === 'paste' ? (
             <FieldGroup>
               <Field data-invalid={parseError ? true : undefined}>
@@ -299,11 +291,11 @@ export function AddManyStringsDialog({
               </Field>
             </FieldGroup>
           ) : (
-            <PastePreviewPanel result={preview} />
+            <ImportPreviewSummary result={preview} />
           )}
         </div>
 
-        <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-end">
+        <DialogFooter className="mx-0 mb-0 rounded-none">
           {step === 'paste' ? (
             <>
               <Button variant="outline" onClick={onClose} disabled={busy}>
