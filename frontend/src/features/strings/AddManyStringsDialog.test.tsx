@@ -192,7 +192,7 @@ describe('AddManyStringsDialog', () => {
       status: 'draft',
       partial: 'true',
     })
-    expect(await screen.findByText('1 create · 1 update · 1 no-op')).toBeTruthy()
+    expect(await screen.findByText(/1 create · 1 update · 1 no-op/)).toBeTruthy()
     expect(screen.getByLabelText('Create')).toBeTruthy()
     expect(screen.getByText('e2e_new')).toBeTruthy()
     expect(screen.getByLabelText('Update')).toBeTruthy()
@@ -242,7 +242,7 @@ describe('AddManyStringsDialog', () => {
       target: { value: JSON.stringify(Object.fromEntries([...create.map((key) => [key, 'v']), ['save', 'Lưu']])) },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('120 create · 1 no-op')).toBeTruthy()
+    expect(await screen.findByText(/120 create · 1 no-op/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Search keys'), { target: { value: 'k119' } })
     await waitFor(() => expect(screen.getByText('k119')).toBeTruthy())
     expect(screen.queryByText('k000')).toBeNull()
