@@ -6,6 +6,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
 const dbPath = path.join(__dirname, '.data', 'e2e.db')
 
+/** Dedicated ports so local `npm run dev` (:8000 / :5173) can stay up. */
+const backendPort = Number(process.env.E2E_BACKEND_PORT ?? 8001)
+const frontendPort = Number(process.env.E2E_FRONTEND_PORT ?? 5174)
+const backendUrl = `http://127.0.0.1:${backendPort}`
+const frontendUrl = `http://127.0.0.1:${frontendPort}`
+
 const e2eEnv = {
   DATABASE_URL: `sqlite:///${dbPath}`,
   AUTH_DEV_BYPASS: 'true',
@@ -28,7 +34,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: frontendUrl,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
@@ -37,22 +43,22 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: 'uv run uvicorn app.main:app --host 127.0.0.1 --port 8000',
+      command: `uv run uvicorn app.main:app --host 127.0.0.1 --port ${backendPort}`,
       cwd: path.join(repoRoot, 'backend'),
-      url: 'http://127.0.0.1:8000/health',
-      reuseExistingServer: !process.env.CI,
+      url: `${backendUrl}/health`,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: e2eEnv,
     },
     {
-      command: 'npm run dev',
+      command: `npm run dev -- --host 127.0.0.1 --port ${frontendPort} --strictPort`,
       cwd: path.join(repoRoot, 'frontend'),
-      url: 'http://127.0.0.1:5173',
-      reuseExistingServer: !process.env.CI,
+      url: frontendUrl,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: {
         ...process.env,
-        VITE_API_PROXY_TARGET: 'http://127.0.0.1:8000',
+        VITE_API_PROXY_TARGET: backendUrl,
       },
     },
   ],

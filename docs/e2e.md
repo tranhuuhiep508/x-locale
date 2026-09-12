@@ -14,13 +14,13 @@ End-to-end tests for the x-locale web UI. These are the **PR merge gate** for co
 # From repo root — installs Playwright + Chromium
 npm run e2e:install
 
-# Run all core flows (starts backend :8000 and frontend :5173 automatically)
+# Run all core flows (starts isolated backend :8001 and frontend :5174)
 npm run e2e
 ```
 
 ### Environment
 
-E2E uses an **isolated SQLite database** at `e2e/.data/e2e.db` (not `backend/x-locale.db`).
+E2E uses an **isolated SQLite database** at `e2e/.data/e2e.db` (not `backend/x-locale.db`) and **dedicated ports** (`8001` / `5174`) so it never attaches to a local `npm run dev` stack on `:8000` / `:5173`. Playwright always starts its own servers (`reuseExistingServer: false`). Override with `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` if those ports are taken.
 
 | Variable | E2E value | Notes |
 |----------|-----------|-------|
@@ -30,6 +30,8 @@ E2E uses an **isolated SQLite database** at `e2e/.data/e2e.db` (not `backend/x-l
 | `X_LOCALE_SECRET` | `e2e-test-secret` | JWT signing for session cookie |
 | `AI_TRANSLATE_STUB` | `true` | Deterministic translate responses (no Bedrock) |
 | `AI_TRANSLATE_STUB_DELAY_MS` | `400` | Keeps translate progress UI visible in specs |
+| `E2E_BACKEND_PORT` | `8001` | Isolated uvicorn; never `:8000` |
+| `E2E_FRONTEND_PORT` | `5174` | Isolated Vite; never `:5173` |
 
 `global-setup.ts` runs `alembic upgrade head` and `seed-demo --force` on that database before the suite. Each spec file calls `resetDemoDatabase()` in `beforeAll` so flows stay independent while sharing one DB (workers are serialized).
 
