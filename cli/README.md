@@ -234,3 +234,46 @@ Nested objects and non-string values are rejected.
 # Pull only public-stage translations for a subset of locales
 locale pull --stage public --locales en,ja
 ```
+
+---
+
+## E2E tests (ship gate)
+
+Process tests invoke the real `locale` CLI against a live FastAPI backend with a
+project-scoped API key. They assert exit codes, stdout, and catalog side effects.
+This suite is separate from Playwright UI tests under `e2e/`.
+
+### Prerequisites
+
+- [uv](https://docs.astral.sh/uv/) (backend + CLI)
+- Backend dev dependencies (`cd backend && uv sync --all-extras`)
+- CLI dev dependencies (`cd cli && uv sync --extra dev`)
+
+### Run locally
+
+```bash
+# From repo root — starts an isolated SQLite backend per session, unique project per test
+cd cli && uv run pytest tests/e2e -m e2e -v
+```
+
+The harness migrates a temp database, boots `uvicorn` on a free port, creates projects
+via the dev-bypass session API, and runs `uv run --project cli locale …` in temp
+directories.
+
+### Coverage (XLOCALE-11)
+
+| # | Scenario |
+|---|----------|
+| 1 | `locale init` writes `.x-locale/config.yaml` from bootstrap |
+| 2 | `locale push` (flat + modular); orphans reported, never deleted |
+| 3 | `locale push --dry-run` reports without writing |
+| 4 | `locale pull --stage draft` writes files; pending-delete omitted |
+| 5 | `locale pull --stage public` uses published snapshot |
+| 6 | `locale status` exit 0 in sync; exit 1 on mismatch |
+| 7 | `locale sync` push+pull; exit 1 when leftovers remain |
+| 8 | Bad/missing API key → non-zero exit, no hang |
+| 9 | Modular `_unassigned` not pushed |
+| 10 | Pull skips rewrite when map unchanged |
+| 11 | Single-locale pull + status still correct for base |
+
+CI workflow: `.github/workflows/cli-e2e.yml` (job name: `cli-e2e`).

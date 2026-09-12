@@ -22,12 +22,24 @@ dependencies = [
   "rich>=13.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+
 [project.scripts]
 locale = "x_locale_cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["x_locale_cli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "e2e: CLI end-to-end tests against a live x-locale API",
+]
 
 [tool.setuptools.package-data]
 x_locale_cli = ["locale.cmd"]
