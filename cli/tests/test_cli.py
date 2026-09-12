@@ -9,6 +9,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from tests.conftest import strip_ansi
 from x_locale_cli.app import app
 from x_locale_cli.config import CONFIG_DIR, CONFIG_FILE
 
@@ -22,33 +23,36 @@ class AppHelpTests(unittest.TestCase):
     def test_root_help_lists_commands(self) -> None:
         result = self.runner.invoke(app, ["--help"])
         self.assertEqual(result.exit_code, 0, result.output)
+        output = strip_ansi(result.output)
         for name in ("init", "push", "pull", "sync", "status"):
-            self.assertIn(name, result.output)
+            self.assertIn(name, output)
 
     def test_root_help_uses_locale_entrypoint_and_x_locale_branding(self) -> None:
         result = self.runner.invoke(app, ["--help"], prog_name="locale")
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("Usage: locale", result.output)
-        self.assertIn("x-locale CLI", result.output)
-        self.assertNotIn("Usage: tms", result.output)
-        self.assertNotIn("TMS CLI", result.output)
+        output = strip_ansi(result.output)
+        self.assertIn("Usage: locale", output)
+        self.assertIn("x-locale CLI", output)
+        self.assertNotIn("Usage: tms", output)
+        self.assertNotIn("TMS CLI", output)
 
     def test_no_args_shows_help(self) -> None:
         result = self.runner.invoke(app, [])
         self.assertEqual(result.exit_code, 2, result.output)
-        self.assertIn("Usage", result.output)
+        self.assertIn("Usage", strip_ansi(result.output))
 
     def test_push_help_uses_layout_choices(self) -> None:
         result = self.runner.invoke(app, ["push", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("--layout", result.output)
-        self.assertIn("flat", result.output)
-        self.assertIn("modular", result.output)
+        output = strip_ansi(result.output)
+        self.assertIn("--layout", output)
+        self.assertIn("flat", output)
+        self.assertIn("modular", output)
 
     def test_short_help_flag(self) -> None:
         result = self.runner.invoke(app, ["-h"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("Usage", result.output)
+        self.assertIn("Usage", strip_ansi(result.output))
 
     def test_push_without_config_prints_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
