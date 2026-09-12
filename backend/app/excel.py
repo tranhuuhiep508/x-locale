@@ -18,8 +18,9 @@ from app.models import (
     Translation,
     TranslationStatus,
 )
-from app.schemas import ImportDiff, ImportResult
+from app.schemas import ImportDiff, ImportDiffItem, ImportResult
 from app.services.strings import promote_string, restore_string
+from app.services.sync import IMPORT_DIFF_SAMPLE
 
 UNASSIGNED_SHEET = "_unassigned"
 FLAT_SHEET = "strings"
@@ -255,8 +256,8 @@ def import_workbook(
                     f"Workbook belongs to project {meta.get('project_slug')}, not {project.slug}"
                 )
 
-    create_keys: list[str] = []
-    update_keys: list[str] = []
+    create_items: list[ImportDiffItem] = []
+    update_items: list[ImportDiffItem] = []
     created = 0
     updated = 0
     total = 0
@@ -339,14 +340,14 @@ def import_workbook(
                 if revived or entry.source_text != source_text or (
                     description and entry.description != description
                 ):
-                    update_keys.append(label)
+                    update_items.append(ImportDiffItem(key=label, source_text=source_text))
                     if not dry_run:
                         entry.source_text = source_text
                         if description is not None:
                             entry.description = description
                         updated += 1
             else:
-                create_keys.append(label)
+                create_items.append(ImportDiffItem(key=label, source_text=source_text))
                 created_this_row = True
                 if not dry_run:
                     entry = StringEntry(
@@ -404,11 +405,11 @@ def import_workbook(
                 promote_string(entry)
 
     diff = ImportDiff(
-        create=create_keys,
-        update=update_keys,
+        create=create_items[:IMPORT_DIFF_SAMPLE],
+        update=update_items[:IMPORT_DIFF_SAMPLE],
         orphan=[],
-        create_count=len(create_keys),
-        update_count=len(update_keys),
+        create_count=len(create_items),
+        update_count=len(update_items),
         orphan_count=0,
     )
     return ImportResult(

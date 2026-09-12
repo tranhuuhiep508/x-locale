@@ -70,8 +70,17 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
 ]
 
 
-def change_items(keys: list[str]) -> list[ChangeItem]:
-    return [ChangeItem(key=key) for key in sorted(keys)]
+def change_items(keys: list[Any]) -> list[ChangeItem]:
+    """Accept key strings or import-diff objects with a ``key`` field."""
+    normalized: list[str] = []
+    for item in keys:
+        if isinstance(item, dict):
+            key = item.get("key")
+            if isinstance(key, str):
+                normalized.append(key)
+        elif isinstance(item, str):
+            normalized.append(item)
+    return [ChangeItem(key=key) for key in sorted(normalized)]
 
 
 def group_pull_changes(

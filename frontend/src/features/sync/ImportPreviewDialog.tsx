@@ -1,4 +1,4 @@
-import type { ImportResult } from '@/lib/api/types'
+import type { ImportDiffItem, ImportResult } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -9,18 +9,21 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
-
-const SAMPLE_LIMIT = 10
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 function SampleList({
   label,
   prefix,
-  keys,
+  items,
   total,
 }: {
   label: string
   prefix: string
-  keys: string[]
+  items: ImportDiffItem[]
   total: number
 }) {
   if (total === 0) return null
@@ -28,16 +31,25 @@ function SampleList({
     <div>
       <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
       <div className="flex max-h-28 flex-col gap-0.5 overflow-y-auto">
-        {keys.slice(0, SAMPLE_LIMIT).map((key) => (
-          <code
-            key={key}
-            className="block rounded bg-muted px-2 py-0.5 text-xs text-foreground"
-          >
-            {prefix} {key}
-          </code>
+        {items.map((item) => (
+          <Tooltip key={item.key}>
+            <TooltipTrigger asChild>
+              <code className="flex min-w-0 items-baseline gap-2 rounded bg-muted px-2 py-0.5 text-xs text-foreground">
+                <span className="shrink-0">
+                  {prefix} {item.key}
+                </span>
+                <span className="min-w-0 truncate text-muted-foreground">
+                  {item.source_text}
+                </span>
+              </code>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap break-words">
+              {item.source_text}
+            </TooltipContent>
+          </Tooltip>
         ))}
-        {total > SAMPLE_LIMIT ? (
-          <p className="text-xs text-muted-foreground">and {total - SAMPLE_LIMIT} more…</p>
+        {total > items.length ? (
+          <p className="text-xs text-muted-foreground">and {total - items.length} more…</p>
         ) : null}
       </div>
     </div>
@@ -63,13 +75,13 @@ export function ImportPreviewSummary({ result }: { result: ImportResult | null }
           <p className="text-xs text-muted-foreground">Orphaned</p>
         </div>
       </div>
-      <SampleList label="New keys:" prefix="+" keys={diff.create} total={diff.create_count} />
-      <SampleList label="Updated keys:" prefix="~" keys={diff.update} total={diff.update_count} />
+      <SampleList label="New keys:" prefix="+" items={diff.create} total={diff.create_count} />
+      <SampleList label="Updated keys:" prefix="~" items={diff.update} total={diff.update_count} />
       {diff.orphan_count > 0 ? (
         <SampleList
           label="Orphaned keys:"
           prefix="–"
-          keys={diff.orphan}
+          items={diff.orphan}
           total={diff.orphan_count}
         />
       ) : null}

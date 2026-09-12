@@ -381,10 +381,15 @@ export interface ActivityFeedResponse {
 }
 
 // ── Import / Export ────────────────────────────────────────────────────
+export interface ImportDiffItem {
+  key: string
+  source_text: string
+}
+
 export interface ImportDiff {
-  create: string[]
-  update: string[]
-  orphan: string[]
+  create: ImportDiffItem[]
+  update: ImportDiffItem[]
+  orphan: ImportDiffItem[]
   create_count: number
   update_count: number
   orphan_count: number

@@ -1597,8 +1597,12 @@ def test_strings_import_modules_payload_keeps_key_and_module(client):
     body = r.json()
     assert body["created"] == 1
     assert body["updated"] == 1
-    assert body["diff"]["create"] == ["auth/password"]
-    assert body["diff"]["update"] == ["auth/auth.email"]
+    assert body["diff"]["create"] == [
+        {"key": "auth/password", "source_text": "Mật khẩu"}
+    ]
+    assert body["diff"]["update"] == [
+        {"key": "auth/auth.email", "source_text": "Địa chỉ email"}
+    ]
 
     items = client.get(f"/api/projects/{pid}/strings").json()["items"]
     by_key = {s["key"]: s for s in items}
@@ -2090,6 +2094,12 @@ def test_import_diff_key_lists_are_capped(client):
     diff = body["diff"]
     assert diff["create_count"] == 120
     assert len(diff["create"]) == 100
+    assert all(
+        isinstance(item, dict) and "key" in item and "source_text" in item
+        for item in diff["create"]
+    )
+    assert {item["key"] for item in diff["create"]} <= set(strings)
+    assert all(item["source_text"] == strings[item["key"]] for item in diff["create"])
     listed = client.get(f"/api/projects/{pid}/strings", params={"page_size": 200}).json()
     assert listed["total"] == 120
 
@@ -2163,8 +2173,8 @@ def test_partial_json_import_dry_run_and_apply_with_module_tags(client):
     assert body["diff"]["create_count"] == 1
     assert body["diff"]["update_count"] == 1
     assert body["diff"]["orphan_count"] == 0
-    assert "add_many_new" in body["diff"]["create"]
-    assert "save" in body["diff"]["update"]
+    assert {"key": "add_many_new", "source_text": "Chuỗi mới"} in body["diff"]["create"]
+    assert {"key": "save", "source_text": "Lưu lại"} in body["diff"]["update"]
 
     listed = client.get(f"/api/projects/{pid}/strings", params={"page_size": 50}).json()
     keys = {item["key"] for item in listed["items"]}

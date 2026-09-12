@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.helpers import content_hash, export_key
 from app.models import Module, Project, StringEntry, Tag, TranslationStatus
-from app.schemas import ImportDiff, ImportResult, SyncStateOut
+from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
@@ -374,6 +374,21 @@ def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]
     return False
 
 
+def _preview_source_text(
+    project: Project,
+    key: str,
+    values: dict[str, str],
+    entry: StringEntry | None = None,
+) -> str:
+    if project.base_language in values:
+        text = values[project.base_language]
+        if text:
+            return text
+    if entry is not None:
+        return entry.source_text
+    return key
+
+
 def _upsert_imported_string(
     db: Session,
     project: Project,
@@ -385,8 +400,8 @@ def _upsert_imported_string(
     status: TranslationStatus,
     module_id: UUID | None,
     tags: list[Tag],
-) -> str:
-    """Return 'create', 'update', or 'unchanged'."""
+) -> tuple[str, StringEntry | None]:
+    """Return ('create'|'update'|'unchanged', entry_or_none)."""
     entry = index.lookup(key, module_id=module_id)
     if entry is None:
         if not dry_run:
@@ -410,13 +425,13 @@ def _upsert_imported_string(
                 promote_string(entry)
             _apply_import_tags(entry, tags)
             index.add(entry)
-        return "create"
+        return "create", entry
 
     revived = bool(entry.deleted_at)
     values_changed = revived or _values_changed(entry, project, values)
     tags_changed = _tags_would_change(entry, tags)
     if not values_changed and not tags_changed:
-        return "unchanged"
+        return "unchanged", entry
 
     if not dry_run:
         restore_string(entry)
@@ -428,7 +443,7 @@ def _upsert_imported_string(
             {loc: val for loc, val in values.items() if loc != project.base_language},
         )
         _apply_import_tags(entry, tags)
-    return "update"
+    return "update", entry
 
 
 def _import_locale_maps(
@@ -442,9 +457,9 @@ def _import_locale_maps(
     report_orphans: bool,
     index: _ImportIndex,
     tags: list[Tag],
-) -> tuple[list[str], list[str], set[str], int]:
-    create_keys: list[str] = []
-    update_keys: list[str] = []
+) -> tuple[list[ImportDiffItem], list[ImportDiffItem], list[ImportDiffItem], int]:
+    create_items: list[ImportDiffItem] = []
+    update_items: list[ImportDiffItem] = []
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
@@ -454,7 +469,7 @@ def _import_locale_maps(
             continue
         total += 1
         seen.add(key)
-        action = _upsert_imported_string(
+        action, entry = _upsert_imported_string(
             db,
             project,
             index,
@@ -466,41 +481,59 @@ def _import_locale_maps(
             tags=tags,
         )
         if action == "create":
-            create_keys.append(key)
+            create_items.append(
+                ImportDiffItem(
+                    key=key,
+                    source_text=_preview_source_text(project, key, values, entry),
+                )
+            )
         elif action == "update":
-            update_keys.append(key)
-    orphan_keys: set[str] = set()
+            update_items.append(
+                ImportDiffItem(
+                    key=key,
+                    source_text=_preview_source_text(project, key, values, entry),
+                )
+            )
+    orphan_items: list[ImportDiffItem] = []
     if report_orphans:
-        if module_id is None:
-            orphan_keys = {k for (_mid, k) in index.by_module_key if k not in seen}
-        else:
-            orphan_keys = {
-                k
-                for (mid, k) in index.by_module_key
-                if mid == module_id and k not in seen
-            }
-    return create_keys, update_keys, orphan_keys, total
+        seen_orphan: set[str] = set()
+        for (mid, k), entry in index.by_module_key.items():
+            if k in seen or k in seen_orphan:
+                continue
+            if module_id is not None and mid != module_id:
+                continue
+            seen_orphan.add(k)
+            orphan_items.append(ImportDiffItem(key=k, source_text=entry.source_text))
+        orphan_items.sort(key=lambda item: item.key)
+    return create_items, update_items, orphan_items, total
+
+
+def _scope_items(slug: str, items: list[ImportDiffItem]) -> list[ImportDiffItem]:
+    return [
+        ImportDiffItem(key=f"{slug}/{item.key}", source_text=item.source_text)
+        for item in items
+    ]
 
 
 def _result(
     *,
-    create_keys: list[str],
-    update_keys: list[str],
-    orphan_keys: list[str],
+    create_items: list[ImportDiffItem],
+    update_items: list[ImportDiffItem],
+    orphan_items: list[ImportDiffItem],
     total: int,
     dry_run: bool,
 ) -> ImportResult:
     diff = ImportDiff(
-        create=create_keys[:IMPORT_DIFF_SAMPLE],
-        update=update_keys[:IMPORT_DIFF_SAMPLE],
-        orphan=orphan_keys[:IMPORT_DIFF_SAMPLE],
-        create_count=len(create_keys),
-        update_count=len(update_keys),
-        orphan_count=len(orphan_keys),
+        create=create_items[:IMPORT_DIFF_SAMPLE],
+        update=update_items[:IMPORT_DIFF_SAMPLE],
+        orphan=orphan_items[:IMPORT_DIFF_SAMPLE],
+        create_count=len(create_items),
+        update_count=len(update_items),
+        orphan_count=len(orphan_items),
     )
     return ImportResult(
-        created=0 if dry_run else len(create_keys),
-        updated=0 if dry_run else len(update_keys),
+        created=0 if dry_run else len(create_items),
+        updated=0 if dry_run else len(update_items),
         total=total,
         dry_run=dry_run,
         diff=diff,
@@ -553,7 +586,7 @@ def import_locale_payload(
         .all()
     )
     index = _ImportIndex(entries)
-    create_keys, update_keys, orphan_keys, total = _import_locale_maps(
+    create_items, update_items, orphan_items, total = _import_locale_maps(
         db,
         project,
         locale_maps,
@@ -565,9 +598,9 @@ def import_locale_payload(
         tags=tags or [],
     )
     return _result(
-        create_keys=create_keys,
-        update_keys=update_keys,
-        orphan_keys=sorted(orphan_keys),
+        create_items=create_items,
+        update_items=update_items,
+        orphan_items=orphan_items,
         total=total,
         dry_run=dry_run,
     )
@@ -595,9 +628,9 @@ def import_modular_payload(
     )
     import_tags = tags or []
     index = _ImportIndex(entries)
-    create_keys: list[str] = []
-    update_keys: list[str] = []
-    orphan_keys: set[str] = set()
+    create_items: list[ImportDiffItem] = []
+    update_items: list[ImportDiffItem] = []
+    orphan_items: list[ImportDiffItem] = []
     total = 0
 
     for slug, locale_maps in modules.items():
@@ -615,9 +648,9 @@ def import_modular_payload(
             index=index,
             tags=import_tags,
         )
-        create_keys.extend(f"{slug}/{k}" for k in created)
-        update_keys.extend(f"{slug}/{k}" for k in updated)
-        orphan_keys.update(f"{slug}/{k}" for k in orphans)
+        create_items.extend(_scope_items(slug, created))
+        update_items.extend(_scope_items(slug, updated))
+        orphan_items.extend(_scope_items(slug, orphans))
         total += count
 
     if unassigned and _is_locale_maps(unassigned):
@@ -632,15 +665,16 @@ def import_modular_payload(
             index=index,
             tags=import_tags,
         )
-        create_keys.extend(created)
-        update_keys.extend(updated)
-        orphan_keys.update(orphans)
+        create_items.extend(created)
+        update_items.extend(updated)
+        orphan_items.extend(orphans)
         total += count
 
+    orphan_items.sort(key=lambda item: item.key)
     return _result(
-        create_keys=create_keys,
-        update_keys=update_keys,
-        orphan_keys=sorted(orphan_keys),
+        create_items=create_items,
+        update_items=update_items,
+        orphan_items=orphan_items,
         total=total,
         dry_run=dry_run,
     )

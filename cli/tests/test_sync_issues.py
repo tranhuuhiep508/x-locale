@@ -144,9 +144,9 @@ class ReportHintTests(unittest.TestCase):
             lambda: print_push_report(
                 result={
                     "diff": {
-                        "create": ["a"],
+                        "create": [{"key": "a", "source_text": "A"}],
                         "update": [],
-                        "orphan": ["old"],
+                        "orphan": [{"key": "old", "source_text": "Old"}],
                         "create_count": 1,
                         "update_count": 0,
                         "orphan_count": 5,

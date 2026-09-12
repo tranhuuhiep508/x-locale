@@ -348,10 +348,15 @@ class ImportPayload(BaseModel):
     modules: dict[str, dict[str, dict[str, str]]] | None = None
 
 
+class ImportDiffItem(BaseModel):
+    key: str
+    source_text: str
+
+
 class ImportDiff(BaseModel):
-    create: list[str] = Field(default_factory=list)
-    update: list[str] = Field(default_factory=list)
-    orphan: list[str] = Field(default_factory=list)
+    create: list[ImportDiffItem] = Field(default_factory=list)
+    update: list[ImportDiffItem] = Field(default_factory=list)
+    orphan: list[ImportDiffItem] = Field(default_factory=list)
     create_count: int = 0
     update_count: int = 0
     orphan_count: int = 0

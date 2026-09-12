@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, Module, Project, Tag } from '@/lib/api/types'
 import { AddManyStringsDialog } from './AddManyStringsDialog'
@@ -49,8 +50,8 @@ const dryResult: ImportResult = {
   dry_run: true,
   batch_id: null,
   diff: {
-    create: ['e2e_new'],
-    update: ['save'],
+    create: [{ key: 'e2e_new', source_text: 'Mới' }],
+    update: [{ key: 'save', source_text: 'Lưu lại' }],
     orphan: [],
     create_count: 1,
     update_count: 1,
@@ -96,7 +97,9 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <TooltipProvider>{children}</TooltipProvider>
+    </QueryClientProvider>
   )
   render(
     <AddManyStringsDialog
@@ -167,6 +170,8 @@ describe('AddManyStringsDialog', () => {
     })
     expect(await screen.findByText(/\+ e2e_new/)).toBeTruthy()
     expect(screen.getByText(/~ save/)).toBeTruthy()
+    expect(screen.getByText('Mới')).toBeTruthy()
+    expect(screen.getByText('Lưu lại')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
