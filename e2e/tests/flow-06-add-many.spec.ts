@@ -14,6 +14,7 @@ function buildPasteJson() {
   return JSON.stringify(
     {
       save: 'Lưu (add many updated)',
+      cancel: 'Hủy',
       [newKey]: 'E2E add many string',
     },
     null,
@@ -40,7 +41,7 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
 
   await json.fill('{}')
   await dialog.getByRole('button', { name: 'Preview' }).click()
-  await expect(dialog.getByText('New strings', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Nothing to add')).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Apply' })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Back' }).click()
 
@@ -49,8 +50,17 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   await page.getByRole('option', { name: /Common/ }).click()
   await dialog.getByRole('button', { name: 'Preview' }).click()
   await expect(dialog.getByRole('button', { name: 'Apply' })).toBeVisible()
-  await expect(dialog.getByText(newKey)).toBeVisible()
-  await expect(dialog.getByText('~ save')).toBeVisible()
+  await expect(dialog.getByText('1 create · 1 update · 1 no-op')).toBeVisible()
+  await expect(dialog.getByLabel('Create')).toBeVisible()
+  await expect(dialog.getByText(newKey, { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('Update')).toBeVisible()
+  await expect(dialog.getByText('save', { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('No-op')).toBeVisible()
+  await expect(dialog.getByText('cancel', { exact: true })).toBeVisible()
+
+  await dialog.getByLabel('Search keys').fill(newKey)
+  await expect(dialog.getByText(newKey, { exact: true })).toBeVisible()
+  await expect(dialog.getByText('save', { exact: true })).toHaveCount(0)
 
   await dialog.getByRole('button', { name: 'Back' }).click()
   await dialog.getByRole('button', { name: 'Cancel' }).click()

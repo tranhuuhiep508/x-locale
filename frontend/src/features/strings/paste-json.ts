@@ -71,9 +71,11 @@ export function emptyImportPreview(): ImportResult {
       create: [],
       update: [],
       orphan: [],
+      noop: [],
       create_count: 0,
       update_count: 0,
       orphan_count: 0,
+      noop_count: 0,
     },
     batch_id: null,
   }

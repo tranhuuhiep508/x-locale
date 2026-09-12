@@ -179,6 +179,7 @@ async def import_project(
             module_id=module_id,
             tag_ids=tag_ids,
             report_orphans=False if partial else None,
+            full_diff=partial,
         )
         if not dry_run:
             db.commit()

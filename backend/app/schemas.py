@@ -353,6 +353,12 @@ class ImportDiffItem(BaseModel):
     source_text: str
 
 
+class ImportKeyLists(BaseModel):
+    create: list[str] = Field(default_factory=list)
+    update: list[str] = Field(default_factory=list)
+    noop: list[str] = Field(default_factory=list)
+
+
 class ImportDiff(BaseModel):
     create: list[ImportDiffItem] = Field(default_factory=list)
     update: list[ImportDiffItem] = Field(default_factory=list)
@@ -360,6 +366,8 @@ class ImportDiff(BaseModel):
     create_count: int = 0
     update_count: int = 0
     orphan_count: int = 0
+    noop_count: int = 0
+    keys: ImportKeyLists | None = None
 
 
 class ImportResult(BaseModel):

@@ -2241,6 +2241,57 @@ def test_partial_json_import_dry_run_and_apply_with_module_tags(client):
     assert cards[0]["children_count"] == 2
 
 
+def test_partial_json_import_returns_full_create_update_noop_keys(client):
+    project = _make_project(client, "Full Paste Keys", layout="flat")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu"},
+    )
+
+    payload = {f"k{i:03d}": f"v{i}" for i in range(120)}
+    payload["save"] = "Lưu"
+    dry = client.post(
+        f"/api/projects/{pid}/import",
+        params={
+            "locale": "vi",
+            "dry_run": True,
+            "partial": True,
+            "status": "draft",
+        },
+        files=_json_upload(payload),
+    )
+    assert dry.status_code == 200, dry.text
+    diff = dry.json()["diff"]
+    assert diff["create_count"] == 120
+    assert diff["update_count"] == 0
+    assert diff["noop_count"] == 1
+    assert len(diff["create"]) == 100
+    assert all(
+        isinstance(item, dict) and "key" in item and "source_text" in item
+        for item in diff["create"]
+    )
+    keys = diff["keys"]
+    assert keys is not None
+    assert len(keys["create"]) == 120
+    assert keys["create"][0] == "k000"
+    assert keys["create"][-1] == "k119"
+    assert keys["update"] == []
+    assert keys["noop"] == ["save"]
+
+    file_import = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "dry_run": True},
+        files=_json_upload({f"n{i:03d}": f"x{i}" for i in range(120)}),
+    )
+    assert file_import.status_code == 200, file_import.text
+    file_diff = file_import.json()["diff"]
+    assert file_diff["create_count"] == 120
+    assert len(file_diff["create"]) == 100
+    assert file_diff["keys"] is None
+    assert file_diff["noop_count"] == 0
+
+
 def test_json_import_unknown_tag_is_rejected(client):
     project = _make_project(client, "Bad Tag")
     pid = project["id"]

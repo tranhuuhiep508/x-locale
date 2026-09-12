@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.helpers import content_hash, export_key
 from app.models import Module, Project, StringEntry, Tag, TranslationStatus
-from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
+from app.schemas import ImportDiff, ImportDiffItem, ImportKeyLists, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
@@ -457,9 +457,10 @@ def _import_locale_maps(
     report_orphans: bool,
     index: _ImportIndex,
     tags: list[Tag],
-) -> tuple[list[ImportDiffItem], list[ImportDiffItem], list[ImportDiffItem], int]:
+) -> tuple[list[ImportDiffItem], list[ImportDiffItem], list[ImportDiffItem], list[str], int]:
     create_items: list[ImportDiffItem] = []
     update_items: list[ImportDiffItem] = []
+    noop_keys: list[str] = []
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
@@ -494,6 +495,8 @@ def _import_locale_maps(
                     source_text=_preview_source_text(project, key, values, entry),
                 )
             )
+        else:
+            noop_keys.append(key)
     orphan_items: list[ImportDiffItem] = []
     if report_orphans:
         seen_orphan: set[str] = set()
@@ -505,7 +508,7 @@ def _import_locale_maps(
             seen_orphan.add(k)
             orphan_items.append(ImportDiffItem(key=k, source_text=entry.source_text))
         orphan_items.sort(key=lambda item: item.key)
-    return create_items, update_items, orphan_items, total
+    return create_items, update_items, orphan_items, noop_keys, total
 
 
 def _scope_items(slug: str, items: list[ImportDiffItem]) -> list[ImportDiffItem]:
@@ -522,7 +525,17 @@ def _result(
     orphan_items: list[ImportDiffItem],
     total: int,
     dry_run: bool,
+    noop_keys: list[str] | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
+    unchanged = noop_keys or []
+    keys = None
+    if full_diff:
+        keys = ImportKeyLists(
+            create=[item.key for item in create_items],
+            update=[item.key for item in update_items],
+            noop=unchanged,
+        )
     diff = ImportDiff(
         create=create_items[:IMPORT_DIFF_SAMPLE],
         update=update_items[:IMPORT_DIFF_SAMPLE],
@@ -530,6 +543,8 @@ def _result(
         create_count=len(create_items),
         update_count=len(update_items),
         orphan_count=len(orphan_items),
+        noop_count=len(unchanged) if full_diff else 0,
+        keys=keys,
     )
     return ImportResult(
         created=0 if dry_run else len(create_items),
@@ -550,6 +565,7 @@ def import_flat_strings(
     module_id: UUID | None = None,
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
+    full_diff: bool = False,
 ) -> ImportResult:
     """CLI / source-locale import: `{ key: source_text }` stored as-is."""
     return import_locale_payload(
@@ -561,6 +577,7 @@ def import_flat_strings(
         module_id=module_id,
         tags=tags,
         report_orphans=report_orphans,
+        full_diff=full_diff,
     )
 
 
@@ -574,6 +591,7 @@ def import_locale_payload(
     module_id: UUID | None = None,
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
+    full_diff: bool = False,
 ) -> ImportResult:
     entries = (
         db.query(StringEntry)
@@ -586,7 +604,7 @@ def import_locale_payload(
         .all()
     )
     index = _ImportIndex(entries)
-    create_items, update_items, orphan_items, total = _import_locale_maps(
+    create_items, update_items, orphan_items, noop_keys, total = _import_locale_maps(
         db,
         project,
         locale_maps,
@@ -601,8 +619,10 @@ def import_locale_payload(
         create_items=create_items,
         update_items=update_items,
         orphan_items=orphan_items,
+        noop_keys=noop_keys,
         total=total,
         dry_run=dry_run,
+        full_diff=full_diff,
     )
 
 
@@ -615,6 +635,7 @@ def import_modular_payload(
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
     tags: list[Tag] | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
     entries = (
         db.query(StringEntry)
@@ -631,13 +652,14 @@ def import_modular_payload(
     create_items: list[ImportDiffItem] = []
     update_items: list[ImportDiffItem] = []
     orphan_items: list[ImportDiffItem] = []
+    noop_keys: list[str] = []
     total = 0
 
     for slug, locale_maps in modules.items():
         if not isinstance(locale_maps, dict):
             continue
         mod = _get_or_create_module(db, project, slug, dry_run=dry_run)
-        created, updated, orphans, count = _import_locale_maps(
+        created, updated, orphans, unchanged, count = _import_locale_maps(
             db,
             project,
             locale_maps,
@@ -651,10 +673,11 @@ def import_modular_payload(
         create_items.extend(_scope_items(slug, created))
         update_items.extend(_scope_items(slug, updated))
         orphan_items.extend(_scope_items(slug, orphans))
+        noop_keys.extend(f"{slug}/{k}" for k in unchanged)
         total += count
 
     if unassigned and _is_locale_maps(unassigned):
-        created, updated, orphans, count = _import_locale_maps(
+        created, updated, orphans, unchanged, count = _import_locale_maps(
             db,
             project,
             unassigned,
@@ -668,6 +691,7 @@ def import_modular_payload(
         create_items.extend(created)
         update_items.extend(updated)
         orphan_items.extend(orphans)
+        noop_keys.extend(unchanged)
         total += count
 
     orphan_items.sort(key=lambda item: item.key)
@@ -675,8 +699,10 @@ def import_modular_payload(
         create_items=create_items,
         update_items=update_items,
         orphan_items=orphan_items,
+        noop_keys=noop_keys,
         total=total,
         dry_run=dry_run,
+        full_diff=full_diff,
     )
 
 
@@ -691,6 +717,7 @@ def import_json_data(
     module_id: UUID | None = None,
     tag_ids: list[UUID] | None = None,
     report_orphans: bool | None = None,
+    full_diff: bool = False,
 ) -> ImportResult:
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="JSON import must be an object")
@@ -714,6 +741,7 @@ def import_json_data(
                 dry_run=dry_run,
                 status=status,
                 tags=tags,
+                full_diff=full_diff,
             )
 
     strings = data.get("strings")
@@ -727,6 +755,7 @@ def import_json_data(
             module_id=target_module_id,
             tags=tags,
             report_orphans=True if report_orphans is None else report_orphans,
+            full_diff=full_diff,
         )
 
     if _is_locale_maps(data) and set(data).issubset(project_locales(project)):
@@ -740,6 +769,7 @@ def import_json_data(
             module_id=target_module_id,
             tags=tags,
             report_orphans=True if report_orphans is None else report_orphans,
+            full_diff=full_diff,
         )
 
     if _is_str_map(data):
@@ -760,6 +790,7 @@ def import_json_data(
             module_id=target_module_id,
             tags=tags,
             report_orphans=orphans,
+            full_diff=full_diff,
         )
 
     if any(not isinstance(value, str) for value in data.values()):
