@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, Module, Project, Tag } from '@/lib/api/types'
 import { AddManyStringsDialog } from './AddManyStringsDialog'
@@ -55,8 +56,6 @@ const dryResult: ImportResult = {
     create_count: 1,
     update_count: 1,
     orphan_count: 0,
-    noop_count: 1,
-    keys: { create: ['e2e_new'], update: ['save'], noop: ['cancel'] },
   },
 }
 
@@ -98,7 +97,9 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <TooltipProvider>{children}</TooltipProvider>
+    </QueryClientProvider>
   )
   render(
     <AddManyStringsDialog
@@ -143,34 +144,9 @@ describe('AddManyStringsDialog', () => {
     renderDialog()
     fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('Nothing to add')).toBeTruthy()
+    expect(await screen.findByText('New strings')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
     expect(syncApi.importFile).not.toHaveBeenCalled()
-  })
-
-  it('disables Apply when every pasted key is already unchanged', async () => {
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      created: 0,
-      updated: 0,
-      total: 1,
-      dry_run: true,
-      batch_id: null,
-      diff: {
-        create: [],
-        update: [],
-        orphan: [],
-        create_count: 0,
-        update_count: 0,
-        orphan_count: 0,
-        noop_count: 1,
-        keys: { create: [], update: [], noop: ['save'] },
-      },
-    })
-    renderDialog()
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('Nothing to add')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('dry-runs then applies through the JSON import endpoint', async () => {
@@ -180,7 +156,7 @@ describe('AddManyStringsDialog', () => {
       .mockResolvedValueOnce(applyResult)
 
     fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"save": "Lưu lại", "e2e_new": "Mới", "cancel": "Hủy"}' },
+      target: { value: '{"save": "Lưu lại", "e2e_new": "Mới"}' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
 
@@ -192,20 +168,10 @@ describe('AddManyStringsDialog', () => {
       status: 'draft',
       partial: 'true',
     })
-    expect(await screen.findByText(/1 create · 1 update · 1 no-op/)).toBeTruthy()
-    expect(screen.getByLabelText('Create')).toBeTruthy()
-    expect(screen.getByText('e2e_new')).toBeTruthy()
-    expect(screen.getByLabelText('Update')).toBeTruthy()
-    expect(screen.getByText('save')).toBeTruthy()
-    expect(screen.getByLabelText('No-op')).toBeTruthy()
-    expect(screen.getByText('cancel')).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText('Search keys'), { target: { value: 'e2e_new' } })
-    await waitFor(() => {
-      expect(screen.getByText('e2e_new')).toBeTruthy()
-      expect(screen.queryByText('save')).toBeNull()
-      expect(screen.queryByText('cancel')).toBeNull()
-    })
+    expect(await screen.findByText(/\+ e2e_new/)).toBeTruthy()
+    expect(screen.getByText(/~ save/)).toBeTruthy()
+    expect(screen.getByText('Mới')).toBeTruthy()
+    expect(screen.getByText('Lưu lại')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
@@ -218,37 +184,6 @@ describe('AddManyStringsDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('surfaces every dry-run key through search', async () => {
-    const create = Array.from({ length: 120 }, (_, i) => `k${String(i).padStart(3, '0')}`)
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      created: 0,
-      updated: 0,
-      total: 121,
-      dry_run: true,
-      batch_id: null,
-      diff: {
-        create: create.slice(0, 100).map((key) => ({ key, source_text: 'v' })),
-        update: [],
-        orphan: [],
-        create_count: 120,
-        update_count: 0,
-        orphan_count: 0,
-        noop_count: 1,
-        keys: { create, update: [], noop: ['save'] },
-      },
-    })
-    renderDialog()
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: JSON.stringify(Object.fromEntries([...create.map((key) => [key, 'v']), ['save', 'Lưu']])) },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText(/120 create · 1 no-op/)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Search keys'), { target: { value: 'k119' } })
-    await waitFor(() => expect(screen.getByText('k119')).toBeTruthy())
-    expect(screen.queryByText('k000')).toBeNull()
-    expect(screen.queryByText('save')).toBeNull()
-  })
-
   it('Cancel on preview back does not apply', async () => {
     const { onSuccess } = renderDialog()
     vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult)
@@ -257,7 +192,7 @@ describe('AddManyStringsDialog', () => {
       target: { value: '{"e2e_new": "Mới"}' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('e2e_new')).toBeTruthy()
+    expect(await screen.findByText(/\+ e2e_new/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy()
     expect(syncApi.importFile).toHaveBeenCalledTimes(1)
