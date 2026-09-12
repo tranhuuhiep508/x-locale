@@ -55,6 +55,8 @@ jobs:
     name: cli-unit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      NO_COLOR: '1'
 
     steps:
       - uses: actions/checkout@v4
