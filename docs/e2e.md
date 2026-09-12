@@ -58,10 +58,11 @@ npx playwright show-report  # last HTML report (traces on failure)
 | C — Unpublish selection | `e2e/tests/flow-07-unpublish-selection.spec.ts` | Batch unpublish returns published strings to draft |
 | D — Activity undo (batch) | `e2e/tests/flow-08-activity-undo.spec.ts` | Import apply → Activity → Undo restores catalog |
 | E — Settings / API key | `e2e/tests/flow-09-settings-api-key.spec.ts` | Generate key, one-time secret, revoke blocks bootstrap |
+| 10 — Modules & Tags CRUD | `e2e/tests/flow-10-modules-tags.spec.ts` | Dedicated Modules and Tags management pages CRUD |
+| 11 — Excel round-trip | `e2e/tests/flow-11-excel-roundtrip.spec.ts` | Export XLSX, upload preview dry-run, apply, verify catalog |
+| 12 — String History restore | `e2e/tests/flow-12-string-history.spec.ts` | History tab restore reverts working copy to previous version |
 
-Deferred: flow A (Add many / XLOCALE-9) until that feature ships.
-
-Out of scope: Modules/Tags pages, Excel import, visual snapshots.
+Out of scope: visual snapshots.
 
 ## Conventions
 

@@ -360,6 +360,7 @@ export default function StringFormDialog({
                   setTagId,
                   setStatus,
                   setTranslations,
+                  setScores,
                 })
               }}
             />

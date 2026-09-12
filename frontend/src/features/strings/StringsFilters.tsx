@@ -151,7 +151,8 @@ function FilterSearchSelect({
         className="w-56 p-1 gap-1"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
-          const input = event.currentTarget.querySelector('input')
+          const target = event.currentTarget as HTMLElement | null
+          const input = target?.querySelector('input')
           input?.focus()
         }}
       >

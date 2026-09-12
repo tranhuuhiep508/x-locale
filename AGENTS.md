@@ -42,6 +42,6 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 
 - Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`).
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
-- CLI: `uv run --project cli python -m unittest discover -s cli/tests`.
+- CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running backend).
 - E2E: `npm run e2e` (Playwright; isolated `e2e/.data/e2e.db` on `:8001` / `:5174`; does not reuse local `:8000` / `:5173`).
 - Validate backend manually: `GET /health`, `GET /api/auth/me` (session cookie, or bypass when OIDC is unset), `GET /api/bootstrap` with `X-API-Key`.
