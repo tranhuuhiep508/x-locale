@@ -49,14 +49,14 @@ const dryResult: ImportResult = {
   dry_run: true,
   batch_id: null,
   diff: {
-    create: ['e2e_new'],
-    update: ['save'],
+    create: [{ key: 'e2e_new', source_text: 'Mới' }],
+    update: [{ key: 'save', source_text: 'Lưu lại' }],
     orphan: [],
-    noop: ['cancel'],
     create_count: 1,
     update_count: 1,
     orphan_count: 0,
     noop_count: 1,
+    keys: { create: ['e2e_new'], update: ['save'], noop: ['cancel'] },
   },
 }
 
@@ -148,6 +148,31 @@ describe('AddManyStringsDialog', () => {
     expect(syncApi.importFile).not.toHaveBeenCalled()
   })
 
+  it('disables Apply when every pasted key is already unchanged', async () => {
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
+      created: 0,
+      updated: 0,
+      total: 1,
+      dry_run: true,
+      batch_id: null,
+      diff: {
+        create: [],
+        update: [],
+        orphan: [],
+        create_count: 0,
+        update_count: 0,
+        orphan_count: 0,
+        noop_count: 1,
+        keys: { create: [], update: [], noop: ['save'] },
+      },
+    })
+    renderDialog()
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('Nothing to add')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('dry-runs then applies through the JSON import endpoint', async () => {
     const { onSuccess, onClose } = renderDialog()
     vi.mocked(syncApi.importFile)
@@ -202,14 +227,14 @@ describe('AddManyStringsDialog', () => {
       dry_run: true,
       batch_id: null,
       diff: {
-        create,
+        create: create.slice(0, 100).map((key) => ({ key, source_text: 'v' })),
         update: [],
         orphan: [],
-        noop: ['save'],
         create_count: 120,
         update_count: 0,
         orphan_count: 0,
         noop_count: 1,
+        keys: { create, update: [], noop: ['save'] },
       },
     })
     renderDialog()

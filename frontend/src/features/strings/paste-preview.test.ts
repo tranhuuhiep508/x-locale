@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ImportResult } from '@/lib/api/types'
+import type { ImportDiffItem, ImportResult } from '@/lib/api/types'
 import {
   buildPastePreview,
   filterKeys,
@@ -7,6 +7,10 @@ import {
   keysForKind,
   pasteCountLabel,
 } from './paste-preview'
+
+function items(...keys: string[]): ImportDiffItem[] {
+  return keys.map((key) => ({ key, source_text: key }))
+}
 
 function result(overrides: Partial<NonNullable<ImportResult['diff']>> = {}): ImportResult {
   return {
@@ -19,11 +23,11 @@ function result(overrides: Partial<NonNullable<ImportResult['diff']>> = {}): Imp
       create: [],
       update: [],
       orphan: [],
-      noop: [],
       create_count: 0,
       update_count: 0,
       orphan_count: 0,
       noop_count: 0,
+      keys: { create: [], update: [], noop: [] },
       ...overrides,
     },
   }
@@ -34,12 +38,12 @@ describe('buildPastePreview', () => {
     const create = Array.from({ length: 120 }, (_, i) => `k${String(i).padStart(3, '0')}`)
     const preview = buildPastePreview(
       result({
-        create,
-        update: ['save'],
-        noop: ['cancel'],
+        create: items(...create.slice(0, 100)),
+        update: items('save'),
         create_count: 120,
         update_count: 1,
         noop_count: 1,
+        keys: { create, update: ['save'], noop: ['cancel'] },
       }),
     )
     expect(preview.create).toHaveLength(120)
@@ -56,7 +60,10 @@ describe('buildPastePreview', () => {
     expect(hasPasteWrites(buildPastePreview(null))).toBe(false)
     expect(pasteCountLabel(buildPastePreview(result()).counts)).toBe('')
     const noops = buildPastePreview(
-      result({ noop: ['save', 'cancel'], noop_count: 2 }),
+      result({
+        noop_count: 2,
+        keys: { create: [], update: [], noop: ['save', 'cancel'] },
+      }),
     )
     expect(hasPasteWrites(noops)).toBe(false)
     expect(pasteCountLabel(noops.counts)).toBe('2 no-op')

@@ -1,4 +1,4 @@
-import type { ImportResult } from '@/lib/api/types'
+import type { ImportDiffItem, ImportResult } from '@/lib/api/types'
 
 export type PasteKind = 'create' | 'update' | 'noop'
 
@@ -23,12 +23,17 @@ export const PASTE_SECTION_LABEL: Record<PasteKind, string> = {
   noop: 'No-op',
 }
 
+function compactKeys(full: string[] | undefined, sampled: ImportDiffItem[] | undefined): string[] {
+  if (full) return full
+  return (sampled ?? []).map((item) => item.key)
+}
+
 export function buildPastePreview(result: ImportResult | null): PastePreview {
   const diff = result?.diff
   return {
-    create: diff?.create ?? [],
-    update: diff?.update ?? [],
-    noop: diff?.noop ?? [],
+    create: compactKeys(diff?.keys?.create, diff?.create),
+    update: compactKeys(diff?.keys?.update, diff?.update),
+    noop: compactKeys(diff?.keys?.noop, undefined),
     counts: {
       create: diff?.create_count ?? 0,
       update: diff?.update_count ?? 0,

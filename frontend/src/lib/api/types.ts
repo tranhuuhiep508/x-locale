@@ -386,6 +386,12 @@ export interface ImportDiffItem {
   source_text: string
 }
 
+export interface ImportKeyLists {
+  create: string[]
+  update: string[]
+  noop: string[]
+}
+
 export interface ImportDiff {
   create: ImportDiffItem[]
   update: ImportDiffItem[]
@@ -393,6 +399,8 @@ export interface ImportDiff {
   create_count: number
   update_count: number
   orphan_count: number
+  noop_count?: number
+  keys?: ImportKeyLists | null
 }
 
 export interface ImportResult {
