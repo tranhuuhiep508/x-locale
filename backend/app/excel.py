@@ -129,6 +129,27 @@ def _write_template_sheet(
         ws.append(row)
 
 
+DANGEROUS_PREFIXES = ("=", "+", "-", "@")
+
+
+def _sanitize_cell_value(val: Any) -> Any:
+    if val is None:
+        return ""
+    s = str(val)
+    if s.startswith(DANGEROUS_PREFIXES):
+        return f"'{s}"
+    return s
+
+
+def _desanitize_cell_value(val: Any) -> str:
+    if val is None:
+        return ""
+    s = str(val)
+    if s.startswith("'") and len(s) > 1 and s[1] in DANGEROUS_PREFIXES:
+        return s[1:]
+    return s
+
+
 def _write_sheet(
     wb: Workbook,
     name: str,
@@ -164,19 +185,19 @@ def _write_sheet(
             row_key = entry.key
             source = entry.source_text
         tags = ",".join(t.name for t in (entry.tags or []))
-        row: list[Any] = [row_key, entry.description or "", tags]
+        row: list[Any] = [row_key, _sanitize_cell_value(entry.description), tags]
         for locale in locales:
             if locale == project.base_language:
-                row.append(source)
+                row.append(_sanitize_cell_value(source))
             else:
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if stage == "public":
                     if t is not None and t.published_value is not None:
-                        row.append(t.published_value)
+                        row.append(_sanitize_cell_value(t.published_value))
                     else:
                         row.append("")
                 else:
-                    row.append(t.value if t else "")
+                    row.append(_sanitize_cell_value(t.value if t else ""))
         ws.append(row)
 
 
@@ -309,7 +330,7 @@ def import_workbook(
                 continue
             total += 1
             description = (
-                str(row[desc_idx]).strip()
+                _desanitize_cell_value(row[desc_idx]).strip()
                 if desc_idx is not None and row[desc_idx]
                 else None
             )
@@ -320,7 +341,7 @@ def import_workbook(
             source_text = ""
             if project.base_language in locale_cols:
                 val = row[locale_cols[project.base_language]]
-                source_text = str(val) if val is not None else ""
+                source_text = _desanitize_cell_value(val)
             if not source_text:
                 source_text = key  # fallback
 
@@ -386,7 +407,7 @@ def import_workbook(
                 if locale == project.base_language:
                     continue
                 val = row[idx]
-                value = str(val) if val is not None else ""
+                value = _desanitize_cell_value(val)
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if t is None:
                     t = Translation(

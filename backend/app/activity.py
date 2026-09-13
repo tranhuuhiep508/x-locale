@@ -194,8 +194,8 @@ def _string_fields_changed(obj: StringEntry) -> bool:
         state = sa_inspect(obj)
     except Exception:
         return False
-    for field in STRING_FIELDS:
-        if state.attrs[field].history.has_changes():
+    for attr_name in STRING_FIELDS:
+        if state.attrs[attr_name].history.has_changes():
             return True
     return False
 

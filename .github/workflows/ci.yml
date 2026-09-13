@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  frontend:
+    name: frontend-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: TypeScript typecheck
+        run: cd frontend && npm run typecheck
+
+      - name: ESLint check
+        run: cd frontend && npm run lint
+
+      - name: Run Vitest unit tests
+        run: cd frontend && npx vitest run
+
+  backend:
+    name: backend-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: cd backend && uv sync --all-extras
+
+      - name: Lint with Ruff
+        run: cd backend && uv run ruff check
+
+      - name: Run pytest
+        run: cd backend && uv run pytest
+
+  cli:
+    name: cli-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
+      TERM: dumb
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: cd cli && uv sync --extra dev
+
+      - name: Run CLI unit tests
+        run: cd cli && uv run pytest tests -m "not e2e"

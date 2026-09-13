@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.auth import generate_api_key, hash_api_key
+from app.auth import hash_api_key
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (

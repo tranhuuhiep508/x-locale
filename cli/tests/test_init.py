@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
+from tests.conftest import strip_ansi
 from x_locale_cli.app import app
 from x_locale_cli.commands.init import _normalize_api_url
 from x_locale_cli.config import load_config
@@ -79,10 +80,11 @@ class InitCommandTests(unittest.TestCase):
     def test_help_mentions_wizard_and_yes(self) -> None:
         result = self.runner.invoke(app, ["init", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("--yes", result.output)
-        self.assertIn("--api-key", result.output)
-        self.assertIn("if omitted", result.output)
-        self.assertNotIn("[required]", result.output)
+        output = strip_ansi(result.output)
+        self.assertIn("--yes", output)
+        self.assertIn("--api-key", output)
+        self.assertIn("if omitted", output)
+        self.assertNotIn("[required]", output)
 
     def test_noninteractive_requires_api_key(self) -> None:
         result = self._invoke(["init"])

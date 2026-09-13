@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Sequence
 
 from fastapi import HTTPException
 from sqlalchemy import exists, func, or_, select
