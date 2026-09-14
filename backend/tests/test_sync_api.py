@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from tests.helpers import _json_upload, _make_project
+from tests.helpers import _json_upload, _make_project, publish_strings
 
 
 def test_export_stage_all_and_locale_filter(client):
@@ -196,10 +196,7 @@ def test_edit_public_string_keeps_published_export(client):
     assert draft["vi"]["save"] == "Lưu ngay"
     assert draft["en"]["save"] == "Save now"
 
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
     public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
     assert public["vi"]["save"] == "Lưu ngay"
     assert public["en"]["save"] == "Save now"
@@ -237,10 +234,7 @@ def test_delete_public_string_is_pending_until_publish(client):
     assert row["pending_delete"] is False
 
     client.delete(f"/api/projects/{pid}/strings/{sid}")
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
     listed = client.get(f"/api/projects/{pid}/strings").json()
     assert listed["total"] == 0
     tombstone = client.get(f"/api/projects/{pid}/strings/{sid}").json()
@@ -303,10 +297,7 @@ def test_sync_state_lists_pending_remove_hidden_from_draft_export(client):
     assert body["pending_remove"] == ["draft/123ewfewf"]
     assert body["tombstones"] == []
 
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
     after = client.get(
         f"/api/projects/{pid}/sync-state",
         params={"layout": "modular", "stage": "draft"},

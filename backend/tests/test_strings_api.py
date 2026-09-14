@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from tests.helpers import _make_project
+from tests.helpers import _make_project, publish_strings
 
 
 def test_batch_publish(client):
@@ -22,12 +22,8 @@ def test_batch_publish(client):
         f"/api/projects/{pid}/strings/{sid}/translations/en",
         json={"value": "A-en"},
     )
-    r = client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["affected"] == 1
+    result = publish_strings(client, pid, [sid])
+    assert result["affected"] == 1
 
     r = client.get(f"/api/projects/{pid}/strings/{sid}")
     assert r.json()["status"] == "public"
@@ -48,10 +44,7 @@ def test_public_export_empty_missing_locale(client):
         f"/api/projects/{pid}/strings/{sid}/translations/en",
         json={"value": "Hello"},
     )
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
 
     r = client.get(f"/api/projects/{pid}/export?layout=flat&stage=public")
     assert r.status_code == 200
@@ -103,10 +96,7 @@ def test_list_strings_filters(client):
         json={"key": "welcome", "source_text": "Chào mừng", "module_id": m2["id"]},
     )
 
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [s1["id"]]},
-    )
+    publish_strings(client, pid, [s1["id"]])
     client.put(
         f"/api/projects/{pid}/strings/{s1['id']}/translations/en",
         json={"value": "Log in"},

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -22,6 +25,9 @@ from app.schemas import (
     TranslationOut,
     TranslationUpdate,
 )
+
+PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
+PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
 
 
 def mark_deleted(entry: StringEntry) -> None:
@@ -72,6 +78,64 @@ def has_unpublished_changes(entry: StringEntry) -> bool:
         if (translation.value or "") != published:
             return True
     return False
+
+
+def is_publishable_entry(entry: StringEntry) -> bool:
+    """True when batch publish would change public for this row."""
+    if entry.deleted_at is not None:
+        return False
+    if entry.pending_delete:
+        return True
+    if entry.status != TranslationStatus.public:
+        return True
+    return has_unpublished_changes(entry)
+
+
+def _status_value(status: TranslationStatus | str) -> str:
+    return status.value if isinstance(status, TranslationStatus) else str(status)
+
+
+def compute_publish_fingerprint(entries: Sequence[StringEntry]) -> str:
+    """Hash publishable working-copy state. Tags, activity, and no-ops are ignored."""
+    rows: list[dict[str, object]] = []
+    for entry in entries:
+        if not is_publishable_entry(entry):
+            continue
+        translations = sorted(entry.translations or [], key=lambda item: item.locale)
+        rows.append(
+            {
+                "id": str(entry.id),
+                "key": entry.key,
+                "module_id": str(entry.module_id) if entry.module_id else None,
+                "source_text": entry.source_text or "",
+                "pending_delete": bool(entry.pending_delete),
+                "status": _status_value(entry.status),
+                "published_key": entry.published_key,
+                "published_module_id": (
+                    str(entry.published_module_id) if entry.published_module_id else None
+                ),
+                "published_source_text": entry.published_source_text,
+                "translations": [
+                    {
+                        "locale": translation.locale,
+                        "value": translation.value or "",
+                        "published_value": translation.published_value,
+                    }
+                    for translation in translations
+                ],
+            }
+        )
+    rows.sort(key=lambda row: str(row["id"]))
+    payload = {
+        "ids": [row["id"] for row in rows],
+        "rows": rows,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def fingerprints_match(expected: str, provided: str) -> bool:
+    return hmac.compare_digest(expected, provided)
 
 
 def unpublished_changes_clause():
@@ -350,6 +414,26 @@ def validate_locales(project: Project, translations: dict[str, str] | None) -> N
             raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
 
+def load_string_entries(
+    db: Session,
+    project_id: uuid.UUID,
+    ids: Sequence[uuid.UUID],
+) -> list[StringEntry]:
+    if not ids:
+        return []
+    return (
+        db.query(StringEntry)
+        .options(
+            joinedload(StringEntry.translations),
+            joinedload(StringEntry.tags),
+            joinedload(StringEntry.module),
+            joinedload(StringEntry.published_module),
+        )
+        .filter(StringEntry.project_id == project_id, StringEntry.id.in_(ids))
+        .all()
+    )
+
+
 def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> StringEntry:
     entry = (
         db.query(StringEntry)
@@ -524,27 +608,32 @@ def delete_string(db: Session, project: Project, string_id: uuid.UUID) -> None:
 def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchResult:
     from app.activity import attach_batch
 
+    action = payload.action
+    fingerprint = (payload.fingerprint or "").strip()
+    if action == "publish" and not fingerprint:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": PUBLISH_FINGERPRINT_REQUIRED},
+        )
+
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
+    entries = load_string_entries(db, project.id, ids)
+
+    if action == "publish":
+        current = compute_publish_fingerprint(entries)
+        if not fingerprints_match(current, fingerprint):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": PUBLISH_FINGERPRINT_MISMATCH},
+            )
+
     if not ids:
         return BatchResult(affected=0, batch_id=uuid.uuid4())
 
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "batch")
 
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.translations),
-            joinedload(StringEntry.tags),
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.published_module),
-        )
-        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids))
-        .all()
-    )
-
     affected = 0
-    action = payload.action
 
     if action == "publish":
         for entry in entries:

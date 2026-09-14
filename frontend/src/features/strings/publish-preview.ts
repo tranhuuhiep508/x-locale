@@ -1,6 +1,7 @@
-import type { BatchFilter, StringEntry } from '@/lib/api/types'
-import type { StringsSearch } from '@/lib/schemas'
 import { differs, isReleased } from '@/features/strings/working-copy'
+import { ApiError } from '@/lib/api/client'
+import type { BatchFilter, BatchRequest, StringEntry } from '@/lib/api/types'
+import type { StringsSearch } from '@/lib/schemas'
 
 export type PublishKind = 'new' | 'update' | 'removal' | 'noop'
 
@@ -38,6 +39,8 @@ export type PublishPreview = {
 }
 
 export const PUBLISH_KIND_ORDER: PublishKind[] = ['new', 'update', 'removal', 'noop']
+
+export const PUBLISH_FINGERPRINT_MISMATCH = 'publish_fingerprint_mismatch'
 
 export const PUBLISH_SECTION_LABEL: Record<PublishKind, string> = {
   new: 'New to public',
@@ -259,6 +262,28 @@ export function previewCountLabel(counts: PublishPreviewCounts): string {
 
 export function hasPublishableChanges(preview: PublishPreview): boolean {
   return preview.publishableIds.length > 0
+}
+
+export function publishConfirmRequest(publishableIds: string[], fingerprint: string): BatchRequest {
+  return { action: 'publish', string_ids: publishableIds, fingerprint }
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined
+  const detail = (error.body as { detail?: unknown } | undefined)?.detail
+  if (detail && typeof detail === 'object' && detail !== null && 'code' in detail) {
+    const code = (detail as { code?: unknown }).code
+    return typeof code === 'string' ? code : undefined
+  }
+  return undefined
+}
+
+export function isPublishFingerprintMismatch(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    errorCode(error) === PUBLISH_FINGERPRINT_MISMATCH
+  )
 }
 
 export function rowsForKind(preview: PublishPreview, kind: PublishKind): PublishPreviewRow[] {

@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
   useTransition,
   lazy,
@@ -36,6 +37,8 @@ import {
 import { PublishPreviewDialog } from '@/features/strings/PublishPreviewDialog'
 import {
   buildPublishPreview,
+  isPublishFingerprintMismatch,
+  publishConfirmRequest,
   reviewPublishSource,
   searchToBatchFilter,
 } from '@/features/strings/publish-preview'
@@ -111,6 +114,8 @@ export function StringsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [publishEntries, setPublishEntries] = useState<StringEntry[] | null>(null)
+  const [publishFingerprint, setPublishFingerprint] = useState<string | null>(null)
+  const publishRequestRef = useRef<PublishPreviewRequest | null>(null)
   const [searchInput, setSearchInput] = useState(search.q ?? '')
 
   useEffect(() => {
@@ -163,6 +168,21 @@ export function StringsPage() {
     qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
   }, [qc, projectId])
 
+  const previewMut = useMutation({
+    mutationFn: (body: PublishPreviewRequest) => stringsApi.publishPreview(projectId, body),
+    onSuccess: (res) => {
+      setPublishEntries(res.items)
+      setPublishFingerprint(res.fingerprint)
+    },
+    onError: () => {
+      toast.error('Failed to load publish preview')
+      setPublishOpen(false)
+      setPublishEntries(null)
+      setPublishFingerprint(null)
+      publishRequestRef.current = null
+    },
+  })
+
   const batchMut = useMutation({
     mutationFn: (req: BatchRequest) => stringsApi.batch(projectId, req),
     onSuccess: (_data, req) => {
@@ -175,21 +195,23 @@ export function StringsPage() {
       if (req.action === 'publish') {
         setPublishOpen(false)
         setPublishEntries(null)
+        setPublishFingerprint(null)
+        publishRequestRef.current = null
         toast.success('Published')
       }
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Batch action failed'),
-  })
-
-  const previewMut = useMutation({
-    mutationFn: (body: PublishPreviewRequest) => stringsApi.publishPreview(projectId, body),
-    onSuccess: (res) => {
-      setPublishEntries(res.items)
-    },
-    onError: () => {
-      toast.error('Failed to load publish preview')
-      setPublishOpen(false)
-      setPublishEntries(null)
+    onError: (e, req) => {
+      if (req.action === 'publish' && isPublishFingerprintMismatch(e)) {
+        const body = publishRequestRef.current
+        if (body) {
+          setPublishEntries(null)
+          setPublishFingerprint(null)
+          previewMut.mutate(body)
+        }
+        toast.info('Working copy changed. Review the updated preview.')
+        return
+      }
+      toast.error(e instanceof Error ? e.message : 'Batch action failed')
     },
   })
 
@@ -270,15 +292,22 @@ export function StringsPage() {
     missingMut.mutate(missingRequest(page))
   }
 
+  const loadPublishPreview = previewMut.mutate
+  const requestPublishPreview = useCallback(
+    (body: PublishPreviewRequest) => {
+      publishRequestRef.current = body
+      setPublishFingerprint(null)
+      setPublishEntries(null)
+      setPublishOpen(true)
+      loadPublishPreview(body)
+    },
+    [loadPublishPreview],
+  )
+
   const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
-  }, [])
-
-  const openPublishPreview = useCallback((entries: StringEntry[]) => {
-    setPublishEntries(entries)
-    setPublishOpen(true)
   }, [])
 
   function setFilter(updates: Partial<StringsSearch>) {
@@ -315,9 +344,9 @@ export function StringsPage() {
       onEdit: (entry: StringEntry) => openEditor(entry),
       onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
       onRefresh: invalidateStrings,
-      onPublishPreview: (entry: StringEntry) => openPublishPreview([entry]),
+      onPublishPreview: (entry: StringEntry) => requestPublishPreview({ string_ids: [entry.id] }),
     }),
-    [projectId, openEditor, openPublishPreview, invalidateStrings],
+    [projectId, openEditor, requestPublishPreview, invalidateStrings],
   )
 
   const table = useReactTable({
@@ -396,37 +425,27 @@ export function StringsPage() {
   function openReviewPublishPreview() {
     const source = reviewPublishSource(selectedEntries, searchToBatchFilter(search))
     if ('entries' in source) {
-      openPublishPreview(source.entries)
+      requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) })
       return
     }
-    setPublishEntries(null)
-    setPublishOpen(true)
-    previewMut.mutate({ filter: source.filter })
+    requestPublishPreview({ filter: source.filter })
   }
 
   function openSelectedPublishPreview() {
-    if (selectedEntries.length > 0 && selectedEntries.length === selectedList.length) {
-      openPublishPreview(selectedEntries)
-      return
-    }
-    if (selectedList.length > 0) {
-      setPublishEntries(null)
-      setPublishOpen(true)
-      previewMut.mutate({ string_ids: selectedList })
-      return
-    }
-    openPublishPreview([])
+    requestPublishPreview({ string_ids: selectedList })
   }
 
   function closePublishPreview() {
     if (batchMut.isPending || previewMut.isPending) return
     setPublishOpen(false)
     setPublishEntries(null)
+    setPublishFingerprint(null)
+    publishRequestRef.current = null
   }
 
   function confirmPublishPreview() {
-    if (!publishPreview || publishPreview.publishableIds.length === 0) return
-    batchMut.mutate({ action: 'publish', string_ids: publishPreview.publishableIds })
+    if (!publishPreview || !publishFingerprint || publishPreview.publishableIds.length === 0) return
+    batchMut.mutate(publishConfirmRequest(publishPreview.publishableIds, publishFingerprint))
   }
 
   return (

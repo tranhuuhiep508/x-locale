@@ -236,6 +236,7 @@ class BatchRequest(BaseModel):
     string_ids: list[UUID] | None = None
     filter: BatchFilter | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+    fingerprint: str | None = None
 
 
 class BatchResult(BaseModel):
@@ -250,6 +251,7 @@ class PublishPreviewRequest(BaseModel):
 
 class PublishPreviewEntriesOut(BaseModel):
     items: list[StringOut]
+    fingerprint: str
 
 
 # ── Translate ─────────────────────────────────────────────────────────

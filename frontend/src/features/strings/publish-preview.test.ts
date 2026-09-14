@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { StringEntry } from '../../lib/api/types'
+import { ApiError } from '@/lib/api/client'
+import type { StringEntry } from '@/lib/api/types'
 import {
+  PUBLISH_FINGERPRINT_MISMATCH,
   buildPublishPreview,
   classifyPublishRow,
   contentFieldChanges,
   hasPublishableChanges,
+  isPublishFingerprintMismatch,
   previewCountLabel,
+  publishConfirmRequest,
   reviewPublishSource,
   searchToBatchFilter,
 } from './publish-preview'
@@ -306,5 +310,33 @@ describe('reviewPublishSource', () => {
   it('falls back to the active filter when nothing on the page is selected', () => {
     const filter = searchToBatchFilter({ has_unpublished_changes: true, q: 'save' })
     expect(reviewPublishSource([], filter)).toEqual({ filter })
+  })
+})
+
+describe('publish fingerprint', () => {
+  it('sends one batch token with the publishable ids', () => {
+    expect(publishConfirmRequest(['a', 'b'], 'fp-1')).toEqual({
+      action: 'publish',
+      string_ids: ['a', 'b'],
+      fingerprint: 'fp-1',
+    })
+  })
+
+  it('detects mismatch from the stable error code, not English', () => {
+    const mismatch = new ApiError(409, 'anything', {
+      detail: { code: PUBLISH_FINGERPRINT_MISMATCH },
+    })
+    expect(isPublishFingerprintMismatch(mismatch)).toBe(true)
+    expect(
+      isPublishFingerprintMismatch(
+        new ApiError(409, 'publish_fingerprint_mismatch', { detail: 'publish_fingerprint_mismatch' }),
+      ),
+    ).toBe(false)
+    expect(
+      isPublishFingerprintMismatch(
+        new ApiError(400, 'missing', { detail: { code: 'publish_fingerprint_required' } }),
+      ),
+    ).toBe(false)
+    expect(isPublishFingerprintMismatch(new Error('publish_fingerprint_mismatch'))).toBe(false)
   })
 })
