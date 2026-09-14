@@ -61,6 +61,7 @@ npx playwright show-report  # last HTML report (traces on failure)
 | 10 — Modules & Tags CRUD | `e2e/tests/flow-10-modules-tags.spec.ts` | Dedicated Modules and Tags management pages CRUD |
 | 11 — Excel round-trip | `e2e/tests/flow-11-excel-roundtrip.spec.ts` | Export XLSX, upload preview dry-run, apply, verify catalog |
 | 12 — String History restore | `e2e/tests/flow-12-string-history.spec.ts` | History tab restore reverts working copy to previous version |
+| 13 — Publish fingerprint (XLOCALE-5) | `e2e/tests/flow-13-publish-fingerprint.spec.ts` | Batch publish sends preview fingerprint; stale confirm → 409 + re-preview; cancel leaves draft; needs-publish review |
 
 Out of scope: visual snapshots.
 

@@ -26,3 +26,38 @@ export async function bootstrapWithApiKey(page: Page, apiKey: string) {
   })
   return response
 }
+
+type StringOut = {
+  id: string
+  key: string
+  source_text: string
+  status: string
+  published_source_text: string | null
+  has_unpublished_changes: boolean
+}
+
+export async function fetchStringByKey(page: Page, projectId: string, key: string): Promise<StringOut> {
+  const response = await page.request.get(
+    `/api/projects/${projectId}/strings?q=${encodeURIComponent(key)}&page_size=50`,
+  )
+  expect(response.ok()).toBeTruthy()
+  const data = (await response.json()) as { items: StringOut[] }
+  const match = data.items.find((item) => item.key === key)
+  if (!match) {
+    throw new Error(`String not found for key ${key}`)
+  }
+  return match
+}
+
+export async function patchStringSource(
+  page: Page,
+  projectId: string,
+  stringId: string,
+  sourceText: string,
+) {
+  const response = await page.request.patch(`/api/projects/${projectId}/strings/${stringId}`, {
+    data: { source_text: sourceText },
+  })
+  expect(response.ok()).toBeTruthy()
+  return response.json() as Promise<StringOut>
+}
