@@ -61,6 +61,7 @@ npx playwright show-report  # last HTML report (traces on failure)
 | 10 — Modules & Tags CRUD | `e2e/tests/flow-10-modules-tags.spec.ts` | Dedicated Modules and Tags management pages CRUD |
 | 11 — Excel round-trip | `e2e/tests/flow-11-excel-roundtrip.spec.ts` | Export XLSX, upload preview dry-run, apply, verify catalog |
 | 12 — String History restore | `e2e/tests/flow-12-string-history.spec.ts` | History tab restore reverts working copy to previous version |
+| 13 — Unpublish editing chrome | `e2e/tests/flow-13-unpublish-editing-chrome.spec.ts` | Editing badge and working-copy compare only when live public with unpublished changes; unpublish and never-published drafts stay draft chrome |
 
 Out of scope: visual snapshots.
 
