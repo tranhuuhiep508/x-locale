@@ -22,6 +22,7 @@ import {
   WorkingCopyCell,
   canDiscardWorkingCopy,
   fieldChanged,
+  isLivePublic,
   isReleased,
   liveTranslation,
   releaseState,
@@ -108,7 +109,8 @@ function StringActionsCell({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const released = isReleased(entry)
-  const dirty = entry.has_unpublished_changes && !entry.pending_delete && !entry.deleted_at
+  const dirty =
+    isLivePublic(entry) && entry.has_unpublished_changes && !entry.pending_delete
   const discardable = canDiscardWorkingCopy(entry)
   const deleted = Boolean(entry.deleted_at)
 
@@ -279,7 +281,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
           <WorkingCopyCell
             working={translation?.value ?? ''}
             published={liveTranslation(entry, locale)}
-            released={isReleased(entry)}
+            released={isLivePublic(entry)}
           />
           <ConfidenceBadge
             score={translation?.value?.trim() ? translation.confidence : null}
@@ -334,7 +336,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       cell: ({ row }) => {
         const entry = row.original
         const state = releaseState(entry)
-        const released = isReleased(entry)
+        const released = isLivePublic(entry)
         const keyChanged = fieldChanged(entry.key, entry.published_key, released)
         const moduleChanged = fieldChanged(
           entry.module_slug ?? '',
@@ -390,7 +392,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             <WorkingCopyCell
               working={entry.source_text}
               published={entry.published_source_text}
-              released={isReleased(entry)}
+              released={isLivePublic(entry)}
               emptyLabel="Missing"
             />
             {entry.description ? (

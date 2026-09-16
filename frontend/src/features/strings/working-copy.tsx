@@ -8,23 +8,29 @@ import { cn } from '@/lib/utils'
 
 export type ReleaseState = 'draft' | 'live' | 'edited' | 'removing' | 'deleted'
 
+export function isReleased(entry: StringEntry): boolean {
+  return entry.published_key != null || Boolean(entry.published_at)
+}
+
+/** Live in the public catalog. Unpublish keeps published_* but the row is no longer live. */
+export function isLivePublic(entry: StringEntry): boolean {
+  return entry.status === 'public' && !entry.deleted_at
+}
+
 export function releaseState(entry: StringEntry): ReleaseState {
   if (entry.deleted_at) return 'deleted'
   if (entry.pending_delete) return 'removing'
-  if (entry.has_unpublished_changes) return 'edited'
-  if (entry.status === 'public') return 'live'
+  if (isLivePublic(entry) && entry.has_unpublished_changes) return 'edited'
+  if (isLivePublic(entry)) return 'live'
   return 'draft'
-}
-
-export function isReleased(entry: StringEntry): boolean {
-  return entry.published_key != null || Boolean(entry.published_at)
 }
 
 export function canDiscardWorkingCopy(entry: StringEntry): boolean {
   return (
     !entry.deleted_at &&
     entry.has_unpublished_changes &&
-    isReleased(entry)
+    isReleased(entry) &&
+    (isLivePublic(entry) || entry.pending_delete)
   )
 }
 

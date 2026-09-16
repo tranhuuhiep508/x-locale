@@ -225,6 +225,19 @@ describe('classifyPublishRow', () => {
     expect(row.kind).toBe('new')
     expect(row.summary).toBe('will appear on public')
   })
+
+  it('still diffs leftover published_* after unpublish (XLOCALE-5 confirm)', () => {
+    const row = classifyPublishRow(
+      entry({
+        status: 'draft',
+        has_unpublished_changes: true,
+        source_text: 'Lưu ngay',
+      }),
+    )
+    expect(row.kind).toBe('update')
+    expect(row.summary).toBe('will update public')
+    expect(row.fields.map((field) => field.field)).toEqual(['source'])
+  })
 })
 
 describe('buildPublishPreview', () => {
