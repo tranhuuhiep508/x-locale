@@ -40,6 +40,8 @@ def test_publish_preview_does_not_mutate(client):
     assert items[0]["id"] == sid
     assert items[0]["status"] == "draft"
     assert items[0]["published_key"] is None
+    assert isinstance(r.json()["fingerprint"], str)
+    assert len(r.json()["fingerprint"]) == 64
 
     refreshed = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert refreshed["status"] == "draft"
@@ -102,6 +104,7 @@ def test_publish_preview_keeps_soft_deleted_when_selected_by_id(client):
     )
     assert listed.status_code == 200
     assert listed.json()["items"] == []
+    assert listed.json()["fingerprint"]
 
 
 def test_publish_preview_empty_selection(client):
@@ -112,3 +115,4 @@ def test_publish_preview_empty_selection(client):
     )
     assert r.status_code == 200, r.text
     assert r.json()["items"] == []
+    assert r.json()["fingerprint"]

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+from tests.helpers import publish_strings
+
 
 def _make_project(client, name: str, targets=None):
     r = client.post(
@@ -199,11 +201,8 @@ def test_restore_last_history_skips_publish(client):
         f"/api/projects/{pid}/strings/{sid}",
         json={"translations": {"en": "Okay"}},
     )
-    pub = client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
-    assert pub.status_code == 200, pub.text
+    pub = publish_strings(client, pid, [sid])
+    assert pub["affected"] == 1
 
     r = client.post(
         f"/api/projects/{pid}/strings/batch",
@@ -226,10 +225,7 @@ def test_restore_last_history_noop_when_only_publish(client):
         json={"key": "only", "source_text": "Only", "status": "draft"},
     ).json()
     sid = created["id"]
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
 
     r = client.post(
         f"/api/projects/{pid}/strings/batch",
@@ -266,10 +262,7 @@ def test_restore_rejects_publish_and_pending_delete_events(client):
         json={"key": "delete", "source_text": "Xóa", "translations": {"en": "Delete"}},
     ).json()
     sid = created["id"]
-    client.post(
-        f"/api/projects/{pid}/strings/batch",
-        json={"action": "publish", "string_ids": [sid]},
-    )
+    publish_strings(client, pid, [sid])
     client.patch(
         f"/api/projects/{pid}/strings/{sid}",
         json={"translations": {"en": "Remove"}},

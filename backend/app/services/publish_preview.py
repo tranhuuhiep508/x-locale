@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from app.models import Project, StringEntry
+from app.models import Project
 from app.schemas import PublishPreviewEntriesOut, PublishPreviewRequest
-from app.services.strings import resolve_string_ids, serialize_string
+from app.services.strings import (
+    compute_publish_fingerprint,
+    load_string_entries,
+    resolve_string_ids,
+    serialize_string,
+)
 
 
 def list_publish_preview_entries(
@@ -15,19 +20,9 @@ def list_publish_preview_entries(
     payload: PublishPreviewRequest,
 ) -> PublishPreviewEntriesOut:
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
-    if not ids:
-        return PublishPreviewEntriesOut(items=[])
-
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.translations),
-            joinedload(StringEntry.tags),
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.published_module),
-        )
-        .filter(StringEntry.project_id == project.id, StringEntry.id.in_(ids))
-        .order_by(StringEntry.key)
-        .all()
+    entries = load_string_entries(db, project.id, ids)
+    entries.sort(key=lambda entry: (entry.key, str(entry.id)))
+    return PublishPreviewEntriesOut(
+        items=[serialize_string(entry) for entry in entries],
+        fingerprint=compute_publish_fingerprint(entries),
     )
-    return PublishPreviewEntriesOut(items=[serialize_string(entry) for entry in entries])

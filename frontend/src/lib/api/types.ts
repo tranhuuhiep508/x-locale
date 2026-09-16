@@ -201,6 +201,7 @@ export interface BatchRequest {
   string_ids?: string[]
   filter?: BatchFilter
   payload?: Record<string, unknown>
+  fingerprint?: string
 }
 
 export interface BatchResult {
@@ -215,6 +216,7 @@ export interface PublishPreviewRequest {
 
 export interface PublishPreviewEntries {
   items: StringEntry[]
+  fingerprint: string
 }
 
 // ── Translate ──────────────────────────────────────────────────────────

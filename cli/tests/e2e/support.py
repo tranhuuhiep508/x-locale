@@ -209,8 +209,14 @@ def create_string(
 
 def publish_strings(admin: httpx.Client, project_id: str, string_ids: list[str]) -> None:
     response = admin.post(
+        f"/api/projects/{project_id}/strings/publish-preview",
+        json={"string_ids": string_ids},
+    )
+    response.raise_for_status()
+    fingerprint = response.json()["fingerprint"]
+    response = admin.post(
         f"/api/projects/{project_id}/strings/batch",
-        json={"action": "publish", "string_ids": string_ids},
+        json={"action": "publish", "string_ids": string_ids, "fingerprint": fingerprint},
     )
     response.raise_for_status()
 
