@@ -21,7 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
-import { PublishedChangeHint, canDiscardWorkingCopy, isLivePublic } from '@/features/strings/working-copy'
+import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -295,7 +295,7 @@ export default function StringFormDialog({
   }
 
   const busy = saveMut.isPending || translateMut.isPending || discardMut.isPending
-  const released = isEdit && baseline ? isLivePublic(baseline) : false
+  const released = isEdit && baseline ? isReleased(baseline) : false
   const moduleSlug = moduleOptions.find((item) => item.id === moduleId)?.slug ?? ''
   const serverDiscardable = Boolean(baseline && canDiscardWorkingCopy(baseline))
   const formDirty = Boolean(baseline && isFormDirty(baseline, targetLocales, formValues))
@@ -447,7 +447,9 @@ export default function StringFormDialog({
                 </Field>
                 {isEdit && released && baseline?.has_unpublished_changes && !baseline.pending_delete ? (
                   <p className="text-sm text-muted-foreground">
-                    Production still has the last published snapshot until you publish.
+                    {baseline.status === 'public'
+                      ? 'Production still has the last published snapshot until you publish.'
+                      : 'Last live snapshot is kept for re-publish. Production already dropped this key.'}
                   </p>
                 ) : null}
                 {entry?.deleted_at ? (

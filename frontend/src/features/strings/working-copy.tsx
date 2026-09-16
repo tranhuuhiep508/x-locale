@@ -6,22 +6,20 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import type { StringEntry } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
 
-export type ReleaseState = 'draft' | 'live' | 'edited' | 'removing' | 'deleted'
+export type ReleaseState = 'draft' | 'live' | 'edited' | 'was_live_edited' | 'removing' | 'deleted'
 
+/** Last live snapshot exists. Unpublish keeps published_* for re-publish. */
 export function isReleased(entry: StringEntry): boolean {
   return entry.published_key != null || Boolean(entry.published_at)
-}
-
-/** Live in the public catalog. Unpublish keeps published_* but the row is no longer live. */
-export function isLivePublic(entry: StringEntry): boolean {
-  return entry.status === 'public' && !entry.deleted_at
 }
 
 export function releaseState(entry: StringEntry): ReleaseState {
   if (entry.deleted_at) return 'deleted'
   if (entry.pending_delete) return 'removing'
-  if (isLivePublic(entry) && entry.has_unpublished_changes) return 'edited'
-  if (isLivePublic(entry)) return 'live'
+  if (isReleased(entry) && entry.has_unpublished_changes) {
+    return entry.status === 'public' ? 'edited' : 'was_live_edited'
+  }
+  if (entry.status === 'public') return 'live'
   return 'draft'
 }
 
@@ -29,8 +27,7 @@ export function canDiscardWorkingCopy(entry: StringEntry): boolean {
   return (
     !entry.deleted_at &&
     entry.has_unpublished_changes &&
-    isReleased(entry) &&
-    (isLivePublic(entry) || entry.pending_delete)
+    isReleased(entry)
   )
 }
 
@@ -55,6 +52,7 @@ const STATE_LABEL: Record<ReleaseState, string> = {
   draft: 'Draft',
   live: 'Live',
   edited: 'Editing',
+  was_live_edited: 'Was live · unpublished edits',
   removing: 'Removing',
   deleted: 'Deleted',
 }
@@ -63,6 +61,7 @@ const STATE_VARIANT: Record<ReleaseState, 'outline' | 'default' | 'secondary' | 
   draft: 'outline',
   live: 'default',
   edited: 'default',
+  was_live_edited: 'secondary',
   removing: 'destructive',
   deleted: 'destructive',
 }
@@ -83,7 +82,7 @@ export function ReleaseBadge({
 }
 
 export function releaseRowClassName(state: ReleaseState): string | undefined {
-  if (state === 'edited') {
+  if (state === 'edited' || state === 'was_live_edited') {
     return 'bg-public/80 hover:bg-public [&>td:first-child]:shadow-[inset_3px_0_0_0_var(--color-public-foreground)]'
   }
   if (state === 'removing') {
@@ -236,6 +235,11 @@ export function releaseCopy(state: ReleaseState): { title: string; body: string 
       return {
         title: 'Working copy is ahead of live',
         body: 'Edits stay here until you publish. Publish to live replaces the current production text.',
+      }
+    case 'was_live_edited':
+      return {
+        title: 'Was live · unpublished edits',
+        body: 'Production already dropped this key. The last live snapshot is kept so you can discard back to it or publish again.',
       }
     case 'live':
       return {

@@ -6,7 +6,6 @@ import {
   WorkingCopyCell,
   canDiscardWorkingCopy,
   fieldChanged,
-  isLivePublic,
   isReleased,
   liveTranslation,
   releaseRowClassName,
@@ -58,7 +57,7 @@ describe('releaseState', () => {
     ).toBe('edited')
   })
 
-  it('stays draft after unpublish even with leftover published_* and edits', () => {
+  it('marks draft-after-unpublish with leftover published_* and edits as was-live-edited', () => {
     expect(
       releaseState(
         entry({
@@ -67,7 +66,7 @@ describe('releaseState', () => {
           source_text: 'Lưu ngay',
         }),
       ),
-    ).toBe('draft')
+    ).toBe('was_live_edited')
   })
 
   it('stays draft for never-published strings', () => {
@@ -106,15 +105,15 @@ describe('fieldChanged', () => {
     expect(fieldChanged('Hello', null, false)).toBe(false)
   })
 
-  it('ignores leftover published snapshot after unpublish', () => {
+  it('diffs leftover published snapshot after unpublish', () => {
     const unpublished = entry({
       status: 'draft',
       has_unpublished_changes: true,
       source_text: 'Lưu ngay',
     })
     expect(
-      fieldChanged('Lưu ngay', unpublished.published_source_text, isLivePublic(unpublished)),
-    ).toBe(false)
+      fieldChanged('Lưu ngay', unpublished.published_source_text, isReleased(unpublished)),
+    ).toBe(true)
   })
 
   it('detects working copy drift after publish', () => {
@@ -162,14 +161,6 @@ describe('isReleased', () => {
   })
 })
 
-describe('isLivePublic', () => {
-  it('is true only while status is public and the row is not deleted', () => {
-    expect(isLivePublic(entry())).toBe(true)
-    expect(isLivePublic(entry({ status: 'draft' }))).toBe(false)
-    expect(isLivePublic(entry({ deleted_at: '2026-02-01T00:00:00Z' }))).toBe(false)
-  })
-})
-
 describe('canDiscardWorkingCopy', () => {
   it('allows discard for published strings with unpublished edits', () => {
     expect(
@@ -197,7 +188,7 @@ describe('canDiscardWorkingCopy', () => {
     ).toBe(false)
   })
 
-  it('blocks discard after unpublish even if published_* remains', () => {
+  it('allows discard after unpublish because the last snapshot is kept', () => {
     expect(
       canDiscardWorkingCopy(
         entry({
@@ -206,13 +197,14 @@ describe('canDiscardWorkingCopy', () => {
           source_text: 'Lưu ngay',
         }),
       ),
-    ).toBe(false)
+    ).toBe(true)
   })
 })
 
 describe('releaseRowClassName', () => {
-  it('highlights editing and removing rows', () => {
+  it('highlights editing, was-live-edited, and removing rows', () => {
     expect(releaseRowClassName('edited')).toContain('public-foreground')
+    expect(releaseRowClassName('was_live_edited')).toContain('public-foreground')
     expect(releaseRowClassName('removing')).toContain('destructive')
     expect(releaseRowClassName('draft')).toBeUndefined()
   })
@@ -228,7 +220,7 @@ describe('ReleaseBadge', () => {
     expect(screen.getByText('Editing')).toBeTruthy()
   })
 
-  it('hides Editing after unpublish even with leftover published_* and edits', () => {
+  it('shows Was live chrome after unpublish with leftover published_* and edits', () => {
     render(
       <ReleaseBadge
         state={releaseState(
@@ -240,6 +232,7 @@ describe('ReleaseBadge', () => {
         )}
       />,
     )
+    expect(screen.getByText('Was live · unpublished edits')).toBeTruthy()
     expect(screen.queryByText('Editing')).toBeNull()
   })
 
@@ -258,11 +251,12 @@ describe('ReleaseBadge', () => {
       />,
     )
     expect(screen.queryByText('Editing')).toBeNull()
+    expect(screen.queryByText('Was live · unpublished edits')).toBeNull()
   })
 })
 
 describe('WorkingCopyCell', () => {
-  it('omits compare chrome after unpublish', () => {
+  it('shows compare chrome after unpublish against the kept snapshot', () => {
     const unpublished = entry({
       status: 'draft',
       has_unpublished_changes: true,
@@ -272,11 +266,11 @@ describe('WorkingCopyCell', () => {
       <WorkingCopyCell
         working={unpublished.source_text}
         published={unpublished.published_source_text}
-        released={isLivePublic(unpublished)}
+        released={isReleased(unpublished)}
       />,
     )
     expect(screen.getByText('Lưu ngay')).toBeTruthy()
-    expect(screen.queryByLabelText('Compare published and working values')).toBeNull()
+    expect(screen.getByLabelText('Compare published and working values')).toBeTruthy()
   })
 
   it('shows compare chrome for public unpublished edits', () => {
@@ -285,9 +279,29 @@ describe('WorkingCopyCell', () => {
       <WorkingCopyCell
         working={edited.source_text}
         published={edited.published_source_text}
-        released={isLivePublic(edited)}
+        released={isReleased(edited)}
       />,
     )
     expect(screen.getByLabelText('Compare published and working values')).toBeTruthy()
+  })
+
+  it('omits compare chrome for never-published drafts', () => {
+    const neverPublished = entry({
+      status: 'draft',
+      has_unpublished_changes: true,
+      published_at: null,
+      published_key: null,
+      published_source_text: null,
+      source_text: 'Lưu ngay',
+    })
+    render(
+      <WorkingCopyCell
+        working={neverPublished.source_text}
+        published={neverPublished.published_source_text}
+        released={isReleased(neverPublished)}
+      />,
+    )
+    expect(screen.getByText('Lưu ngay')).toBeTruthy()
+    expect(screen.queryByLabelText('Compare published and working values')).toBeNull()
   })
 })

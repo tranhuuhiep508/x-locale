@@ -30,17 +30,26 @@ async function editSource(page: Page, key: string, source: string) {
   await expect(page.getByRole('heading', { name: 'Edit string' })).toBeHidden()
 }
 
-async function expectLiveEditingChrome(page: Page, key: string, visible: boolean) {
+type ChromeKind = 'none' | 'editing' | 'was_live'
+
+async function expectWorkingCopyChrome(page: Page, key: string, kind: ChromeKind) {
   const row = rowFor(page, key)
   const editingBadge = row.getByText('Editing', { exact: true })
+  const wasLiveBadge = row.getByText('Was live · unpublished edits', { exact: true })
   const compareButton = row.getByRole('button', {
     name: 'Compare published and working values',
   })
-  if (visible) {
+  if (kind === 'editing') {
     await expect(editingBadge).toBeVisible()
+    await expect(wasLiveBadge).toHaveCount(0)
+    await expect(compareButton).toBeVisible()
+  } else if (kind === 'was_live') {
+    await expect(wasLiveBadge).toBeVisible()
+    await expect(editingBadge).toHaveCount(0)
     await expect(compareButton).toBeVisible()
   } else {
     await expect(editingBadge).toHaveCount(0)
+    await expect(wasLiveBadge).toHaveCount(0)
     await expect(compareButton).toHaveCount(0)
   }
 }
@@ -58,24 +67,24 @@ test('published string with working copy edits shows Editing chrome', async ({ p
 
   const row = rowFor(page, publishedKey)
   await expect(row.getByRole('switch', { name: 'Public' })).toBeVisible()
-  await expectLiveEditingChrome(page, publishedKey, false)
+  await expectWorkingCopyChrome(page, publishedKey, 'none')
 
   await editSource(page, publishedKey, 'Working copy ahead')
   await searchStrings(page, publishedKey)
-  await expectLiveEditingChrome(page, publishedKey, true)
+  await expectWorkingCopyChrome(page, publishedKey, 'editing')
 })
 
-test('after unpublish, further edits stay draft chrome without Editing', async ({ page }) => {
+test('after unpublish, further edits show Was live working-copy chrome', async ({ page }) => {
   await searchStrings(page, publishedKey)
   const row = rowFor(page, publishedKey)
   await row.getByRole('switch', { name: 'Public' }).click()
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expectLiveEditingChrome(page, publishedKey, false)
+  await expectWorkingCopyChrome(page, publishedKey, 'was_live')
 
-  await editSource(page, publishedKey, 'Still draft after unpublish')
+  await editSource(page, publishedKey, 'Still snapshot after unpublish')
   await searchStrings(page, publishedKey)
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expectLiveEditingChrome(page, publishedKey, false)
+  await expectWorkingCopyChrome(page, publishedKey, 'was_live')
 })
 
 test('never-published draft edits do not show Editing chrome', async ({ page }) => {
@@ -87,10 +96,10 @@ test('never-published draft edits do not show Editing chrome', async ({ page }) 
 
   const row = rowFor(page, draftOnlyKey)
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expectLiveEditingChrome(page, draftOnlyKey, false)
+  await expectWorkingCopyChrome(page, draftOnlyKey, 'none')
 
   await editSource(page, draftOnlyKey, 'Draft edited')
   await searchStrings(page, draftOnlyKey)
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expectLiveEditingChrome(page, draftOnlyKey, false)
+  await expectWorkingCopyChrome(page, draftOnlyKey, 'none')
 })
