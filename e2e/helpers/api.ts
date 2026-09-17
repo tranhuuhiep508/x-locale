@@ -61,3 +61,34 @@ export async function patchStringSource(
   expect(response.ok()).toBeTruthy()
   return response.json() as Promise<StringOut>
 }
+
+export async function createStringViaApi(
+  page: Page,
+  projectId: string,
+  data: {
+    key: string
+    source_text: string
+    status?: 'draft' | 'public'
+    translations?: Record<string, string>
+  },
+): Promise<StringOut> {
+  const response = await page.request.post(`/api/projects/${projectId}/strings`, { data })
+  expect(response.ok()).toBeTruthy()
+  return response.json() as Promise<StringOut>
+}
+
+/** Public string whose working copy differs from the last published snapshot. */
+export async function seedPublicWithUnpublishedSource(
+  page: Page,
+  projectId: string,
+  key: string,
+  publishedSource: string,
+  workingSource: string,
+): Promise<StringOut> {
+  const created = await createStringViaApi(page, projectId, {
+    key,
+    source_text: publishedSource,
+    status: 'public',
+  })
+  return patchStringSource(page, projectId, created.id, workingSource)
+}
