@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
 import {
   AlertDialog,
@@ -22,6 +23,8 @@ interface ConfirmDialogProps {
   isLoading?: boolean
   confirmDisabled?: boolean
   variant?: 'destructive' | 'default'
+  /** Wider layout for rich preview bodies (restore / undo). */
+  contentClassName?: string
 }
 
 export function ConfirmDialog({
@@ -35,6 +38,7 @@ export function ConfirmDialog({
   isLoading,
   confirmDisabled = false,
   variant = 'destructive',
+  contentClassName,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog
@@ -43,11 +47,13 @@ export function ConfirmDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent className={cn('min-w-0 overflow-x-hidden', contentClassName)}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description ? (
-            <AlertDialogDescription>{description}</AlertDialogDescription>
+            <AlertDialogDescription asChild>
+              <div className="w-full min-w-0 text-sm text-muted-foreground">{description}</div>
+            </AlertDialogDescription>
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>

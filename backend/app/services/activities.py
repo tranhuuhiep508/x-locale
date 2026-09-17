@@ -71,7 +71,7 @@ def _to_changed_out(
     out: list[ActivityChangeOut] = []
     for row in rows:
         before, after = row.before, row.after
-        if row.field == "module_id":
+        if row.field in ("module_id", "published_module_id"):
             before = names.get(before, before) if before else before
             after = names.get(after, after) if after else after
         out.append(

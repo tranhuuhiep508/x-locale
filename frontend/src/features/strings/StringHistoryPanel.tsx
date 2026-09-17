@@ -24,26 +24,29 @@ function changeKey(change: ActivityChange) {
   return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
 }
 
-function ChangeLine({ change }: { change: ActivityChange }) {
+function ChangeLine({ change, wrap = false }: { change: ActivityChange; wrap?: boolean }) {
   const label = change.scope === 'published' ? `${changeFieldLabel(change)} (published)` : changeFieldLabel(change)
   const before = changeDisplayValue(change, change.before)
   const after = changeDisplayValue(change, change.after)
+  const lineClass = wrap
+    ? 'break-words text-xs text-muted-foreground'
+    : 'truncate text-xs text-muted-foreground'
   if (!change.before) {
     return (
-      <p className="truncate text-xs text-muted-foreground">
+      <p className={lineClass}>
         <span className="font-medium text-foreground/80">{label}</span> “{after}”
       </p>
     )
   }
   if (!change.after) {
     return (
-      <p className="truncate text-xs text-muted-foreground">
+      <p className={lineClass}>
         <span className="font-medium text-foreground/80">{label}</span> “{before}”
       </p>
     )
   }
   return (
-    <p className="truncate text-xs text-muted-foreground">
+    <p className={lineClass}>
       <span className="font-medium text-foreground/80">{label}</span> “{before}” → “{after}”
     </p>
   )
@@ -61,9 +64,9 @@ function RestorePreviewBody({ preview }: { preview: RestorePreview | undefined }
     <div className="flex flex-col gap-2 text-left">
       <p>{preview.notice ?? preview.blocked_reason}</p>
       {preview.changes.length > 0 ? (
-        <div className="flex flex-col gap-1 rounded-md border p-2">
+        <div className="flex max-h-48 min-w-0 flex-col gap-1 overflow-y-auto rounded-md border p-2">
           {preview.changes.map((change) => (
-            <ChangeLine key={changeKey(change)} change={change} />
+            <ChangeLine key={changeKey(change)} change={change} wrap />
           ))}
         </div>
       ) : null}
@@ -231,6 +234,7 @@ export function StringHistoryPanel({
         variant="default"
         isLoading={restoreMut.isPending}
         confirmDisabled={!preview?.can_restore}
+        contentClassName="sm:max-w-lg"
       />
 
       <ActivityDetailSheet

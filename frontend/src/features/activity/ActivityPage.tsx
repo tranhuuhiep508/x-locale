@@ -341,6 +341,7 @@ export function ActivityPage() {
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
         isLoading={undoMut.isPending}
+        contentClassName="sm:max-w-lg"
       />
 
       <ActivityDetailSheet
