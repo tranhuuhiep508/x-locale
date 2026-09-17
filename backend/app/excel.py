@@ -185,7 +185,11 @@ def _write_sheet(
             row_key = entry.key
             source = entry.source_text
         tags = ",".join(t.name for t in (entry.tags or []))
-        row: list[Any] = [row_key, _sanitize_cell_value(entry.description), tags]
+        row: list[Any] = [
+            _sanitize_cell_value(row_key),
+            _sanitize_cell_value(entry.description),
+            _sanitize_cell_value(tags),
+        ]
         for locale in locales:
             if locale == project.base_language:
                 row.append(_sanitize_cell_value(source))
@@ -325,7 +329,7 @@ def import_workbook(
         for row in rows[1:]:
             if not row or row[key_idx] is None:
                 continue
-            key = str(row[key_idx]).strip()
+            key = _desanitize_cell_value(row[key_idx]).strip()
             if not key:
                 continue
             total += 1
@@ -336,7 +340,11 @@ def import_workbook(
             )
             tag_names = []
             if tags_idx is not None and row[tags_idx]:
-                tag_names = [t.strip() for t in str(row[tags_idx]).split(",") if t.strip()]
+                tag_names = [
+                    _desanitize_cell_value(t.strip())
+                    for t in str(row[tags_idx]).split(",")
+                    if t.strip()
+                ]
 
             source_text = ""
             if project.base_language in locale_cols:
