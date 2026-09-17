@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 
 from openpyxl import Workbook, load_workbook
 
@@ -318,17 +319,176 @@ def test_build_workbook_sanitizes_formula_injection():
         layout=ProjectLayout.flat,
     )
     dangerous_entry = StringEntry(
-        key="formula_key",
+        key='=HYPERLINK("http://evil")',
         source_text="=SUM(A1:A10)",
         description="+cmd|' /C calc'",
         status=TranslationStatus.draft,
+        tags=[Tag(name="@malicious"), Tag(name="safe"), Tag(name="-1day")],
         translations=[Translation(locale="en", value="@malicious_link")],
     )
-    wb_bytes = build_workbook(project, [dangerous_entry], stage="draft")
+    normal_entry = StringEntry(
+        key="btn.save",
+        source_text="Lưu",
+        description="Save button",
+        status=TranslationStatus.draft,
+        tags=[Tag(name="v1")],
+        translations=[Translation(locale="en", value="Save")],
+    )
+    empty_tags_entry = StringEntry(
+        key="plain.key",
+        source_text="Xin chào",
+        description="",
+        status=TranslationStatus.draft,
+        tags=[],
+        translations=[],
+    )
+    wb_bytes = build_workbook(
+        project, [dangerous_entry, normal_entry, empty_tags_entry], stage="draft"
+    )
     wb = load_workbook(io.BytesIO(wb_bytes))
     rows = list(wb[FLAT_SHEET].iter_rows(values_only=True))
-    row = rows[1]
-    assert row[1] == "'+cmd|' /C calc'"
-    assert row[3] == "'=SUM(A1:A10)"
-    assert row[4] == "'@malicious_link"
+    by_key = {r[0]: r for r in rows[1:]}
+
+    dangerous = by_key["'=HYPERLINK(\"http://evil\")"]
+    assert dangerous[0] == "'=HYPERLINK(\"http://evil\")"
+    assert dangerous[1] == "'+cmd|' /C calc'"
+    assert dangerous[2] == "'@malicious,safe,-1day"
+    assert dangerous[3] == "'=SUM(A1:A10)"
+    assert dangerous[4] == "'@malicious_link"
+
+    normal = by_key["btn.save"]
+    assert normal[0] == "btn.save"
+    assert normal[1] == "Save button"
+    assert normal[2] == "v1"
+    assert normal[3] == "Lưu"
+    assert normal[4] == "Save"
+
+    empty_tags = by_key["plain.key"]
+    assert empty_tags[0] == "plain.key"
+    assert empty_tags[2] in ("", None)
+
+
+def test_import_workbook_desanitizes_key_and_tags_round_trip(client):
+    project = _make_project(client, name="Formula Key Tags Round Trip")
+    pid = project["id"]
+
+    export_project = Project(
+        name=project["name"],
+        slug=project["slug"],
+        base_language=project["base_language"],
+        target_languages=project["target_languages"],
+        layout=ProjectLayout.flat,
+    )
+    export_project.id = uuid.UUID(pid)
+
+    dangerous_entry = StringEntry(
+        key='=HYPERLINK("http://evil")',
+        source_text="=SUM(A1:A10)",
+        description="+cmd|' /C calc'",
+        status=TranslationStatus.draft,
+        tags=[Tag(name="@malicious"), Tag(name="safe"), Tag(name="-1day")],
+        translations=[Translation(locale="en", value="@malicious_link")],
+    )
+    plus_key_entry = StringEntry(
+        key="+plus.key",
+        source_text="Nguồn",
+        status=TranslationStatus.draft,
+        tags=[Tag(name="v2"), Tag(name="=cmd")],
+        translations=[],
+    )
+    normal_entry = StringEntry(
+        key="btn.save",
+        source_text="Lưu",
+        description="Save button",
+        status=TranslationStatus.draft,
+        tags=[Tag(name="v1")],
+        translations=[Translation(locale="en", value="Save")],
+    )
+    empty_tags_entry = StringEntry(
+        key="plain.key",
+        source_text="Xin chào",
+        status=TranslationStatus.draft,
+        tags=[],
+        translations=[],
+    )
+    apostrophe_key_entry = StringEntry(
+        key="'quoted.key",
+        source_text="Giữ apostrophe",
+        status=TranslationStatus.draft,
+        tags=[Tag(name="'keep")],
+        translations=[],
+    )
+
+    content = build_workbook(
+        export_project,
+        [
+            dangerous_entry,
+            plus_key_entry,
+            normal_entry,
+            empty_tags_entry,
+            apostrophe_key_entry,
+        ],
+        stage="draft",
+    )
+
+    r = client.post(
+        f"/api/projects/{pid}/import?dry_run=false",
+        files={
+            "file": (
+                "formula.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r.status_code == 200, r.text
+    result = r.json()
+    assert result["created"] == 5
+    assert result["dry_run"] is False
+
+    catalog = client.get(f"/api/projects/{pid}/strings").json()
+    assert catalog["total"] == 5
+    by_key = {item["key"]: item for item in catalog["items"]}
+
+    dangerous = by_key['=HYPERLINK("http://evil")']
+    assert {t["name"] for t in dangerous["tags"]} == {"@malicious", "safe", "-1day"}
+    assert dangerous["source_text"] == "=SUM(A1:A10)"
+    assert dangerous["description"] == "+cmd|' /C calc'"
+
+    plus_key = by_key["+plus.key"]
+    assert {t["name"] for t in plus_key["tags"]} == {"v2", "=cmd"}
+
+    normal = by_key["btn.save"]
+    assert {t["name"] for t in normal["tags"]} == {"v1"}
+    assert normal["source_text"] == "Lưu"
+    assert normal["description"] == "Save button"
+
+    empty_tags = by_key["plain.key"]
+    assert empty_tags["tags"] == []
+
+    apostrophe = by_key["'quoted.key"]
+    assert {t["name"] for t in apostrophe["tags"]} == {"'keep"}
+
+    # Re-import the same sanitized workbook: lookup uses the original key, not the
+    # Excel prefix, so we update in place instead of creating quoted duplicates.
+    r_again = client.post(
+        f"/api/projects/{pid}/import?dry_run=false",
+        files={
+            "file": (
+                "formula.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert r_again.status_code == 200, r_again.text
+    catalog_again = client.get(f"/api/projects/{pid}/strings").json()
+    assert catalog_again["total"] == 5
+    assert {item["key"] for item in catalog_again["items"]} == {
+        '=HYPERLINK("http://evil")',
+        "+plus.key",
+        "btn.save",
+        "plain.key",
+        "'quoted.key",
+    }
 
