@@ -207,6 +207,63 @@ def create_string(
     return response.json()
 
 
+def unpublish_strings(admin: httpx.Client, project_id: str, string_ids: list[str]) -> None:
+    response = admin.post(
+        f"/api/projects/{project_id}/strings/batch",
+        json={"action": "unpublish", "string_ids": string_ids},
+    )
+    response.raise_for_status()
+
+
+def find_string_by_key(client: httpx.Client, project_id: str, key: str) -> dict[str, Any] | None:
+    response = client.get(
+        f"/api/projects/{project_id}/strings",
+        params={"q": key, "page_size": 50},
+    )
+    response.raise_for_status()
+    for item in response.json().get("items") or []:
+        if item.get("key") == key:
+            return item
+    return None
+
+
+def export_flat_keys(
+    client: httpx.Client,
+    project_id: str,
+    *,
+    stage: str,
+    locale: str = "vi",
+) -> set[str]:
+    response = client.get(
+        f"/api/projects/{project_id}/export",
+        params={"layout": "flat", "stage": stage},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    locale_map = payload.get(locale) or {}
+    return set(locale_map.keys())
+
+
+def export_modular_keys(
+    client: httpx.Client,
+    project_id: str,
+    *,
+    stage: str,
+    module_slug: str,
+    locale: str = "vi",
+) -> set[str]:
+    response = client.get(
+        f"/api/projects/{project_id}/export",
+        params={"layout": "modular", "stage": stage},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    modules = payload.get("modules") or {}
+    module_locales = modules.get(module_slug) or {}
+    locale_map = module_locales.get(locale) or {}
+    return set(locale_map.keys())
+
+
 def publish_strings(admin: httpx.Client, project_id: str, string_ids: list[str]) -> None:
     response = admin.post(
         f"/api/projects/{project_id}/strings/publish-preview",
