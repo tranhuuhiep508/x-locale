@@ -43,6 +43,10 @@ import {
   searchToBatchFilter,
 } from '@/features/strings/publish-preview'
 import {
+  batchSuccessMessage,
+  unpublishConfirmCopy,
+} from '@/features/strings/batch-feedback'
+import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
   applySuccessMessage,
@@ -112,6 +116,7 @@ export function StringsPage() {
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [unpublishConfirm, setUnpublishConfirm] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [publishEntries, setPublishEntries] = useState<StringEntry[] | null>(null)
   const [publishFingerprint, setPublishFingerprint] = useState<string | null>(null)
@@ -185,20 +190,22 @@ export function StringsPage() {
 
   const batchMut = useMutation({
     mutationFn: (req: BatchRequest) => stringsApi.batch(projectId, req),
-    onSuccess: (_data, req) => {
+    onSuccess: (data, req) => {
       invalidateStrings()
       setRowSelection({})
       setShowMoveModule(false)
       setShowAddTags(false)
       setDeleteConfirm(false)
       setRestoreLastConfirm(false)
+      setUnpublishConfirm(false)
       if (req.action === 'publish') {
         setPublishOpen(false)
         setPublishEntries(null)
         setPublishFingerprint(null)
         publishRequestRef.current = null
-        toast.success('Published')
       }
+      const message = batchSuccessMessage(req.action, data.affected)
+      if (message) toast.success(message)
     },
     onError: (e, req) => {
       if (req.action === 'publish' && isPublishFingerprintMismatch(e)) {
@@ -390,12 +397,20 @@ export function StringsPage() {
       if (event.key !== 'Escape') return
       if (event.defaultPrevented) return
       if (document.querySelector('[data-slot="alert-dialog-content"], [data-slot="dialog-content"]')) return
-      if (dialogOpen || reviewOpen || publishOpen || showMoveModule || showAddTags || deleteConfirm) return
+      if (
+        dialogOpen ||
+        reviewOpen ||
+        publishOpen ||
+        showMoveModule ||
+        showAddTags ||
+        deleteConfirm ||
+        unpublishConfirm
+      ) return
       setRowSelection({})
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedCount, dialogOpen, reviewOpen, publishOpen, showMoveModule, showAddTags, deleteConfirm])
+  }, [selectedCount, dialogOpen, reviewOpen, publishOpen, showMoveModule, showAddTags, deleteConfirm, unpublishConfirm])
 
   useEffect(() => {
     setRowSelection({})
@@ -414,6 +429,7 @@ export function StringsPage() {
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
   const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
   const showRestore = selectedEntries.some((entry) => Boolean(entry.deleted_at))
+  const unpublishCopy = unpublishConfirmCopy(selectedCount)
   const selectedReleased = selectedEntries.some(
     (entry) => entry.status === 'public' || entry.published_at,
   )
@@ -558,7 +574,7 @@ export function StringsPage() {
                 modules={modules}
                 tags={tags}
                 onPublish={() => openSelectedPublishPreview()}
-                onUnpublish={() => batchMut.mutate({ action: 'unpublish', string_ids: selectedList })}
+                onUnpublish={() => setUnpublishConfirm(true)}
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}
                 onDelete={() => setDeleteConfirm(true)}
@@ -677,6 +693,19 @@ export function StringsPage() {
             payload: { tag_ids: tagIds },
           })
         }
+        isLoading={batchMut.isPending}
+      />
+
+      <ConfirmDialog
+        open={unpublishConfirm}
+        onClose={() => setUnpublishConfirm(false)}
+        onConfirm={() =>
+          batchMut.mutate({ action: 'unpublish', string_ids: selectedList })
+        }
+        title={unpublishCopy.title}
+        description={unpublishCopy.description}
+        confirmLabel={unpublishCopy.confirmLabel}
+        variant="default"
         isLoading={batchMut.isPending}
       />
 

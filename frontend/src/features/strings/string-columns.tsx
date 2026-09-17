@@ -16,6 +16,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { batchSuccessMessage, unpublishConfirmCopy } from '@/features/strings/batch-feedback'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
   ChangedValueHint,
@@ -44,7 +45,7 @@ function metaOf(table: Table<StringEntry>) {
   return table.options.meta as StringTableMeta
 }
 
-function PublishSwitch({
+export function PublishSwitch({
   entry,
   projectId,
   onRefresh,
@@ -56,8 +57,10 @@ function PublishSwitch({
   onPublishPreview: (entry: StringEntry) => void
 }) {
   const toast = useToast()
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false)
   const locked = entry.pending_delete || Boolean(entry.deleted_at)
   const isPublic = entry.status === 'public' && !entry.deleted_at
+  const unpublishCopy = unpublishConfirmCopy(1)
 
   const unpublishMut = useMutation({
     mutationFn: () =>
@@ -65,9 +68,10 @@ function PublishSwitch({
         action: 'unpublish',
         string_ids: [entry.id],
       } satisfies BatchRequest),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setConfirmUnpublish(false)
       onRefresh()
-      toast.success('Moved to draft')
+      toast.success(batchSuccessMessage('unpublish', data.affected) ?? 'Unpublished 1 string')
     },
     onError: () => toast.error('Failed to update status'),
   })
@@ -81,9 +85,19 @@ function PublishSwitch({
         onCheckedChange={(checked) => {
           if (locked) return
           if (checked) onPublishPreview(entry)
-          else unpublishMut.mutate()
+          else setConfirmUnpublish(true)
         }}
         aria-label={isPublic ? 'Public' : 'Draft'}
+      />
+      <ConfirmDialog
+        open={confirmUnpublish}
+        onClose={() => setConfirmUnpublish(false)}
+        onConfirm={() => unpublishMut.mutate()}
+        title={unpublishCopy.title}
+        description={unpublishCopy.description}
+        confirmLabel={unpublishCopy.confirmLabel}
+        variant="default"
+        isLoading={unpublishMut.isPending}
       />
     </div>
   )
