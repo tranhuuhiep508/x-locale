@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sheet'
 import { Spinner } from '@/components/ui/spinner'
 import { changeDisplayValue, changeFieldLabel, changeScopeLabel, groupChangesByScope } from '@/features/activity/change-labels'
+import { batchKindLabel, eventTypeLabel } from '@/features/activity/event-type-labels'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 
 function ChangeRow({ change }: { change: ActivityChange }) {
@@ -96,8 +97,10 @@ export function ActivityDetailSheet({
                 <span title={formatDate(detail.created_at)}>
                   {formatRelativeTime(detail.created_at)}
                 </span>
-                <Badge variant="secondary">{detail.event_type}</Badge>
-                {detail.batch_kind ? <Badge variant="outline">{detail.batch_kind}</Badge> : null}
+                <Badge variant="secondary">{eventTypeLabel(detail.event_type)}</Badge>
+                {detail.batch_kind ? (
+                  <Badge variant="outline">{batchKindLabel(detail.batch_kind)}</Badge>
+                ) : null}
               </>
             ) : (
               'Loading…'

@@ -9,6 +9,7 @@ import { activityFeedQuery, batchRevertPreviewQuery, projectQuery } from '@/lib/
 import { ActivityCard } from '@/features/activity/ActivityCard'
 import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
+import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels'
 import {
   isUndoConflict,
   outcomeLabel,
@@ -36,17 +37,6 @@ import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
-
-const EVENT_FILTERS: { value: string; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'string.created', label: 'Created' },
-  { value: 'translation.updated', label: 'Translations' },
-  { value: 'string.published', label: 'Published' },
-  { value: 'import', label: 'Imports' },
-  { value: 'translate', label: 'AI translate' },
-  { value: 'batch', label: 'Batch actions' },
-  { value: 'string.restored', label: 'Restored' },
-]
 
 function changeKey(change: ActivityChange) {
   return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
@@ -221,7 +211,7 @@ export function ActivityPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {EVENT_FILTERS.map((option) => (
+                {EVENT_TYPE_FILTER_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
