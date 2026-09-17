@@ -52,7 +52,7 @@ test('batch unpublish cancel is no-write; confirm moves to draft with toast', as
   await toolbar.getByRole('button', { name: 'Unpublish' }).click()
   await dialog.getByRole('button', { name: 'Unpublish' }).click()
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expect(page.getByText('Unpublished 1 string')).toBeVisible()
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Unpublished 1 string' })).toBeVisible()
   expect(unpublishPosts).toBe(1)
 })
 
@@ -83,6 +83,6 @@ test('row unpublish cancel is no-write; confirm shows success toast', async ({ p
   await togglePublishSwitch(page, rowKey, false)
   await dialog.getByRole('button', { name: 'Unpublish' }).click()
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
-  await expect(page.getByText('Unpublished 1 string')).toBeVisible()
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Unpublished 1 string' })).toBeVisible()
   expect(unpublishPosts).toBe(1)
 })
