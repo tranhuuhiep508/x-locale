@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 EVENT_CREATED = "string.created"
 EVENT_RENAMED = "string.renamed"
@@ -47,6 +47,8 @@ class ChangedField:
     before: str | None = None
     after: str | None = None
     locale: str | None = None
+    scope: Literal["draft", "published"] = "draft"
+    kind: Literal["field", "translation", "tags"] = "field"
 
 
 def _enum_val(val: Any) -> str | None:
@@ -105,7 +107,9 @@ def _pending(snap: dict[str, Any] | None) -> bool:
     return bool(snap.get("pending_delete"))
 
 
-def _published_changed(before: dict[str, Any] | None, after: dict[str, Any] | None) -> bool:
+def published_fields_changed(
+    before: dict[str, Any] | None, after: dict[str, Any] | None
+) -> bool:
     left = before or {}
     right = after or {}
     for field in PUBLISHED_FIELDS:
@@ -179,7 +183,7 @@ def classify_event(
     if before_status == "public" and after_status == "draft":
         return ClassifiedEvent(EVENT_UNPUBLISHED, None, f"Unpublished {_quote(key)}")
 
-    if (before_status != "public" and after_status == "public") or _published_changed(
+    if (before_status != "public" and after_status == "public") or published_fields_changed(
         before, after
     ):
         return ClassifiedEvent(EVENT_PUBLISHED, None, f"Published {_quote(key)}")
@@ -236,39 +240,65 @@ def human_changed(
     *,
     action: str | None = None,
 ) -> list[ChangedField]:
-    """Working-copy diffs suitable for the UI. Skips published_* and ids."""
+    """Full before/after diffs suitable for the UI, split into draft (working copy)
+    and published (last published snapshot) scopes."""
     action_val = _enum_val(action) or "update"
     left = before or {}
     right = after or {}
     rows: list[ChangedField] = []
 
-    def add(field: str, old: Any, new: Any) -> None:
+    def add(
+        field: str,
+        old: Any,
+        new: Any,
+        *,
+        scope: Literal["draft", "published"] = "draft",
+        kind: Literal["field", "translation", "tags"] = "field",
+        locale: str | None = None,
+    ) -> None:
         old_s = _fmt(old)
         new_s = _fmt(new)
         if action_val == "update" and old_s == new_s:
             return
         if action_val == "create" and new_s is None:
             return
-        rows.append(ChangedField(field=field, before=old_s, after=new_s))
+        rows.append(
+            ChangedField(field=field, before=old_s, after=new_s, locale=locale, scope=scope, kind=kind)
+        )
 
     add("key", left.get("key"), right.get("key"))
     add("source_text", left.get("source_text"), right.get("source_text"))
     add("description", left.get("description"), right.get("description"))
     add("status", left.get("status"), right.get("status"))
-    add("tags", _tag_labels(left), _tag_labels(right))
+    add("module_id", left.get("module_id"), right.get("module_id"))
+    add("tags", _tag_labels(left), _tag_labels(right), kind="tags")
 
     trans_left = translations_map(left.get("translations"))
     trans_right = translations_map(right.get("translations"))
     for locale in sorted(set(trans_left) | set(trans_right)):
-        old_s = _fmt(trans_left.get(locale, ""))
-        new_s = _fmt(trans_right.get(locale, ""))
-        if action_val == "update" and old_s == new_s:
-            continue
-        if action_val == "create" and new_s is None:
-            continue
-        rows.append(
-            ChangedField(field="translation", locale=locale, before=old_s, after=new_s)
+        add(
+            "translation",
+            trans_left.get(locale, ""),
+            trans_right.get(locale, ""),
+            kind="translation",
+            locale=locale,
         )
+
+    for field in PUBLISHED_FIELDS:
+        add(field, left.get(field), right.get(field), scope="published")
+
+    pub_left = translations_map(left.get("published_translations"))
+    pub_right = translations_map(right.get("published_translations"))
+    for locale in sorted(set(pub_left) | set(pub_right)):
+        add(
+            "translation",
+            pub_left.get(locale, ""),
+            pub_right.get(locale, ""),
+            scope="published",
+            kind="translation",
+            locale=locale,
+        )
+
     return rows
 
 

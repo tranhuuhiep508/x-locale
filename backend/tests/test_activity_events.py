@@ -121,7 +121,7 @@ def test_classify_mixed_fields_fallback():
     assert event.event_type == EVENT_UPDATED
 
 
-def test_human_changed_skips_published_fields():
+def test_human_changed_tags_published_fields_with_scope():
     rows = human_changed(
         {
             "key": "a",
@@ -137,8 +137,41 @@ def test_human_changed_skips_published_fields():
         },
         action="update",
     )
-    assert all(row.field != "published_key" for row in rows)
-    assert any(row.locale == "en" for row in rows)
+    published_key_row = next(row for row in rows if row.field == "published_key")
+    assert published_key_row.scope == "published"
+    assert published_key_row.before == "old"
+    assert published_key_row.after == "new"
+    draft_translation = next(
+        row for row in rows if row.field == "translation" and row.locale == "en"
+    )
+    assert draft_translation.scope == "draft"
+    assert draft_translation.kind == "translation"
+
+
+def test_human_changed_includes_module_id_and_published_translations():
+    rows = human_changed(
+        {
+            "key": "a",
+            "module_id": "mod-1",
+            "published_translations": {"en": "Old"},
+        },
+        {
+            "key": "a",
+            "module_id": "mod-2",
+            "published_translations": {"en": "New"},
+        },
+        action="update",
+    )
+    module_row = next(row for row in rows if row.field == "module_id")
+    assert module_row.before == "mod-1"
+    assert module_row.after == "mod-2"
+    assert module_row.scope == "draft"
+    pub_translation = next(
+        row for row in rows if row.field == "translation" and row.scope == "published"
+    )
+    assert pub_translation.locale == "en"
+    assert pub_translation.before == "Old"
+    assert pub_translation.after == "New"
 
 
 def test_human_changed_prefers_tag_names():
@@ -160,6 +193,7 @@ def test_human_changed_prefers_tag_names():
     tag = next(row for row in rows if row.field == "tags")
     assert tag.before == "old"
     assert tag.after == "release"
+    assert tag.kind == "tags"
 
 
 def test_classify_moved_and_tagged():

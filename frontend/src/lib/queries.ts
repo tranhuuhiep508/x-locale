@@ -89,3 +89,31 @@ export const stringActivitiesInfiniteQuery = (projectId: string, stringId: strin
       return loaded < lastPage.total ? lastPage.page + 1 : undefined
     },
   })
+
+export const activityDetailQuery = (projectId: string, activityId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.detail(projectId, activityId),
+    queryFn: () => activitiesApi.detail(projectId, activityId),
+  })
+
+export const revertPreviewQuery = (projectId: string, activityId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.revertPreview(projectId, activityId),
+    queryFn: () => activitiesApi.revertPreview(projectId, activityId),
+  })
+
+export const batchRevertPreviewQuery = (projectId: string, batchId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.batchRevertPreview(projectId, batchId),
+    queryFn: () => activitiesApi.revertBatchPreview(projectId, batchId),
+  })
+
+export const restoreVersionPreviewQuery = (
+  projectId: string,
+  stringId: string,
+  activityId: string,
+) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.restorePreview(projectId, stringId, activityId),
+    queryFn: () => activitiesApi.restoreVersionPreview(projectId, stringId, activityId),
+  })

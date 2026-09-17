@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Spinner } from '@/components/ui/spinner'
 import {
   AlertDialog,
@@ -15,10 +16,11 @@ interface ConfirmDialogProps {
   onClose: () => void
   onConfirm: () => void
   title: string
-  description?: string
+  description?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   isLoading?: boolean
+  confirmDisabled?: boolean
   variant?: 'destructive' | 'default'
 }
 
@@ -31,6 +33,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   isLoading,
+  confirmDisabled = false,
   variant = 'destructive',
 }: ConfirmDialogProps) {
   return (
@@ -51,7 +54,7 @@ export function ConfirmDialog({
           <AlertDialogCancel disabled={isLoading}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             variant={variant}
-            disabled={isLoading}
+            disabled={isLoading || confirmDisabled}
             onClick={(e) => {
               e.preventDefault()
               onConfirm()

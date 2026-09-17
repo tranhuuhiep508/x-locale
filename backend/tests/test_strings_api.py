@@ -261,7 +261,13 @@ def test_string_create_activity_snapshot(client):
     assert after["translations"]["en"] == "Save"
     assert creates[0]["event_type"] == "string.created"
     assert creates[0]["summary"] == "Created 'save'"
-    assert all(change["field"] != "published_key" for change in creates[0]["changed"])
+    # Creating directly as public also stamps the published snapshot, which now
+    # surfaces as a "published" scoped change row alongside the draft fields.
+    published_key_change = next(
+        change for change in creates[0]["changed"] if change["field"] == "published_key"
+    )
+    assert published_key_change["scope"] == "published"
+    assert published_key_change["after"] == "save"
 
 
 def test_string_patch_one_activity_with_translation(client):

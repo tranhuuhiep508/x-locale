@@ -392,6 +392,8 @@ class ActivityChangeOut(BaseModel):
     before: str | None = None
     after: str | None = None
     locale: str | None = None
+    scope: Literal["draft", "published"] = "draft"
+    kind: Literal["field", "translation", "tags"] = "field"
 
 
 class ActivityOut(BaseModel):
@@ -422,6 +424,21 @@ class ActivityOut(BaseModel):
 class RestoreVersionOut(ActivityOut):
     notice: str
     pending_delete: bool = False
+
+
+class ActivityLinkOut(BaseModel):
+    id: UUID
+    summary: str
+    created_at: UtcDateTime | None = None
+
+
+class ActivityDetailOut(ActivityOut):
+    string_key: str | None = None
+    module_name: str | None = None
+    is_history_restorable: bool = False
+    restore_blocked_reason: str | None = None
+    revert_of: ActivityLinkOut | None = None
+    reverted_by: ActivityLinkOut | None = None
 
 
 class ActivityListOut(BaseModel):
@@ -466,3 +483,34 @@ class ActivityFeedOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class RevertPreviewItemOut(BaseModel):
+    activity_id: UUID
+    string_id: UUID | None = None
+    string_key: str | None = None
+    outcome: Literal[
+        "restore_values", "move_to_deleted", "recreate", "already_reverted", "missing"
+    ]
+    conflict: bool = False
+    affects_published: bool = False
+    changes: list[ActivityChangeOut] = Field(default_factory=list)
+
+
+class RevertPreviewOut(BaseModel):
+    items: list[RevertPreviewItemOut]
+    total: int
+    conflict_count: int
+    requires_force: bool
+    affects_published: bool
+
+
+class RestorePreviewOut(BaseModel):
+    string_id: UUID
+    activity_id: UUID
+    can_restore: bool
+    blocked_reason: str | None = None
+    already_matches: bool = False
+    pending_delete: bool = False
+    notice: str | None = None
+    changes: list[ActivityChangeOut] = Field(default_factory=list)

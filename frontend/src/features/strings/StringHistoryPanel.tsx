@@ -1,22 +1,74 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
-import type { Activity } from '@/lib/api/types'
-import { stringActivitiesInfiniteQuery } from '@/lib/queries'
+import type { ActivityChange, RestorePreview } from '@/lib/api/types'
+import { restoreVersionPreviewQuery, stringActivitiesInfiniteQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Spinner } from '@/components/ui/spinner'
-import { shouldShowHistoryRestore } from '@/features/strings/history-restore'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
+import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
+import {
+  historyRestoreBlockedReason,
+  isHistoryRestoreEnabled,
+  shouldShowHistoryRestore,
+} from '@/features/strings/history-restore'
 import { useToast } from '@/lib/toast'
 import { formatRelativeTime } from '@/lib/utils'
 
-function changePreview(activity: Activity) {
-  const change = activity.changed.find((item) => item.field === 'translation') ?? activity.changed[0]
-  if (!change) return null
-  const label = change.locale ?? change.field
-  if (change.before && change.after) {
-    return `${label}: “${change.before}” → “${change.after}”`
+const VISIBLE_CHANGES = 4
+
+function changeKey(change: ActivityChange) {
+  return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
+}
+
+function ChangeLine({ change }: { change: ActivityChange }) {
+  const label = change.scope === 'published' ? `${changeFieldLabel(change)} (published)` : changeFieldLabel(change)
+  const before = changeDisplayValue(change, change.before)
+  const after = changeDisplayValue(change, change.after)
+  if (!change.before) {
+    return (
+      <p className="truncate text-xs text-muted-foreground">
+        <span className="font-medium text-foreground/80">{label}</span> “{after}”
+      </p>
+    )
   }
-  return `${label}: “${change.after ?? change.before ?? ''}”`
+  if (!change.after) {
+    return (
+      <p className="truncate text-xs text-muted-foreground">
+        <span className="font-medium text-foreground/80">{label}</span> “{before}”
+      </p>
+    )
+  }
+  return (
+    <p className="truncate text-xs text-muted-foreground">
+      <span className="font-medium text-foreground/80">{label}</span> “{before}” → “{after}”
+    </p>
+  )
+}
+
+function RestorePreviewBody({ preview }: { preview: RestorePreview | undefined }) {
+  if (!preview) {
+    return (
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Loading preview…
+      </span>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 text-left">
+      <p>{preview.notice ?? preview.blocked_reason}</p>
+      {preview.changes.length > 0 ? (
+        <div className="flex flex-col gap-1 rounded-md border p-2">
+          {preview.changes.map((change) => (
+            <ChangeLine key={changeKey(change)} change={change} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export function StringHistoryPanel({
@@ -34,6 +86,25 @@ export function StringHistoryPanel({
     stringActivitiesInfiniteQuery(projectId, stringId),
   )
 
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+
+  const previewQuery = useQuery({
+    ...restoreVersionPreviewQuery(projectId, stringId, restoreTarget ?? ''),
+    enabled: restoreTarget !== null,
+  })
+  const preview = previewQuery.data
+
+  // Safety net: if the authoritative preview disagrees with the client-side
+  // heuristic (e.g. a race with another edit), bail out with an explanation
+  // instead of leaving a stuck confirm dialog.
+  useEffect(() => {
+    if (restoreTarget && preview && !preview.can_restore) {
+      toast.warning(preview.blocked_reason ?? 'This version cannot be restored')
+      setRestoreTarget(null)
+    }
+  }, [restoreTarget, preview, toast])
+
   const restoreMut = useMutation({
     mutationFn: (activityId: string) =>
       activitiesApi.restoreVersion(projectId, stringId, activityId),
@@ -45,9 +116,13 @@ export function StringHistoryPanel({
       }
       qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
       qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
+      setRestoreTarget(null)
       onRestored()
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Restore failed'),
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'Restore failed')
+      setRestoreTarget(null)
+    },
   })
 
   const items = data?.pages.flatMap((page) => page.items) ?? []
@@ -67,32 +142,71 @@ export function StringHistoryPanel({
   return (
     <div className="flex flex-col gap-3">
       <ol className="flex flex-col gap-3">
-        {items.map((activity, index) => (
-          <li key={activity.id} className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground">{activity.summary}</p>
-              <p className="text-xs text-muted-foreground">
-                {activity.actor_label} · {formatRelativeTime(activity.created_at)}
-              </p>
-              {changePreview(activity) ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {changePreview(activity)}
+        {items.map((activity, index) => {
+          const show = shouldShowHistoryRestore(index)
+          const enabled = isHistoryRestoreEnabled(index, activity)
+          const blockedReason = historyRestoreBlockedReason(activity)
+          const visibleChanges = activity.changed.slice(0, VISIBLE_CHANGES)
+          const extra = activity.changed.length - visibleChanges.length
+          return (
+            <li key={activity.id} className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground">{activity.summary}</p>
+                <p className="text-xs text-muted-foreground">
+                  {activity.actor_label} · {formatRelativeTime(activity.created_at)}
                 </p>
-              ) : null}
-            </div>
-            {shouldShowHistoryRestore(index, activity) ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={restoreMut.isPending}
-                onClick={() => restoreMut.mutate(activity.id)}
-              >
-                Restore
-              </Button>
-            ) : null}
-          </li>
-        ))}
+                <div className="mt-0.5 flex flex-col gap-0.5">
+                  {visibleChanges.map((change) => (
+                    <ChangeLine key={changeKey(change)} change={change} />
+                  ))}
+                  {extra > 0 ? (
+                    <button
+                      type="button"
+                      className="text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      onClick={() => setDetailId(activity.id)}
+                    >
+                      +{extra} more change{extra === 1 ? '' : 's'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDetailId(activity.id)}
+                >
+                  View details
+                </Button>
+                {show ? (
+                  enabled ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={restoreMut.isPending}
+                      onClick={() => setRestoreTarget(activity.id)}
+                    >
+                      Restore
+                    </Button>
+                  ) : (
+                    <Tooltip delayDuration={200}>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Button type="button" variant="ghost" size="sm" disabled>
+                            Restore
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">{blockedReason}</TooltipContent>
+                    </Tooltip>
+                  )
+                ) : null}
+              </div>
+            </li>
+          )
+        })}
       </ol>
       {hasNextPage ? (
         <Button
@@ -106,6 +220,30 @@ export function StringHistoryPanel({
           {isFetchingNextPage ? 'Loading…' : 'Load older'}
         </Button>
       ) : null}
+
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        onClose={() => setRestoreTarget(null)}
+        onConfirm={() => restoreTarget && restoreMut.mutate(restoreTarget)}
+        title="Restore this version?"
+        description={<RestorePreviewBody preview={preview} />}
+        confirmLabel="Restore"
+        variant="default"
+        isLoading={restoreMut.isPending}
+        confirmDisabled={!preview?.can_restore}
+      />
+
+      <ActivityDetailSheet
+        projectId={projectId}
+        activityId={detailId}
+        onOpenChange={(open) => !open && setDetailId(null)}
+        onRestore={() => {
+          if (detailId) {
+            setRestoreTarget(detailId)
+            setDetailId(null)
+          }
+        }}
+      />
     </div>
   )
 }

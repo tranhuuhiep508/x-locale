@@ -10,11 +10,24 @@ from fastapi import APIRouter, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.schemas import ActivityFeedOut, ActivityListOut, ActivityOut, RestoreVersionOut
+from app.schemas import (
+    ActivityDetailOut,
+    ActivityFeedOut,
+    ActivityListOut,
+    ActivityOut,
+    RestorePreviewOut,
+    RestoreVersionOut,
+    RevertPreviewOut,
+)
 from app.services.activities import (
+    get_activity_detail,
     list_activities,
     list_activity_feed,
     list_string_activities,
+    module_name_map,
+    preview_restore_activity_version,
+    preview_revert_activity,
+    preview_revert_batch,
     restore_activity_version,
     revert_activity,
     revert_batch,
@@ -80,6 +93,15 @@ def activity_feed(
     )
 
 
+@router.get("/activities/{activity_id}", response_model=ActivityDetailOut)
+def activity_detail_endpoint(
+    activity_id: uuid.UUID,
+    project: ProjectAccess,
+    db: DbSession,
+) -> ActivityDetailOut:
+    return get_activity_detail(db, project, activity_id)
+
+
 @router.get("/strings/{string_id}/activities", response_model=ActivityListOut)
 def string_activities(
     string_id: uuid.UUID,
@@ -103,6 +125,19 @@ def restore_string_version(
     return restore_activity_version(db, project, string_id, activity_id)
 
 
+@router.get(
+    "/strings/{string_id}/activities/{activity_id}/restore/preview",
+    response_model=RestorePreviewOut,
+)
+def restore_string_version_preview(
+    string_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    project: ProjectAccess,
+    db: DbSession,
+) -> RestorePreviewOut:
+    return preview_restore_activity_version(db, project, string_id, activity_id)
+
+
 @router.post("/activities/{activity_id}/revert", response_model=ActivityOut)
 def revert_activity_endpoint(
     activity_id: uuid.UUID,
@@ -111,7 +146,16 @@ def revert_activity_endpoint(
     force: Annotated[bool, Query()] = False,
 ) -> ActivityOut:
     activity = revert_activity(db, project, activity_id, force=force)
-    return serialize_activity(activity)
+    return serialize_activity(activity, module_name_map(db, project.id))
+
+
+@router.get("/activities/{activity_id}/revert/preview", response_model=RevertPreviewOut)
+def revert_activity_preview_endpoint(
+    activity_id: uuid.UUID,
+    project: ProjectAccess,
+    db: DbSession,
+) -> RevertPreviewOut:
+    return preview_revert_activity(db, project, activity_id)
 
 
 @router.post("/activities/batch/{batch_id}/revert", response_model=dict)
@@ -122,3 +166,12 @@ def revert_batch_endpoint(
     force: Annotated[bool, Query()] = False,
 ) -> dict:
     return revert_batch(db, project, batch_id, force=force)
+
+
+@router.get("/activities/batch/{batch_id}/revert/preview", response_model=RevertPreviewOut)
+def revert_batch_preview_endpoint(
+    batch_id: uuid.UUID,
+    project: ProjectAccess,
+    db: DbSession,
+) -> RevertPreviewOut:
+    return preview_revert_batch(db, project, batch_id)

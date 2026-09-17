@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { canRestoreHistoryVersion, shouldShowHistoryRestore } from '@/features/strings/history-restore'
+import {
+  canRestoreHistoryVersion,
+  historyRestoreBlockedReason,
+  isHistoryRestoreEnabled,
+  shouldShowHistoryRestore,
+} from '@/features/strings/history-restore'
 
 describe('canRestoreHistoryVersion', () => {
   it('allows content snapshots', () => {
@@ -27,9 +32,19 @@ describe('canRestoreHistoryVersion', () => {
 })
 
 describe('shouldShowHistoryRestore', () => {
-  it('hides restore on the newest event even when the snapshot is restorable', () => {
+  it('hides restore on the newest event', () => {
+    expect(shouldShowHistoryRestore(0)).toBe(false)
+  })
+
+  it('shows restore on older events', () => {
+    expect(shouldShowHistoryRestore(1)).toBe(true)
+  })
+})
+
+describe('isHistoryRestoreEnabled', () => {
+  it('is disabled on the newest event even when the snapshot is restorable', () => {
     expect(
-      shouldShowHistoryRestore(0, {
+      isHistoryRestoreEnabled(0, {
         after: { key: 'welcome' },
         action: 'update',
         event_type: 'translation.updated',
@@ -37,13 +52,62 @@ describe('shouldShowHistoryRestore', () => {
     ).toBe(false)
   })
 
-  it('shows restore on older content snapshots', () => {
+  it('is enabled on older content snapshots', () => {
     expect(
-      shouldShowHistoryRestore(1, {
+      isHistoryRestoreEnabled(1, {
         after: { key: 'welcome' },
         action: 'update',
         event_type: 'translation.updated',
       }),
     ).toBe(true)
+  })
+
+  it('is disabled on older lifecycle events', () => {
+    expect(
+      isHistoryRestoreEnabled(1, {
+        after: { key: 'welcome', status: 'public' },
+        action: 'update',
+        event_type: 'string.published',
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('historyRestoreBlockedReason', () => {
+  it('explains why publish/unpublish snapshots cannot be restored', () => {
+    const reason = historyRestoreBlockedReason({
+      after: { key: 'k' },
+      action: 'update',
+      event_type: 'string.published',
+    })
+    expect(reason).toMatch(/Publish and unpublish/)
+  })
+
+  it('explains why pending deletes cannot be restored', () => {
+    const reason = historyRestoreBlockedReason({
+      after: { key: 'k' },
+      action: 'update',
+      event_type: 'string.pending_delete',
+    })
+    expect(reason).toMatch(/Pending deletes/)
+  })
+
+  it('explains why deleted strings cannot be restored', () => {
+    const reason = historyRestoreBlockedReason({
+      after: { key: 'k' },
+      action: 'delete',
+      event_type: 'string.deleted',
+    })
+    expect(reason).toMatch(/Deleted strings/)
+  })
+
+  it('returns null for a restorable snapshot', () => {
+    expect(
+      historyRestoreBlockedReason({
+        after: { key: 'k' },
+        action: 'update',
+        event_type: 'translation.updated',
+      }),
+    ).toBeNull()
   })
 })

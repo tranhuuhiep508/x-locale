@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/lib/api/client'
-import { isUndoConflict, undoDescription, undoOverwriteDescription } from '@/features/activity/undo-batch'
-import type { ActivityFeedCard } from '@/lib/api/types'
+import {
+  isUndoConflict,
+  outcomeLabel,
+  undoDescription,
+  undoOverwriteDescription,
+} from '@/features/activity/undo-batch'
+import type { ActivityFeedCard, RevertPreview, RevertPreviewItem } from '@/lib/api/types'
+
+function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
+  return {
+    activity_id: 'a1',
+    string_id: 's1',
+    string_key: 'welcome',
+    outcome: 'restore_values',
+    conflict: false,
+    affects_published: false,
+    changes: [],
+    ...overrides,
+  }
+}
+
+function preview(overrides: Partial<RevertPreview>): RevertPreview {
+  return {
+    items: [],
+    total: 0,
+    conflict_count: 0,
+    requires_force: false,
+    affects_published: false,
+    ...overrides,
+  }
+}
 
 function card(overrides: Partial<ActivityFeedCard>): ActivityFeedCard {
   return {
@@ -56,5 +85,46 @@ describe('isUndoConflict', () => {
 describe('undoOverwriteDescription', () => {
   it('states that later edits will be overwritten', () => {
     expect(undoOverwriteDescription()).toContain('overwritten')
+  })
+
+  it('names the conflict count when a preview is available', () => {
+    const text = undoOverwriteDescription(preview({ conflict_count: 2 }))
+    expect(text).toContain('2 strings')
+    expect(text).toContain('overwritten')
+  })
+})
+
+describe('undoDescription with preview', () => {
+  it('reflects the preview total and creation count instead of the card estimate', () => {
+    const text = undoDescription(
+      card({ counts: { created: 99 } }),
+      preview({
+        total: 2,
+        items: [
+          previewItem({ outcome: 'move_to_deleted' }),
+          previewItem({ outcome: 'restore_values' }),
+        ],
+      }),
+    )
+    expect(text).toContain('This undoes 2 strings')
+    expect(text).toContain('1 new string')
+  })
+
+  it('mentions the published snapshot when the preview flags it', () => {
+    const text = undoDescription(
+      card({ counts: { updated: 1 } }),
+      preview({ total: 1, affects_published: true }),
+    )
+    expect(text).toContain('published snapshot')
+  })
+})
+
+describe('outcomeLabel', () => {
+  it('labels each outcome', () => {
+    expect(outcomeLabel(previewItem({ outcome: 'restore_values' }))).toBe('Restore previous value')
+    expect(outcomeLabel(previewItem({ outcome: 'move_to_deleted' }))).toBe('Move to Deleted')
+    expect(outcomeLabel(previewItem({ outcome: 'recreate' }))).toBe('Recreate')
+    expect(outcomeLabel(previewItem({ outcome: 'already_reverted' }))).toBe('Already undone')
+    expect(outcomeLabel(previewItem({ outcome: 'missing' }))).toBe('No longer exists')
   })
 })
