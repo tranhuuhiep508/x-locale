@@ -111,7 +111,6 @@ describe('historyRestoreBlockedReason', () => {
 
   it('explains why pending deletes cannot be restored', () => {
     const reason = historyRestoreBlockedReason({
-      after: { key: 'k' },
       action: 'update',
       event_type: 'string.pending_delete',
     })
@@ -120,7 +119,6 @@ describe('historyRestoreBlockedReason', () => {
 
   it('explains why deleted strings cannot be restored', () => {
     const reason = historyRestoreBlockedReason({
-      after: { key: 'k' },
       action: 'delete',
       event_type: 'string.deleted',
     })

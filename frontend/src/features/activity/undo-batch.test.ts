@@ -50,6 +50,7 @@ function card(overrides: Partial<ActivityFeedCard>): ActivityFeedCard {
     is_undoable: true,
     counts: {},
     changed: [],
+    changed_count: 0,
     children: [],
     ...overrides,
   }

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-
 from tests.helpers import _make_project, publish_strings
 
 

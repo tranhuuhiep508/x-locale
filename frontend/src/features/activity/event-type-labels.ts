@@ -38,9 +38,9 @@ export const EVENT_TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
 ]
 
 export function eventTypeLabel(eventType: string): string {
-  return EVENT_TYPE_LABELS[eventType] ?? eventType.replace(/^string\./, '').replaceAll('_', ' ')
+  return EVENT_TYPE_LABELS[eventType] ?? eventType.replace(/^string\./, '').replace(/_/g, ' ')
 }
 
 export function batchKindLabel(batchKind: string): string {
-  return BATCH_KIND_LABELS[batchKind] ?? batchKind.replaceAll('_', ' ')
+  return BATCH_KIND_LABELS[batchKind] ?? batchKind.replace(/_/g, ' ')
 }
