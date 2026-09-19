@@ -49,10 +49,10 @@ def test_batch_unpublish_omits_from_public_export_and_public_list(client):
         f"/api/projects/{pid}/strings",
         json={"key": "live", "source_text": "Live", "translations": {"en": "Live"}},
     ).json()
-    draft_only = client.post(
+    client.post(
         f"/api/projects/{pid}/strings",
         json={"key": "draft", "source_text": "Draft"},
-    ).json()
+    )
     publish_strings(client, pid, [pub["id"]])
 
     r = client.post(
