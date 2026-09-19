@@ -252,19 +252,19 @@ def test_string_create_activity_snapshot(client):
         if a["action"] == "create" and a["entity_type"] == "string"
     ]
     assert len(creates) == 1
-    after = creates[0]["after"]
-    uuid.UUID(after["id"])
-    assert after["status"] == "public"
-    assert after["key"] == "save"
-    assert after["tag_ids"] == [tag["id"]]
-    assert after["tag_names"] == ["ui"]
-    assert after["translations"]["en"] == "Save"
-    assert creates[0]["event_type"] == "string.created"
-    assert creates[0]["summary"] == "Created 'save'"
-    # Creating directly as public also stamps the published snapshot, which now
-    # surfaces as a "published" scoped change row alongside the draft fields.
+    create_row = creates[0]
+    assert "before" not in create_row
+    assert "after" not in create_row
+    assert create_row["string_key"] == "save"
+    assert create_row["event_type"] == "string.created"
+    assert create_row["summary"] == "Created 'save'"
+    assert not any(change["scope"] == "published" for change in create_row["changed"])
+
+    detail = client.get(f"/api/projects/{pid}/activities/{create_row['id']}").json()
+    assert "before" not in detail
+    assert "after" not in detail
     published_key_change = next(
-        change for change in creates[0]["changed"] if change["field"] == "published_key"
+        change for change in detail["changed"] if change["field"] == "published_key"
     )
     assert published_key_change["scope"] == "published"
     assert published_key_change["after"] == "save"
@@ -287,10 +287,17 @@ def test_string_patch_one_activity_with_translation(client):
     items = client.get(f"/api/projects/{pid}/activities").json()["items"]
     updates = [a for a in items if a["action"] == "update" and a["entity_type"] == "string"]
     assert len(updates) == 1
-    assert updates[0]["before"]["key"] == "save"
-    assert updates[0]["after"]["key"] == "save_v2"
-    assert updates[0]["before"]["translations"]["en"] == "Save"
-    assert updates[0]["after"]["translations"]["en"] == "Saved"
+    assert "before" not in updates[0]
+    assert "after" not in updates[0]
+    detail = client.get(f"/api/projects/{pid}/activities/{updates[0]['id']}").json()
+    key_change = next(row for row in detail["changed"] if row["field"] == "key")
+    assert key_change["before"] == "save"
+    assert key_change["after"] == "save_v2"
+    en_change = next(
+        row for row in detail["changed"] if row["field"] == "translation" and row["locale"] == "en"
+    )
+    assert en_change["before"] == "Save"
+    assert en_change["after"] == "Saved"
     assert all(a["entity_type"] != "translation" for a in items)
 
 
@@ -324,13 +331,16 @@ def test_string_delete_activity_and_revert(client):
     items = client.get(f"/api/projects/{pid}/activities").json()["items"]
     deletes = [a for a in items if a["action"] == "delete" and a["entity_type"] == "string"]
     assert len(deletes) == 1
-    before = deletes[0]["before"]
-    assert before["key"] == "cancel"
-    assert before["tag_ids"] == [tag["id"]]
-    assert before["translations"]["en"] == "Cancel"
+    assert deletes[0]["string_key"] == "cancel"
+    assert "before" not in deletes[0]
+    assert "after" not in deletes[0]
 
     r = client.post(f"/api/projects/{pid}/activities/{deletes[0]['id']}/revert")
     assert r.status_code == 200, r.text
+    reverted_snap = r.json()
+    assert reverted_snap["before"]["key"] == "cancel"
+    assert reverted_snap["before"]["tag_ids"] == [tag["id"]]
+    assert reverted_snap["before"]["translations"]["en"] == "Cancel"
     restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert restored["key"] == "cancel"
     assert restored["deleted_at"] is None

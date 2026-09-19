@@ -121,6 +121,25 @@ def test_classify_mixed_fields_fallback():
     assert event.event_type == EVENT_UPDATED
 
 
+def test_human_changed_can_omit_published_scope():
+    rows = human_changed(
+        {
+            "key": "a",
+            "published_key": "old",
+            "translations": {"en": "Hi"},
+        },
+        {
+            "key": "a",
+            "published_key": "new",
+            "translations": {"en": "Hello"},
+        },
+        action="update",
+        include_published=False,
+    )
+    assert not any(row.field == "published_key" for row in rows)
+    assert any(row.field == "translation" and row.locale == "en" for row in rows)
+
+
 def test_human_changed_tags_published_fields_with_scope():
     rows = human_changed(
         {

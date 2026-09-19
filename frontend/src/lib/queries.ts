@@ -74,6 +74,18 @@ export const activityFeedQuery = (projectId: string, params: ActivityFeedParams)
 
 export const HISTORY_PAGE_SIZE = 50
 
+export const batchActivitiesQuery = (
+  projectId: string,
+  batchId: string,
+  pageSize = HISTORY_PAGE_SIZE,
+) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.batch(projectId, batchId, { page_size: pageSize }),
+    queryFn: () =>
+      activitiesApi.list(projectId, { batch_id: batchId, page: 1, page_size: pageSize }),
+    enabled: Boolean(batchId),
+  })
+
 export const stringActivitiesInfiniteQuery = (projectId: string, stringId: string) =>
   infiniteQueryOptions({
     queryKey: queryKeys.projects.activities.string(projectId, stringId),

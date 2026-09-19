@@ -150,7 +150,7 @@ export function StringHistoryPanel({
           const enabled = isHistoryRestoreEnabled(index, activity)
           const blockedReason = historyRestoreBlockedReason(activity)
           const visibleChanges = activity.changed.slice(0, VISIBLE_CHANGES)
-          const extra = activity.changed.length - visibleChanges.length
+          const extra = Math.max(0, activity.changed_count - visibleChanges.length)
           return (
             <li key={activity.id} className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">

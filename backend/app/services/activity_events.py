@@ -239,6 +239,7 @@ def human_changed(
     after: dict[str, Any] | None,
     *,
     action: str | None = None,
+    include_published: bool = True,
 ) -> list[ChangedField]:
     """Full before/after diffs suitable for the UI, split into draft (working copy)
     and published (last published snapshot) scopes."""
@@ -284,20 +285,21 @@ def human_changed(
             locale=locale,
         )
 
-    for field in PUBLISHED_FIELDS:
-        add(field, left.get(field), right.get(field), scope="published")
+    if include_published:
+        for field in PUBLISHED_FIELDS:
+            add(field, left.get(field), right.get(field), scope="published")
 
-    pub_left = translations_map(left.get("published_translations"))
-    pub_right = translations_map(right.get("published_translations"))
-    for locale in sorted(set(pub_left) | set(pub_right)):
-        add(
-            "translation",
-            pub_left.get(locale, ""),
-            pub_right.get(locale, ""),
-            scope="published",
-            kind="translation",
-            locale=locale,
-        )
+        pub_left = translations_map(left.get("published_translations"))
+        pub_right = translations_map(right.get("published_translations"))
+        for locale in sorted(set(pub_left) | set(pub_right)):
+            add(
+                "translation",
+                pub_left.get(locale, ""),
+                pub_right.get(locale, ""),
+                scope="published",
+                kind="translation",
+                locale=locale,
+            )
 
     return rows
 

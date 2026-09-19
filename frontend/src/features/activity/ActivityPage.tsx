@@ -52,8 +52,8 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
   }
 
   const conflicts = preview.items.filter((item) => item.conflict)
-  const visible = preview.items.slice(0, 20)
-  const overflow = preview.items.length - visible.length
+  const visible = preview.items
+  const overflow = Math.max(0, preview.total - visible.length)
 
   return (
     <div className="flex flex-col gap-2 text-left">

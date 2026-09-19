@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
-import type { ActivityChange, ActivityFeedCard, ActivityFeedChild } from '@/lib/api/types'
+import type { ActivityChange, ActivityFeedCard, ActivityFeedChild, ActivityListItem } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
+import { batchActivitiesQuery } from '@/lib/queries'
+import { Spinner } from '@/components/ui/spinner'
 import { formatRelativeTime } from '@/lib/utils'
 
 const VISIBLE_CHANGES = 5
@@ -55,7 +58,7 @@ function ChildRow({
   onOpenDetail?: (activityId: string) => void
 }) {
   const visible = child.changed.slice(0, VISIBLE_CHILD_CHANGES)
-  const extra = child.changed.length - visible.length
+  const extra = Math.max(0, child.changed_count - visible.length)
   return (
     <li className="text-xs text-muted-foreground">
       <div className="flex flex-wrap items-baseline gap-1">
@@ -87,6 +90,62 @@ function ChildRow({
   )
 }
 
+function listItemToFeedChild(item: ActivityListItem): ActivityFeedChild {
+  return {
+    id: item.id,
+    event_type: item.event_type,
+    summary: item.summary,
+    string_id: item.string_id,
+    string_key: item.string_key,
+    locale: item.locale,
+    changed: item.changed,
+    changed_count: item.changed_count,
+  }
+}
+
+function BatchChildrenList({
+  projectId,
+  batchId,
+  childrenCount,
+  onOpenDetail,
+}: {
+  projectId: string
+  batchId: string
+  childrenCount: number
+  onOpenDetail?: (activityId: string) => void
+}) {
+  const { data, isLoading, isError } = useQuery(batchActivitiesQuery(projectId, batchId))
+
+  if (isLoading) {
+    return (
+      <div className="mt-1 flex items-center gap-2 pl-3 text-xs text-muted-foreground">
+        <Spinner className="size-3.5" /> Loading strings…
+      </div>
+    )
+  }
+  if (isError) {
+    return <p className="mt-1 pl-3 text-xs text-destructive">Could not load batch strings.</p>
+  }
+
+  const children = data?.items ?? []
+  if (children.length === 0) {
+    return <p className="mt-1 pl-3 text-xs text-muted-foreground">No strings in this batch.</p>
+  }
+
+  const overflow = childrenCount - children.length
+
+  return (
+    <ul className="mt-1 flex flex-col gap-1.5 border-l pl-3">
+      {children.map((item) => (
+        <ChildRow key={item.id} child={listItemToFeedChild(item)} onOpenDetail={onOpenDetail} />
+      ))}
+      {overflow > 0 ? (
+        <li className="text-xs text-muted-foreground">+{overflow} more strings</li>
+      ) : null}
+    </ul>
+  )
+}
+
 export function ActivityCard({
   card,
   projectId,
@@ -104,7 +163,7 @@ export function ActivityCard({
   const isBatch = card.kind === 'batch'
   const parts = countParts(card.counts)
   const visibleChanges = card.changed.slice(0, VISIBLE_CHANGES)
-  const extraChanges = card.changed.length - visibleChanges.length
+  const extraChanges = Math.max(0, card.changed_count - visibleChanges.length)
 
   return (
     <div className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent/60">
@@ -152,18 +211,15 @@ export function ActivityCard({
               onClick={() => setOpen((value) => !value)}
             >
               {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-              {open
-                ? 'Hide strings'
-                : card.children.length < card.children_count
-                  ? `Show ${card.children.length} of ${card.children_count} strings`
-                  : `Show ${card.children_count} strings`}
+              {open ? 'Hide strings' : `Show ${card.children_count} strings`}
             </button>
-            {open ? (
-              <ul className="mt-1 flex flex-col gap-1.5 border-l pl-3">
-                {card.children.map((child) => (
-                  <ChildRow key={child.id} child={child} onOpenDetail={onOpenDetail} />
-                ))}
-              </ul>
+            {open && card.batch_id ? (
+              <BatchChildrenList
+                projectId={projectId}
+                batchId={card.batch_id}
+                childrenCount={card.children_count}
+                onOpenDetail={onOpenDetail}
+              />
             ) : null}
           </div>
         ) : null}

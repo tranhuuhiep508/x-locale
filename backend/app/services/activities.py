@@ -27,9 +27,9 @@ from app.schemas import (
     ActivityChangeOut,
     ActivityDetailOut,
     ActivityFeedCardOut,
-    ActivityFeedChildOut,
     ActivityFeedOut,
     ActivityLinkOut,
+    ActivityListItemOut,
     ActivityListOut,
     ActivityOut,
     RestorePreviewOut,
@@ -54,7 +54,9 @@ from app.services.activity_events import (
 )
 
 FEED_CHILD_LIMIT = 50
-CHILD_CHANGE_LIMIT = 10
+LIST_CHANGE_LIMIT = 5
+PREVIEW_ITEM_LIMIT = 20
+PREVIEW_CHANGE_LIMIT = 5
 _LOCALE_RE = re.compile(r"^[\w-]+$")
 
 
@@ -65,11 +67,14 @@ def module_name_map(db: Session, project_id: uuid.UUID) -> dict[str, str]:
 
 
 def _to_changed_out(
-    rows: list[ChangedField], module_names: dict[str, str] | None = None
+    rows: list[ChangedField],
+    module_names: dict[str, str] | None = None,
+    *,
+    limit: int | None = None,
 ) -> list[ActivityChangeOut]:
     names = module_names or {}
     out: list[ActivityChangeOut] = []
-    for row in rows:
+    for row in rows[:limit] if limit is not None else rows:
         before, after = row.before, row.after
         if row.field in ("module_id", "published_module_id"):
             before = names.get(before, before) if before else before
@@ -87,44 +92,115 @@ def _to_changed_out(
     return out
 
 
+def _changed_rows(
+    before: dict | None,
+    after: dict | None,
+    *,
+    action: str,
+    module_names: dict[str, str] | None = None,
+    include_published: bool = True,
+    limit: int | None = None,
+) -> tuple[list[ActivityChangeOut], int]:
+    rows = human_changed(
+        before,
+        after,
+        action=action,
+        include_published=include_published,
+    )
+    full = _to_changed_out(rows, module_names)
+    total = len(full)
+    if limit is not None:
+        return full[:limit], total
+    return full, total
+
+
 def _changed_out(
-    activity: Activity, module_names: dict[str, str] | None = None
+    activity: Activity,
+    module_names: dict[str, str] | None = None,
+    *,
+    include_published: bool = True,
+    limit: int | None = None,
 ) -> list[ActivityChangeOut]:
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    rows = human_changed(activity.before, activity.after, action=str(action or "update"))
-    return _to_changed_out(rows, module_names)
+    changed, _ = _changed_rows(
+        activity.before,
+        activity.after,
+        action=str(action or "update"),
+        module_names=module_names,
+        include_published=include_published,
+        limit=limit,
+    )
+    return changed
+
+
+def _history_restore_flags(activity: Activity) -> tuple[bool, str | None]:
+    action = activity.action.value if hasattr(activity.action, "value") else activity.action
+    if not activity.after:
+        return False, "This version cannot be restored"
+    if not is_history_restorable(activity.event_type, str(action or "update")):
+        return False, _history_restore_reject_detail(activity.event_type)
+    return True, None
+
+
+def _activity_core_fields(activity: Activity) -> dict[str, Any]:
+    return {
+        "id": activity.id,
+        "actor_type": activity.actor_type.value
+        if hasattr(activity.actor_type, "value")
+        else activity.actor_type,
+        "actor_id": activity.actor_id,
+        "actor_label": activity.actor_label,
+        "action": activity.action.value if hasattr(activity.action, "value") else activity.action,
+        "entity_type": activity.entity_type.value
+        if hasattr(activity.entity_type, "value")
+        else activity.entity_type,
+        "entity_id": activity.entity_id,
+        "string_id": activity.string_id,
+        "locale": activity.locale,
+        "event_type": activity.event_type or "string.updated",
+        "summary": activity.summary,
+        "batch_id": activity.batch_id,
+        "batch_kind": activity.batch_kind.value
+        if activity.batch_kind and hasattr(activity.batch_kind, "value")
+        else (activity.batch_kind),
+        "revert_of_id": activity.revert_of_id,
+        "reverted_by_id": activity.reverted_by_id,
+        "is_revertible": activity.is_revertible,
+        "created_at": activity.created_at,
+    }
+
+
+def serialize_list_item(
+    activity: Activity, module_names: dict[str, str] | None = None
+) -> ActivityListItemOut:
+    action = activity.action.value if hasattr(activity.action, "value") else activity.action
+    changed, changed_count = _changed_rows(
+        activity.before,
+        activity.after,
+        action=str(action or "update"),
+        module_names=module_names,
+        include_published=False,
+        limit=LIST_CHANGE_LIMIT,
+    )
+    restorable, blocked = _history_restore_flags(activity)
+    return ActivityListItemOut(
+        **_activity_core_fields(activity),
+        string_key=snapshot_key(activity.before, activity.after),
+        changed=changed,
+        changed_count=changed_count,
+        is_history_restorable=restorable,
+        restore_blocked_reason=blocked,
+    )
 
 
 def serialize_activity(
     activity: Activity, module_names: dict[str, str] | None = None
 ) -> ActivityOut:
     return ActivityOut(
-        id=activity.id,
-        actor_type=activity.actor_type.value
-        if hasattr(activity.actor_type, "value")
-        else activity.actor_type,
-        actor_id=activity.actor_id,
-        actor_label=activity.actor_label,
-        action=activity.action.value if hasattr(activity.action, "value") else activity.action,
-        entity_type=activity.entity_type.value
-        if hasattr(activity.entity_type, "value")
-        else activity.entity_type,
-        entity_id=activity.entity_id,
-        string_id=activity.string_id,
-        locale=activity.locale,
+        **_activity_core_fields(activity),
         before=activity.before,
         after=activity.after,
-        event_type=activity.event_type or "string.updated",
-        summary=activity.summary,
-        batch_id=activity.batch_id,
-        batch_kind=activity.batch_kind.value
-        if activity.batch_kind and hasattr(activity.batch_kind, "value")
-        else (activity.batch_kind),
-        revert_of_id=activity.revert_of_id,
-        reverted_by_id=activity.reverted_by_id,
-        is_revertible=activity.is_revertible,
-        created_at=activity.created_at,
-        changed=_changed_out(activity, module_names),
+        changed=_changed_out(activity, module_names, include_published=True),
     )
 
 
@@ -169,7 +245,7 @@ def list_activities(
     )
     names = module_name_map(db, project.id)
     return ActivityListOut(
-        items=[serialize_activity(a, names) for a in items],
+        items=[serialize_list_item(a, names) for a in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -253,27 +329,6 @@ def _feed_counts(type_n: dict[str, int]) -> dict[str, int]:
     }
 
 
-def _feed_child(
-    activity: Activity,
-    *,
-    before: dict | None,
-    after: dict | None,
-    module_names: dict[str, str] | None = None,
-) -> ActivityFeedChildOut:
-    action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    rows = human_changed(before, after, action=str(action or "update"))
-    changed = _to_changed_out(rows, module_names)[:CHILD_CHANGE_LIMIT]
-    return ActivityFeedChildOut(
-        id=activity.id,
-        event_type=activity.event_type or "string.updated",
-        summary=activity.summary,
-        string_id=activity.string_id,
-        string_key=snapshot_key(before, after),
-        locale=activity.locale,
-        changed=changed,
-    )
-
-
 def _sort_feed_rows(rows: list[Activity]) -> list[Activity]:
     return sorted(
         rows,
@@ -314,25 +369,17 @@ def _feed_card(
     undoable = bool(is_batch and kind_val in UNDOABLE_BATCH_KINDS and any_undoable)
     newest_before, newest_after = snaps.get(newest.id, (None, None))
     action = newest.action.value if hasattr(newest.action, "value") else newest.action
-    changed = (
-        []
-        if is_batch
-        else _to_changed_out(
-            human_changed(newest_before, newest_after, action=str(action or "update")),
-            module_names,
+    changed: list[ActivityChangeOut] = []
+    changed_count = 0
+    if not is_batch:
+        changed, changed_count = _changed_rows(
+            newest_before,
+            newest_after,
+            action=str(action or "update"),
+            module_names=module_names,
+            include_published=False,
+            limit=LIST_CHANGE_LIMIT,
         )
-    )
-    children = []
-    if is_batch:
-        children = [
-            _feed_child(
-                row,
-                before=snaps.get(row.id, (None, None))[0],
-                after=snaps.get(row.id, (None, None))[1],
-                module_names=module_names,
-            )
-            for row in rows[:FEED_CHILD_LIMIT]
-        ]
     return ActivityFeedCardOut(
         id=card_id,
         kind="batch" if is_batch else "single",
@@ -352,7 +399,8 @@ def _feed_card(
         is_undoable=undoable,
         counts=counts,
         changed=changed,
-        children=children,
+        changed_count=changed_count,
+        children=[],
     )
 
 
@@ -449,8 +497,7 @@ def list_activity_feed(
         .subquery()
     )
     preview_ids = [
-        _as_uuid(row[0])
-        for row in db.query(ranked.c.id).filter(ranked.c.rn <= FEED_CHILD_LIMIT).all()
+        _as_uuid(row[0]) for row in db.query(ranked.c.id).filter(ranked.c.rn == 1).all()
     ]
     by_card: dict[uuid.UUID, list[Activity]] = {}
     if preview_ids:
@@ -470,9 +517,7 @@ def list_activity_feed(
             continue
         ordered = _sort_feed_rows(rows)
         newest = ordered[0]
-        if newest.batch_id is not None:
-            json_ids.extend(item.id for item in ordered[:FEED_CHILD_LIMIT])
-        else:
+        if newest.batch_id is None:
             json_ids.append(newest.id)
 
     snaps: dict[uuid.UUID, tuple[dict | None, dict | None]] = {}
@@ -578,24 +623,23 @@ def get_activity_detail(
         raise HTTPException(status_code=404, detail="Activity not found")
 
     names = module_name_map(db, project.id)
-    base = serialize_activity(activity, names)
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    restorable = bool(activity.after) and is_history_restorable(
-        activity.event_type, str(action or "update")
+    changed, _ = _changed_rows(
+        activity.before,
+        activity.after,
+        action=str(action or "update"),
+        module_names=names,
+        include_published=True,
     )
-    if not activity.after:
-        blocked_reason: str | None = "This version cannot be restored"
-    elif not restorable:
-        blocked_reason = _history_restore_reject_detail(activity.event_type)
-    else:
-        blocked_reason = None
+    restorable, blocked_reason = _history_restore_flags(activity)
 
     snap = activity.after or activity.before or {}
     module_id = snap.get("module_id")
     module_name = names.get(module_id) if module_id else None
 
     return ActivityDetailOut(
-        **base.model_dump(),
+        **_activity_core_fields(activity),
+        changed=changed,
         string_key=snapshot_key(activity.before, activity.after),
         module_name=module_name,
         is_history_restorable=restorable,
@@ -821,25 +865,72 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
         )
 
 
-def current_matches_after(db: Session, activity: Activity) -> bool:
+def _string_ids_for_activities(activities: list[Activity]) -> set[uuid.UUID]:
+    ids: set[uuid.UUID] = set()
+    for activity in activities:
+        if activity.string_id:
+            ids.add(activity.string_id)
+        elif activity.entity_type == EntityType.string or activity.entity_type == "string":
+            try:
+                ids.add(uuid.UUID(activity.entity_id))
+            except (ValueError, TypeError):
+                continue
+    return ids
+
+
+def _load_string_entries(
+    db: Session, string_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, StringEntry]:
+    if not string_ids:
+        return {}
+    rows = (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+        .filter(StringEntry.id.in_(string_ids))
+        .all()
+    )
+    return {row.id: row for row in rows}
+
+
+def _entry_for_activity(
+    activity: Activity, entries: dict[uuid.UUID, StringEntry]
+) -> StringEntry | None:
+    if activity.string_id:
+        return entries.get(activity.string_id)
+    if activity.entity_type == EntityType.string or activity.entity_type == "string":
+        try:
+            return entries.get(uuid.UUID(activity.entity_id))
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def current_matches_after(
+    db: Session,
+    activity: Activity,
+    *,
+    entry: StringEntry | None = None,
+) -> bool:
     """Conflict guard: current row must still match activity.after."""
     after = activity.after or {}
     if activity.entity_type == EntityType.string or activity.entity_type == "string":
         if activity.action == ActivityAction.delete or activity.action == "delete":
-            entry = (
-                db.query(StringEntry)
-                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
-                .first()
-            )
+            if entry is None:
+                entry = (
+                    db.query(StringEntry)
+                    .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                    .first()
+                )
             if after.get("deleted_at"):
                 return entry is not None and entry.deleted_at is not None
             return entry is None
-        entry = (
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
-            .filter(StringEntry.id == uuid.UUID(activity.entity_id))
-            .first()
-        )
+        if entry is None:
+            entry = (
+                db.query(StringEntry)
+                .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+                .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+                .first()
+            )
         if entry is None:
             return False
         if entry.deleted_at is not None:
@@ -1175,9 +1266,12 @@ def revert_batch(
     new_batch = uuid.uuid4()
     existing = attach_batch(db, new_batch, "revert")
 
+    entries = _load_string_entries(db, _string_ids_for_activities(activities))
     reverted = 0
     for activity in activities:
-        if not force and not current_matches_after(db, activity):
+        if not force and not current_matches_after(
+            db, activity, entry=_entry_for_activity(activity, entries)
+        ):
             raise HTTPException(
                 status_code=409,
                 detail=f"Conflict on activity {activity.id}. Pass force=true to override.",
@@ -1201,7 +1295,10 @@ def revert_batch(
 
 
 def _revert_preview_item(
-    db: Session, activity: Activity, module_names: dict[str, str]
+    db: Session,
+    activity: Activity,
+    module_names: dict[str, str],
+    entries: dict[uuid.UUID, StringEntry],
 ) -> RevertPreviewItemOut:
     before = activity.before or {}
     after = activity.after or {}
@@ -1224,7 +1321,9 @@ def _revert_preview_item(
             changes=[],
         )
 
-    conflict = not current_matches_after(db, activity)
+    conflict = not current_matches_after(
+        db, activity, entry=_entry_for_activity(activity, entries)
+    )
     changes: list[ActivityChangeOut] = []
     affects_published = False
 
@@ -1245,19 +1344,10 @@ def _revert_preview_item(
 
         if outcome in ("restore_values", "recreate"):
             affects_published = published_fields_changed(before, after)
-            current_entry = None
-            if activity.string_id:
-                current_entry = (
-                    db.query(StringEntry)
-                    .options(
-                        joinedload(StringEntry.translations), joinedload(StringEntry.tags)
-                    )
-                    .filter(StringEntry.id == activity.string_id)
-                    .first()
-                )
+            current_entry = _entry_for_activity(activity, entries)
             current_snap = _live_snapshot(current_entry) if current_entry else None
-            rows = human_changed(current_snap, before, action="update")
-            changes = _to_changed_out(rows, module_names)
+            rows = human_changed(current_snap, before, action="update", include_published=True)
+            changes = _to_changed_out(rows, module_names)[:PREVIEW_CHANGE_LIMIT]
     else:
         outcome = "restore_values" if action != "create" else "move_to_deleted"
 
@@ -1276,12 +1366,13 @@ def build_revert_preview(
     db: Session, project: Project, activities: list[Activity]
 ) -> RevertPreviewOut:
     names = module_name_map(db, project.id)
-    items = [_revert_preview_item(db, activity, names) for activity in activities]
-    conflict_count = sum(1 for item in items if item.conflict)
-    affects_published = any(item.affects_published for item in items)
+    entries = _load_string_entries(db, _string_ids_for_activities(activities))
+    all_items = [_revert_preview_item(db, activity, names, entries) for activity in activities]
+    conflict_count = sum(1 for item in all_items if item.conflict)
+    affects_published = any(item.affects_published for item in all_items)
     return RevertPreviewOut(
-        items=items,
-        total=len(items),
+        items=all_items[:PREVIEW_ITEM_LIMIT],
+        total=len(all_items),
         conflict_count=conflict_count,
         requires_force=conflict_count > 0,
         affects_published=affects_published,

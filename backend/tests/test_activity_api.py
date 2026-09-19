@@ -94,7 +94,12 @@ def test_restore_version_applies_after_without_409(client):
         a
         for a in history
         if a["action"] == "update"
-        and (a["after"] or {}).get("translations", {}).get("en") == "Hello"
+        and any(
+            row["field"] == "translation"
+            and row.get("locale") == "en"
+            and row.get("after") == "Hello"
+            for row in a["changed"]
+        )
     )
 
     r = client.post(
@@ -421,10 +426,8 @@ def test_feed_caps_batch_children(client):
     assert feed.status_code == 200, feed.text
     card = feed.json()["items"][0]
     assert card["children_count"] == total
-    assert len(card["children"]) == FEED_CHILD_LIMIT
+    assert card["children"] == []
     assert card["counts"]["created"] == total
-    assert "before" not in card["children"][0]
-    assert "after" not in card["children"][0]
 
 
 def test_tag_change_shows_names_in_changed(client):
@@ -538,7 +541,7 @@ def test_activity_retention_default_is_90():
     assert Settings.model_fields["activity_retention_days"].default == 90
 
 
-def test_feed_caps_batch_children_include_changed_rows(client):
+def test_feed_batch_children_load_via_batch_id_list(client):
     project = _make_project(client, "Feed Child Diffs")
     pid = project["id"]
     imported = client.post(
@@ -546,6 +549,7 @@ def test_feed_caps_batch_children_include_changed_rows(client):
         json={"strings": {"a": "A", "b": "B"}},
     )
     assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
 
     feed = client.get(
         f"/api/projects/{pid}/activities/feed",
@@ -554,10 +558,18 @@ def test_feed_caps_batch_children_include_changed_rows(client):
     assert feed.status_code == 200, feed.text
     card = feed.json()["items"][0]
     assert card["children_count"] == 2
-    for child in card["children"]:
+    assert card["children"] == []
+
+    children = client.get(
+        f"/api/projects/{pid}/activities",
+        params={"batch_id": batch_id},
+    ).json()["items"]
+    assert len(children) == 2
+    for child in children:
         assert child["changed"], "each batch child should carry its own diff"
         assert "before" not in child
         assert "after" not in child
+        assert child["changed_count"] >= len(child["changed"])
 
 
 def test_activity_detail_endpoint(client):
@@ -574,12 +586,20 @@ def test_activity_detail_endpoint(client):
     )
     latest = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"][0]
 
+    list_row = latest
+    assert list_row["is_history_restorable"] is True
+    assert list_row["restore_blocked_reason"] is None
+    assert "before" not in list_row
+    assert "after" not in list_row
+
     detail = client.get(f"/api/projects/{pid}/activities/{latest['id']}")
     assert detail.status_code == 200, detail.text
     body = detail.json()
     assert body["string_key"] == "welcome"
     assert body["is_history_restorable"] is True
     assert body["restore_blocked_reason"] is None
+    assert "before" not in body
+    assert "after" not in body
     assert any(row["field"] == "translation" and row["locale"] == "en" for row in body["changed"])
 
     missing = client.get(f"/api/projects/{pid}/activities/{uuid.uuid4()}")
@@ -617,6 +637,23 @@ def test_activity_detail_resolves_module_name_and_blocked_reason(client):
     blocked_detail = client.get(f"/api/projects/{pid}/activities/{pending['id']}").json()
     assert blocked_detail["is_history_restorable"] is False
     assert "Pending deletes" in blocked_detail["restore_blocked_reason"]
+
+
+def test_revert_batch_preview_caps_response_items(client):
+    project = _make_project(client, "Revert Preview Cap")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {f"k{i:02d}": f"v{i}" for i in range(25)}},
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+    preview = client.get(f"/api/projects/{pid}/activities/batch/{batch_id}/revert/preview")
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["total"] == 25
+    assert len(body["items"]) == 20
+    assert body["conflict_count"] == 0
 
 
 def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
@@ -723,7 +760,12 @@ def test_restore_version_preview_matches_actual_restore(client):
         a
         for a in history
         if a["action"] == "update"
-        and (a["after"] or {}).get("translations", {}).get("en") == "Hello"
+        and any(
+            row["field"] == "translation"
+            and row.get("locale") == "en"
+            and row.get("after") == "Hello"
+            for row in a["changed"]
+        )
     )
 
     preview = client.get(

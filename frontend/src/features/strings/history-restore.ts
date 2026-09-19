@@ -6,14 +6,17 @@ const HISTORY_UNRESTORABLE_EVENT_TYPES = new Set([
 ])
 
 interface RestorableActivity {
-  after: unknown
+  is_history_restorable?: boolean
+  restore_blocked_reason?: string | null
   action: string
   event_type: string
 }
 
 export function canRestoreHistoryVersion(activity: RestorableActivity) {
+  if (activity.is_history_restorable !== undefined) {
+    return activity.is_history_restorable
+  }
   return (
-    Boolean(activity.after) &&
     activity.action !== 'delete' &&
     !HISTORY_UNRESTORABLE_EVENT_TYPES.has(activity.event_type)
   )
@@ -22,7 +25,9 @@ export function canRestoreHistoryVersion(activity: RestorableActivity) {
 /** Mirrors the backend's `_history_restore_reject_detail()` copy so the disabled
  * button's reason matches what the API would say if asked anyway. */
 export function historyRestoreBlockedReason(activity: RestorableActivity): string | null {
-  if (!activity.after) return 'This version cannot be restored'
+  if (activity.restore_blocked_reason) {
+    return activity.restore_blocked_reason
+  }
   if (activity.action === 'delete' || activity.event_type === 'string.deleted') {
     return 'Deleted strings cannot be restored from History. Use Restore on the Deleted filter.'
   }

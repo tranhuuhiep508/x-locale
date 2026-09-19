@@ -396,7 +396,7 @@ class ActivityChangeOut(BaseModel):
     kind: Literal["field", "translation", "tags"] = "field"
 
 
-class ActivityOut(BaseModel):
+class ActivityCoreOut(BaseModel):
     id: UUID
     actor_type: str
     actor_id: str | None
@@ -406,8 +406,6 @@ class ActivityOut(BaseModel):
     entity_id: str
     string_id: UUID | None
     locale: str | None
-    before: dict[str, Any] | None
-    after: dict[str, Any] | None
     event_type: str
     summary: str
     batch_id: UUID | None
@@ -421,6 +419,18 @@ class ActivityOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ActivityOut(ActivityCoreOut):
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+
+
+class ActivityListItemOut(ActivityCoreOut):
+    string_key: str | None = None
+    changed_count: int = 0
+    is_history_restorable: bool = False
+    restore_blocked_reason: str | None = None
+
+
 class RestoreVersionOut(ActivityOut):
     notice: str
     pending_delete: bool = False
@@ -432,7 +442,7 @@ class ActivityLinkOut(BaseModel):
     created_at: UtcDateTime | None = None
 
 
-class ActivityDetailOut(ActivityOut):
+class ActivityDetailOut(ActivityCoreOut):
     string_key: str | None = None
     module_name: str | None = None
     is_history_restorable: bool = False
@@ -442,7 +452,7 @@ class ActivityDetailOut(ActivityOut):
 
 
 class ActivityListOut(BaseModel):
-    items: list[ActivityOut]
+    items: list[ActivityListItemOut]
     total: int
     page: int
     page_size: int
@@ -456,6 +466,7 @@ class ActivityFeedChildOut(BaseModel):
     string_key: str | None = None
     locale: str | None = None
     changed: list[ActivityChangeOut] = Field(default_factory=list)
+    changed_count: int = 0
 
 
 class ActivityFeedCardOut(BaseModel):
@@ -475,6 +486,7 @@ class ActivityFeedCardOut(BaseModel):
     is_undoable: bool = False
     counts: dict[str, int] = Field(default_factory=dict)
     changed: list[ActivityChangeOut] = Field(default_factory=list)
+    changed_count: int = 0
     children: list[ActivityFeedChildOut] = Field(default_factory=list)
 
 

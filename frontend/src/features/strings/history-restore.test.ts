@@ -10,7 +10,7 @@ describe('canRestoreHistoryVersion', () => {
   it('allows content snapshots', () => {
     expect(
       canRestoreHistoryVersion({
-        after: { key: 'welcome', translations: { en: 'Hello' } },
+        is_history_restorable: true,
         action: 'update',
         event_type: 'translation.updated',
       }),
@@ -18,15 +18,41 @@ describe('canRestoreHistoryVersion', () => {
   })
 
   it('hides publish, unpublish, and pending delete', () => {
-    const after = { key: 'delete', status: 'public' }
     expect(
-      canRestoreHistoryVersion({ after, action: 'update', event_type: 'string.published' }),
+      canRestoreHistoryVersion({
+        is_history_restorable: false,
+        action: 'update',
+        event_type: 'string.published',
+      }),
     ).toBe(false)
     expect(
-      canRestoreHistoryVersion({ after, action: 'update', event_type: 'string.unpublished' }),
+      canRestoreHistoryVersion({
+        is_history_restorable: false,
+        action: 'update',
+        event_type: 'string.unpublished',
+      }),
     ).toBe(false)
     expect(
-      canRestoreHistoryVersion({ after, action: 'update', event_type: 'string.pending_delete' }),
+      canRestoreHistoryVersion({
+        is_history_restorable: false,
+        action: 'update',
+        event_type: 'string.pending_delete',
+      }),
+    ).toBe(false)
+  })
+
+  it('falls back to event_type when server flag is absent', () => {
+    expect(
+      canRestoreHistoryVersion({
+        action: 'update',
+        event_type: 'translation.updated',
+      }),
+    ).toBe(true)
+    expect(
+      canRestoreHistoryVersion({
+        action: 'update',
+        event_type: 'string.published',
+      }),
     ).toBe(false)
   })
 })
@@ -45,7 +71,7 @@ describe('isHistoryRestoreEnabled', () => {
   it('is disabled on the newest event even when the snapshot is restorable', () => {
     expect(
       isHistoryRestoreEnabled(0, {
-        after: { key: 'welcome' },
+        is_history_restorable: true,
         action: 'update',
         event_type: 'translation.updated',
       }),
@@ -55,7 +81,7 @@ describe('isHistoryRestoreEnabled', () => {
   it('is enabled on older content snapshots', () => {
     expect(
       isHistoryRestoreEnabled(1, {
-        after: { key: 'welcome' },
+        is_history_restorable: true,
         action: 'update',
         event_type: 'translation.updated',
       }),
@@ -65,7 +91,7 @@ describe('isHistoryRestoreEnabled', () => {
   it('is disabled on older lifecycle events', () => {
     expect(
       isHistoryRestoreEnabled(1, {
-        after: { key: 'welcome', status: 'public' },
+        is_history_restorable: false,
         action: 'update',
         event_type: 'string.published',
       }),
@@ -76,7 +102,7 @@ describe('isHistoryRestoreEnabled', () => {
 describe('historyRestoreBlockedReason', () => {
   it('explains why publish/unpublish snapshots cannot be restored', () => {
     const reason = historyRestoreBlockedReason({
-      after: { key: 'k' },
+      restore_blocked_reason: 'Publish and unpublish cannot be restored from History.',
       action: 'update',
       event_type: 'string.published',
     })
@@ -104,7 +130,8 @@ describe('historyRestoreBlockedReason', () => {
   it('returns null for a restorable snapshot', () => {
     expect(
       historyRestoreBlockedReason({
-        after: { key: 'k' },
+        is_history_restorable: true,
+        restore_blocked_reason: null,
         action: 'update',
         event_type: 'translation.updated',
       }),

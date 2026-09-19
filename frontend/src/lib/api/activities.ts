@@ -14,6 +14,7 @@ export type ActivityListParams = {
   event_type?: string
   actor?: string
   string_id?: string
+  batch_id?: string
 }
 
 export type ActivityFeedParams = {
