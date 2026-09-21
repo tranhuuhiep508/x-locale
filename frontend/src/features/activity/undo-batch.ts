@@ -23,7 +23,7 @@ export function undoDescription(card: ActivityFeedCard, preview?: RevertPreview)
     return `This restores ${total} ${stringNoun(total)} to their values before this action.`
   }
 
-  const created = preview.items.filter((item) => item.outcome === 'move_to_deleted').length
+  const created = preview.outcome_counts.move_to_deleted
   const total = preview.total
   const parts: string[] = []
   if (created > 0) {
@@ -48,6 +48,12 @@ export function undoOverwriteDescription(preview?: RevertPreview): string {
     )
   }
   return 'Later edits will be overwritten.'
+}
+
+export function previewShowingCaption(preview: RevertPreview): string | null {
+  const shown = preview.items.length
+  if (shown >= preview.total) return null
+  return `Showing ${shown} of ${preview.total}`
 }
 
 export function outcomeLabel(item: RevertPreviewItem): string {

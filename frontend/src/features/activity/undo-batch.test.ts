@@ -3,10 +3,16 @@ import { ApiError } from '@/lib/api/client'
 import {
   isUndoConflict,
   outcomeLabel,
+  previewShowingCaption,
   undoDescription,
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
-import type { ActivityFeedCard, RevertPreview, RevertPreviewItem } from '@/lib/api/types'
+import type {
+  ActivityFeedCard,
+  RevertPreview,
+  RevertPreviewItem,
+  RevertPreviewOutcomeCounts,
+} from '@/lib/api/types'
 
 function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
   return {
@@ -21,6 +27,19 @@ function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
   }
 }
 
+function outcomeCounts(
+  overrides: Partial<RevertPreviewOutcomeCounts> = {},
+): RevertPreviewOutcomeCounts {
+  return {
+    restore_values: 0,
+    move_to_deleted: 0,
+    recreate: 0,
+    already_reverted: 0,
+    missing: 0,
+    ...overrides,
+  }
+}
+
 function preview(overrides: Partial<RevertPreview>): RevertPreview {
   return {
     items: [],
@@ -28,6 +47,7 @@ function preview(overrides: Partial<RevertPreview>): RevertPreview {
     conflict_count: 0,
     requires_force: false,
     affects_published: false,
+    outcome_counts: outcomeCounts(),
     ...overrides,
   }
 }
@@ -105,10 +125,28 @@ describe('undoDescription with preview', () => {
           previewItem({ outcome: 'move_to_deleted' }),
           previewItem({ outcome: 'restore_values' }),
         ],
+        outcome_counts: outcomeCounts({ move_to_deleted: 1, restore_values: 1 }),
       }),
     )
     expect(text).toContain('This undoes 2 strings')
     expect(text).toContain('1 new string')
+  })
+
+  it('uses full-batch outcome tallies when Deleted outcomes sit past the item cap', () => {
+    const items = Array.from({ length: 20 }, (_, index) =>
+      previewItem({ activity_id: `a${index}`, outcome: 'restore_values' }),
+    )
+    const text = undoDescription(
+      card({ counts: { created: 0 } }),
+      preview({
+        total: 25,
+        items,
+        outcome_counts: outcomeCounts({ restore_values: 20, move_to_deleted: 5 }),
+      }),
+    )
+    expect(items.filter((item) => item.outcome === 'move_to_deleted')).toHaveLength(0)
+    expect(text).toContain('This undoes 25 strings')
+    expect(text).toContain('5 new strings will be moved to Deleted')
   })
 
   it('mentions the published snapshot when the preview flags it', () => {
@@ -117,6 +155,26 @@ describe('undoDescription with preview', () => {
       preview({ total: 1, affects_published: true }),
     )
     expect(text).toContain('published snapshot')
+  })
+})
+
+describe('previewShowingCaption', () => {
+  it('is omitted when every item is already in the preview list', () => {
+    expect(
+      previewShowingCaption(
+        preview({
+          total: 2,
+          items: [previewItem({ activity_id: 'a1' }), previewItem({ activity_id: 'a2' })],
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('names the truncated window when the batch is larger than the item cap', () => {
+    const items = Array.from({ length: 20 }, (_, index) =>
+      previewItem({ activity_id: `a${index}` }),
+    )
+    expect(previewShowingCaption(preview({ total: 25, items }))).toBe('Showing 20 of 25')
   })
 })
 

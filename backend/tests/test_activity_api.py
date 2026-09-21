@@ -654,6 +654,13 @@ def test_revert_batch_preview_caps_response_items(client):
     assert body["total"] == 25
     assert len(body["items"]) == 20
     assert body["conflict_count"] == 0
+    # Truncated items undercount Deleted outcomes; full-batch tallies must not.
+    assert sum(1 for item in body["items"] if item["outcome"] == "move_to_deleted") == 20
+    assert body["outcome_counts"]["move_to_deleted"] == 25
+    assert body["outcome_counts"]["restore_values"] == 0
+    assert body["outcome_counts"]["recreate"] == 0
+    assert body["outcome_counts"]["already_reverted"] == 0
+    assert body["outcome_counts"]["missing"] == 0
 
 
 def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
@@ -678,6 +685,8 @@ def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
     assert clean_body["total"] == 2
     assert clean_body["conflict_count"] == 0
     assert clean_body["requires_force"] is False
+    assert clean_body["outcome_counts"]["restore_values"] == 2
+    assert clean_body["outcome_counts"]["move_to_deleted"] == 0
     outcomes = {item["outcome"] for item in clean_body["items"]}
     assert outcomes == {"restore_values"}
     a_item = next(item for item in clean_body["items"] if item["string_key"] == "a")
@@ -737,6 +746,8 @@ def test_revert_activity_preview_move_to_deleted_for_create(client):
     assert body["total"] == 1
     assert body["items"][0]["outcome"] == "move_to_deleted"
     assert body["items"][0]["string_id"] == sid
+    assert body["outcome_counts"]["move_to_deleted"] == 1
+    assert body["outcome_counts"]["restore_values"] == 0
 
 
 def test_restore_version_preview_matches_actual_restore(client):

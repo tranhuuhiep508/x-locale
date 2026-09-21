@@ -509,12 +509,21 @@ class RevertPreviewItemOut(BaseModel):
     changes: list[ActivityChangeOut] = Field(default_factory=list)
 
 
+class RevertPreviewOutcomeCountsOut(BaseModel):
+    restore_values: int = 0
+    move_to_deleted: int = 0
+    recreate: int = 0
+    already_reverted: int = 0
+    missing: int = 0
+
+
 class RevertPreviewOut(BaseModel):
     items: list[RevertPreviewItemOut]
     total: int
     conflict_count: int
     requires_force: bool
     affects_published: bool
+    outcome_counts: RevertPreviewOutcomeCountsOut
 
 
 class RestorePreviewOut(BaseModel):

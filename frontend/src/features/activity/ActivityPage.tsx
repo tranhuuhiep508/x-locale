@@ -13,6 +13,7 @@ import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels
 import {
   isUndoConflict,
   outcomeLabel,
+  previewShowingCaption,
   undoDescription,
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
@@ -53,15 +54,15 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
 
   const conflicts = preview.items.filter((item) => item.conflict)
   const visible = preview.items
-  const overflow = Math.max(0, preview.total - visible.length)
+  const showingCaption = previewShowingCaption(preview)
 
   return (
     <div className="flex flex-col gap-2 text-left">
-      {conflicts.length > 0 ? (
+      {preview.conflict_count > 0 ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
           <p className="font-medium">
-            {conflicts.length} {conflicts.length === 1 ? 'string was' : 'strings were'} edited since
-            this action:
+            {preview.conflict_count} {preview.conflict_count === 1 ? 'string was' : 'strings were'}{' '}
+            edited since this action:
           </p>
           <ul className="mt-1 flex flex-col gap-0.5">
             {conflicts.slice(0, 10).map((item) => (
@@ -87,10 +88,8 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
             ))}
           </li>
         ))}
-        {overflow > 0 ? (
-          <li className="text-xs text-muted-foreground">+{overflow} more</li>
-        ) : null}
       </ul>
+      {showingCaption ? <p className="text-xs text-muted-foreground">{showingCaption}</p> : null}
     </div>
   )
 }

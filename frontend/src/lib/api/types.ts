@@ -432,12 +432,21 @@ export interface RevertPreviewItem {
   changes: ActivityChange[]
 }
 
+export interface RevertPreviewOutcomeCounts {
+  restore_values: number
+  move_to_deleted: number
+  recreate: number
+  already_reverted: number
+  missing: number
+}
+
 export interface RevertPreview {
   items: RevertPreviewItem[]
   total: number
   conflict_count: number
   requires_force: boolean
   affects_published: boolean
+  outcome_counts: RevertPreviewOutcomeCounts
 }
 
 export interface RestorePreview {

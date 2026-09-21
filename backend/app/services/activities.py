@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -35,6 +36,7 @@ from app.schemas import (
     RestorePreviewOut,
     RestoreVersionOut,
     RevertPreviewItemOut,
+    RevertPreviewOutcomeCountsOut,
     RevertPreviewOut,
 )
 from app.services.activity_events import (
@@ -1362,6 +1364,17 @@ def _revert_preview_item(
     )
 
 
+def _outcome_counts(items: list[RevertPreviewItemOut]) -> RevertPreviewOutcomeCountsOut:
+    tallies = Counter(item.outcome for item in items)
+    return RevertPreviewOutcomeCountsOut(
+        restore_values=tallies["restore_values"],
+        move_to_deleted=tallies["move_to_deleted"],
+        recreate=tallies["recreate"],
+        already_reverted=tallies["already_reverted"],
+        missing=tallies["missing"],
+    )
+
+
 def build_revert_preview(
     db: Session, project: Project, activities: list[Activity]
 ) -> RevertPreviewOut:
@@ -1376,6 +1389,7 @@ def build_revert_preview(
         conflict_count=conflict_count,
         requires_force=conflict_count > 0,
         affects_published=affects_published,
+        outcome_counts=_outcome_counts(all_items),
     )
 
 
