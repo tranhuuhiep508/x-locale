@@ -36,8 +36,8 @@ from app.schemas import (
     RestorePreviewOut,
     RestoreVersionOut,
     RevertPreviewItemOut,
-    RevertPreviewOutcomeCountsOut,
     RevertPreviewOut,
+    RevertPreviewOutcomeCountsOut,
 )
 from app.services.activity_events import (
     EVENT_CREATED,
