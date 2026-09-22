@@ -50,10 +50,21 @@ export function undoOverwriteDescription(preview?: RevertPreview): string {
   return 'Later edits will be overwritten.'
 }
 
-export function previewShowingCaption(preview: RevertPreview): string | null {
-  const shown = preview.items.length
-  if (shown >= preview.total) return null
-  return `Showing ${shown} of ${preview.total}`
+export function previewTruncated(shown: number, total: number): boolean {
+  return shown < total
+}
+
+export function previewShowingCaption(shown: number, total: number): string | null {
+  if (!previewTruncated(shown, total)) return null
+  return `Showing ${shown} of ${total}`
+}
+
+export function previewItemsShowingCaption(preview: RevertPreview): string | null {
+  return previewShowingCaption(preview.items.length, preview.total)
+}
+
+export function previewConflictsShowingCaption(preview: RevertPreview): string | null {
+  return previewShowingCaption(preview.conflicts.length, preview.conflict_count)
 }
 
 export function outcomeLabel(item: RevertPreviewItem): string {

@@ -13,7 +13,9 @@ import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels
 import {
   isUndoConflict,
   outcomeLabel,
-  previewShowingCaption,
+  previewConflictsShowingCaption,
+  previewItemsShowingCaption,
+  previewTruncated,
   undoDescription,
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
@@ -52,9 +54,10 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
     )
   }
 
-  const conflicts = preview.items.filter((item) => item.conflict)
+  const conflicts = preview.conflicts
   const visible = preview.items
-  const showingCaption = previewShowingCaption(preview)
+  const itemsCaption = previewItemsShowingCaption(preview)
+  const conflictsCaption = previewConflictsShowingCaption(preview)
 
   return (
     <div className="flex flex-col gap-2 text-left">
@@ -65,12 +68,18 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
             edited since this action:
           </p>
           <ul className="mt-1 flex flex-col gap-0.5">
-            {conflicts.slice(0, 10).map((item) => (
+            {conflicts.map((item) => (
               <li key={item.activity_id} className="font-mono">
                 {item.string_key ?? item.activity_id}
               </li>
             ))}
+            {previewTruncated(conflicts.length, preview.conflict_count) ? (
+              <li className="font-mono text-destructive/80">…</li>
+            ) : null}
           </ul>
+          {conflictsCaption ? (
+            <p className="mt-1 text-destructive/80">{conflictsCaption}</p>
+          ) : null}
         </div>
       ) : null}
       <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border p-2">
@@ -80,16 +89,22 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
               <span className="font-mono text-foreground/80">{item.string_key ?? 'string'}</span>
               <span>{outcomeLabel(item)}</span>
             </div>
-            {item.changes.slice(0, 2).map((change) => (
+            {item.changes.map((change) => (
               <p key={changeKey(change)} className="truncate">
                 <span className="font-medium text-foreground/70">{changeFieldLabel(change)}</span>{' '}
                 “{changeDisplayValue(change, change.before)}” → “{changeDisplayValue(change, change.after)}”
               </p>
             ))}
+            {previewTruncated(item.changes.length, item.change_count) ? (
+              <p className="text-muted-foreground/80">…</p>
+            ) : null}
           </li>
         ))}
+        {previewTruncated(visible.length, preview.total) ? (
+          <li className="text-xs text-muted-foreground/80">…</li>
+        ) : null}
       </ul>
-      {showingCaption ? <p className="text-xs text-muted-foreground">{showingCaption}</p> : null}
+      {itemsCaption ? <p className="text-xs text-muted-foreground">{itemsCaption}</p> : null}
     </div>
   )
 }

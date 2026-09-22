@@ -422,6 +422,11 @@ export type RevertPreviewOutcome =
   | 'already_reverted'
   | 'missing'
 
+export interface RevertPreviewConflict {
+  activity_id: string
+  string_key: string | null
+}
+
 export interface RevertPreviewItem {
   activity_id: string
   string_id: string | null
@@ -429,6 +434,7 @@ export interface RevertPreviewItem {
   outcome: RevertPreviewOutcome
   conflict: boolean
   affects_published: boolean
+  change_count: number
   changes: ActivityChange[]
 }
 
@@ -442,6 +448,7 @@ export interface RevertPreviewOutcomeCounts {
 
 export interface RevertPreview {
   items: RevertPreviewItem[]
+  conflicts: RevertPreviewConflict[]
   total: number
   conflict_count: number
   requires_force: boolean

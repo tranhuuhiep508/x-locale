@@ -497,6 +497,11 @@ class ActivityFeedOut(BaseModel):
     page_size: int
 
 
+class RevertPreviewConflictOut(BaseModel):
+    activity_id: UUID
+    string_key: str | None = None
+
+
 class RevertPreviewItemOut(BaseModel):
     activity_id: UUID
     string_id: UUID | None = None
@@ -506,6 +511,7 @@ class RevertPreviewItemOut(BaseModel):
     ]
     conflict: bool = False
     affects_published: bool = False
+    change_count: int = 0
     changes: list[ActivityChangeOut] = Field(default_factory=list)
 
 
@@ -519,6 +525,7 @@ class RevertPreviewOutcomeCountsOut(BaseModel):
 
 class RevertPreviewOut(BaseModel):
     items: list[RevertPreviewItemOut]
+    conflicts: list[RevertPreviewConflictOut] = Field(default_factory=list)
     total: int
     conflict_count: int
     requires_force: bool
