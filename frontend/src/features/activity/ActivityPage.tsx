@@ -1,14 +1,19 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
-import type { ActivityFeedCard } from '@/lib/api/types'
+import type { ActivityChange, ActivityFeedCard, RevertPreview } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
-import { activityFeedQuery, projectQuery } from '@/lib/queries'
+import { activityFeedQuery, batchRevertPreviewQuery, projectQuery } from '@/lib/queries'
 import { ActivityCard } from '@/features/activity/ActivityCard'
+import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
+import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
+import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels'
 import {
   isUndoConflict,
+  outcomeLabel,
+  previewShowingCaption,
   undoDescription,
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
@@ -34,16 +39,60 @@ import { dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
 
-const EVENT_FILTERS: { value: string; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'string.created', label: 'Created' },
-  { value: 'translation.updated', label: 'Translations' },
-  { value: 'string.published', label: 'Published' },
-  { value: 'import', label: 'Imports' },
-  { value: 'translate', label: 'AI translate' },
-  { value: 'batch', label: 'Batch actions' },
-  { value: 'string.restored', label: 'Restored' },
-]
+function changeKey(change: ActivityChange) {
+  return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
+}
+
+function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
+  if (!preview) {
+    return (
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Loading preview…
+      </span>
+    )
+  }
+
+  const conflicts = preview.items.filter((item) => item.conflict)
+  const visible = preview.items
+  const showingCaption = previewShowingCaption(preview)
+
+  return (
+    <div className="flex flex-col gap-2 text-left">
+      {preview.conflict_count > 0 ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+          <p className="font-medium">
+            {preview.conflict_count} {preview.conflict_count === 1 ? 'string was' : 'strings were'}{' '}
+            edited since this action:
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {conflicts.slice(0, 10).map((item) => (
+              <li key={item.activity_id} className="font-mono">
+                {item.string_key ?? item.activity_id}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border p-2">
+        {visible.map((item) => (
+          <li key={item.activity_id} className="text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-baseline gap-1">
+              <span className="font-mono text-foreground/80">{item.string_key ?? 'string'}</span>
+              <span>{outcomeLabel(item)}</span>
+            </div>
+            {item.changes.slice(0, 2).map((change) => (
+              <p key={changeKey(change)} className="truncate">
+                <span className="font-medium text-foreground/70">{changeFieldLabel(change)}</span>{' '}
+                “{changeDisplayValue(change, change.before)}” → “{changeDisplayValue(change, change.after)}”
+              </p>
+            ))}
+          </li>
+        ))}
+      </ul>
+      {showingCaption ? <p className="text-xs text-muted-foreground">{showingCaption}</p> : null}
+    </div>
+  )
+}
 
 export function ActivityPage() {
   const { projectId } = routeApi.useParams()
@@ -62,6 +111,7 @@ export function ActivityPage() {
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
   const [undoOverwrite, setUndoOverwrite] = useState(false)
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
   const { data, isLoading } = useQuery(
@@ -75,6 +125,20 @@ export function ActivityPage() {
       until: search.until,
     }),
   )
+
+  const undoPreviewQuery = useQuery({
+    ...batchRevertPreviewQuery(projectId, undoTarget?.batch_id ?? ''),
+    enabled: undoTarget !== null && Boolean(undoTarget.batch_id),
+  })
+  const undoPreview = undoPreviewQuery.data
+
+  // Surface conflicts as soon as the preview loads, instead of waiting for a 409
+  // from the actual revert attempt.
+  useEffect(() => {
+    if (undoPreview?.requires_force) {
+      setUndoOverwrite(true)
+    }
+  }, [undoPreview])
 
   function closeUndo() {
     setUndoTarget(null)
@@ -146,7 +210,7 @@ export function ActivityPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {EVENT_FILTERS.map((option) => (
+                {EVENT_TYPE_FILTER_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -220,6 +284,7 @@ export function ActivityPage() {
                     card={card}
                     projectId={projectId}
                     onUndo={setUndoTarget}
+                    onOpenDetail={setDetailId}
                   />
                 ))}
               </section>
@@ -244,19 +309,34 @@ export function ActivityPage() {
         onClose={closeUndo}
         onConfirm={() =>
           undoTarget?.batch_id &&
-          undoMut.mutate({ batchId: undoTarget.batch_id, force: undoOverwrite })
+          undoMut.mutate({
+            batchId: undoTarget.batch_id,
+            force: undoOverwrite || Boolean(undoPreview?.requires_force),
+          })
         }
         title={undoOverwrite ? 'Overwrite later edits?' : 'Undo this batch?'}
         description={
-          undoOverwrite
-            ? undoOverwriteDescription()
-            : undoTarget
-              ? undoDescription(undoTarget)
-              : ''
+          <div className="flex flex-col gap-3 text-left">
+            <p>
+              {undoOverwrite
+                ? undoOverwriteDescription(undoPreview)
+                : undoTarget
+                  ? undoDescription(undoTarget, undoPreview)
+                  : ''}
+            </p>
+            <UndoPreviewList preview={undoPreview} />
+          </div>
         }
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
         isLoading={undoMut.isPending}
+        contentClassName="sm:max-w-lg"
+      />
+
+      <ActivityDetailSheet
+        projectId={projectId}
+        activityId={detailId}
+        onOpenChange={(open) => !open && setDetailId(null)}
       />
     </div>
   )

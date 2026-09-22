@@ -74,6 +74,18 @@ export const activityFeedQuery = (projectId: string, params: ActivityFeedParams)
 
 export const HISTORY_PAGE_SIZE = 50
 
+export const batchActivitiesQuery = (
+  projectId: string,
+  batchId: string,
+  pageSize = HISTORY_PAGE_SIZE,
+) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.batch(projectId, batchId, { page_size: pageSize }),
+    queryFn: () =>
+      activitiesApi.list(projectId, { batch_id: batchId, page: 1, page_size: pageSize }),
+    enabled: Boolean(batchId),
+  })
+
 export const stringActivitiesInfiniteQuery = (projectId: string, stringId: string) =>
   infiniteQueryOptions({
     queryKey: queryKeys.projects.activities.string(projectId, stringId),
@@ -88,4 +100,32 @@ export const stringActivitiesInfiniteQuery = (projectId: string, stringId: strin
       const loaded = lastPage.page * lastPage.page_size
       return loaded < lastPage.total ? lastPage.page + 1 : undefined
     },
+  })
+
+export const activityDetailQuery = (projectId: string, activityId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.detail(projectId, activityId),
+    queryFn: () => activitiesApi.detail(projectId, activityId),
+  })
+
+export const revertPreviewQuery = (projectId: string, activityId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.revertPreview(projectId, activityId),
+    queryFn: () => activitiesApi.revertPreview(projectId, activityId),
+  })
+
+export const batchRevertPreviewQuery = (projectId: string, batchId: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.batchRevertPreview(projectId, batchId),
+    queryFn: () => activitiesApi.revertBatchPreview(projectId, batchId),
+  })
+
+export const restoreVersionPreviewQuery = (
+  projectId: string,
+  stringId: string,
+  activityId: string,
+) =>
+  queryOptions({
+    queryKey: queryKeys.projects.activities.restorePreview(projectId, stringId, activityId),
+    queryFn: () => activitiesApi.restoreVersionPreview(projectId, stringId, activityId),
   })

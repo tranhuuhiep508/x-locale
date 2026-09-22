@@ -94,7 +94,12 @@ def test_restore_version_applies_after_without_409(client):
         a
         for a in history
         if a["action"] == "update"
-        and (a["after"] or {}).get("translations", {}).get("en") == "Hello"
+        and any(
+            row["field"] == "translation"
+            and row.get("locale") == "en"
+            and row.get("after") == "Hello"
+            for row in a["changed"]
+        )
     )
 
     r = client.post(
@@ -421,10 +426,8 @@ def test_feed_caps_batch_children(client):
     assert feed.status_code == 200, feed.text
     card = feed.json()["items"][0]
     assert card["children_count"] == total
-    assert len(card["children"]) == FEED_CHILD_LIMIT
+    assert card["children"] == []
     assert card["counts"]["created"] == total
-    assert "before" not in card["children"][0]
-    assert "after" not in card["children"][0]
 
 
 def test_tag_change_shows_names_in_changed(client):
@@ -536,6 +539,293 @@ def test_activity_retention_default_is_90():
     from app.config import Settings
 
     assert Settings.model_fields["activity_retention_days"].default == 90
+
+
+def test_feed_batch_children_load_via_batch_id_list(client):
+    project = _make_project(client, "Feed Child Diffs")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"a": "A", "b": "B"}},
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+
+    feed = client.get(
+        f"/api/projects/{pid}/activities/feed",
+        params={"event_type": "import"},
+    )
+    assert feed.status_code == 200, feed.text
+    card = feed.json()["items"][0]
+    assert card["children_count"] == 2
+    assert card["children"] == []
+
+    children = client.get(
+        f"/api/projects/{pid}/activities",
+        params={"batch_id": batch_id},
+    ).json()["items"]
+    assert len(children) == 2
+    for child in children:
+        assert child["changed"], "each batch child should carry its own diff"
+        assert "before" not in child
+        assert "after" not in child
+        assert child["changed_count"] >= len(child["changed"])
+
+
+def test_activity_detail_endpoint(client):
+    project = _make_project(client, "Activity Detail")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "welcome", "source_text": "Chào", "translations": {"en": "Hi"}},
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"translations": {"en": "Hello"}},
+    )
+    latest = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"][0]
+
+    list_row = latest
+    assert list_row["is_history_restorable"] is True
+    assert list_row["restore_blocked_reason"] is None
+    assert "before" not in list_row
+    assert "after" not in list_row
+
+    detail = client.get(f"/api/projects/{pid}/activities/{latest['id']}")
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["string_key"] == "welcome"
+    assert body["is_history_restorable"] is True
+    assert body["restore_blocked_reason"] is None
+    assert "before" not in body
+    assert "after" not in body
+    assert any(row["field"] == "translation" and row["locale"] == "en" for row in body["changed"])
+
+    missing = client.get(f"/api/projects/{pid}/activities/{uuid.uuid4()}")
+    assert missing.status_code == 404
+
+
+def test_activity_detail_resolves_module_name_and_blocked_reason(client):
+    project = _make_project(client, "Activity Detail Module")
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules", json={"slug": "auth", "name": "Auth"}
+    ).json()
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "login", "source_text": "Đăng nhập", "status": "public"},
+    ).json()
+    sid = created["id"]
+    client.patch(f"/api/projects/{pid}/strings/{sid}", json={"module_id": module["id"]})
+
+    moved = next(
+        a
+        for a in client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+        if a["event_type"] == "string.moved"
+    )
+    detail = client.get(f"/api/projects/{pid}/activities/{moved['id']}").json()
+    module_row = next(row for row in detail["changed"] if row["field"] == "module_id")
+    assert module_row["after"] == "Auth"
+
+    client.delete(f"/api/projects/{pid}/strings/{sid}")
+    pending = next(
+        a
+        for a in client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+        if a["event_type"] == "string.pending_delete"
+    )
+    blocked_detail = client.get(f"/api/projects/{pid}/activities/{pending['id']}").json()
+    assert blocked_detail["is_history_restorable"] is False
+    assert "Pending deletes" in blocked_detail["restore_blocked_reason"]
+
+
+def test_revert_batch_preview_caps_response_items(client):
+    project = _make_project(client, "Revert Preview Cap")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {f"k{i:02d}": f"v{i}" for i in range(25)}},
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+    preview = client.get(f"/api/projects/{pid}/activities/batch/{batch_id}/revert/preview")
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["total"] == 25
+    assert len(body["items"]) == 20
+    assert body["conflict_count"] == 0
+    # Truncated items undercount Deleted outcomes; full-batch tallies must not.
+    assert sum(1 for item in body["items"] if item["outcome"] == "move_to_deleted") == 20
+    assert body["outcome_counts"]["move_to_deleted"] == 25
+    assert body["outcome_counts"]["restore_values"] == 0
+    assert body["outcome_counts"]["recreate"] == 0
+    assert body["outcome_counts"]["already_reverted"] == 0
+    assert body["outcome_counts"]["missing"] == 0
+
+
+def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
+    project = _make_project(client, "Revert Batch Preview")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"a": "A1", "b": "B1"}},
+    )
+    first_batch = imported.json()["batch_id"]
+    reimported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"a": "A2", "b": "B2"}},
+    )
+    batch_id = reimported.json()["batch_id"]
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {row["key"]: row for row in items}
+
+    clean_preview = client.get(f"/api/projects/{pid}/activities/batch/{batch_id}/revert/preview")
+    assert clean_preview.status_code == 200, clean_preview.text
+    clean_body = clean_preview.json()
+    assert clean_body["total"] == 2
+    assert clean_body["conflict_count"] == 0
+    assert clean_body["requires_force"] is False
+    assert clean_body["outcome_counts"]["restore_values"] == 2
+    assert clean_body["outcome_counts"]["move_to_deleted"] == 0
+    outcomes = {item["outcome"] for item in clean_body["items"]}
+    assert outcomes == {"restore_values"}
+    a_item = next(item for item in clean_body["items"] if item["string_key"] == "a")
+    change = next(row for row in a_item["changes"] if row["field"] == "source_text")
+    assert change["before"] == "A2"
+    assert change["after"] == "A1"
+
+    client.patch(
+        f"/api/projects/{pid}/strings/{by_key['a']['id']}",
+        json={"source_text": "A3"},
+    )
+    conflict_preview = client.get(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert/preview"
+    )
+    assert conflict_preview.status_code == 200, conflict_preview.text
+    conflict_body = conflict_preview.json()
+    assert conflict_body["conflict_count"] == 1
+    assert conflict_body["requires_force"] is True
+    conflicted = next(item for item in conflict_body["items"] if item["string_key"] == "a")
+    assert conflicted["conflict"] is True
+
+    # The revert itself is unaffected by having previewed it first.
+    reverted = client.post(
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        params={"force": True},
+    )
+    assert reverted.status_code == 200, reverted.text
+
+    missing = client.get(
+        f"/api/projects/{pid}/activities/batch/{uuid.uuid4()}/revert/preview"
+    )
+    assert missing.status_code == 404
+
+    already = client.get(f"/api/projects/{pid}/activities/batch/{first_batch}/revert/preview")
+    # first_batch's activities were superseded by the second import and are not
+    # revertible on their own once overwritten; either 404 (nothing left to revert)
+    # or a report with no pending conflicts is acceptable here.
+    assert already.status_code in (200, 404)
+
+
+def test_revert_activity_preview_move_to_deleted_for_create(client):
+    project = _make_project(client, "Revert Activity Preview Create")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "temp", "source_text": "Tạm"},
+    ).json()
+    sid = created["id"]
+    activity = next(
+        a
+        for a in client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+        if a["event_type"] == "string.created"
+    )
+    preview = client.get(f"/api/projects/{pid}/activities/{activity['id']}/revert/preview")
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["total"] == 1
+    assert body["items"][0]["outcome"] == "move_to_deleted"
+    assert body["items"][0]["string_id"] == sid
+    assert body["outcome_counts"]["move_to_deleted"] == 1
+    assert body["outcome_counts"]["restore_values"] == 0
+
+
+def test_restore_version_preview_matches_actual_restore(client):
+    project = _make_project(client, "Restore Version Preview")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "welcome", "source_text": "Chào", "translations": {"en": "Hi"}},
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"translations": {"en": "Hello"}},
+    )
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"translations": {"en": "Welcome"}},
+    )
+    history = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+    hello = next(
+        a
+        for a in history
+        if a["action"] == "update"
+        and any(
+            row["field"] == "translation"
+            and row.get("locale") == "en"
+            and row.get("after") == "Hello"
+            for row in a["changed"]
+        )
+    )
+
+    preview = client.get(
+        f"/api/projects/{pid}/strings/{sid}/activities/{hello['id']}/restore/preview"
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["can_restore"] is True
+    assert body["blocked_reason"] is None
+    assert "Publish status is unchanged" in body["notice"]
+    translation_change = next(row for row in body["changes"] if row["field"] == "translation")
+    assert translation_change["before"] == "Welcome"
+    assert translation_change["after"] == "Hello"
+
+    restored = client.post(
+        f"/api/projects/{pid}/strings/{sid}/activities/{hello['id']}/restore"
+    )
+    assert restored.status_code == 200, restored.text
+
+    noop_preview = client.get(
+        f"/api/projects/{pid}/strings/{sid}/activities/{hello['id']}/restore/preview"
+    )
+    assert noop_preview.status_code == 200, noop_preview.text
+    noop_body = noop_preview.json()
+    assert noop_body["can_restore"] is False
+    assert noop_body["already_matches"] is True
+
+
+def test_restore_version_preview_blocks_publish_events(client):
+    project = _make_project(client, "Restore Preview Blocked")
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "delete", "source_text": "Xóa", "translations": {"en": "Delete"}},
+    ).json()
+    sid = created["id"]
+    publish_strings(client, pid, [sid])
+    published = next(
+        a
+        for a in client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+        if a["event_type"] == "string.published"
+    )
+    preview = client.get(
+        f"/api/projects/{pid}/strings/{sid}/activities/{published['id']}/restore/preview"
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["can_restore"] is False
+    assert "Publish" in body["blocked_reason"]
 
 
 def test_feed_locale_filter_matches_snapshot_keys(client):

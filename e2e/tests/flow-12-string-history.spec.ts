@@ -40,7 +40,13 @@ test('string history restore reverts working copy to previous version', async ({
   await expect(restoreButton).toBeVisible()
   await restoreButton.click()
 
-  // 5. Switch back to Details tab and verify source text is restored
+  // 5. Confirm the restore preview dialog before the write happens
+  const confirm = page.getByRole('alertdialog', { name: 'Restore this version?' })
+  await expect(confirm).toBeVisible()
+  await confirm.getByRole('button', { name: 'Restore' }).click()
+  await expect(confirm).toBeHidden()
+
+  // 6. Switch back to Details tab and verify source text is restored
   await page.getByText('Details', { exact: true }).click()
   await expect(page.getByLabel('Source text')).toHaveValue('Original version 1')
 })

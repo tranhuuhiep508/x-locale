@@ -22,6 +22,16 @@ const projectKeys = {
       [...projectKeys.activities.all(id), 'feed', params] as const,
     string: (id: string, stringId: string) =>
       [...projectKeys.activities.all(id), 'string', stringId] as const,
+    batch: (id: string, batchId: string, params?: { page?: number; page_size?: number }) =>
+      [...projectKeys.activities.all(id), 'batch', batchId, params] as const,
+    detail: (id: string, activityId: string) =>
+      [...projectKeys.activities.all(id), 'detail', activityId] as const,
+    revertPreview: (id: string, activityId: string) =>
+      [...projectKeys.activities.all(id), 'revert-preview', activityId] as const,
+    batchRevertPreview: (id: string, batchId: string) =>
+      [...projectKeys.activities.all(id), 'batch-revert-preview', batchId] as const,
+    restorePreview: (id: string, stringId: string, activityId: string) =>
+      [...projectKeys.activities.all(id), 'restore-preview', stringId, activityId] as const,
   },
 }
 

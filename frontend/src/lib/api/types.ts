@@ -303,14 +303,19 @@ export interface Job {
 }
 
 // ── Activities ─────────────────────────────────────────────────────────
+export type ActivityChangeScope = 'draft' | 'published'
+export type ActivityChangeKind = 'field' | 'translation' | 'tags'
+
 export interface ActivityChange {
   field: string
   before: string | null
   after: string | null
   locale: string | null
+  scope: ActivityChangeScope
+  kind: ActivityChangeKind
 }
 
-export interface Activity {
+export interface ActivityCore {
   id: string
   actor_type: string
   actor_id: string | null
@@ -320,8 +325,6 @@ export interface Activity {
   entity_id: string
   string_id: string | null
   locale: string | null
-  before: Record<string, unknown> | null
-  after: Record<string, unknown> | null
   event_type: string
   summary: string
   batch_id: string | null
@@ -333,13 +336,26 @@ export interface Activity {
   changed: ActivityChange[]
 }
 
+/** Full activity row including snapshots (write responses: restore, revert). */
+export interface Activity extends ActivityCore {
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+}
+
+export interface ActivityListItem extends ActivityCore {
+  string_key: string | null
+  changed_count: number
+  is_history_restorable: boolean
+  restore_blocked_reason: string | null
+}
+
 export interface RestoreVersionResult extends Activity {
   notice: string
   pending_delete: boolean
 }
 
 export interface ActivityListResponse {
-  items: Activity[]
+  items: ActivityListItem[]
   total: number
   page: number
   page_size: number
@@ -353,6 +369,7 @@ export interface ActivityFeedChild {
   string_key: string | null
   locale: string | null
   changed: ActivityChange[]
+  changed_count: number
 }
 
 export interface ActivityFeedCard {
@@ -372,6 +389,7 @@ export interface ActivityFeedCard {
   is_undoable: boolean
   counts: Record<string, number>
   changed: ActivityChange[]
+  changed_count: number
   children: ActivityFeedChild[]
 }
 
@@ -380,6 +398,66 @@ export interface ActivityFeedResponse {
   total: number
   page: number
   page_size: number
+}
+
+export interface ActivityLink {
+  id: string
+  summary: string
+  created_at: string | null
+}
+
+export interface ActivityDetail extends ActivityCore {
+  string_key: string | null
+  module_name: string | null
+  is_history_restorable: boolean
+  restore_blocked_reason: string | null
+  revert_of: ActivityLink | null
+  reverted_by: ActivityLink | null
+}
+
+export type RevertPreviewOutcome =
+  | 'restore_values'
+  | 'move_to_deleted'
+  | 'recreate'
+  | 'already_reverted'
+  | 'missing'
+
+export interface RevertPreviewItem {
+  activity_id: string
+  string_id: string | null
+  string_key: string | null
+  outcome: RevertPreviewOutcome
+  conflict: boolean
+  affects_published: boolean
+  changes: ActivityChange[]
+}
+
+export interface RevertPreviewOutcomeCounts {
+  restore_values: number
+  move_to_deleted: number
+  recreate: number
+  already_reverted: number
+  missing: number
+}
+
+export interface RevertPreview {
+  items: RevertPreviewItem[]
+  total: number
+  conflict_count: number
+  requires_force: boolean
+  affects_published: boolean
+  outcome_counts: RevertPreviewOutcomeCounts
+}
+
+export interface RestorePreview {
+  string_id: string
+  activity_id: string
+  can_restore: boolean
+  blocked_reason: string | null
+  already_matches: boolean
+  pending_delete: boolean
+  notice: string | null
+  changes: ActivityChange[]
 }
 
 // ── Import / Export ────────────────────────────────────────────────────
