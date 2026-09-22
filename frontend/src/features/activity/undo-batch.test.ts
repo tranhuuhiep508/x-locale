@@ -3,7 +3,10 @@ import { ApiError } from '@/lib/api/client'
 import {
   isUndoConflict,
   outcomeLabel,
+  previewConflictsShowingCaption,
+  previewItemsShowingCaption,
   previewShowingCaption,
+  previewTruncated,
   undoDescription,
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
@@ -22,6 +25,7 @@ function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
     outcome: 'restore_values',
     conflict: false,
     affects_published: false,
+    change_count: 0,
     changes: [],
     ...overrides,
   }
@@ -43,6 +47,7 @@ function outcomeCounts(
 function preview(overrides: Partial<RevertPreview>): RevertPreview {
   return {
     items: [],
+    conflicts: [],
     total: 0,
     conflict_count: 0,
     requires_force: false,
@@ -158,10 +163,30 @@ describe('undoDescription with preview', () => {
   })
 })
 
+describe('previewTruncated', () => {
+  it('is false when the list is complete', () => {
+    expect(previewTruncated(2, 2)).toBe(false)
+  })
+
+  it('is true when more rows exist than shown', () => {
+    expect(previewTruncated(10, 15)).toBe(true)
+  })
+})
+
 describe('previewShowingCaption', () => {
+  it('is omitted when every row is shown', () => {
+    expect(previewShowingCaption(2, 2)).toBeNull()
+  })
+
+  it('names the truncated window', () => {
+    expect(previewShowingCaption(20, 25)).toBe('Showing 20 of 25')
+  })
+})
+
+describe('previewItemsShowingCaption', () => {
   it('is omitted when every item is already in the preview list', () => {
     expect(
-      previewShowingCaption(
+      previewItemsShowingCaption(
         preview({
           total: 2,
           items: [previewItem({ activity_id: 'a1' }), previewItem({ activity_id: 'a2' })],
@@ -174,7 +199,33 @@ describe('previewShowingCaption', () => {
     const items = Array.from({ length: 20 }, (_, index) =>
       previewItem({ activity_id: `a${index}` }),
     )
-    expect(previewShowingCaption(preview({ total: 25, items }))).toBe('Showing 20 of 25')
+    expect(previewItemsShowingCaption(preview({ total: 25, items }))).toBe('Showing 20 of 25')
+  })
+})
+
+describe('previewConflictsShowingCaption', () => {
+  it('is omitted when every conflict key is listed', () => {
+    expect(
+      previewConflictsShowingCaption(
+        preview({
+          conflict_count: 2,
+          conflicts: [
+            { activity_id: 'a1', string_key: 'k1' },
+            { activity_id: 'a2', string_key: 'k2' },
+          ],
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('names the truncated conflict window', () => {
+    const conflicts = Array.from({ length: 10 }, (_, index) => ({
+      activity_id: `a${index}`,
+      string_key: `k${index}`,
+    }))
+    expect(
+      previewConflictsShowingCaption(preview({ conflict_count: 15, conflicts })),
+    ).toBe('Showing 10 of 15')
   })
 })
 

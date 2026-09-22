@@ -663,6 +663,56 @@ def test_revert_batch_preview_caps_response_items(client):
     assert body["outcome_counts"]["missing"] == 0
 
 
+def test_revert_batch_preview_caps_conflicts_independent_of_items(client):
+    project = _make_project(client, "Revert Preview Conflict Cap")
+    pid = project["id"]
+    key_count = 31
+    keys = [f"k{i:02d}" for i in range(key_count)]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {key: f"v0-{key}" for key in keys}},
+    )
+    assert imported.status_code == 200, imported.text
+    reimported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {key: f"v1-{key}" for key in keys}},
+    )
+    assert reimported.status_code == 200, reimported.text
+    batch_id = reimported.json()["batch_id"]
+
+    activities = client.get(
+        f"/api/projects/{pid}/activities",
+        params={"batch_id": batch_id, "page_size": 200},
+    ).json()["items"]
+    activities_sorted = sorted(activities, key=lambda row: row["created_at"], reverse=True)
+    outside_window = activities_sorted[20:]
+
+    for activity in outside_window:
+        assert activity["string_id"] is not None
+        patched = client.patch(
+            f"/api/projects/{pid}/strings/{activity['string_id']}",
+            json={"source_text": "edited-after-batch"},
+        )
+        assert patched.status_code == 200, patched.text
+
+    preview = client.get(f"/api/projects/{pid}/activities/batch/{batch_id}/revert/preview")
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["total"] == key_count
+    assert len(body["items"]) == 20
+    assert body["conflict_count"] == len(outside_window)
+    assert len(body["conflicts"]) == 10
+
+    item_keys = {item["string_key"] for item in body["items"]}
+    conflict_keys = {row["string_key"] for row in body["conflicts"]}
+    assert conflict_keys
+    assert not conflict_keys.issubset(item_keys)
+
+    for item in body["items"]:
+        assert item["change_count"] >= len(item["changes"])
+        assert len(item["changes"]) <= 2
+
+
 def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
     project = _make_project(client, "Revert Batch Preview")
     pid = project["id"]
@@ -707,6 +757,10 @@ def test_revert_batch_preview_reports_outcomes_and_conflicts(client):
     assert conflict_body["requires_force"] is True
     conflicted = next(item for item in conflict_body["items"] if item["string_key"] == "a")
     assert conflicted["conflict"] is True
+    assert conflicted["change_count"] >= len(conflicted["changes"])
+    assert len(conflicted["changes"]) <= 2
+    assert len(conflict_body["conflicts"]) == 1
+    assert conflict_body["conflicts"][0]["string_key"] == "a"
 
     # The revert itself is unaffected by having previewed it first.
     reverted = client.post(

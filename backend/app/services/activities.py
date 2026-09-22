@@ -35,6 +35,7 @@ from app.schemas import (
     ActivityOut,
     RestorePreviewOut,
     RestoreVersionOut,
+    RevertPreviewConflictOut,
     RevertPreviewItemOut,
     RevertPreviewOut,
     RevertPreviewOutcomeCountsOut,
@@ -58,7 +59,8 @@ from app.services.activity_events import (
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
 PREVIEW_ITEM_LIMIT = 20
-PREVIEW_CHANGE_LIMIT = 5
+PREVIEW_CONFLICT_LIMIT = 10
+PREVIEW_CHANGE_LIMIT = 2
 _LOCALE_RE = re.compile(r"^[\w-]+$")
 
 
@@ -1320,6 +1322,7 @@ def _revert_preview_item(
             outcome="already_reverted",
             conflict=False,
             affects_published=False,
+            change_count=0,
             changes=[],
         )
 
@@ -1327,6 +1330,7 @@ def _revert_preview_item(
         db, activity, entry=_entry_for_activity(activity, entries)
     )
     changes: list[ActivityChangeOut] = []
+    change_count = 0
     affects_published = False
 
     if etype == "string":
@@ -1349,7 +1353,9 @@ def _revert_preview_item(
             current_entry = _entry_for_activity(activity, entries)
             current_snap = _live_snapshot(current_entry) if current_entry else None
             rows = human_changed(current_snap, before, action="update", include_published=True)
-            changes = _to_changed_out(rows, module_names)[:PREVIEW_CHANGE_LIMIT]
+            full_changes = _to_changed_out(rows, module_names)
+            change_count = len(full_changes)
+            changes = full_changes[:PREVIEW_CHANGE_LIMIT]
     else:
         outcome = "restore_values" if action != "create" else "move_to_deleted"
 
@@ -1360,6 +1366,7 @@ def _revert_preview_item(
         outcome=outcome,
         conflict=conflict,
         affects_published=affects_published,
+        change_count=change_count,
         changes=changes,
     )
 
@@ -1383,8 +1390,14 @@ def build_revert_preview(
     all_items = [_revert_preview_item(db, activity, names, entries) for activity in activities]
     conflict_count = sum(1 for item in all_items if item.conflict)
     affects_published = any(item.affects_published for item in all_items)
+    conflicted = [item for item in all_items if item.conflict]
+    conflicts = [
+        RevertPreviewConflictOut(activity_id=item.activity_id, string_key=item.string_key)
+        for item in conflicted[:PREVIEW_CONFLICT_LIMIT]
+    ]
     return RevertPreviewOut(
         items=all_items[:PREVIEW_ITEM_LIMIT],
+        conflicts=conflicts,
         total=len(all_items),
         conflict_count=conflict_count,
         requires_force=conflict_count > 0,
