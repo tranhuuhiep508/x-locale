@@ -264,6 +264,27 @@ def test_export_sync_state_and_translations_json(client):
     _assert_or_record("export", snapshots)
 
 
+def test_export_gzip_round_trip(client):
+    built = _build_catalog(client)
+    pid = built["project_id"]
+    long_text = "Xin chào " * 200
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "long_export", "source_text": long_text},
+    )
+    assert created.status_code == 201, created.text
+    params = {"format": "json", "layout": "modular", "stage": "draft"}
+    url = f"/api/projects/{pid}/export"
+    plain = client.get(url, params=params, headers={"Accept-Encoding": "identity"})
+    compressed = client.get(url, params=params, headers={"Accept-Encoding": "gzip"})
+    assert plain.status_code == 200, plain.text
+    assert compressed.status_code == 200, compressed.text
+    assert "content-encoding" not in plain.headers
+    assert compressed.headers.get("content-encoding") == "gzip"
+    # The test client decodes gzip before exposing the body.
+    assert compressed.json() == plain.json()
+
+
 def test_publish_preview_snapshot(client):
     built = _build_catalog(client)
     pid = built["project_id"]
