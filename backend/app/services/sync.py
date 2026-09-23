@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.helpers import content_hash, export_key
-from app.models import Module, Project, StringEntry, Tag, TranslationStatus
+from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
@@ -34,6 +36,108 @@ def load_export_entries(db: Session, project_id) -> list[StringEntry]:
         .order_by(StringEntry.key)
         .all()
     )
+
+
+@dataclass(slots=True)
+class _ExportSlug:
+    slug: str
+
+
+@dataclass(slots=True)
+class _ExportTranslation:
+    locale: str
+    value: str
+    published_value: str | None
+
+
+@dataclass(slots=True)
+class _ExportRow:
+    """Columns the JSON export builders read. Not an ORM instance."""
+
+    key: str
+    source_text: str
+    status: TranslationStatus
+    published_key: str | None
+    published_source_text: str | None
+    pending_delete: bool
+    deleted_at: Any
+    module: _ExportSlug | None
+    published_module: _ExportSlug | None
+    translations: list[_ExportTranslation]
+
+
+def load_export_rows(db: Session, project_id, locales: list[str]) -> list[_ExportRow]:
+    """Load export columns with Core selects instead of hydrating ORM graphs.
+
+    ``locales`` are the target locales whose translation rows are needed.
+    Pass an empty list to skip translations (sync-state, base-locale export).
+    """
+    module_rows = db.execute(
+        select(Module.id, Module.slug).where(Module.project_id == project_id)
+    ).all()
+    modules = {row.id: _ExportSlug(slug=row.slug) for row in module_rows}
+
+    string_rows = db.execute(
+        select(
+            StringEntry.id,
+            StringEntry.key,
+            StringEntry.source_text,
+            StringEntry.status,
+            StringEntry.module_id,
+            StringEntry.published_key,
+            StringEntry.published_module_id,
+            StringEntry.published_source_text,
+            StringEntry.pending_delete,
+            StringEntry.deleted_at,
+        )
+        .where(StringEntry.project_id == project_id)
+        .order_by(StringEntry.key)
+    ).all()
+
+    translations: dict[Any, list[_ExportTranslation]] = {}
+    if locales:
+        translation_rows = db.execute(
+            select(
+                Translation.string_id,
+                Translation.locale,
+                Translation.value,
+                Translation.published_value,
+            )
+            .join(StringEntry, StringEntry.id == Translation.string_id)
+            .where(
+                StringEntry.project_id == project_id,
+                Translation.locale.in_(locales),
+            )
+        ).all()
+        for row in translation_rows:
+            translations.setdefault(row.string_id, []).append(
+                _ExportTranslation(
+                    locale=row.locale,
+                    value=row.value or "",
+                    published_value=row.published_value,
+                )
+            )
+
+    rows: list[_ExportRow] = []
+    for row in string_rows:
+        status = row.status
+        if not isinstance(status, TranslationStatus):
+            status = TranslationStatus(status)
+        rows.append(
+            _ExportRow(
+                key=row.key,
+                source_text=row.source_text,
+                status=status,
+                published_key=row.published_key,
+                published_source_text=row.published_source_text,
+                pending_delete=bool(row.pending_delete),
+                deleted_at=row.deleted_at,
+                module=modules.get(row.module_id),
+                published_module=modules.get(row.published_module_id),
+                translations=translations.get(row.id, []),
+            )
+        )
+    return rows
 
 
 def load_sync_state_entries(db: Session, project_id) -> list[StringEntry]:
