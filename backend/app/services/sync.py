@@ -469,6 +469,8 @@ class _ImportIndex:
 def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
     if project.base_language in values and entry.source_text != values[project.base_language]:
         return True
+    if not any(locale != project.base_language for locale in values):
+        return False
     by_locale = {t.locale: t.value for t in entry.translations}
     for locale, value in values.items():
         if locale == project.base_language:
@@ -476,6 +478,89 @@ def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]
         if by_locale.get(locale, "") != value:
             return True
     return False
+
+
+_PRELOAD_CHUNK = 1000
+
+
+def _preload_collections(
+    db: Session,
+    entries: list[StringEntry],
+    *,
+    translations: bool,
+    tags: bool,
+) -> None:
+    """Fill translations and tags on identities already in the session.
+
+    Chunked selectinload queries populate those collections without a later
+    lazy SELECT per string. autoflush stays off so a later module in the same
+    import does not flush the strings touched so far.
+    """
+    if not translations and not tags:
+        return
+    options = []
+    if translations:
+        options.append(selectinload(StringEntry.translations))
+    if tags:
+        options.append(selectinload(StringEntry.tags))
+    seen: set[UUID] = set()
+    ids: list[UUID] = []
+    for entry in entries:
+        if entry.id is None or entry.id in seen:
+            continue
+        seen.add(entry.id)
+        ids.append(entry.id)
+    if not ids:
+        return
+    with db.no_autoflush:
+        for start in range(0, len(ids), _PRELOAD_CHUNK):
+            chunk = ids[start : start + _PRELOAD_CHUNK]
+            db.query(StringEntry).options(*options).filter(StringEntry.id.in_(chunk)).all()
+
+
+def _import_row_will_change(
+    entry: StringEntry,
+    project: Project,
+    values: dict[str, str],
+    tags: list[Tag],
+) -> bool:
+    revived = bool(entry.deleted_at)
+    values_changed = revived or _values_changed(entry, project, values)
+    return values_changed or _tags_would_change(entry, tags)
+
+
+def _prepare_import_collections(
+    db: Session,
+    project: Project,
+    index: _ImportIndex,
+    maps: dict[str, dict[str, str]],
+    module_id: UUID | None,
+    tags: list[Tag],
+) -> None:
+    """Load the collections comparisons and activity capture will read."""
+    matched: list[tuple[StringEntry, dict[str, str]]] = []
+    has_target_locale = False
+    base = project.base_language
+    for key in _union_keys(maps):
+        values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
+        if not values:
+            continue
+        if not has_target_locale and any(locale != base for locale in values):
+            has_target_locale = True
+        entry = index.lookup(key, module_id=module_id)
+        if entry is not None:
+            matched.append((entry, values))
+    matched_entries = [entry for entry, _ in matched]
+    if has_target_locale:
+        _preload_collections(db, matched_entries, translations=True, tags=False)
+    if tags:
+        _preload_collections(db, matched_entries, translations=False, tags=True)
+    changing = [
+        entry
+        for entry, values in matched
+        if _import_row_will_change(entry, project, values, tags)
+    ]
+    _preload_collections(db, changing, translations=True, tags=True)
 
 
 def _preview_source_text(
@@ -567,6 +652,7 @@ def _import_locale_maps(
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
+    _prepare_import_collections(db, project, index, maps, module_id, tags)
     for key in _union_keys(maps):
         values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
         if not values:
@@ -668,6 +754,16 @@ def import_flat_strings(
     )
 
 
+def _load_import_index_entries(db: Session, project_id) -> list[StringEntry]:
+    """String rows plus module slug. Translations and tags load later, in chunks."""
+    return (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.module))
+        .filter(StringEntry.project_id == project_id)
+        .all()
+    )
+
+
 def import_locale_payload(
     db: Session,
     project: Project,
@@ -679,16 +775,7 @@ def import_locale_payload(
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
 ) -> ImportResult:
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.translations),
-            selectinload(StringEntry.tags),
-        )
-        .filter(StringEntry.project_id == project.id)
-        .all()
-    )
+    entries = _load_import_index_entries(db, project.id)
     index = _ImportIndex(entries)
     create_items, update_items, orphan_items, total = _import_locale_maps(
         db,
@@ -720,16 +807,7 @@ def import_modular_payload(
     status: TranslationStatus = TranslationStatus.draft,
     tags: list[Tag] | None = None,
 ) -> ImportResult:
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.translations),
-            selectinload(StringEntry.tags),
-        )
-        .filter(StringEntry.project_id == project.id)
-        .all()
-    )
+    entries = _load_import_index_entries(db, project.id)
     import_tags = tags or []
     index = _ImportIndex(entries)
     create_items: list[ImportDiffItem] = []
