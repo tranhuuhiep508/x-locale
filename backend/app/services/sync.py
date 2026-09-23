@@ -14,6 +14,7 @@ from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
+    live_module_label,
     promote_string,
     restore_string,
 )
@@ -343,23 +344,25 @@ class _ImportIndex:
             self.add(entry)
 
     def add(self, entry: StringEntry) -> None:
-        dest_module = self.deleted_by_module_key if entry.deleted_at else self.by_module_key
-        dest_key = self.deleted_by_key if entry.deleted_at else self.by_key
-        dest_module[(entry.module_id, entry.key)] = entry
-        existing = dest_key.get(entry.key)
-        if existing is None or entry.module_id is None:
-            dest_key[entry.key] = entry
+        if entry.deleted_at:
+            self.deleted_by_module_key[(entry.module_id, entry.key)] = entry
+            existing = self.deleted_by_key.get(entry.key)
+            if existing is None or entry.module_id is None:
+                self.deleted_by_key[entry.key] = entry
+            return
+        self.by_module_key[(entry.module_id, entry.key)] = entry
+        self.by_key.setdefault(entry.key, entry)
 
     def lookup(self, key: str, *, module_id: UUID | None) -> StringEntry | None:
+        if module_id is None:
+            live = self.by_key.get(key)
+            if live is not None:
+                return live
+            return self.deleted_by_module_key.get((None, key)) or self.deleted_by_key.get(key)
         live = self.by_module_key.get((module_id, key))
         if live is not None:
             return live
-        deleted = self.deleted_by_module_key.get((module_id, key))
-        if deleted is not None:
-            return deleted
-        if module_id is None:
-            return self.by_key.get(key) or self.deleted_by_key.get(key)
-        return None
+        return self.deleted_by_module_key.get((module_id, key))
 
 
 def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
@@ -403,6 +406,14 @@ def _upsert_imported_string(
 ) -> tuple[str, StringEntry | None]:
     """Return ('create'|'update'|'unchanged', entry_or_none)."""
     entry = index.lookup(key, module_id=module_id)
+    live = index.by_key.get(key)
+    if live is not None and (entry is None or entry.id != live.id):
+        if module_id is None:
+            raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
+        raise HTTPException(
+            status_code=409,
+            detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
+        )
     if entry is None:
         if not dry_run:
             source_text = values.get(project.base_language, "") or key
@@ -540,6 +551,56 @@ def _result(
     )
 
 
+def _payload_keys(project: Project, locale_maps: dict[str, dict[str, str]]) -> list[str]:
+    if not isinstance(locale_maps, dict):
+        return []
+    return _union_keys(_known_locale_maps(project, locale_maps))
+
+
+def _module_slug_for_id(db: Session, project: Project, module_id: UUID) -> str:
+    mod = (
+        db.query(Module)
+        .filter(Module.project_id == project.id, Module.id == module_id)
+        .first()
+    )
+    if mod is None:
+        return "unassigned"
+    return mod.slug
+
+
+def _claim_payload_key(owners: dict[str, str], key: str, slug: str) -> None:
+    previous = owners.get(key)
+    if previous is not None and previous != slug:
+        raise HTTPException(
+            status_code=409,
+            detail=f"String '{key}' appears in more than one module",
+        )
+    owners[key] = slug
+
+
+def _reject_other_module(index: _ImportIndex, key: str, slug: str) -> None:
+    live = index.by_key.get(key)
+    if live is None or live_module_label(live) == slug:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
+    )
+
+
+def _preflight_named_keys(
+    index: _ImportIndex,
+    project: Project,
+    locale_maps: dict[str, dict[str, str]],
+    slug: str,
+    owners: dict[str, str] | None = None,
+) -> None:
+    for key in _payload_keys(project, locale_maps):
+        if owners is not None:
+            _claim_payload_key(owners, key, slug)
+        _reject_other_module(index, key, slug)
+
+
 def import_flat_strings(
     db: Session,
     project: Project,
@@ -586,6 +647,13 @@ def import_locale_payload(
         .all()
     )
     index = _ImportIndex(entries)
+    if module_id is not None:
+        _preflight_named_keys(
+            index,
+            project,
+            locale_maps,
+            _module_slug_for_id(db, project, module_id),
+        )
     create_items, update_items, orphan_items, total = _import_locale_maps(
         db,
         project,
@@ -628,6 +696,13 @@ def import_modular_payload(
     )
     import_tags = tags or []
     index = _ImportIndex(entries)
+    owners: dict[str, str] = {}
+    for slug, locale_maps in modules.items():
+        if not isinstance(locale_maps, dict):
+            continue
+        _preflight_named_keys(index, project, locale_maps, slug, owners)
+    if unassigned and _is_locale_maps(unassigned):
+        _preflight_named_keys(index, project, unassigned, "unassigned", owners)
     create_items: list[ImportDiffItem] = []
     update_items: list[ImportDiffItem] = []
     orphan_items: list[ImportDiffItem] = []
