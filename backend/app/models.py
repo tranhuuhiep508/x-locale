@@ -198,9 +198,8 @@ class StringEntry(Base):
     __tablename__ = "strings"
     __table_args__ = (
         Index(
-            "uq_project_module_key_alive",
+            "uq_project_key_alive",
             "project_id",
-            "module_id",
             "key",
             unique=True,
             sqlite_where=text("deleted_at IS NULL"),
