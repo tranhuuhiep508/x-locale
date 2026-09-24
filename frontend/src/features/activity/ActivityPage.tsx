@@ -1,7 +1,7 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { CalendarIcon, Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import type { ActivityChange, ActivityFeedCard, RevertPreview } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
-import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -38,6 +37,21 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
+
+const DateRangePicker = lazy(() =>
+  import('@/components/ui/date-range-picker').then((m) => ({ default: m.DateRangePicker })),
+)
+
+const dateRangeFallback = (
+  <Button
+    variant="outline"
+    className="w-[240px] justify-start text-left font-normal text-muted-foreground"
+    disabled
+  >
+    <CalendarIcon data-icon="inline-start" />
+    Date range
+  </Button>
+)
 
 const routeApi = getRouteApi('/projects/$projectId/activity')
 
@@ -261,12 +275,14 @@ export function ActivityPage() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <DateRangePicker
-            value={{ since: search.since, until: search.until }}
-            onChange={({ since, until }) => setSearch({ since, until })}
-            placeholder="Date range"
-            disabled={{ after: new Date() }}
-          />
+          <Suspense fallback={dateRangeFallback}>
+            <DateRangePicker
+              value={{ since: search.since, until: search.until }}
+              onChange={({ since, until }) => setSearch({ since, until })}
+              placeholder="Date range"
+              disabled={{ after: new Date() }}
+            />
+          </Suspense>
           {search.event_type || search.actor || search.locale || search.since || search.until ? (
             <Button variant="ghost" size="sm" onClick={() => navigate({ search: { page: 1 } })}>
               Clear

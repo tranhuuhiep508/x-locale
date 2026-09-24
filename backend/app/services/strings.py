@@ -10,8 +10,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import exists, func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
@@ -313,8 +313,8 @@ def string_query(
     query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
     if eager:
         query = query.options(
-            joinedload(StringEntry.translations),
-            joinedload(StringEntry.tags),
+            selectinload(StringEntry.translations),
+            selectinload(StringEntry.tags),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
@@ -424,8 +424,8 @@ def load_string_entries(
     return (
         db.query(StringEntry)
         .options(
-            joinedload(StringEntry.translations),
-            joinedload(StringEntry.tags),
+            selectinload(StringEntry.translations),
+            selectinload(StringEntry.tags),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
@@ -438,8 +438,8 @@ def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> Stri
     entry = (
         db.query(StringEntry)
         .options(
-            joinedload(StringEntry.translations),
-            joinedload(StringEntry.tags),
+            selectinload(StringEntry.translations),
+            selectinload(StringEntry.tags),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
@@ -480,7 +480,9 @@ def list_strings(
         deleted=deleted,
         max_confidence=max_confidence,
     )
-    total = query.count()
+    total = (
+        query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()
+    )
     entries = (
         query.order_by(StringEntry.key)
         .offset((page - 1) * page_size)

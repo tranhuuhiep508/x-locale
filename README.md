@@ -156,6 +156,7 @@ See [.env.example](.env.example). Notable vars:
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Entra app registration credentials |
 | `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
 | `X_LOCALE_DEMO_API_KEY` | Seeded demo project key |
+| `WEB_CONCURRENCY` | Production uvicorn worker processes (default 4). Each worker keeps its own database pool, about 15 connections, so size Postgres `max_connections` for `workers × 15` plus headroom. Dev compose stays on one process with `--reload`. |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
