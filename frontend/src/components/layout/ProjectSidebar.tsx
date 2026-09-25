@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
   Activity,
@@ -21,19 +20,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  useSidebar,
 } from '@/components/ui/sidebar'
-
-function CloseMobileSidebarOnNavigate() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { isMobile, setOpenMobile } = useSidebar()
-
-  useEffect(() => {
-    if (isMobile) setOpenMobile(false)
-  }, [pathname, isMobile, setOpenMobile])
-
-  return null
-}
 
 function isProjectPath(pathname: string, projectId: string, suffix: string, exact = false) {
   const href = `/projects/${projectId}${suffix}`
@@ -52,7 +39,6 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <CloseMobileSidebarOnNavigate />
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

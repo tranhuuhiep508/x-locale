@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from tests.helpers import make_project, publish_strings
+from tests.helpers import make_project
 
 
 def _modules_and_string(client, pid):

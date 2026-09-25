@@ -1,0 +1,1602 @@
+{
+  "editor_list": {
+    "deleted": {
+      "items": [
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": "<timestamp>",
+          "description": null,
+          "has_unpublished_changes": false,
+          "id": "string:buried",
+          "key": "buried",
+          "module_id": "module:home",
+          "module_slug": "home",
+          "pending_delete": false,
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_module_slug": null,
+          "published_source_text": null,
+          "source_text": "Đã xóa",
+          "status": "draft",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:buried:en",
+              "locale": "en",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": "Buried"
+            },
+            {
+              "confidence": null,
+              "id": "translation:buried:ja",
+              "locale": "ja",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": ""
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        }
+      ],
+      "page": 1,
+      "page_size": 50,
+      "total": 1
+    },
+    "edited": {
+      "created_at": "<timestamp>",
+      "created_by_label": "dev@localhost",
+      "created_by_type": "user",
+      "deleted_at": null,
+      "description": null,
+      "has_unpublished_changes": true,
+      "id": "string:edited",
+      "key": "edited",
+      "module_id": "module:auth",
+      "module_slug": "auth",
+      "pending_delete": false,
+      "published_at": "<timestamp>",
+      "published_key": "edited",
+      "published_module_id": "module:auth",
+      "published_module_slug": "auth",
+      "published_source_text": "Cũ",
+      "source_text": "Mới",
+      "status": "public",
+      "tags": [],
+      "translations": [
+        {
+          "confidence": null,
+          "id": "translation:edited:en",
+          "locale": "en",
+          "published_value": "Old",
+          "updated_at": "<timestamp>",
+          "value": "New"
+        },
+        {
+          "confidence": null,
+          "id": "translation:edited:ja",
+          "locale": "ja",
+          "published_value": "旧",
+          "updated_at": "<timestamp>",
+          "value": "新"
+        }
+      ],
+      "updated_at": "<timestamp>",
+      "updated_by_label": "dev@localhost",
+      "updated_by_type": "user"
+    },
+    "live": {
+      "items": [
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": "never published",
+          "has_unpublished_changes": false,
+          "id": "string:draft_only",
+          "key": "draft_only",
+          "module_id": "module:auth",
+          "module_slug": "auth",
+          "pending_delete": false,
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_module_slug": null,
+          "published_source_text": null,
+          "source_text": "Bản nháp",
+          "status": "draft",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:draft_only:en",
+              "locale": "en",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": "Draft"
+            },
+            {
+              "confidence": null,
+              "id": "translation:draft_only:ja",
+              "locale": "ja",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": ""
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": true,
+          "id": "string:edited",
+          "key": "edited",
+          "module_id": "module:auth",
+          "module_slug": "auth",
+          "pending_delete": false,
+          "published_at": "<timestamp>",
+          "published_key": "edited",
+          "published_module_id": "module:auth",
+          "published_module_slug": "auth",
+          "published_source_text": "Cũ",
+          "source_text": "Mới",
+          "status": "public",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:edited:en",
+              "locale": "en",
+              "published_value": "Old",
+              "updated_at": "<timestamp>",
+              "value": "New"
+            },
+            {
+              "confidence": null,
+              "id": "translation:edited:ja",
+              "locale": "ja",
+              "published_value": "旧",
+              "updated_at": "<timestamp>",
+              "value": "新"
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": false,
+          "id": "string:empty_targets",
+          "key": "empty_targets",
+          "module_id": "module:auth",
+          "module_slug": "auth",
+          "pending_delete": false,
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_module_slug": null,
+          "published_source_text": null,
+          "source_text": "Trống",
+          "status": "draft",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:empty_targets:en",
+              "locale": "en",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": ""
+            },
+            {
+              "confidence": null,
+              "id": "translation:empty_targets:ja",
+              "locale": "ja",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": ""
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": false,
+          "id": "string:loose",
+          "key": "loose",
+          "module_id": null,
+          "module_slug": null,
+          "pending_delete": false,
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_module_slug": null,
+          "published_source_text": null,
+          "source_text": "Không module",
+          "status": "draft",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:loose:en",
+              "locale": "en",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": "Loose"
+            },
+            {
+              "confidence": null,
+              "id": "translation:loose:ja",
+              "locale": "ja",
+              "published_value": null,
+              "updated_at": "<timestamp>",
+              "value": ""
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": true,
+          "id": "string:moved",
+          "key": "moved",
+          "module_id": "module:home",
+          "module_slug": "home",
+          "pending_delete": false,
+          "published_at": "<timestamp>",
+          "published_key": "moved",
+          "published_module_id": "module:auth",
+          "published_module_slug": "auth",
+          "published_source_text": "Di chuyển",
+          "source_text": "Di chuyển",
+          "status": "public",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:moved:en",
+              "locale": "en",
+              "published_value": "Move",
+              "updated_at": "<timestamp>",
+              "value": "Move"
+            },
+            {
+              "confidence": null,
+              "id": "translation:moved:ja",
+              "locale": "ja",
+              "published_value": "移動",
+              "updated_at": "<timestamp>",
+              "value": "移動"
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": false,
+          "id": "string:published",
+          "key": "published",
+          "module_id": "module:auth",
+          "module_slug": "auth",
+          "pending_delete": false,
+          "published_at": "<timestamp>",
+          "published_key": "published",
+          "published_module_id": "module:auth",
+          "published_module_slug": "auth",
+          "published_source_text": "Đã xuất bản",
+          "source_text": "Đã xuất bản",
+          "status": "public",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:published:en",
+              "locale": "en",
+              "published_value": "Published",
+              "updated_at": "<timestamp>",
+              "value": "Published"
+            },
+            {
+              "confidence": null,
+              "id": "translation:published:ja",
+              "locale": "ja",
+              "published_value": "公開",
+              "updated_at": "<timestamp>",
+              "value": "公開"
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": true,
+          "id": "string:soon_gone",
+          "key": "soon_gone",
+          "module_id": "module:home",
+          "module_slug": "home",
+          "pending_delete": true,
+          "published_at": "<timestamp>",
+          "published_key": "soon_gone",
+          "published_module_id": "module:home",
+          "published_module_slug": "home",
+          "published_source_text": "Sắp xóa",
+          "source_text": "Sắp xóa",
+          "status": "public",
+          "tags": [],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:soon_gone:en",
+              "locale": "en",
+              "published_value": "Going",
+              "updated_at": "<timestamp>",
+              "value": "Going"
+            },
+            {
+              "confidence": null,
+              "id": "translation:soon_gone:ja",
+              "locale": "ja",
+              "published_value": "削除予定",
+              "updated_at": "<timestamp>",
+              "value": "削除予定"
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        },
+        {
+          "created_at": "<timestamp>",
+          "created_by_label": "dev@localhost",
+          "created_by_type": "user",
+          "deleted_at": null,
+          "description": null,
+          "has_unpublished_changes": false,
+          "id": "string:tagged",
+          "key": "tagged",
+          "module_id": "module:home",
+          "module_slug": "home",
+          "pending_delete": false,
+          "published_at": "<timestamp>",
+          "published_key": "tagged",
+          "published_module_id": "module:home",
+          "published_module_slug": "home",
+          "published_source_text": "Có thẻ",
+          "source_text": "Có thẻ",
+          "status": "public",
+          "tags": [
+            {
+              "color": "#112233",
+              "id": "tag:ship",
+              "name": "ship",
+              "string_count": 0
+            }
+          ],
+          "translations": [
+            {
+              "confidence": null,
+              "id": "translation:tagged:en",
+              "locale": "en",
+              "published_value": "Tagged",
+              "updated_at": "<timestamp>",
+              "value": "Tagged"
+            },
+            {
+              "confidence": null,
+              "id": "translation:tagged:ja",
+              "locale": "ja",
+              "published_value": "タグ",
+              "updated_at": "<timestamp>",
+              "value": "タグ"
+            }
+          ],
+          "updated_at": "<timestamp>",
+          "updated_by_label": "dev@localhost",
+          "updated_by_type": "user"
+        }
+      ],
+      "page": 1,
+      "page_size": 50,
+      "total": 8
+    }
+  },
+  "export": {
+    "export:flat:draft:all": {
+      "en": {
+        "draft_only": "Draft",
+        "edited": "New",
+        "loose": "Loose",
+        "moved": "Move",
+        "published": "Published",
+        "tagged": "Tagged"
+      },
+      "ja": {
+        "edited": "新",
+        "moved": "移動",
+        "published": "公開",
+        "tagged": "タグ"
+      },
+      "vi": {
+        "draft_only": "Bản nháp",
+        "edited": "Mới",
+        "empty_targets": "Trống",
+        "loose": "Không module",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "tagged": "Có thẻ"
+      }
+    },
+    "export:flat:draft:en": {
+      "en": {
+        "draft_only": "Draft",
+        "edited": "New",
+        "loose": "Loose",
+        "moved": "Move",
+        "published": "Published",
+        "tagged": "Tagged"
+      }
+    },
+    "export:flat:draft:vi": {
+      "vi": {
+        "draft_only": "Bản nháp",
+        "edited": "Mới",
+        "empty_targets": "Trống",
+        "loose": "Không module",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "tagged": "Có thẻ"
+      }
+    },
+    "export:flat:public:all": {
+      "en": {
+        "edited": "Old",
+        "moved": "Move",
+        "published": "Published",
+        "soon_gone": "Going",
+        "tagged": "Tagged"
+      },
+      "ja": {
+        "edited": "旧",
+        "moved": "移動",
+        "published": "公開",
+        "soon_gone": "削除予定",
+        "tagged": "タグ"
+      },
+      "vi": {
+        "edited": "Cũ",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "soon_gone": "Sắp xóa",
+        "tagged": "Có thẻ"
+      }
+    },
+    "export:flat:public:en": {
+      "en": {
+        "edited": "Old",
+        "moved": "Move",
+        "published": "Published",
+        "soon_gone": "Going",
+        "tagged": "Tagged"
+      }
+    },
+    "export:flat:public:vi": {
+      "vi": {
+        "edited": "Cũ",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "soon_gone": "Sắp xóa",
+        "tagged": "Có thẻ"
+      }
+    },
+    "export:modular:draft:all": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "6311967c80d8f3e0bfabc74aa2daf29e06620b1a914550510dad8de4933e61a3",
+        "locales": [
+          "vi",
+          "en",
+          "ja"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "en": {
+            "draft_only": "Draft",
+            "edited": "New",
+            "published": "Published"
+          },
+          "ja": {
+            "edited": "新",
+            "published": "公開"
+          },
+          "vi": {
+            "draft_only": "Bản nháp",
+            "edited": "Mới",
+            "empty_targets": "Trống",
+            "published": "Đã xuất bản"
+          }
+        },
+        "home": {
+          "en": {
+            "moved": "Move",
+            "tagged": "Tagged"
+          },
+          "ja": {
+            "moved": "移動",
+            "tagged": "タグ"
+          },
+          "vi": {
+            "moved": "Di chuyển",
+            "tagged": "Có thẻ"
+          }
+        }
+      },
+      "unassigned": {
+        "en": {
+          "loose": "Loose"
+        },
+        "ja": {},
+        "vi": {
+          "loose": "Không module"
+        }
+      }
+    },
+    "export:modular:draft:en": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "9836e73cff7d4412f55a6092915428148f5d1f6164bf662165fc3afac9c196b1",
+        "locales": [
+          "en"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "en": {
+            "draft_only": "Draft",
+            "edited": "New",
+            "published": "Published"
+          }
+        },
+        "home": {
+          "en": {
+            "moved": "Move",
+            "tagged": "Tagged"
+          }
+        }
+      },
+      "unassigned": {
+        "en": {
+          "loose": "Loose"
+        }
+      }
+    },
+    "export:modular:draft:vi": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "4ce2cbea7badd1657e36b73c712765fa37363c4e64f8cfb0b66fe0369f5ac836",
+        "locales": [
+          "vi"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "vi": {
+            "draft_only": "Bản nháp",
+            "edited": "Mới",
+            "empty_targets": "Trống",
+            "published": "Đã xuất bản"
+          }
+        },
+        "home": {
+          "vi": {
+            "moved": "Di chuyển",
+            "tagged": "Có thẻ"
+          }
+        }
+      },
+      "unassigned": {
+        "vi": {
+          "loose": "Không module"
+        }
+      }
+    },
+    "export:modular:public:all": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "9fc75102ef7b40d646d1b1a70a3d607b2744af8d564af5cbb91e737a2aec75c3",
+        "locales": [
+          "vi",
+          "en",
+          "ja"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "en": {
+            "edited": "Old",
+            "moved": "Move",
+            "published": "Published"
+          },
+          "ja": {
+            "edited": "旧",
+            "moved": "移動",
+            "published": "公開"
+          },
+          "vi": {
+            "edited": "Cũ",
+            "moved": "Di chuyển",
+            "published": "Đã xuất bản"
+          }
+        },
+        "home": {
+          "en": {
+            "soon_gone": "Going",
+            "tagged": "Tagged"
+          },
+          "ja": {
+            "soon_gone": "削除予定",
+            "tagged": "タグ"
+          },
+          "vi": {
+            "soon_gone": "Sắp xóa",
+            "tagged": "Có thẻ"
+          }
+        }
+      },
+      "unassigned": {
+        "en": {},
+        "ja": {},
+        "vi": {}
+      }
+    },
+    "export:modular:public:en": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "71673a8e3b3c2d396eb641f7f06904450ff9d0890d2997880c79b4124413436e",
+        "locales": [
+          "en"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "en": {
+            "edited": "Old",
+            "moved": "Move",
+            "published": "Published"
+          }
+        },
+        "home": {
+          "en": {
+            "soon_gone": "Going",
+            "tagged": "Tagged"
+          }
+        }
+      },
+      "unassigned": {
+        "en": {}
+      }
+    },
+    "export:modular:public:vi": {
+      "manifest": {
+        "base_language": "vi",
+        "content_hash": "8562780fc3adf82da463bb7c46f9c6709d018398f81e9f7ef39415bcc9195441",
+        "locales": [
+          "vi"
+        ],
+        "modules": [
+          "auth",
+          "home"
+        ]
+      },
+      "modules": {
+        "auth": {
+          "vi": {
+            "edited": "Cũ",
+            "moved": "Di chuyển",
+            "published": "Đã xuất bản"
+          }
+        },
+        "home": {
+          "vi": {
+            "soon_gone": "Sắp xóa",
+            "tagged": "Có thẻ"
+          }
+        }
+      },
+      "unassigned": {
+        "vi": {}
+      }
+    },
+    "sync-state:flat:draft": {
+      "base_language": "vi",
+      "exported": [],
+      "layout": "flat",
+      "pending_remove": [
+        "soon_gone"
+      ],
+      "stage": "draft",
+      "tombstones": [
+        "buried"
+      ]
+    },
+    "sync-state:flat:public": {
+      "base_language": "vi",
+      "exported": [],
+      "layout": "flat",
+      "pending_remove": [
+        "soon_gone"
+      ],
+      "stage": "public",
+      "tombstones": [
+        "buried"
+      ]
+    },
+    "sync-state:modular:draft": {
+      "base_language": "vi",
+      "exported": [],
+      "layout": "modular",
+      "pending_remove": [
+        "home/soon_gone"
+      ],
+      "stage": "draft",
+      "tombstones": [
+        "home/buried"
+      ]
+    },
+    "sync-state:modular:public": {
+      "base_language": "vi",
+      "exported": [],
+      "layout": "modular",
+      "pending_remove": [
+        "home/soon_gone"
+      ],
+      "stage": "public",
+      "tombstones": [
+        "home/buried"
+      ]
+    },
+    "translations.json:draft": {
+      "en": {
+        "draft_only": "Draft",
+        "edited": "New",
+        "loose": "Loose",
+        "moved": "Move",
+        "published": "Published",
+        "tagged": "Tagged"
+      },
+      "ja": {
+        "edited": "新",
+        "moved": "移動",
+        "published": "公開",
+        "tagged": "タグ"
+      },
+      "vi": {
+        "draft_only": "Bản nháp",
+        "edited": "Mới",
+        "empty_targets": "Trống",
+        "loose": "Không module",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "tagged": "Có thẻ"
+      }
+    },
+    "translations.json:public": {
+      "en": {
+        "edited": "Old",
+        "moved": "Move",
+        "published": "Published",
+        "soon_gone": "Going",
+        "tagged": "Tagged"
+      },
+      "ja": {
+        "edited": "旧",
+        "moved": "移動",
+        "published": "公開",
+        "soon_gone": "削除予定",
+        "tagged": "タグ"
+      },
+      "vi": {
+        "edited": "Cũ",
+        "moved": "Di chuyển",
+        "published": "Đã xuất bản",
+        "soon_gone": "Sắp xóa",
+        "tagged": "Có thẻ"
+      }
+    }
+  },
+  "import_dry_run": {
+    "activities": [],
+    "result": {
+      "created": 0,
+      "diff": {
+        "create": [
+          {
+            "key": "fresh",
+            "source_text": "Mới"
+          }
+        ],
+        "create_count": 1,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [
+          {
+            "key": "save",
+            "source_text": "Lưu lại"
+          }
+        ],
+        "update_count": 1
+      },
+      "dry_run": true,
+      "total": 2,
+      "updated": 0
+    }
+  },
+  "import_edited": {
+    "activities": [
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu lại",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "before": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "event_type": "string.source_updated"
+      }
+    ],
+    "result": {
+      "created": 0,
+      "diff": {
+        "create": [],
+        "create_count": 0,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [
+          {
+            "key": "save",
+            "source_text": "Lưu lại"
+          }
+        ],
+        "update_count": 1
+      },
+      "dry_run": false,
+      "total": 1,
+      "updated": 1
+    }
+  },
+  "import_locale_map": {
+    "activities": [
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:bye",
+          "key": "bye",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null,
+            "ja": null
+          },
+          "source_text": "Tạm biệt",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Bye",
+            "ja": ""
+          }
+        },
+        "before": null,
+        "event_type": "string.created"
+      },
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:hello",
+          "key": "hello",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null,
+            "ja": null
+          },
+          "source_text": "Xin chào",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Hello",
+            "ja": "こんにちは"
+          }
+        },
+        "before": null,
+        "event_type": "string.created"
+      }
+    ],
+    "result": {
+      "created": 2,
+      "diff": {
+        "create": [
+          {
+            "key": "hello",
+            "source_text": "Xin chào"
+          },
+          {
+            "key": "bye",
+            "source_text": "Tạm biệt"
+          }
+        ],
+        "create_count": 2,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [],
+        "update_count": 0
+      },
+      "dry_run": false,
+      "total": 2,
+      "updated": 0
+    }
+  },
+  "import_revive": {
+    "activities": [
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu lại",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "before": {
+          "deleted_at": "<timestamp>",
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": null,
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "event_type": "string.restored"
+      }
+    ],
+    "result": {
+      "created": 0,
+      "diff": {
+        "create": [],
+        "create_count": 0,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [
+          {
+            "key": "save",
+            "source_text": "Lưu lại"
+          }
+        ],
+        "update_count": 1
+      },
+      "dry_run": false,
+      "total": 1,
+      "updated": 1
+    }
+  },
+  "import_tags": {
+    "activities": [
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:fresh",
+          "key": "fresh",
+          "module_id": "module:auth",
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Mới",
+          "status": "draft",
+          "tag_ids": [
+            "tag:ship"
+          ],
+          "tag_names": [
+            "ship"
+          ],
+          "translations": {
+            "en": ""
+          }
+        },
+        "before": null,
+        "event_type": "string.created"
+      },
+      {
+        "after": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": "module:auth",
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu lại",
+          "status": "draft",
+          "tag_ids": [
+            "tag:ship"
+          ],
+          "tag_names": [
+            "ship"
+          ],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "before": {
+          "deleted_at": null,
+          "description": null,
+          "id": "string:save",
+          "key": "save",
+          "module_id": "module:auth",
+          "pending_delete": false,
+          "project_id": "project",
+          "published_at": null,
+          "published_key": null,
+          "published_module_id": null,
+          "published_source_text": null,
+          "published_translations": {
+            "en": null
+          },
+          "source_text": "Lưu",
+          "status": "draft",
+          "tag_ids": [],
+          "tag_names": [],
+          "translations": {
+            "en": "Save"
+          }
+        },
+        "event_type": "string.updated"
+      }
+    ],
+    "result": {
+      "created": 1,
+      "diff": {
+        "create": [
+          {
+            "key": "fresh",
+            "source_text": "Mới"
+          }
+        ],
+        "create_count": 1,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [
+          {
+            "key": "save",
+            "source_text": "Lưu lại"
+          }
+        ],
+        "update_count": 1
+      },
+      "dry_run": false,
+      "total": 2,
+      "updated": 1
+    }
+  },
+  "import_unchanged": {
+    "activities": [],
+    "result": {
+      "created": 0,
+      "diff": {
+        "create": [],
+        "create_count": 0,
+        "orphan": [],
+        "orphan_count": 0,
+        "update": [],
+        "update_count": 0
+      },
+      "dry_run": false,
+      "total": 1,
+      "updated": 0
+    }
+  },
+  "publish_preview": {
+    "fingerprint": "<sha256>",
+    "items": [
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": "never published",
+        "has_unpublished_changes": false,
+        "id": "string:draft_only",
+        "key": "draft_only",
+        "module_id": "module:auth",
+        "module_slug": "auth",
+        "pending_delete": false,
+        "published_at": null,
+        "published_key": null,
+        "published_module_id": null,
+        "published_module_slug": null,
+        "published_source_text": null,
+        "source_text": "Bản nháp",
+        "status": "draft",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:draft_only:en",
+            "locale": "en",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": "Draft"
+          },
+          {
+            "confidence": null,
+            "id": "translation:draft_only:ja",
+            "locale": "ja",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": ""
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": true,
+        "id": "string:edited",
+        "key": "edited",
+        "module_id": "module:auth",
+        "module_slug": "auth",
+        "pending_delete": false,
+        "published_at": "<timestamp>",
+        "published_key": "edited",
+        "published_module_id": "module:auth",
+        "published_module_slug": "auth",
+        "published_source_text": "Cũ",
+        "source_text": "Mới",
+        "status": "public",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:edited:en",
+            "locale": "en",
+            "published_value": "Old",
+            "updated_at": "<timestamp>",
+            "value": "New"
+          },
+          {
+            "confidence": null,
+            "id": "translation:edited:ja",
+            "locale": "ja",
+            "published_value": "旧",
+            "updated_at": "<timestamp>",
+            "value": "新"
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": false,
+        "id": "string:empty_targets",
+        "key": "empty_targets",
+        "module_id": "module:auth",
+        "module_slug": "auth",
+        "pending_delete": false,
+        "published_at": null,
+        "published_key": null,
+        "published_module_id": null,
+        "published_module_slug": null,
+        "published_source_text": null,
+        "source_text": "Trống",
+        "status": "draft",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:empty_targets:en",
+            "locale": "en",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": ""
+          },
+          {
+            "confidence": null,
+            "id": "translation:empty_targets:ja",
+            "locale": "ja",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": ""
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": false,
+        "id": "string:loose",
+        "key": "loose",
+        "module_id": null,
+        "module_slug": null,
+        "pending_delete": false,
+        "published_at": null,
+        "published_key": null,
+        "published_module_id": null,
+        "published_module_slug": null,
+        "published_source_text": null,
+        "source_text": "Không module",
+        "status": "draft",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:loose:en",
+            "locale": "en",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": "Loose"
+          },
+          {
+            "confidence": null,
+            "id": "translation:loose:ja",
+            "locale": "ja",
+            "published_value": null,
+            "updated_at": "<timestamp>",
+            "value": ""
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": true,
+        "id": "string:moved",
+        "key": "moved",
+        "module_id": "module:home",
+        "module_slug": "home",
+        "pending_delete": false,
+        "published_at": "<timestamp>",
+        "published_key": "moved",
+        "published_module_id": "module:auth",
+        "published_module_slug": "auth",
+        "published_source_text": "Di chuyển",
+        "source_text": "Di chuyển",
+        "status": "public",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:moved:en",
+            "locale": "en",
+            "published_value": "Move",
+            "updated_at": "<timestamp>",
+            "value": "Move"
+          },
+          {
+            "confidence": null,
+            "id": "translation:moved:ja",
+            "locale": "ja",
+            "published_value": "移動",
+            "updated_at": "<timestamp>",
+            "value": "移動"
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": false,
+        "id": "string:published",
+        "key": "published",
+        "module_id": "module:auth",
+        "module_slug": "auth",
+        "pending_delete": false,
+        "published_at": "<timestamp>",
+        "published_key": "published",
+        "published_module_id": "module:auth",
+        "published_module_slug": "auth",
+        "published_source_text": "Đã xuất bản",
+        "source_text": "Đã xuất bản",
+        "status": "public",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:published:en",
+            "locale": "en",
+            "published_value": "Published",
+            "updated_at": "<timestamp>",
+            "value": "Published"
+          },
+          {
+            "confidence": null,
+            "id": "translation:published:ja",
+            "locale": "ja",
+            "published_value": "公開",
+            "updated_at": "<timestamp>",
+            "value": "公開"
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": true,
+        "id": "string:soon_gone",
+        "key": "soon_gone",
+        "module_id": "module:home",
+        "module_slug": "home",
+        "pending_delete": true,
+        "published_at": "<timestamp>",
+        "published_key": "soon_gone",
+        "published_module_id": "module:home",
+        "published_module_slug": "home",
+        "published_source_text": "Sắp xóa",
+        "source_text": "Sắp xóa",
+        "status": "public",
+        "tags": [],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:soon_gone:en",
+            "locale": "en",
+            "published_value": "Going",
+            "updated_at": "<timestamp>",
+            "value": "Going"
+          },
+          {
+            "confidence": null,
+            "id": "translation:soon_gone:ja",
+            "locale": "ja",
+            "published_value": "削除予定",
+            "updated_at": "<timestamp>",
+            "value": "削除予定"
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      },
+      {
+        "created_at": "<timestamp>",
+        "created_by_label": "dev@localhost",
+        "created_by_type": "user",
+        "deleted_at": null,
+        "description": null,
+        "has_unpublished_changes": false,
+        "id": "string:tagged",
+        "key": "tagged",
+        "module_id": "module:home",
+        "module_slug": "home",
+        "pending_delete": false,
+        "published_at": "<timestamp>",
+        "published_key": "tagged",
+        "published_module_id": "module:home",
+        "published_module_slug": "home",
+        "published_source_text": "Có thẻ",
+        "source_text": "Có thẻ",
+        "status": "public",
+        "tags": [
+          {
+            "color": "#112233",
+            "id": "tag:ship",
+            "name": "ship",
+            "string_count": 0
+          }
+        ],
+        "translations": [
+          {
+            "confidence": null,
+            "id": "translation:tagged:en",
+            "locale": "en",
+            "published_value": "Tagged",
+            "updated_at": "<timestamp>",
+            "value": "Tagged"
+          },
+          {
+            "confidence": null,
+            "id": "translation:tagged:ja",
+            "locale": "ja",
+            "published_value": "タグ",
+            "updated_at": "<timestamp>",
+            "value": "タグ"
+          }
+        ],
+        "updated_at": "<timestamp>",
+        "updated_by_label": "dev@localhost",
+        "updated_by_type": "user"
+      }
+    ]
+  }
+}

@@ -6,8 +6,9 @@ import io
 from typing import Any
 from uuid import UUID
 
+from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
     Module,
@@ -20,7 +21,7 @@ from app.models import (
 )
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult
 from app.helpers import validate_locale_code, validate_module_slug
-from app.services.strings import promote_string, restore_string
+from app.services.strings import live_module_label, promote_string, restore_string
 from app.services.sync import IMPORT_DIFF_SAMPLE
 
 UNASSIGNED_SHEET = "_unassigned"
@@ -288,6 +289,14 @@ def import_workbook(
     updated = 0
     total = 0
     modular = _is_modular(project)
+    live_rows = (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.module))
+        .filter(StringEntry.project_id == project.id, StringEntry.deleted_at.is_(None))
+        .all()
+    )
+    live_by_key = {row.key: row for row in live_rows}
+    workbook_keys: dict[str, str] = {}
 
     for sheet_name in wb.sheetnames:
         if sheet_name == "_meta":
@@ -341,6 +350,24 @@ def import_workbook(
             key = _desanitize_cell_value(row[key_idx]).strip()
             if not key:
                 continue
+            if modular:
+                sheet_label = "unassigned" if sheet_name == UNASSIGNED_SHEET else sheet_name
+                prior = workbook_keys.get(key)
+                if prior is not None and prior != sheet_label:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"String '{key}' appears in more than one module",
+                    )
+                workbook_keys[key] = sheet_label
+                live = live_by_key.get(key)
+                if live is not None and live_module_label(live) != sheet_label:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"String '{key}' already exists in module "
+                            f"'{live_module_label(live)}'"
+                        ),
+                    )
             total += 1
             description = (
                 _desanitize_cell_value(row[desc_idx]).strip()
@@ -369,6 +396,17 @@ def import_workbook(
                 module_id,
                 match_any_module=not modular,
             )
+            live = live_by_key.get(key)
+            if live is not None and (entry is None or entry.id != live.id):
+                if modular:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"String '{key}' already exists in module "
+                            f"'{live_module_label(live)}'"
+                        ),
+                    )
+                raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
             if revived and entry is not None and not dry_run:
                 restore_string(entry)
 
@@ -398,6 +436,7 @@ def import_workbook(
                     )
                     db.add(entry)
                     db.flush()
+                    live_by_key[key] = entry
                     created += 1
 
             if dry_run or entry is None:

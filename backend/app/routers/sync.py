@@ -21,8 +21,9 @@ from app.services.sync import (
     import_flat_strings,
     import_json_data,
     load_export_entries,
-    load_sync_state_entries,
+    load_export_rows,
     normalize_export_stage,
+    resolve_export_locales,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["sync"])
@@ -49,9 +50,9 @@ def export_project(
         project.layout.value if hasattr(project.layout, "value") else project.layout
     )
     effective_stage = normalize_export_stage(stage)
-    entries = load_export_entries(db, project.id)
 
     if format == "xlsx":
+        entries = load_export_entries(db, project.id)
         from app.excel import build_workbook
 
         try:
@@ -65,10 +66,16 @@ def export_project(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    target_locales = [
+        loc
+        for loc in resolve_export_locales(project, locale)
+        if loc != project.base_language
+    ]
+    rows = load_export_rows(db, project.id, target_locales)
     if effective_layout == "modular":
-        payload = build_modular_export(project, entries, effective_stage, locale=locale)
+        payload = build_modular_export(project, rows, effective_stage, locale=locale)
     else:
-        payload = build_flat_export(project, entries, effective_stage, locale=locale)
+        payload = build_flat_export(project, rows, effective_stage, locale=locale)
 
     filename = _export_filename(project, stage, locale, "json")
     return JSONResponse(
@@ -89,8 +96,8 @@ def project_sync_state(
         project.layout.value if hasattr(project.layout, "value") else project.layout
     )
     effective_stage = normalize_export_stage(stage)
-    entries = load_sync_state_entries(db, project.id)
-    return build_sync_state(project, entries, effective_layout, effective_stage)
+    rows = load_export_rows(db, project.id, [])
+    return build_sync_state(project, rows, effective_layout, effective_stage)
 
 
 @router.get("/translations.json")
@@ -100,8 +107,11 @@ def export_translations_compat(
     stage: Annotated[str, Query(pattern="^(draft|public|all)$")] = "draft",
 ) -> dict[str, dict[str, str]]:
     """Back-compat flat export used by older CLI."""
-    entries = load_export_entries(db, project.id)
-    return build_flat_export(project, entries, normalize_export_stage(stage))
+    target_locales = [
+        loc for loc in resolve_export_locales(project, None) if loc != project.base_language
+    ]
+    rows = load_export_rows(db, project.id, target_locales)
+    return build_flat_export(project, rows, normalize_export_stage(stage))
 
 
 @router.get("/import-template")

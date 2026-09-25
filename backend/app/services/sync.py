@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.helpers import content_hash, export_key, validate_module_slug
-from app.models import Module, Project, StringEntry, Tag, TranslationStatus
+from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
+    live_module_label,
     promote_string,
     restore_string,
 )
@@ -34,6 +37,108 @@ def load_export_entries(db: Session, project_id) -> list[StringEntry]:
         .order_by(StringEntry.key)
         .all()
     )
+
+
+@dataclass(slots=True)
+class _ExportSlug:
+    slug: str
+
+
+@dataclass(slots=True)
+class _ExportTranslation:
+    locale: str
+    value: str
+    published_value: str | None
+
+
+@dataclass(slots=True)
+class _ExportRow:
+    """Columns the JSON export builders read. Not an ORM instance."""
+
+    key: str
+    source_text: str
+    status: TranslationStatus
+    published_key: str | None
+    published_source_text: str | None
+    pending_delete: bool
+    deleted_at: Any
+    module: _ExportSlug | None
+    published_module: _ExportSlug | None
+    translations: list[_ExportTranslation]
+
+
+def load_export_rows(db: Session, project_id, locales: list[str]) -> list[_ExportRow]:
+    """Load export columns with Core selects instead of hydrating ORM graphs.
+
+    ``locales`` are the target locales whose translation rows are needed.
+    Pass an empty list to skip translations (sync-state, base-locale export).
+    """
+    module_rows = db.execute(
+        select(Module.id, Module.slug).where(Module.project_id == project_id)
+    ).all()
+    modules = {row.id: _ExportSlug(slug=row.slug) for row in module_rows}
+
+    string_rows = db.execute(
+        select(
+            StringEntry.id,
+            StringEntry.key,
+            StringEntry.source_text,
+            StringEntry.status,
+            StringEntry.module_id,
+            StringEntry.published_key,
+            StringEntry.published_module_id,
+            StringEntry.published_source_text,
+            StringEntry.pending_delete,
+            StringEntry.deleted_at,
+        )
+        .where(StringEntry.project_id == project_id)
+        .order_by(StringEntry.key)
+    ).all()
+
+    translations: dict[Any, list[_ExportTranslation]] = {}
+    if locales:
+        translation_rows = db.execute(
+            select(
+                Translation.string_id,
+                Translation.locale,
+                Translation.value,
+                Translation.published_value,
+            )
+            .join(StringEntry, StringEntry.id == Translation.string_id)
+            .where(
+                StringEntry.project_id == project_id,
+                Translation.locale.in_(locales),
+            )
+        ).all()
+        for row in translation_rows:
+            translations.setdefault(row.string_id, []).append(
+                _ExportTranslation(
+                    locale=row.locale,
+                    value=row.value or "",
+                    published_value=row.published_value,
+                )
+            )
+
+    rows: list[_ExportRow] = []
+    for row in string_rows:
+        status = row.status
+        if not isinstance(status, TranslationStatus):
+            status = TranslationStatus(status)
+        rows.append(
+            _ExportRow(
+                key=row.key,
+                source_text=row.source_text,
+                status=status,
+                published_key=row.published_key,
+                published_source_text=row.published_source_text,
+                pending_delete=bool(row.pending_delete),
+                deleted_at=row.deleted_at,
+                module=modules.get(row.module_id),
+                published_module=modules.get(row.published_module_id),
+                translations=translations.get(row.id, []),
+            )
+        )
+    return rows
 
 
 def load_sync_state_entries(db: Session, project_id) -> list[StringEntry]:
@@ -347,28 +452,32 @@ class _ImportIndex:
             self.add(entry)
 
     def add(self, entry: StringEntry) -> None:
-        dest_module = self.deleted_by_module_key if entry.deleted_at else self.by_module_key
-        dest_key = self.deleted_by_key if entry.deleted_at else self.by_key
-        dest_module[(entry.module_id, entry.key)] = entry
-        existing = dest_key.get(entry.key)
-        if existing is None or entry.module_id is None:
-            dest_key[entry.key] = entry
+        if entry.deleted_at:
+            self.deleted_by_module_key[(entry.module_id, entry.key)] = entry
+            existing = self.deleted_by_key.get(entry.key)
+            if existing is None or entry.module_id is None:
+                self.deleted_by_key[entry.key] = entry
+            return
+        self.by_module_key[(entry.module_id, entry.key)] = entry
+        self.by_key.setdefault(entry.key, entry)
 
     def lookup(self, key: str, *, module_id: UUID | None) -> StringEntry | None:
+        if module_id is None:
+            live = self.by_key.get(key)
+            if live is not None:
+                return live
+            return self.deleted_by_module_key.get((None, key)) or self.deleted_by_key.get(key)
         live = self.by_module_key.get((module_id, key))
         if live is not None:
             return live
-        deleted = self.deleted_by_module_key.get((module_id, key))
-        if deleted is not None:
-            return deleted
-        if module_id is None:
-            return self.by_key.get(key) or self.deleted_by_key.get(key)
-        return None
+        return self.deleted_by_module_key.get((module_id, key))
 
 
 def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
     if project.base_language in values and entry.source_text != values[project.base_language]:
         return True
+    if not any(locale != project.base_language for locale in values):
+        return False
     by_locale = {t.locale: t.value for t in entry.translations}
     for locale, value in values.items():
         if locale == project.base_language:
@@ -376,6 +485,89 @@ def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]
         if by_locale.get(locale, "") != value:
             return True
     return False
+
+
+_PRELOAD_CHUNK = 1000
+
+
+def _preload_collections(
+    db: Session,
+    entries: list[StringEntry],
+    *,
+    translations: bool,
+    tags: bool,
+) -> None:
+    """Fill translations and tags on identities already in the session.
+
+    Chunked selectinload queries populate those collections without a later
+    lazy SELECT per string. autoflush stays off so a later module in the same
+    import does not flush the strings touched so far.
+    """
+    if not translations and not tags:
+        return
+    options = []
+    if translations:
+        options.append(selectinload(StringEntry.translations))
+    if tags:
+        options.append(selectinload(StringEntry.tags))
+    seen: set[UUID] = set()
+    ids: list[UUID] = []
+    for entry in entries:
+        if entry.id is None or entry.id in seen:
+            continue
+        seen.add(entry.id)
+        ids.append(entry.id)
+    if not ids:
+        return
+    with db.no_autoflush:
+        for start in range(0, len(ids), _PRELOAD_CHUNK):
+            chunk = ids[start : start + _PRELOAD_CHUNK]
+            db.query(StringEntry).options(*options).filter(StringEntry.id.in_(chunk)).all()
+
+
+def _import_row_will_change(
+    entry: StringEntry,
+    project: Project,
+    values: dict[str, str],
+    tags: list[Tag],
+) -> bool:
+    revived = bool(entry.deleted_at)
+    values_changed = revived or _values_changed(entry, project, values)
+    return values_changed or _tags_would_change(entry, tags)
+
+
+def _prepare_import_collections(
+    db: Session,
+    project: Project,
+    index: _ImportIndex,
+    maps: dict[str, dict[str, str]],
+    module_id: UUID | None,
+    tags: list[Tag],
+) -> None:
+    """Load the collections comparisons and activity capture will read."""
+    matched: list[tuple[StringEntry, dict[str, str]]] = []
+    has_target_locale = False
+    base = project.base_language
+    for key in _union_keys(maps):
+        values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
+        if not values:
+            continue
+        if not has_target_locale and any(locale != base for locale in values):
+            has_target_locale = True
+        entry = index.lookup(key, module_id=module_id)
+        if entry is not None:
+            matched.append((entry, values))
+    matched_entries = [entry for entry, _ in matched]
+    if has_target_locale:
+        _preload_collections(db, matched_entries, translations=True, tags=False)
+    if tags:
+        _preload_collections(db, matched_entries, translations=False, tags=True)
+    changing = [
+        entry
+        for entry, values in matched
+        if _import_row_will_change(entry, project, values, tags)
+    ]
+    _preload_collections(db, changing, translations=True, tags=True)
 
 
 def _preview_source_text(
@@ -407,6 +599,14 @@ def _upsert_imported_string(
 ) -> tuple[str, StringEntry | None]:
     """Return ('create'|'update'|'unchanged', entry_or_none)."""
     entry = index.lookup(key, module_id=module_id)
+    live = index.by_key.get(key)
+    if live is not None and (entry is None or entry.id != live.id):
+        if module_id is None:
+            raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
+        raise HTTPException(
+            status_code=409,
+            detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
+        )
     if entry is None:
         if not dry_run:
             source_text = values.get(project.base_language, "") or key
@@ -467,6 +667,7 @@ def _import_locale_maps(
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
+    _prepare_import_collections(db, project, index, maps, module_id, tags)
     for key in _union_keys(maps):
         values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
         if not values:
@@ -544,6 +745,56 @@ def _result(
     )
 
 
+def _payload_keys(project: Project, locale_maps: dict[str, dict[str, str]]) -> list[str]:
+    if not isinstance(locale_maps, dict):
+        return []
+    return _union_keys(_known_locale_maps(project, locale_maps))
+
+
+def _module_slug_for_id(db: Session, project: Project, module_id: UUID) -> str:
+    mod = (
+        db.query(Module)
+        .filter(Module.project_id == project.id, Module.id == module_id)
+        .first()
+    )
+    if mod is None:
+        return "unassigned"
+    return mod.slug
+
+
+def _claim_payload_key(owners: dict[str, str], key: str, slug: str) -> None:
+    previous = owners.get(key)
+    if previous is not None and previous != slug:
+        raise HTTPException(
+            status_code=409,
+            detail=f"String '{key}' appears in more than one module",
+        )
+    owners[key] = slug
+
+
+def _reject_other_module(index: _ImportIndex, key: str, slug: str) -> None:
+    live = index.by_key.get(key)
+    if live is None or live_module_label(live) == slug:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
+    )
+
+
+def _preflight_named_keys(
+    index: _ImportIndex,
+    project: Project,
+    locale_maps: dict[str, dict[str, str]],
+    slug: str,
+    owners: dict[str, str] | None = None,
+) -> None:
+    for key in _payload_keys(project, locale_maps):
+        if owners is not None:
+            _claim_payload_key(owners, key, slug)
+        _reject_other_module(index, key, slug)
+
+
 def import_flat_strings(
     db: Session,
     project: Project,
@@ -568,6 +819,16 @@ def import_flat_strings(
     )
 
 
+def _load_import_index_entries(db: Session, project_id) -> list[StringEntry]:
+    """String rows plus module slug. Translations and tags load later, in chunks."""
+    return (
+        db.query(StringEntry)
+        .options(joinedload(StringEntry.module))
+        .filter(StringEntry.project_id == project_id)
+        .all()
+    )
+
+
 def import_locale_payload(
     db: Session,
     project: Project,
@@ -579,17 +840,15 @@ def import_locale_payload(
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
 ) -> ImportResult:
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.translations),
-            selectinload(StringEntry.tags),
-        )
-        .filter(StringEntry.project_id == project.id)
-        .all()
-    )
+    entries = _load_import_index_entries(db, project.id)
     index = _ImportIndex(entries)
+    if module_id is not None:
+        _preflight_named_keys(
+            index,
+            project,
+            locale_maps,
+            _module_slug_for_id(db, project, module_id),
+        )
     create_items, update_items, orphan_items, total = _import_locale_maps(
         db,
         project,
@@ -620,18 +879,16 @@ def import_modular_payload(
     status: TranslationStatus = TranslationStatus.draft,
     tags: list[Tag] | None = None,
 ) -> ImportResult:
-    entries = (
-        db.query(StringEntry)
-        .options(
-            joinedload(StringEntry.module),
-            joinedload(StringEntry.translations),
-            selectinload(StringEntry.tags),
-        )
-        .filter(StringEntry.project_id == project.id)
-        .all()
-    )
+    entries = _load_import_index_entries(db, project.id)
     import_tags = tags or []
     index = _ImportIndex(entries)
+    owners: dict[str, str] = {}
+    for slug, locale_maps in modules.items():
+        if not isinstance(locale_maps, dict):
+            continue
+        _preflight_named_keys(index, project, locale_maps, slug, owners)
+    if unassigned and _is_locale_maps(unassigned):
+        _preflight_named_keys(index, project, unassigned, "unassigned", owners)
     create_items: list[ImportDiffItem] = []
     update_items: list[ImportDiffItem] = []
     orphan_items: list[ImportDiffItem] = []

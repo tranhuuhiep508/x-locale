@@ -177,6 +177,12 @@ def _tag_ids_before_after(
         before_names = [before_map[tid] for tid in before_ids]
         return before_ids, after_ids, before_names, after_names, True
 
+    # A string that has not been inserted yet has no string_tags rows. Tags
+    # assigned before the first flush are already on the loaded collection,
+    # which the branch above records.
+    if sa_inspect(obj).pending:
+        return [], [], [], [], False
+
     rows = (
         session.query(Tag.id, Tag.name)
         .join(StringTag, StringTag.tag_id == Tag.id)

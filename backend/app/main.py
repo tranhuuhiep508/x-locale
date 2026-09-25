@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
@@ -57,6 +58,9 @@ if settings.cors_origin_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Outermost: compress the finished response. Level 1 favors latency over ratio.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=1)
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(bootstrap.router, prefix="/api")

@@ -30,7 +30,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
-      X_LOCALE_SECRET: ${X_LOCALE_SECRET:?}
+      X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
@@ -45,7 +45,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-4}"
 
 volumes:
   postgres_data:

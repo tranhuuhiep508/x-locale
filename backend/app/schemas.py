@@ -392,9 +392,11 @@ class ActivityChangeOut(BaseModel):
     before: str | None = None
     after: str | None = None
     locale: str | None = None
+    scope: Literal["draft", "published"] = "draft"
+    kind: Literal["field", "translation", "tags"] = "field"
 
 
-class ActivityOut(BaseModel):
+class ActivityCoreOut(BaseModel):
     id: UUID
     actor_type: str
     actor_id: str | None
@@ -404,8 +406,6 @@ class ActivityOut(BaseModel):
     entity_id: str
     string_id: UUID | None
     locale: str | None
-    before: dict[str, Any] | None
-    after: dict[str, Any] | None
     event_type: str
     summary: str
     batch_id: UUID | None
@@ -419,13 +419,40 @@ class ActivityOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ActivityOut(ActivityCoreOut):
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+
+
+class ActivityListItemOut(ActivityCoreOut):
+    string_key: str | None = None
+    changed_count: int = 0
+    is_history_restorable: bool = False
+    restore_blocked_reason: str | None = None
+
+
 class RestoreVersionOut(ActivityOut):
     notice: str
     pending_delete: bool = False
 
 
+class ActivityLinkOut(BaseModel):
+    id: UUID
+    summary: str
+    created_at: UtcDateTime | None = None
+
+
+class ActivityDetailOut(ActivityCoreOut):
+    string_key: str | None = None
+    module_name: str | None = None
+    is_history_restorable: bool = False
+    restore_blocked_reason: str | None = None
+    revert_of: ActivityLinkOut | None = None
+    reverted_by: ActivityLinkOut | None = None
+
+
 class ActivityListOut(BaseModel):
-    items: list[ActivityOut]
+    items: list[ActivityListItemOut]
     total: int
     page: int
     page_size: int
@@ -439,6 +466,7 @@ class ActivityFeedChildOut(BaseModel):
     string_key: str | None = None
     locale: str | None = None
     changed: list[ActivityChangeOut] = Field(default_factory=list)
+    changed_count: int = 0
 
 
 class ActivityFeedCardOut(BaseModel):
@@ -458,6 +486,7 @@ class ActivityFeedCardOut(BaseModel):
     is_undoable: bool = False
     counts: dict[str, int] = Field(default_factory=dict)
     changed: list[ActivityChangeOut] = Field(default_factory=list)
+    changed_count: int = 0
     children: list[ActivityFeedChildOut] = Field(default_factory=list)
 
 
@@ -466,3 +495,50 @@ class ActivityFeedOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class RevertPreviewConflictOut(BaseModel):
+    activity_id: UUID
+    string_key: str | None = None
+
+
+class RevertPreviewItemOut(BaseModel):
+    activity_id: UUID
+    string_id: UUID | None = None
+    string_key: str | None = None
+    outcome: Literal[
+        "restore_values", "move_to_deleted", "recreate", "already_reverted", "missing"
+    ]
+    conflict: bool = False
+    affects_published: bool = False
+    change_count: int = 0
+    changes: list[ActivityChangeOut] = Field(default_factory=list)
+
+
+class RevertPreviewOutcomeCountsOut(BaseModel):
+    restore_values: int = 0
+    move_to_deleted: int = 0
+    recreate: int = 0
+    already_reverted: int = 0
+    missing: int = 0
+
+
+class RevertPreviewOut(BaseModel):
+    items: list[RevertPreviewItemOut]
+    conflicts: list[RevertPreviewConflictOut] = Field(default_factory=list)
+    total: int
+    conflict_count: int
+    requires_force: bool
+    affects_published: bool
+    outcome_counts: RevertPreviewOutcomeCountsOut
+
+
+class RestorePreviewOut(BaseModel):
+    string_id: UUID
+    activity_id: UUID
+    can_restore: bool
+    blocked_reason: str | None = None
+    already_matches: bool = False
+    pending_delete: bool = False
+    notice: str | None = None
+    changes: list[ActivityChangeOut] = Field(default_factory=list)
