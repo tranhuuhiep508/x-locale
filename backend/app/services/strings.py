@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
@@ -25,6 +26,7 @@ from app.schemas import (
     TranslationOut,
     TranslationUpdate,
 )
+from app.services.catalog import get_module
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
@@ -418,9 +420,21 @@ def load_string_entries(
     db: Session,
     project_id: uuid.UUID,
     ids: Sequence[uuid.UUID],
+    *,
+    lock: bool = False,
 ) -> list[StringEntry]:
     if not ids:
         return []
+    if lock:
+        # Lock in a stable order before loading translations for the fingerprint.
+        # Writers also lock their parent string, so a publish sees one coherent copy.
+        (
+            db.query(StringEntry.id)
+            .filter(StringEntry.project_id == project_id, StringEntry.id.in_(ids))
+            .order_by(StringEntry.id)
+            .with_for_update()
+            .all()
+        )
     return (
         db.query(StringEntry)
         .options(
@@ -434,8 +448,10 @@ def load_string_entries(
     )
 
 
-def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> StringEntry:
-    entry = (
+def get_string(
+    db: Session, project_id: uuid.UUID, string_id: uuid.UUID, *, lock: bool = False
+) -> StringEntry:
+    query = (
         db.query(StringEntry)
         .options(
             selectinload(StringEntry.translations),
@@ -444,8 +460,10 @@ def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> Stri
             joinedload(StringEntry.published_module),
         )
         .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
-        .first()
     )
+    if lock:
+        query = query.with_for_update(of=StringEntry)
+    entry = query.first()
     if not entry:
         raise HTTPException(status_code=404, detail="String not found")
     return entry
@@ -508,6 +526,8 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    if payload.module_id is not None:
+        get_module(db, project.id, payload.module_id)
     existing = (
         db.query(StringEntry)
         .filter(
@@ -544,7 +564,11 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
         promote_string(entry)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists") from exc
     return serialize_string(get_string(db, project.id, entry.id))
 
 
@@ -554,7 +578,9 @@ def update_string(
     string_id: uuid.UUID,
     payload: StringUpdate,
 ) -> StringOut:
-    entry = get_string(db, project.id, string_id)
+    entry = get_string(db, project.id, string_id, lock=True)
+    if payload.module_id is not None:
+        get_module(db, project.id, payload.module_id)
     if payload.key is not None:
         if payload.key != entry.key:
             conflict = (
@@ -593,7 +619,11 @@ def update_string(
         promote_string(entry)
     elif payload.status == TranslationStatus.draft:
         unpublish_string(entry)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists") from exc
     return serialize_string(get_string(db, project.id, string_id))
 
 
@@ -604,7 +634,7 @@ def upsert_translation(
     locale: str,
     payload: TranslationUpdate,
 ) -> StringOut:
-    entry = get_string(db, project.id, string_id)
+    entry = get_string(db, project.id, string_id, lock=True)
     if locale not in project.target_languages and locale != project.base_language:
         raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
@@ -626,7 +656,7 @@ def upsert_translation(
 
 
 def delete_string(db: Session, project: Project, string_id: uuid.UUID) -> None:
-    entry = get_string(db, project.id, string_id)
+    entry = get_string(db, project.id, string_id, lock=True)
     queue_or_soft_delete(entry)
     db.commit()
 
@@ -643,7 +673,7 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         )
 
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
-    entries = load_string_entries(db, project.id, ids)
+    entries = load_string_entries(db, project.id, ids, lock=True)
 
     if action == "publish":
         current = compute_publish_fingerprint(entries)
@@ -696,12 +726,20 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         affected = restore_last_history(db, project, entries)
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
-        mid = uuid.UUID(module_id) if module_id else None
+        try:
+            mid = uuid.UUID(module_id) if module_id else None
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid module ID") from exc
+        if mid is not None:
+            get_module(db, project.id, mid)
         for entry in entries:
             entry.module_id = mid
             affected += 1
     elif action == "add_tags":
-        tag_ids = [uuid.UUID(t) for t in payload.payload.get("tag_ids", [])]
+        try:
+            tag_ids = [uuid.UUID(t) for t in payload.payload.get("tag_ids", [])]
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid tag ID") from exc
         tags = db.query(Tag).filter(Tag.project_id == project.id, Tag.id.in_(tag_ids)).all()
         for entry in entries:
             existing_ids = {t.id for t in entry.tags}
@@ -710,7 +748,10 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
                     entry.tags.append(tag)
                     affected += 1
     elif action == "remove_tags":
-        tag_ids = {uuid.UUID(t) for t in payload.payload.get("tag_ids", [])}
+        try:
+            tag_ids = {uuid.UUID(t) for t in payload.payload.get("tag_ids", [])}
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid tag ID") from exc
         for entry in entries:
             before = len(entry.tags)
             entry.tags = [t for t in entry.tags if t.id not in tag_ids]

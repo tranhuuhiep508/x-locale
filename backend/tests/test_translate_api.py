@@ -620,7 +620,7 @@ def test_translate_proposals_large_uses_job(client, monkeypatch):
     ).json()
 
     monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
-    monkeypatch.setattr("app.routers.translate.run_propose_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.routers.translate.process_job", lambda *args, **kwargs: None)
 
     r = client.post(
         f"/api/projects/{pid}/translate/proposals",
@@ -648,7 +648,7 @@ def test_translate_proposals_job_progress_updates_without_payload(client, monkey
     ).json()
 
     monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
-    monkeypatch.setattr("app.routers.translate.run_propose_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.routers.translate.process_job", lambda *args, **kwargs: None)
 
     r = client.post(
         f"/api/projects/{pid}/translate/proposals",
@@ -701,4 +701,3 @@ def test_load_entries_by_ids_preserves_request_order(client):
         assert [str(entry.id) for entry in entries] == [second["id"], first["id"]]
     finally:
         db.close()
-

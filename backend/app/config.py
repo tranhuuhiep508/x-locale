@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
+    job_inline_nudge: bool = True
     x_locale_secret: str = INSECURE_DEFAULT_X_LOCALE_SECRET
     x_locale_demo_api_key: str = "demo-local-key"
     default_base_language: str = "vi"

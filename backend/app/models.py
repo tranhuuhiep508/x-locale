@@ -353,6 +353,9 @@ class Job(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     @property
     def progress(self) -> dict | None:
@@ -361,3 +364,14 @@ class Job(Base):
             return None
         raw = payload.get("progress")
         return raw if isinstance(raw, dict) else None
+
+
+class JobTarget(Base):
+    __tablename__ = "job_targets"
+    __table_args__ = (Index("ix_job_targets_job_position", "job_id", "position"),)
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    string_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)

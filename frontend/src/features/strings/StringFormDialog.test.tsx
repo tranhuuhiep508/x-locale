@@ -110,6 +110,27 @@ describe('StringFormDialog inline catalog create', () => {
     vi.mocked(stringsApi.create).mockReset().mockResolvedValue({} as never)
   })
 
+  it('preserves entered values after a failed save and allows retry', async () => {
+    vi.mocked(stringsApi.create)
+      .mockRejectedValueOnce(new Error('Temporary save failure'))
+      .mockResolvedValueOnce({} as never)
+    const { onClose, onSuccess } = renderDialog()
+    fireEvent.change(screen.getByLabelText('Key'), { target: { value: 'retry.key' } })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Retry source' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create string' }))
+    await waitFor(() => expect(stringsApi.create).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Create string' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(screen.getByLabelText('Key')).toHaveProperty('value', 'retry.key')
+    expect(screen.getByLabelText('Source text')).toHaveProperty('value', 'Retry source')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onSuccess).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create string' }))
+    await waitFor(() => expect(stringsApi.create).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+  })
+
   it('keeps Add string open and selects a module created from New', async () => {
     const { onClose, onSuccess } = renderDialog()
 

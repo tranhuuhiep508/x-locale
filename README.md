@@ -132,16 +132,19 @@ More detail: [docs/](docs/).
 
 ```bash
 # Backend tests
-cd backend && uv sync --all-extras && uv run pytest
+(cd backend && uv sync --all-extras && uv run pytest)
 
-# Frontend typecheck + build
-cd frontend && npm run build
+# Frontend typecheck, lint, unit tests, and build
+(cd frontend && npm run typecheck && npm run lint && npm run test -- --run && npm run build)
 
-# CLI tests
-uv run --project cli python -m unittest discover -s cli/tests
+# CLI unit tests (the separate CLI E2E suite starts its own backend)
+(cd cli && uv run pytest tests -m "not e2e")
+
+# Core browser flows (isolated database and ports)
+npm run e2e
 
 # Regenerate OpenAPI types (backend must be running)
-cd frontend && npm run gen:api
+(cd frontend && npm run gen:api)
 ```
 
 ## Environment
@@ -158,6 +161,7 @@ See [.env.example](.env.example). Notable vars:
 | `OIDC_REDIRECT_URL` | Must match a Web redirect URI in Entra (`http://localhost:5173/api/auth/callback` for Vite) |
 | `X_LOCALE_DEMO_API_KEY` | Seeded demo project key |
 | `WEB_CONCURRENCY` | Production uvicorn worker processes (default 4). Each worker keeps its own database pool, about 15 connections, so size Postgres `max_connections` for `workers × 15` plus headroom. Dev compose stays on one process with `--reload`. |
+| `JOB_INLINE_NUDGE` | Defaults to `true` for local development. Production Compose sets it to `false` and runs the separate database-backed `worker` service for translation jobs. |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |

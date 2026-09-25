@@ -17,6 +17,7 @@ services:
       retries: 5
 
   backend:
+    image: x-locale-prod:local
     build:
       context: .
       dockerfile: backend/Dockerfile.prod
@@ -33,6 +34,7 @@ services:
       X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
+      JOB_INLINE_NUDGE: "false"
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -46,6 +48,26 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-4}"
+
+  worker:
+    image: x-locale-prod:local
+    environment:
+      DATABASE_URL: postgresql+psycopg://xlocale:${POSTGRES_PASSWORD}@postgres:5432/xlocale
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
+      X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}
+      AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    depends_on:
+      backend:
+        condition: service_started
+    command: python -m app.worker
 
 volumes:
   postgres_data:

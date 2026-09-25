@@ -329,12 +329,14 @@ export function StringsPage() {
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
-    (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
+    (Boolean(proposalJobId) && !proposalJobQuery.isError && jobStillRunning(proposalJobQuery.data))
   const reviewError =
     missingMut.error instanceof Error
       ? missingMut.error.message
-      : proposeMut.error instanceof Error
-        ? proposeMut.error.message
+        : proposeMut.error instanceof Error
+          ? proposeMut.error.message
+          : proposalJobQuery.error instanceof Error
+            ? `Could not check translation progress: ${proposalJobQuery.error.message}`
         : proposalJobQuery.data?.status === 'failed'
           ? proposalJobQuery.data.error ?? 'Translation job failed'
           : null
@@ -649,6 +651,7 @@ export function StringsPage() {
         onPageChange={loadMissingPage}
         onClose={closeReview}
         onTranslate={(items) => {
+          setProposalJobId(null)
           proposeMut.mutate({
             scope: 'strings',
             string_ids: items.map((item) => item.string_id),

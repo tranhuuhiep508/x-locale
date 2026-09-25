@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from io import BytesIO
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -27,6 +28,19 @@ from app.services.sync import (
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["sync"])
+MAX_IMPORT_BYTES = 256 * 1024 * 1024
+IMPORT_READ_CHUNK = 1024 * 1024
+
+
+async def _read_import_file(file: UploadFile) -> bytes:
+    data = BytesIO()
+    size = 0
+    while chunk := await file.read(IMPORT_READ_CHUNK):
+        size += len(chunk)
+        if size > MAX_IMPORT_BYTES:
+            raise HTTPException(status_code=413, detail="Import file exceeds 256 MiB")
+        data.write(chunk)
+    return data.getvalue()
 
 
 def _export_filename(project, stage: str, locale: str | None, ext: str) -> str:
@@ -158,7 +172,7 @@ async def import_project(
     import_status = TranslationStatus(status)
 
     filename = (file.filename or "").lower()
-    raw = await file.read()
+    raw = await _read_import_file(file)
     if filename.endswith(".xlsx") or (file.content_type or "").endswith("spreadsheetml.sheet"):
         from app.excel import import_workbook
 

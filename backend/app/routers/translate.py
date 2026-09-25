@@ -8,8 +8,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.activity import attach_batch
 from app.auth import ProjectAccess
+from app.config import settings
 from app.database import DbSession
-from app.models import Job, JobStatus
 from app.schemas import (
     TranslateApplyRequest,
     TranslateApplyResult,
@@ -19,6 +19,7 @@ from app.schemas import (
     TranslateRequest,
     TranslateResult,
 )
+from app.services.jobs import enqueue_job, process_job
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
@@ -29,8 +30,6 @@ from app.services.translate import (
     preview_translations,
     propose_translations,
     queued_progress,
-    run_propose_job,
-    run_translate_job,
     select_entries,
     serialize_descriptions,
 )
@@ -67,30 +66,24 @@ def translate(
     entry_ids = [e.id for e in entries]
 
     if work > SYNC_THRESHOLD:
-        job = Job(
+        job = enqueue_job(
+            db,
             project_id=project.id,
             kind="translate",
-            status=JobStatus.pending,
             payload={
                 "scope": payload.scope,
                 "locales": locales,
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
                 "actor": _actor_from_session(db),
+                "batch_id": str(batch_id),
             },
+            entry_ids=entry_ids,
         )
-        db.add(job)
         db.commit()
         db.refresh(job)
-        background_tasks.add_task(
-            run_translate_job,
-            project.id,
-            entry_ids,
-            locales,
-            payload.overwrite,
-            batch_id,
-            job.id,
-        )
+        if settings.job_inline_nudge:
+            background_tasks.add_task(process_job, job.id)
         return TranslateResult(translated_count=0, locales=locales, job_id=job.id)
 
     attach_batch(db, batch_id, "translate")
@@ -159,10 +152,10 @@ def translate_proposals(
     desc_payload = serialize_descriptions(descriptions)
 
     if work > SYNC_THRESHOLD:
-        job = Job(
+        job = enqueue_job(
+            db,
             project_id=project.id,
             kind="translate_proposals",
-            status=JobStatus.pending,
             payload={
                 "scope": payload.scope,
                 "locales": locales,
@@ -171,19 +164,12 @@ def translate_proposals(
                 "descriptions": desc_payload,
                 "progress": queued_progress(work),
             },
+            entry_ids=entry_ids,
         )
-        db.add(job)
         db.commit()
         db.refresh(job)
-        background_tasks.add_task(
-            run_propose_job,
-            project.id,
-            entry_ids,
-            locales,
-            payload.overwrite,
-            job.id,
-            desc_payload,
-        )
+        if settings.job_inline_nudge:
+            background_tasks.add_task(process_job, job.id)
         return TranslateProposalsResult(
             locales=locales,
             items=[],

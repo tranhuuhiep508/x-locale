@@ -445,12 +445,11 @@ def run_translate_job(
         if job_id:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
-                job.status = JobStatus.running
                 actor = ((job.payload or {}).get("actor") or {})
 
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
-            return 0
+            raise RuntimeError("Project no longer exists")
 
         db.info["activity"] = {
             "actor_type": actor.get("actor_type") or "user",
@@ -505,13 +504,9 @@ def run_propose_job(
 ) -> None:
     db = SessionLocal()
     try:
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = JobStatus.running
-
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
-            return
+            raise RuntimeError("Project no longer exists")
 
         db.commit()
 

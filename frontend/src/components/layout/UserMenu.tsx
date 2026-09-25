@@ -61,7 +61,7 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-8 gap-2 rounded-full px-1.5">
+        <Button variant="ghost" className="h-8 gap-2 rounded-full px-1.5" aria-label={user.name}>
           <Avatar size="sm">
             {user.avatar_url ? (
               <AvatarImage src={user.avatar_url} alt={user.name} />

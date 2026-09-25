@@ -37,7 +37,7 @@ function columnPinningClassName<TData>(column: Column<TData>, variant: 'header' 
   const pinned = column.getIsPinned()
   if (!pinned) return undefined
   return cn(
-    'sticky',
+    'sticky max-sm:static max-sm:shadow-none',
     variant === 'header' ? 'z-20 bg-background' : 'z-[1] bg-inherit',
     pinned === 'left' && column.getIsLastColumn('left') && 'shadow-[inset_-1px_0_0_0_var(--border)]',
     pinned === 'right' && column.getIsFirstColumn('right') && 'shadow-[inset_1px_0_0_0_var(--border)]',

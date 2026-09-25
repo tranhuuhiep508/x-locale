@@ -16,6 +16,10 @@ npm run e2e:install
 
 # Run all core flows (starts isolated backend :8001 and frontend :5174)
 npm run e2e
+# Built frontend served by FastAPI (requires `cd frontend && npm run build` first)
+npm --prefix e2e run test:prod
+# Firefox, WebKit, mobile Chromium, and keyboard smoke tests
+npm --prefix e2e run test:nightly
 ```
 
 ### Environment
@@ -62,6 +66,8 @@ npx playwright show-report  # last HTML report (traces on failure)
 | 11 — Excel round-trip | `e2e/tests/flow-11-excel-roundtrip.spec.ts` | Export XLSX, upload preview dry-run, apply, verify catalog |
 | 12 — String History restore | `e2e/tests/flow-12-string-history.spec.ts` | History tab restore reverts working copy to previous version |
 | 13 — Publish fingerprint (XLOCALE-5) | `e2e/tests/flow-13-publish-fingerprint.spec.ts` | Batch publish sends preview fingerprint; stale confirm → 409 + re-preview; cancel leaves draft; needs-publish review |
+| 16 — Recovery | `e2e/tests/flow-16-recovery.spec.ts` | Failed save and import preserve user input and succeed on retry |
+| Keyboard | `e2e/tests/keyboard-navigation.spec.ts` | Open and dismiss the string form with keyboard controls |
 
 Out of scope: visual snapshots.
 
@@ -74,7 +80,7 @@ Out of scope: visual snapshots.
 
 ## CI (PR gate)
 
-Workflow: `.github/workflows/e2e.yml` (job name: `e2e`).
+Workflow: `.github/workflows/e2e.yml` (job name: `e2e`). It runs the full Chromium suite and a built-frontend smoke suite through FastAPI. `.github/workflows/cli-e2e.yml` runs CLI end-to-end tests against a separate backend. `.github/workflows/ci.yml` runs lint, typecheck, build, unit tests, coverage reports, and focused PostgreSQL migration/concurrency tests.
 
 Runs on every pull request and on pushes to `master`. CI installs Chromium via `npx playwright install chromium` plus Ubuntu-packaged OS libraries (avoids `playwright install --with-deps`, which can flake when Google's apt mirror has a hash mismatch).
 
@@ -82,9 +88,25 @@ To block merges:
 
 1. GitHub → **Settings → Branches → Branch protection** for `master`
 2. Enable **Require status checks to pass**
-3. Select **`e2e`** as a required check
+3. Select **`frontend-quality`**, **`backend-quality`**, **`postgres-integration`**, **`cli-unit`**, **`cli-e2e`**, and **`e2e`** as required checks.
 
 Until branch protection is configured, the job still runs on PRs but merge is not blocked automatically.
+
+## Nightly and release criteria
+
+`.github/workflows/nightly-quality.yml` runs the PostgreSQL migration/concurrency and worker restart suite, the 100,000-string/10-target-locale benchmark, plus Firefox, WebKit, mobile Chromium, and keyboard smoke tests. The benchmark job limits its container to four CPUs and 8 GiB RAM, runs four API workers against PostgreSQL 16, warms the API, takes three measurements per operation, and uploads `benchmark.json` with timing and peak worker RSS. It fails when catalog p95 reaches 1 second, public single-locale export reaches 15 seconds, JSON/Excel import reaches 5 minutes, or a worker exceeds 2 GiB RSS.
+
+Before a release, check that **both nightly jobs** passed on the release revision within the preceding 24 hours. There is no automated release workflow in this repository yet, so release operators must enforce this check until the release pipeline calls the same gate. Optional staging smoke tests can use real Microsoft sign-in and Bedrock credentials; CI uses deterministic bypass/stubs.
+
+To run the scale test with a PostgreSQL 16 admin URL:
+
+```bash
+cd backend
+POSTGRES_TEST_URL=postgresql+psycopg://user:password@localhost:5432/postgres \
+  uv run python -m scripts.benchmark_scale --output ../benchmark-artifacts
+```
+
+The benchmark creates and drops an isolated database. It is intentionally separate from the pull-request checks to keep those under 30 minutes.
 
 ## Resetting demo data locally
 

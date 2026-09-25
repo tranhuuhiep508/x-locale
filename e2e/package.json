@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:prod": "playwright test --config=playwright.prod.config.ts flow-01-sign-in-demo flow-02-catalog-crud flow-03-publish-preview",
+    "test:nightly": "playwright test --config=playwright.nightly.config.ts",
     "test:ui": "playwright test --ui",
     "install:browsers": "playwright install --with-deps chromium"
   },

@@ -29,8 +29,17 @@ jobs:
       - name: ESLint check
         run: cd frontend && npm run lint
 
-      - name: Run Vitest unit tests
-        run: cd frontend && npx vitest run
+      - name: Production build
+        run: cd frontend && npm run build
+
+      - name: Frontend tests and coverage
+        run: cd frontend && npm install --no-save --package-lock=false @vitest/coverage-v8@2.1.9 && npx vitest run --coverage --coverage.reporter=lcov
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
 
   backend:
     name: backend-quality
@@ -48,8 +57,43 @@ jobs:
       - name: Lint with Ruff
         run: cd backend && uv run ruff check
 
-      - name: Run pytest
-        run: cd backend && uv run pytest
+      - name: Backend tests and coverage
+        run: cd backend && uv run --with pytest-cov pytest --cov=app --cov-report=xml:coverage.xml -q
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  postgres:
+    name: postgres-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: xlocale
+          POSTGRES_PASSWORD: xlocale-test
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xlocale -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install backend dependencies
+        run: cd backend && uv sync --all-extras
+      - name: Run PostgreSQL migrations and concurrency tests
+        run: cd backend && uv run pytest tests/postgres -m "postgres and not postgres_nightly" -q
+        env:
+          POSTGRES_TEST_URL: postgresql+psycopg://xlocale:xlocale-test@127.0.0.1:5432/postgres
 
   cli:
     name: cli-unit
@@ -68,5 +112,11 @@ jobs:
       - name: Install dependencies
         run: cd cli && uv sync --extra dev
 
-      - name: Run CLI unit tests
-        run: cd cli && uv run pytest tests -m "not e2e"
+      - name: CLI unit tests and coverage
+        run: cd cli && uv run --with pytest-cov pytest tests -m "not e2e" --cov=x_locale_cli --cov-report=xml:coverage.xml -q
+
+      - name: Upload CLI coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-coverage
+          path: cli/coverage.xml

@@ -461,7 +461,7 @@ def test_translate_job_payload_stamps_actor(client, monkeypatch):
     ).json()
     me = client.get("/api/auth/me").json()
     monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
-    monkeypatch.setattr("app.routers.translate.run_translate_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.routers.translate.process_job", lambda *args, **kwargs: None)
 
     r = client.post(
         f"/api/projects/{pid}/translate",
@@ -910,4 +910,3 @@ def test_feed_locale_filter_matches_snapshot_keys(client):
     assert feed.json()["total"] >= 1
     keys = {card.get("string_key") for card in feed.json()["items"]}
     assert "hi" in keys
-

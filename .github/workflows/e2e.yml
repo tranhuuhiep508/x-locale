@@ -69,6 +69,14 @@ jobs:
           AI_TRANSLATE_STUB: true
           AI_TRANSLATE_STUB_DELAY_MS: 400
 
+      - name: Build production frontend
+        run: cd frontend && npm run build
+
+      - name: Smoke test built frontend through FastAPI
+        run: cd e2e && npm run test:prod
+        env:
+          CI: true
+
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4

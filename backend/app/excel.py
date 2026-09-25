@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 from typing import Any
-from uuid import UUID
+from uuid import uuid4
 
 from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
@@ -22,7 +22,7 @@ from app.models import (
 )
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult
 from app.services.strings import live_module_label, promote_string, restore_string
-from app.services.sync import IMPORT_DIFF_SAMPLE
+from app.services.sync import IMPORT_DIFF_SAMPLE, IMPORT_FLUSH_CHUNK, flush_created_entries
 
 UNASSIGNED_SHEET = "_unassigned"
 FLAT_SHEET = "strings"
@@ -58,9 +58,7 @@ def build_workbook(
     stage: str,
     locale: str | None = None,
 ) -> bytes:
-    wb = Workbook()
-    default = wb.active
-    wb.remove(default)
+    wb = Workbook(write_only=True)
 
     locales = _export_locales(project, locale)
     if _is_modular(project):
@@ -207,61 +205,6 @@ def _write_sheet(
         ws.append(row)
 
 
-def _find_excel_entry(
-    db: Session,
-    project: Project,
-    key: str,
-    module_id: UUID | None,
-    *,
-    match_any_module: bool,
-) -> tuple[StringEntry | None, bool]:
-    """Return (entry, revived). Prefer live rows, then tombstones."""
-    live_exact = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.module_id == module_id,
-            StringEntry.key == key,
-            StringEntry.deleted_at.is_(None),
-        )
-        .first()
-    )
-    if live_exact is not None:
-        return live_exact, False
-    if match_any_module:
-        live_any = (
-            db.query(StringEntry)
-            .filter(
-                StringEntry.project_id == project.id,
-                StringEntry.key == key,
-                StringEntry.deleted_at.is_(None),
-            )
-            .first()
-        )
-        if live_any is not None:
-            return live_any, False
-    tomb_exact = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.module_id == module_id,
-            StringEntry.key == key,
-        )
-        .first()
-    )
-    if tomb_exact is not None:
-        return tomb_exact, True
-    if match_any_module:
-        tomb_any = (
-            db.query(StringEntry)
-            .filter(StringEntry.project_id == project.id, StringEntry.key == key)
-            .first()
-        )
-        if tomb_any is not None:
-            return tomb_any, True
-    return None, False
-
-
 def import_workbook(
     db: Session,
     project: Project,
@@ -289,23 +232,30 @@ def import_workbook(
     updated = 0
     total = 0
     modular = _is_modular(project)
-    live_rows = (
+    existing_rows = (
         db.query(StringEntry)
         .options(joinedload(StringEntry.module))
-        .filter(StringEntry.project_id == project.id, StringEntry.deleted_at.is_(None))
+        .filter(StringEntry.project_id == project.id)
         .all()
     )
-    live_by_key = {row.key: row for row in live_rows}
+    live_by_key = {row.key: row for row in existing_rows if row.deleted_at is None}
+    tomb_by_key = {row.key: row for row in existing_rows if row.deleted_at is not None}
+    tomb_by_module_key = {
+        (row.module_id, row.key): row for row in existing_rows if row.deleted_at is not None
+    }
     workbook_keys: dict[str, str] = {}
+    seen_input_keys: dict[str, str] = {}
+    created_entries: list[StringEntry] = []
 
     for sheet_name in wb.sheetnames:
         if sheet_name == "_meta":
             continue
         ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
+        rows = iter(ws.iter_rows(values_only=True))
+        first = next(rows, None)
+        if first is None:
             continue
-        headers = [str(h).strip() if h else "" for h in rows[0]]
+        headers = [str(h).strip() if h else "" for h in first]
         try:
             key_idx = headers.index("key")
         except ValueError:
@@ -344,12 +294,21 @@ def import_workbook(
                 raise ValueError(f"Invalid locale column {h!r}: {exc}") from exc
             locale_cols[loc] = i
 
-        for row in rows[1:]:
+        for row in rows:
             if not row or row[key_idx] is None:
                 continue
             key = _desanitize_cell_value(row[key_idx]).strip()
             if not key:
                 continue
+            prior_sheet = seen_input_keys.get(key)
+            if prior_sheet is not None:
+                detail = (
+                    f"String '{key}' appears in more than one module"
+                    if modular and prior_sheet != sheet_name
+                    else f"String '{key}' appears more than once"
+                )
+                raise HTTPException(status_code=409, detail=detail)
+            seen_input_keys[key] = sheet_name
             if modular:
                 sheet_label = "unassigned" if sheet_name == UNASSIGNED_SHEET else sheet_name
                 prior = workbook_keys.get(key)
@@ -389,14 +348,13 @@ def import_workbook(
             if not source_text:
                 source_text = key  # fallback
 
-            entry, revived = _find_excel_entry(
-                db,
-                project,
-                key,
-                module_id,
-                match_any_module=not modular,
-            )
             live = live_by_key.get(key)
+            entry = live if live is not None and (not modular or live.module_id == module_id) else None
+            if entry is None:
+                entry = tomb_by_module_key.get((module_id, key))
+            if entry is None and not modular:
+                entry = tomb_by_key.get(key)
+            revived = entry is not None and entry.deleted_at is not None
             if live is not None and (entry is None or entry.id != live.id):
                 if modular:
                     raise HTTPException(
@@ -427,6 +385,7 @@ def import_workbook(
                 created_this_row = True
                 if not dry_run:
                     entry = StringEntry(
+                        id=uuid4(),
                         project_id=project.id,
                         module_id=module_id,
                         key=key,
@@ -435,8 +394,6 @@ def import_workbook(
                         status=TranslationStatus.draft,
                     )
                     db.add(entry)
-                    db.flush()
-                    live_by_key[key] = entry
                     created += 1
 
             if dry_run or entry is None:
@@ -480,6 +437,13 @@ def import_workbook(
 
             if created_this_row and status == TranslationStatus.public:
                 promote_string(entry)
+            if created_this_row:
+                created_entries.append(entry)
+                if len(created_entries) >= IMPORT_FLUSH_CHUNK:
+                    flush_created_entries(db, created_entries)
+
+    flush_created_entries(db, created_entries)
+    wb.close()
 
     diff = ImportDiff(
         create=create_items[:IMPORT_DIFF_SAMPLE],

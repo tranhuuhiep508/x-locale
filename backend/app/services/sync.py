@@ -23,6 +23,20 @@ from app.services.strings import (
 
 CLI_UNASSIGNED = "_unassigned"
 IMPORT_DIFF_SAMPLE = 100
+IMPORT_FLUSH_CHUNK = 500
+
+
+def flush_created_entries(db: Session, entries: list[StringEntry]) -> None:
+    """Keep large new imports in one transaction without retaining every ORM row."""
+    if not entries:
+        return
+    db.flush()
+    for entry in entries:
+        for translation in entry.translations:
+            if translation in db:
+                db.expunge(translation)
+        db.expunge(entry)
+    entries.clear()
 
 
 def load_export_entries(db: Session, project_id) -> list[StringEntry]:
@@ -628,7 +642,6 @@ def _upsert_imported_string(
             if status == TranslationStatus.public:
                 promote_string(entry)
             _apply_import_tags(entry, tags)
-            index.add(entry)
         return "create", entry
 
     revived = bool(entry.deleted_at)
@@ -665,6 +678,7 @@ def _import_locale_maps(
     create_items: list[ImportDiffItem] = []
     update_items: list[ImportDiffItem] = []
     seen: set[str] = set()
+    created_entries: list[StringEntry] = []
     total = 0
     maps = _known_locale_maps(project, locale_maps)
     _prepare_import_collections(db, project, index, maps, module_id, tags)
@@ -692,6 +706,10 @@ def _import_locale_maps(
                     source_text=_preview_source_text(project, key, values, entry),
                 )
             )
+            if not dry_run and entry is not None:
+                created_entries.append(entry)
+                if len(created_entries) >= IMPORT_FLUSH_CHUNK:
+                    flush_created_entries(db, created_entries)
         elif action == "update":
             update_items.append(
                 ImportDiffItem(
@@ -700,6 +718,8 @@ def _import_locale_maps(
                 )
             )
     orphan_items: list[ImportDiffItem] = []
+    if created_entries:
+        flush_created_entries(db, created_entries)
     if report_orphans:
         seen_orphan: set[str] = set()
         for (mid, k), entry in index.by_module_key.items():

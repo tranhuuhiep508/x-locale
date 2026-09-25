@@ -47,3 +47,7 @@ ignore = ["E501", "B008", "UP037", "UP042"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "postgres: requires POSTGRES_TEST_URL and a PostgreSQL 16 server",
+  "postgres_nightly: PostgreSQL worker restart or long-running reliability tests",
+]
