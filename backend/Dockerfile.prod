@@ -39,7 +39,8 @@ COPY --from=builder /app /app
 COPY --from=frontend-build /frontend/dist ./static
 
 ENV STATIC_DIR=static
+ENV AUTH_DEV_BYPASS=false
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && python -m app.cli seed-demo && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

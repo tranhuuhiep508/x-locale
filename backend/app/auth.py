@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import Cookie, Depends, Header, HTTPException, Query, Request
+from fastapi import Cookie, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -50,10 +50,21 @@ def create_session_token(user: User) -> str:
         "sub": str(user.id),
         "email": user.email,
         "name": user.name,
+        "tv": int(user.token_version or 0),
         "iat": now,
         "exp": now + timedelta(hours=SESSION_TTL_HOURS),
     }
     return jwt.encode(payload, settings.x_locale_secret, algorithm="HS256")
+
+
+def _user_from_session_payload(db: Session, payload: dict) -> User:
+    user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    token_tv = int(payload.get("tv", 0))
+    if int(user.token_version or 0) != token_tv:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return user
 
 
 def decode_session_token(token: str) -> dict:
@@ -105,9 +116,7 @@ def current_user(
     """Require an authenticated UI session (or AUTH_DEV_BYPASS)."""
     if x_locale_session:
         payload = decode_session_token(x_locale_session)
-        user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+        user = _user_from_session_payload(db, payload)
         set_activity_context(
             db,
             AuthContext(
@@ -143,7 +152,7 @@ def optional_user(
     if x_locale_session:
         try:
             payload = decode_session_token(x_locale_session)
-            return db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+            return _user_from_session_payload(db, payload)
         except HTTPException:
             return None
     if settings.dev_bypass_active:
@@ -184,12 +193,10 @@ def _resolve_api_key(db: Session, raw_key: str) -> tuple[ApiKey, Project]:
 def project_from_api_key(
     db: Session = Depends(get_db),
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    api_key: Annotated[str | None, Query(description="Project API key")] = None,
 ) -> Project:
-    raw = x_api_key or api_key
-    if not raw:
+    if not x_api_key:
         raise HTTPException(status_code=401, detail="API key required")
-    _, project = _resolve_api_key(db, raw)
+    _, project = _resolve_api_key(db, x_api_key)
     return project
 
 
@@ -198,10 +205,9 @@ def project_access(
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_user),
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    api_key: Annotated[str | None, Query()] = None,
 ) -> Project:
     """Accept either session user (any project) or API key matching the project."""
-    raw = x_api_key or api_key
+    raw = x_api_key
     if raw:
         _, project = _resolve_api_key(db, raw)
         if project.id != project_id:

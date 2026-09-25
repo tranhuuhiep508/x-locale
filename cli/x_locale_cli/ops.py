@@ -17,6 +17,7 @@ from x_locale_cli.io import (
     load_json_file,
     parse_locale_json,
     resolve_push_source,
+    resolve_under_output,
     scan_modular_base,
     string_map,
     write_locale_file_reported,
@@ -202,7 +203,8 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
 
     pending_remove, tombstones = _parse_sync_state(state)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_root = output_dir.resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
     reports: list[PulledFileReport] = []
     manifest_written: Path | None = None
 
@@ -212,28 +214,26 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         manifest = data.get("manifest", {})
 
         for module_slug, locale_map in modules.items():
-            module_dir = output_dir / module_slug
-            module_dir.mkdir(parents=True, exist_ok=True)
             for locale, strings in locale_map.items():
                 if allowed_locales and locale not in allowed_locales:
                     continue
-                target = module_dir / f"{locale}.json"
+                target = resolve_under_output(output_root, module_slug, f"{locale}.json")
+                target.parent.mkdir(parents=True, exist_ok=True)
                 reports.append(write_locale_file_reported(target, strings))
 
         has_unassigned = any(strings for strings in unassigned.values())
         if has_unassigned:
-            unassigned_dir = output_dir / UNASSIGNED_SLUG
-            unassigned_dir.mkdir(parents=True, exist_ok=True)
             for locale, strings in unassigned.items():
                 if not strings:
                     continue
                 if allowed_locales and locale not in allowed_locales:
                     continue
-                target = unassigned_dir / f"{locale}.json"
+                target = resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json")
+                target.parent.mkdir(parents=True, exist_ok=True)
                 reports.append(write_locale_file_reported(target, strings))
 
         if write_manifest and manifest:
-            manifest_written = output_dir / "manifest.json"
+            manifest_written = resolve_under_output(output_root, "manifest.json")
             manifest_written.write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -242,7 +242,7 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         for locale, strings in data.items():
             if allowed_locales and locale not in allowed_locales:
                 continue
-            target = output_dir / f"{locale}.json"
+            target = resolve_under_output(output_root, f"{locale}.json")
             reports.append(write_locale_file_reported(target, strings))
 
     print_pull_report(

@@ -1,10 +1,12 @@
 # Production: single backend image serves API + built frontend on port 8000.
+# TLS is expected in front of this service (company proxy). Set SESSION_COOKIE_SECURE=true
+# when the browser sees HTTPS, or use an https:// OIDC_REDIRECT_URL.
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: xlocale
-      POSTGRES_PASSWORD: xlocale
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: xlocale
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -21,21 +23,21 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale
+      DATABASE_URL: postgresql+psycopg://xlocale:${POSTGRES_PASSWORD}@postgres:5432/xlocale
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.amazon.nova-2-lite-v1:0}
-      X_LOCALE_SECRET: ${X_LOCALE_SECRET:-change-me}
-      X_LOCALE_DEMO_API_KEY: ${X_LOCALE_DEMO_API_KEY:-demo-local-key}
+      X_LOCALE_SECRET: ${X_LOCALE_SECRET:?}
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
       STATIC_DIR: static
     depends_on:
@@ -43,7 +45,6 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-             python -m app.cli seed-demo &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:

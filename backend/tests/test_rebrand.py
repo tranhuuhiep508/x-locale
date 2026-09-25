@@ -105,15 +105,19 @@ def test_env_example_documents_x_locale_not_tms():
 
 
 def test_compose_uses_xlocale_postgres_and_x_locale_env():
-    for name in ("docker-compose.yml", "docker-compose.prod.yml"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert "POSTGRES_USER: xlocale" in text
-        assert "POSTGRES_DB: xlocale" in text
-        assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in text
-        assert "X_LOCALE_SECRET:" in text
-        assert "X_LOCALE_DEMO_API_KEY:" in text
-        assert "TMS_SECRET" not in text
-        assert "POSTGRES_USER: tms" not in text
+    dev = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "POSTGRES_USER: xlocale" in dev
+    assert "POSTGRES_DB: xlocale" in dev
+    assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev
+    assert "X_LOCALE_SECRET:" in dev
+    assert "X_LOCALE_DEMO_API_KEY:" in dev
+    assert "TMS_SECRET" not in dev
+    assert "POSTGRES_USER: tms" not in dev
+
+    prod = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
+    assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
+    assert "seed-demo" not in prod
 
 
 def test_sqlite_default_filename_in_config_source():

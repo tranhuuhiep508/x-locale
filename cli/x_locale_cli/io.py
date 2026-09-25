@@ -174,6 +174,20 @@ def build_modular_push_body(
     return {"modules": {slug: {base_language: strings} for slug, strings in modules.items()}}
 
 
+def resolve_under_output(output_dir: Path, *parts: str) -> Path:
+    """Resolve a file path and ensure it stays under output_dir."""
+    for part in parts:
+        if not part or part in (".", "..") or "/" in part or "\\" in part:
+            raise XLocaleError(f"Unsafe path segment: {part!r}")
+    root = output_dir.resolve()
+    target = (root.joinpath(*parts)).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise XLocaleError(f"Refusing to write outside {root}: {target}") from exc
+    return target
+
+
 def write_locale_file(path: Path, strings: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

@@ -75,7 +75,7 @@ See [cli/README.md](cli/README.md) for modular vs flat layouts and override flag
 | Mode | How |
 |------|-----|
 | UI (session) | Microsoft Entra ID via Authlib (`OIDC_*`). `AUTH_DEV_BYPASS=true` mints a local Dev User only when OIDC is **not** configured |
-| CLI / runtime | Project API key via `X-API-Key` header (or `?api_key=` for back-compat) |
+| CLI / runtime | Project API key via `X-API-Key` header |
 
 Any authenticated UI user can access all projects (no roles yet). Create and rotate
 keys under **Project → Settings**.
@@ -150,7 +150,8 @@ See [.env.example](.env.example). Notable vars:
 
 | Var | Purpose |
 |-----|---------|
-| `X_LOCALE_SECRET` | Signs session JWTs |
+| `X_LOCALE_SECRET` | Signs session JWTs. **Required in production:** set a long random value; the app refuses to start with the repo default when OIDC is configured or `AUTH_DEV_BYPASS=false`. |
+| `SESSION_COOKIE_SECURE` | Set `true` when browsers reach the app over HTTPS (or rely on an `https://` `OIDC_REDIRECT_URL`). |
 | `AUTH_DEV_BYPASS` | Local Dev User when OIDC is unset. Ignored once `OIDC_*` is filled |
 | `OIDC_ISSUER` | Entra discovery base (`https://login.microsoftonline.com/common/v2.0`) |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Entra app registration credentials |

@@ -2,6 +2,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Default in repo; production must override via X_LOCALE_SECRET.
+INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
@@ -12,7 +15,7 @@ class Settings(BaseSettings):
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
-    x_locale_secret: str = "change-me"
+    x_locale_secret: str = INSECURE_DEFAULT_X_LOCALE_SECRET
     x_locale_demo_api_key: str = "demo-local-key"
     default_base_language: str = "vi"
 
@@ -22,7 +25,8 @@ class Settings(BaseSettings):
     oidc_client_secret: str = ""
     oidc_scopes: str = "openid email profile"
     oidc_redirect_url: str = "http://localhost:5173/api/auth/callback"
-    auth_dev_bypass: bool = True
+    auth_dev_bypass: bool = False
+    session_cookie_secure: bool = False
 
     # Optional retention for append-only activity log (0 = keep forever)
     activity_retention_days: int = 90
@@ -51,6 +55,23 @@ class Settings(BaseSettings):
     def dev_bypass_active(self) -> bool:
         """Mint Dev User only when bypass is on and OIDC is not configured."""
         return self.auth_dev_bypass and not self.oidc_configured
+
+    @property
+    def cookies_secure(self) -> bool:
+        if self.session_cookie_secure:
+            return True
+        return self.oidc_redirect_url.strip().lower().startswith("https://")
+
+    def validate_for_runtime(self) -> None:
+        """Refuse production-like boot with known-insecure defaults."""
+        if self.dev_bypass_active:
+            return
+        secret = (self.x_locale_secret or "").strip()
+        if not secret or secret == INSECURE_DEFAULT_X_LOCALE_SECRET:
+            raise RuntimeError(
+                "X_LOCALE_SECRET must be set to a long random value when "
+                "AUTH_DEV_BYPASS is false or OIDC is configured"
+            )
 
 
 settings = Settings()

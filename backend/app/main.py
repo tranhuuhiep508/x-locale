@@ -24,14 +24,30 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings.validate_for_runtime()
     register_activity_listener()
     yield
 
 
-app = FastAPI(title="x-locale API", version="0.2.0", lifespan=lifespan)
+_api_docs = "/docs" if settings.dev_bypass_active else None
+_api_redoc = "/redoc" if settings.dev_bypass_active else None
+_api_openapi = "/openapi.json" if settings.dev_bypass_active else None
+
+app = FastAPI(
+    title="x-locale API",
+    version="0.2.0",
+    lifespan=lifespan,
+    docs_url=_api_docs,
+    redoc_url=_api_redoc,
+    openapi_url=_api_openapi,
+)
 
 # SessionMiddleware required by Authlib OIDC authorize_redirect
-app.add_middleware(SessionMiddleware, secret_key=settings.x_locale_secret)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.x_locale_secret,
+    https_only=settings.cookies_secure,
+)
 
 if settings.cors_origin_list:
     app.add_middleware(

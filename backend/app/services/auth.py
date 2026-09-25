@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from starlette.responses import RedirectResponse
 
 from app.auth import SESSION_COOKIE, SESSION_TTL_HOURS, create_session_token
+from app.config import settings
 from app.models import User
 
 
@@ -53,6 +54,7 @@ def attach_session(response: Response, user: User) -> None:
         token,
         httponly=True,
         samesite="lax",
+        secure=settings.cookies_secure,
         max_age=SESSION_TTL_HOURS * 3600,
         path="/",
     )

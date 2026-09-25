@@ -15,6 +15,12 @@ def _root() -> None:
 @app.command("seed-demo")
 def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo project")) -> None:
     """Seed the Demo App project (Vietnamese base, modular layout)."""
+    from app.config import settings
+
+    if not settings.auth_dev_bypass:
+        typer.echo("seed-demo is only allowed when AUTH_DEV_BYPASS=true", err=True)
+        raise typer.Exit(1)
+
     from app.seed import seed_demo_data
 
     project = seed_demo_data(force=force)
