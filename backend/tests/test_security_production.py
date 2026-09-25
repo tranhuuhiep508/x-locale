@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent
-
 from app.auth import SESSION_COOKIE
 from app.config import INSECURE_DEFAULT_X_LOCALE_SECRET, Settings
+
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_validate_for_runtime_rejects_default_secret_when_not_bypass(monkeypatch):
