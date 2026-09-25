@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 from app.auth import SESSION_COOKIE
 from app.config import INSECURE_DEFAULT_X_LOCALE_SECRET, Settings
@@ -66,7 +69,7 @@ def test_seed_demo_exits_when_bypass_off(monkeypatch):
     monkeypatch.setenv("AUTH_DEV_BYPASS", "false")
     result = subprocess.run(
         [sys.executable, "-m", "app.cli", "seed-demo"],
-        cwd="/workspace/backend",
+        cwd=_BACKEND_ROOT,
         capture_output=True,
         text=True,
     )
@@ -91,7 +94,7 @@ def test_openapi_hidden_when_oidc_configured():
             "-c",
             "from app.main import app; print(app.openapi_url)",
         ],
-        cwd="/workspace/backend",
+        cwd=_BACKEND_ROOT,
         env=env,
         capture_output=True,
         text=True,
