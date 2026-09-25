@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.auth import SESSION_COOKIE
 from app.config import INSECURE_DEFAULT_X_LOCALE_SECRET, Settings

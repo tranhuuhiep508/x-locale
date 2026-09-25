@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session, joinedload
 
+from app.helpers import validate_locale_code, validate_module_slug
 from app.models import (
     Module,
     Project,
@@ -20,7 +21,6 @@ from app.models import (
     TranslationStatus,
 )
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult
-from app.helpers import validate_locale_code, validate_module_slug
 from app.services.strings import live_module_label, promote_string, restore_string
 from app.services.sync import IMPORT_DIFF_SAMPLE
 
