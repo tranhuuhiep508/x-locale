@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.helpers import content_hash, export_key
+from app.helpers import content_hash, export_key, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.strings import (
@@ -362,6 +362,10 @@ def _known_locale_maps(
 def _get_or_create_module(
     db: Session, project: Project, slug: str, *, dry_run: bool
 ) -> Module | None:
+    try:
+        slug = validate_module_slug(slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     mod = (
         db.query(Module)
         .filter(Module.project_id == project.id, Module.slug == slug)

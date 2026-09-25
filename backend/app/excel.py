@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session, joinedload
 
+from app.helpers import validate_locale_code, validate_module_slug
 from app.models import (
     Module,
     Project,
@@ -314,26 +315,34 @@ def import_workbook(
 
         module_id = None
         if modular and sheet_name != UNASSIGNED_SHEET:
+            try:
+                sheet_slug = validate_module_slug(sheet_name)
+            except ValueError as exc:
+                raise ValueError(f"Invalid sheet name {sheet_name!r}: {exc}") from exc
             mod = (
                 db.query(Module)
-                .filter(Module.project_id == project.id, Module.slug == sheet_name)
+                .filter(Module.project_id == project.id, Module.slug == sheet_slug)
                 .first()
             )
             if not mod and not dry_run:
                 mod = Module(
                     project_id=project.id,
-                    slug=sheet_name,
-                    name=sheet_name.replace("-", " ").replace("_", " ").title(),
+                    slug=sheet_slug,
+                    name=sheet_slug.replace("-", " ").replace("_", " ").title(),
                 )
                 db.add(mod)
                 db.flush()
             module_id = mod.id if mod else None
 
-        locale_cols = {
-            h: i
-            for i, h in enumerate(headers)
-            if h and h not in ("key", "description", "tags")
-        }
+        locale_cols: dict[str, int] = {}
+        for i, h in enumerate(headers):
+            if not h or h in ("key", "description", "tags"):
+                continue
+            try:
+                loc = validate_locale_code(h)
+            except ValueError as exc:
+                raise ValueError(f"Invalid locale column {h!r}: {exc}") from exc
+            locale_cols[loc] = i
 
         for row in rows[1:]:
             if not row or row[key_idx] is None:

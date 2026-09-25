@@ -12,6 +12,22 @@ from sqlalchemy.orm import Session
 from app.models import Project, StringEntry
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+LOCALE_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
+
+
+def validate_locale_code(code: str) -> str:
+    """BCP-47-style locale tag safe for paths and DB (single segment)."""
+    normalized = (code or "").strip()
+    if not LOCALE_RE.fullmatch(normalized):
+        raise ValueError(f"Invalid locale code: {code!r}")
+    return normalized
+
+
+def validate_module_slug(slug: str) -> str:
+    normalized = (slug or "").strip()
+    if not SLUG_RE.fullmatch(normalized):
+        raise ValueError(f"Invalid module slug: {slug!r}")
+    return normalized
 
 
 def slugify(name: str) -> str:

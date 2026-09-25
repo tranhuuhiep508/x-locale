@@ -24,6 +24,10 @@ def save_config(config: Config, path: Path = CONFIG_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         yaml.safe_dump(config.to_dict(), fh, sort_keys=False)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def require_project_id(config: Config) -> str:

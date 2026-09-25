@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import generate_api_key
 from app.config import settings
-from app.helpers import ensure_unique_slug, slugify
+from app.helpers import ensure_unique_slug, slugify, validate_locale_code
 from app.models import ApiKey, Project, StringEntry, User
 from app.schemas import (
     ApiKeyCreate,
@@ -80,15 +80,32 @@ def list_projects(db: Session) -> list[ProjectOut]:
     return [to_project_out(db, p, counts) for p in projects]
 
 
+def _validated_locales(base: str, targets: list[str]) -> tuple[str, list[str]]:
+    base_lang = validate_locale_code(base)
+    seen: set[str] = set()
+    target_langs: list[str] = []
+    for loc in targets:
+        code = validate_locale_code(loc)
+        if code in seen:
+            continue
+        seen.add(code)
+        target_langs.append(code)
+    return base_lang, target_langs
+
+
 def create_project(db: Session, payload: ProjectCreate, user: User) -> ProjectOut:
     slug = payload.slug or slugify(payload.name)
     slug = ensure_unique_slug(db, slug)
     base = payload.base_language or settings.default_base_language
+    try:
+        base_lang, target_langs = _validated_locales(base, payload.target_languages)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     project = Project(
         name=payload.name,
         slug=slug,
-        base_language=base,
-        target_languages=payload.target_languages,
+        base_language=base_lang,
+        target_languages=target_langs,
         layout=payload.layout,
         created_by=user.id,
     )
@@ -105,10 +122,19 @@ def update_project(db: Session, project_id: uuid.UUID, payload: ProjectUpdate) -
         project.name = payload.name
     if payload.slug is not None:
         project.slug = ensure_unique_slug(db, payload.slug, exclude_id=project.id)
-    if payload.base_language is not None:
-        project.base_language = payload.base_language
-    if payload.target_languages is not None:
-        project.target_languages = payload.target_languages
+    if payload.base_language is not None or payload.target_languages is not None:
+        base = payload.base_language if payload.base_language is not None else project.base_language
+        targets = (
+            payload.target_languages
+            if payload.target_languages is not None
+            else (project.target_languages or [])
+        )
+        try:
+            base_lang, target_langs = _validated_locales(base, targets)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        project.base_language = base_lang
+        project.target_languages = target_langs
     if payload.layout is not None:
         project.layout = payload.layout
     db.commit()

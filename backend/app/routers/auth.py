@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
 from typing import Annotated
 
 import httpx
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentUser, get_or_create_dev_user
+from app.auth import SESSION_COOKIE, CurrentUser, decode_session_token, get_or_create_dev_user
 from app.config import settings
 from app.database import get_db
 from app.models import User
@@ -20,6 +22,7 @@ from app.services.auth import clear_session, login_redirect, upsert_oidc_user
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 oauth = OAuth()
+logger = logging.getLogger(__name__)
 
 
 def _configure_oauth() -> None:
@@ -65,7 +68,8 @@ async def callback(request: Request, db: Annotated[Session, Depends(get_db)]):
             claims_options=oidc_iss_claims_options(settings.oidc_issuer),
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"OIDC callback failed: {exc}") from exc
+        logger.exception("OIDC callback failed")
+        raise HTTPException(status_code=400, detail="OIDC callback failed") from exc
 
     userinfo = token.get("userinfo")
     if not userinfo:
@@ -95,7 +99,20 @@ async def callback(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict[str, str]:
+def logout(
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+) -> dict[str, str]:
+    if x_locale_session:
+        try:
+            payload = decode_session_token(x_locale_session)
+            user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+            if user is not None:
+                user.token_version = int(user.token_version or 0) + 1
+                db.commit()
+        except HTTPException:
+            pass
     clear_session(response)
     return {"status": "ok"}
 
