@@ -266,12 +266,25 @@ def print_pull_report(
     console.print(f"\n[dim]{footer}[/dim]")
 
 
+def _format_duration(seconds: float) -> str:
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    return f"{seconds:.2f} s"
+
+
 def print_push_report(
     *,
     result: dict[str, Any],
     local_key_count: int,
     details: list[str],
     dry_run: bool,
+    prepare_seconds: float | None = None,
+    request_seconds: float | None = None,
+    total_seconds: float | None = None,
+    keys_to_send: int | None = None,
+    skipped_api: bool = False,
+    removed_locally: list[str] | None = None,
+    delta_mode: bool = False,
 ) -> None:
     diff = result.get("diff") or {}
     create_keys = diff.get("create") or []
@@ -286,6 +299,13 @@ def print_push_report(
     unchanged_count = max(0, local_key_count - create_count - update_count)
 
     print_report_header("Push", details)
+    send_count = keys_to_send if keys_to_send is not None else local_key_count
+    if delta_mode or keys_to_send is not None:
+        console.print(f"  Keys to send (local)  {send_count:>4}")
+    removed = removed_locally or []
+    if removed:
+        console.print(f"  Removed locally, still on x-locale  {len(removed):>4}")
+
     counts: list[tuple[str, int]] = [
         ("Created", create_count),
         ("Updated", update_count),
@@ -317,10 +337,45 @@ def print_push_report(
         total=orphan_count,
     )
 
-    if dry_run:
+    if removed:
+        _print_change_section(
+            "Removed locally, still on x-locale",
+            change_items(removed),
+            style="yellow",
+            hint="Push does not delete remote keys. Restoring the same text locally will skip; different text sends an update.",
+            limit=_KEY_LIST_LIMIT,
+        )
+
+    if skipped_api:
+        console.print(
+            "\n[dim]Nothing to push. Local base files match the last successful push or draft pull.[/dim]"
+        )
+    elif dry_run:
         console.print("\n[dim]Dry run — no changes were saved.[/dim]")
     elif not create_count and not update_count and not orphan_count:
-        console.print("\n[green]Everything is already up to date.[/green]")
+        console.print("\n[green]Server import completed with no creates or updates.[/green]")
+
+    if total_seconds is not None:
+        parts = [f"total {_format_duration(total_seconds)}"]
+        if request_seconds is not None:
+            parts.append(f"import {_format_duration(request_seconds)}")
+        if prepare_seconds is not None:
+            parts.append(f"read files {_format_duration(prepare_seconds)}")
+        rate = ""
+        rate_keys = send_count if send_count else local_key_count
+        if request_seconds and request_seconds > 0 and rate_keys and not skipped_api:
+            rate = f" · {rate_keys / request_seconds:,.0f} keys/s (request)"
+        console.print(f"\n[dim]{' · '.join(parts)}{rate}[/dim]")
+        if (
+            not skipped_api
+            and not delta_mode
+            and unchanged_count == local_key_count
+            and local_key_count > 0
+        ):
+            console.print(
+                "[dim]No creates/updates — server only compared existing strings "
+                "(much faster than a first import).[/dim]"
+            )
 
 
 def print_status(snapshot: StatusSnapshot) -> None:

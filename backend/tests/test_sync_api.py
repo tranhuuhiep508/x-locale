@@ -157,6 +157,54 @@ def test_strings_import_modules_payload_keeps_key_and_module(client):
     assert by_key["password"]["module_slug"] == "auth"
 
 
+def test_strings_import_partial_skips_orphans(client):
+    project = _make_project(client, "Partial CLI")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"keep": "A", "other": "B"}},
+    )
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"keep": "A2"}},
+        params={"partial": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["updated"] == 1
+    assert body["diff"]["orphan_count"] == 0
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s["source_text"] for s in items}
+    assert by_key == {"keep": "A2", "other": "B"}
+
+
+def test_strings_import_partial_modular_one_key(client):
+    project = _make_project(client, "Partial Modular")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={
+            "modules": {
+                "auth": {"vi": {"a": "1", "b": "2"}},
+                "home": {"vi": {"c": "3"}},
+            }
+        },
+    )
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"modules": {"auth": {"vi": {"a": "1-up"}}}},
+        params={"partial": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+    assert r.json()["diff"]["orphan_count"] == 0
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s["source_text"] for s in items}
+    assert by_key["a"] == "1-up"
+    assert by_key["b"] == "2"
+    assert by_key["c"] == "3"
+
+
 def test_edit_public_string_keeps_published_export(client):
     project = _make_project(client, "Working Copy")
     pid = project["id"]

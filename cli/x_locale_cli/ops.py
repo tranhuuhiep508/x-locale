@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -24,6 +25,20 @@ from x_locale_cli.io import (
 )
 from x_locale_cli.issues import StatusSnapshot, classify_sync_issues
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PullResult, PulledFileReport
+from x_locale_cli.push_index import (
+    apply_index_after_success,
+    build_flat_delta_payload,
+    build_modular_delta_payload,
+    catalog_hashes_flat,
+    catalog_hashes_modular,
+    clear_push_pending,
+    compute_push_diff,
+    hashes_from_flat_payload,
+    hashes_from_modular_payload,
+    load_push_index,
+    refresh_push_index_after_pull,
+    set_push_pending,
+)
 from x_locale_cli.report import (
     print_pull_report,
     print_push_report,
@@ -139,10 +154,19 @@ def _exit_if_blocking(snapshot: StatusSnapshot) -> None:
         raise XLocaleExit(1)
 
 
-def push_strings(config: Config, *, dry_run: bool = False, client: Any | None = None) -> None:
+def push_strings(
+    config: Config,
+    *,
+    dry_run: bool = False,
+    full: bool = False,
+    client: Any | None = None,
+) -> None:
+    started = time.perf_counter()
     project_id = require_project_id(config)
     output_dir = config.output_path
     base_language = config.base_language
+    flat_strings: dict[str, str] | None = None
+    modules: dict[str, dict[str, str]] | None = None
 
     if config.layout is Layout.modular:
         modules = scan_modular_base(output_dir, base_language)
@@ -151,37 +175,117 @@ def push_strings(config: Config, *, dry_run: bool = False, client: Any | None = 
                 f"No module directories with {base_language}.json found in {output_dir}. "
                 "Create at least one module directory or switch to flat layout."
             )
-        payload: dict[str, Any] = build_modular_push_body(modules, base_language)
-        local_key_count = sum(len(strings) for strings in modules.values())
+        local_hashes = catalog_hashes_modular(modules)
+        local_key_count = len(local_hashes)
         details = [config.layout.value, f"{len(modules)} modules", base_language]
     else:
         source_path = resolve_push_source(config, None)
         raw = load_json_file(source_path)
         if not isinstance(raw, dict):
             raise XLocaleError("Locale JSON must be a top-level object")
-        strings = parse_locale_json(raw)
-        payload = {"strings": strings}
-        local_key_count = len(strings)
+        flat_strings = parse_locale_json(raw)
+        local_hashes = catalog_hashes_flat(flat_strings)
+        local_key_count = len(local_hashes)
         details = [config.layout.value, str(source_path)]
 
+    loaded = load_push_index(config)
+    diff = compute_push_diff(config, local_hashes, full=full, loaded=loaded)
+    old_entries = dict(loaded.entries) if loaded and diff.index_usable and not diff.use_full else {}
+
+    if full:
+        details = ["full", *details]
     if dry_run:
         details = ["dry run", *details]
 
-    with _client(config, client) as http:
-        result = request_json(
-            http,
-            "POST",
-            f"/api/projects/{project_id}/strings/import",
-            action="Push",
-            params={"dry_run": dry_run},
-            payload=payload,
-        )
+    keys_to_send = diff.keys_to_send if not diff.use_full else sorted(local_hashes)
+    use_partial = not diff.use_full and bool(keys_to_send)
+
+    if config.layout is Layout.modular:
+        assert modules is not None
+        if diff.use_full:
+            payload: dict[str, Any] = build_modular_push_body(modules, base_language)
+        else:
+            payload = build_modular_delta_payload(modules, base_language, keys_to_send)
+    else:
+        assert flat_strings is not None
+        if diff.use_full:
+            payload = {"strings": flat_strings}
+        else:
+            payload = build_flat_delta_payload(flat_strings, keys_to_send)
+
+    prepare_seconds = time.perf_counter() - started
+    request_seconds = 0.0
+    skipped_api = False
+    result: dict[str, Any] = {
+        "dry_run": dry_run,
+        "created": 0,
+        "updated": 0,
+        "total": 0,
+        "diff": {
+            "create": [],
+            "update": [],
+            "orphan": [],
+            "create_count": 0,
+            "update_count": 0,
+            "orphan_count": 0,
+        },
+    }
+
+    if not diff.use_full and not keys_to_send:
+        skipped_api = True
+    else:
+        params: dict[str, Any] = {"dry_run": dry_run}
+        if use_partial:
+            params["partial"] = True
+        request_started = time.perf_counter()
+        if not dry_run:
+            set_push_pending()
+        try:
+            with _client(config, client) as http:
+                result = request_json(
+                    http,
+                    "POST",
+                    f"/api/projects/{project_id}/strings/import",
+                    action="Push",
+                    params=params,
+                    payload=payload,
+                )
+        except Exception:
+            if not dry_run:
+                clear_push_pending()
+            raise
+        request_seconds = time.perf_counter() - request_started
+
+        if not dry_run:
+            if config.layout is Layout.modular:
+                sent_hashes = hashes_from_modular_payload(
+                    payload.get("modules") or {},
+                    base_language,
+                )
+            else:
+                sent_hashes = hashes_from_flat_payload(payload.get("strings") or {})
+            apply_index_after_success(
+                config,
+                use_full=diff.use_full,
+                old_entries=old_entries if not diff.use_full else {},
+                sent_hashes=sent_hashes,
+                local_hashes=local_hashes,
+            )
+
+    total_seconds = time.perf_counter() - started
 
     print_push_report(
         result=result,
         local_key_count=local_key_count,
+        keys_to_send=len(keys_to_send) if not diff.use_full else local_key_count,
         details=details,
         dry_run=dry_run,
+        prepare_seconds=prepare_seconds,
+        request_seconds=request_seconds,
+        total_seconds=total_seconds,
+        skipped_api=skipped_api,
+        removed_locally=diff.removed_locally,
+        delta_mode=not diff.use_full,
     )
 
 
@@ -253,6 +357,12 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         manifest_written=manifest_written,
         pending_remove=pending_remove,
         tombstones=tombstones,
+    )
+    refresh_push_index_after_pull(
+        config,
+        data,
+        reports,
+        output_dir=output_root,
     )
     return PullResult(export=data, state=state)
 

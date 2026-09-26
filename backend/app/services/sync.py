@@ -805,6 +805,7 @@ def import_flat_strings(
     module_id: UUID | None = None,
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
+    partial: bool = False,
 ) -> ImportResult:
     """CLI / source-locale import: `{ key: source_text }` stored as-is."""
     return import_locale_payload(
@@ -816,17 +817,55 @@ def import_flat_strings(
         module_id=module_id,
         tags=tags,
         report_orphans=report_orphans,
+        partial=partial,
     )
 
 
-def _load_import_index_entries(db: Session, project_id) -> list[StringEntry]:
-    """String rows plus module slug. Translations and tags load later, in chunks."""
-    return (
-        db.query(StringEntry)
-        .options(joinedload(StringEntry.module))
-        .filter(StringEntry.project_id == project_id)
-        .all()
-    )
+_IMPORT_INDEX_KEY_BATCH = 500
+
+
+def _union_modular_payload_keys(
+    project: Project,
+    modules: dict[str, dict[str, dict[str, str]]],
+    unassigned: dict[str, dict[str, str]] | None,
+) -> list[str]:
+    keys: set[str] = set()
+    for locale_maps in modules.values():
+        if isinstance(locale_maps, dict):
+            keys.update(_payload_keys(project, locale_maps))
+    if unassigned and _is_locale_maps(unassigned):
+        keys.update(_payload_keys(project, unassigned))
+    return sorted(keys)
+
+
+def _load_import_index_entries(
+    db: Session,
+    project_id,
+    keys: list[str] | None = None,
+) -> list[StringEntry]:
+    """String rows plus module slug. Translations and tags load later, in chunks.
+
+    When *keys* is set, load only those keys (including tombstones) project-wide.
+    """
+    if keys is None:
+        return (
+            db.query(StringEntry)
+            .options(joinedload(StringEntry.module))
+            .filter(StringEntry.project_id == project_id)
+            .all()
+        )
+    if not keys:
+        return []
+    entries: list[StringEntry] = []
+    for start in range(0, len(keys), _IMPORT_INDEX_KEY_BATCH):
+        batch = keys[start : start + _IMPORT_INDEX_KEY_BATCH]
+        entries.extend(
+            db.query(StringEntry)
+            .options(joinedload(StringEntry.module))
+            .filter(StringEntry.project_id == project_id, StringEntry.key.in_(batch))
+            .all()
+        )
+    return entries
 
 
 def import_locale_payload(
@@ -839,8 +878,13 @@ def import_locale_payload(
     module_id: UUID | None = None,
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
+    partial: bool = False,
 ) -> ImportResult:
-    entries = _load_import_index_entries(db, project.id)
+    if partial:
+        key_list = _payload_keys(project, locale_maps)
+        entries = _load_import_index_entries(db, project.id, key_list)
+    else:
+        entries = _load_import_index_entries(db, project.id)
     index = _ImportIndex(entries)
     if module_id is not None:
         _preflight_named_keys(
@@ -878,8 +922,14 @@ def import_modular_payload(
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
     tags: list[Tag] | None = None,
+    report_orphans: bool = True,
+    partial: bool = False,
 ) -> ImportResult:
-    entries = _load_import_index_entries(db, project.id)
+    if partial:
+        key_list = _union_modular_payload_keys(project, modules, unassigned)
+        entries = _load_import_index_entries(db, project.id, key_list)
+    else:
+        entries = _load_import_index_entries(db, project.id)
     import_tags = tags or []
     index = _ImportIndex(entries)
     owners: dict[str, str] = {}
@@ -905,7 +955,7 @@ def import_modular_payload(
             dry_run=dry_run,
             status=status,
             module_id=mod.id if mod else None,
-            report_orphans=True,
+            report_orphans=report_orphans,
             index=index,
             tags=import_tags,
         )
@@ -922,7 +972,7 @@ def import_modular_payload(
             dry_run=dry_run,
             status=status,
             module_id=None,
-            report_orphans=True,
+            report_orphans=report_orphans,
             index=index,
             tags=import_tags,
         )
@@ -952,6 +1002,7 @@ def import_json_data(
     module_id: UUID | None = None,
     tag_ids: list[UUID] | None = None,
     report_orphans: bool | None = None,
+    partial: bool = False,
 ) -> ImportResult:
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="JSON import must be an object")
@@ -967,6 +1018,7 @@ def import_json_data(
         # Modular export: { modules: { slug: { locale: { key: value } } }, unassigned: {...} }
         if any(_is_locale_maps(v) or not v for v in modules.values()):
             unassigned = data.get("unassigned")
+            orphans = False if partial else True if report_orphans is None else report_orphans
             return import_modular_payload(
                 db,
                 project,
@@ -975,6 +1027,8 @@ def import_json_data(
                 dry_run=dry_run,
                 status=status,
                 tags=tags,
+                report_orphans=orphans,
+                partial=partial,
             )
 
     strings = data.get("strings")
