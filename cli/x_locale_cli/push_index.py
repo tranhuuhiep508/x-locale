@@ -363,13 +363,7 @@ def pull_should_mark_pending(config: Config, export: Any) -> bool:
         return False
 
     if config.stage is Stage.public:
-        for locale_map in modules.values():
-            if isinstance(locale_map, dict) and base in locale_map:
-                return True
-        unassigned = export.get("unassigned")
-        if isinstance(unassigned, dict) and base in unassigned:
-            return True
-        return False
+        return _modular_pull_writes_base_locale(config, export)
 
     for slug, locale_map in modules.items():
         if not isinstance(locale_map, dict) or base not in locale_map:
@@ -380,6 +374,26 @@ def pull_should_mark_pending(config: Config, export: Any) -> bool:
             continue
         return True
     return False
+
+
+def _modular_pull_writes_base_locale(config: Config, export: dict[str, Any]) -> bool:
+    """True when modular pull will write at least one base-locale file (matches ops.pull_translations)."""
+    base = config.base_language
+    allowed = config.locale_filter
+    modules = export.get("modules")
+    if isinstance(modules, dict):
+        for locale_map in modules.values():
+            if isinstance(locale_map, dict) and base in locale_map:
+                if allowed and base not in allowed:
+                    continue
+                return True
+    unassigned = export.get("unassigned")
+    if not isinstance(unassigned, dict):
+        return False
+    if not any(isinstance(strings, dict) and strings for strings in unassigned.values()):
+        return False
+    base_map = unassigned.get(base)
+    return isinstance(base_map, dict) and bool(base_map)
 
 
 def _module_base_maps_from_export(export: Any, base_language: str) -> dict[str, dict[str, str]]:
@@ -415,11 +429,17 @@ def refresh_push_index_after_pull(
         for report in reports:
             _module, locale = file_module_locale(report.path, output_dir)
             if locale == base:
-                delete_push_index()
-                console.print(
-                    "\n[dim]Public pull updated base-language files; push-index removed. "
-                    "The next push will be a full push.[/dim]"
-                )
+                try:
+                    delete_push_index()
+                    console.print(
+                        "\n[dim]Public pull updated base-language files; push-index removed. "
+                        "The next push will be a full push.[/dim]"
+                    )
+                except OSError as exc:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Locale files were written but push-index could "
+                        f"not be removed ({exc})."
+                    )
                 return
         return
 

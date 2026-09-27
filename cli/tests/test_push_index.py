@@ -19,9 +19,11 @@ import httpx
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.models import Config, PulledFileReport
 from x_locale_cli.ops import pull_translations, push_strings
+from x_locale_cli.io import scoped_key
 from x_locale_cli.push_index import (
     catalog_hashes_flat,
     hash_base_value,
+    index_file_path,
     load_push_index,
     normalize_api_origin,
     pending_file_path,
@@ -36,6 +38,9 @@ def _write_config(
     layout: str = "flat",
     api_url: str = "http://127.0.0.1:8000",
     output_rel: str = "./locales",
+    stage: str = "draft",
+    locales: list[str] | None = None,
+    manifest: bool = False,
 ) -> Path:
     config_dir = root / ".x-locale"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -47,10 +52,10 @@ def _write_config(
                 "api_key": "xl_test_key",
                 "output_dir": output_rel,
                 "layout": layout,
-                "stage": "draft",
+                "stage": stage,
                 "base_language": "vi",
-                "locales": [],
-                "manifest": False,
+                "locales": list(locales or []),
+                "manifest": manifest,
             },
             sort_keys=False,
         ),
@@ -67,6 +72,27 @@ def chdir(path: Path) -> Iterator[None]:
         yield
     finally:
         os.chdir(previous)
+
+
+def _http_status_error(status: int, message: str = "error") -> Any:
+    def _raise(*_a: object, **_k: object) -> Any:
+        response = httpx.Response(status, request=httpx.Request("POST", "http://x"))
+        raise XLocaleError(f"Push failed ({status}): {message}") from httpx.HTTPStatusError(
+            message,
+            request=response.request,
+            response=response,
+        )
+
+    return _raise
+
+
+def _request_transport_error(*_a: object, **_k: object) -> Any:
+    request = httpx.Request("POST", "http://x")
+    raise XLocaleError("Push failed: timeout") from httpx.RequestError("timeout", request=request)
+
+
+def _json_decode_error(*_a: object, **_k: object) -> Any:
+    raise json.JSONDecodeError("Expecting value", "", 0)
 
 
 def _import_ok(*, dry_run: bool = False) -> dict[str, Any]:
@@ -491,4 +517,594 @@ class PushIndexTests(unittest.TestCase):
             ):
                 with self.assertRaises(OSError):
                     pull_translations(config)
+            self.assertTrue(push_pending_is_active())
+
+    def test_push_5xx_keeps_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"a":"A"}', encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "base_language": "vi",
+            }
+        )
+        with chdir(self.root):
+            with patch("x_locale_cli.ops.request_json", side_effect=_http_status_error(500)):
+                with self.assertRaises(XLocaleError):
+                    push_strings(config, dry_run=False)
+            self.assertTrue(push_pending_is_active())
+
+    def test_push_request_error_keeps_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"a":"A"}', encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "base_language": "vi",
+            }
+        )
+        with chdir(self.root):
+            with patch("x_locale_cli.ops.request_json", side_effect=_request_transport_error):
+                with self.assertRaises(XLocaleError):
+                    push_strings(config, dry_run=False)
+            self.assertTrue(push_pending_is_active())
+
+    def test_push_json_decode_error_keeps_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"a":"A"}', encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "base_language": "vi",
+            }
+        )
+        with chdir(self.root):
+            with patch("x_locale_cli.ops.request_json", side_effect=_json_decode_error):
+                with self.assertRaises(json.JSONDecodeError):
+                    push_strings(config, dry_run=False)
+            self.assertTrue(push_pending_is_active())
+
+    def test_preexisting_marker_survives_index_write_oserror_on_push(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"a":"A"}', encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "base_language": "vi",
+            }
+        )
+        scope = scope_from_config(config)
+        index_payload = json.dumps(
+            {**scope.__dict__, "entries": catalog_hashes_flat({"a": "A"})},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+
+        def _request(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            return _import_ok(dry_run=False)
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text(index_payload, encoding="utf-8")
+            pending_file_path().write_text("", encoding="utf-8")
+            before = index_file_path().read_bytes()
+            with (
+                patch("x_locale_cli.ops.request_json", side_effect=_request),
+                patch(
+                    "x_locale_cli.push_index.atomic_write_push_index",
+                    side_effect=OSError("disk full"),
+                ),
+            ):
+                push_strings(config, dry_run=False)
+            self.assertTrue(push_pending_is_active())
+            self.assertEqual(index_file_path().read_bytes(), before)
+
+    def test_successful_full_push_clears_preexisting_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text(json.dumps({"a": "A", "b": "B"}), encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "base_language": "vi",
+            }
+        )
+        scope = scope_from_config(config)
+        calls: list[dict[str, Any]] = []
+
+        def _request(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            calls.append({"params": dict(params or {}), "payload": payload})
+            return _import_ok(dry_run=False)
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "push-index.json").write_text(
+                json.dumps({**scope.__dict__, "entries": catalog_hashes_flat({"a": "A", "b": "B"})}),
+                encoding="utf-8",
+            )
+            pending_file_path().write_text("", encoding="utf-8")
+            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+                push_strings(config, dry_run=False)
+            self.assertEqual(len(calls), 1)
+            self.assertNotIn("partial", calls[0]["params"])
+            self.assertFalse(push_pending_is_active())
+            loaded = load_push_index(config)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.entries, catalog_hashes_flat({"a": "A", "b": "B"}))
+
+    def test_modular_draft_pull_preserves_index_and_preexisting_marker(self) -> None:
+        locales = self.root / "locales"
+        auth_dir = locales / "auth"
+        home_dir = locales / "home"
+        auth_dir.mkdir(parents=True)
+        home_dir.mkdir(parents=True)
+        (auth_dir / "vi.json").write_text(json.dumps({"k1": "old"}), encoding="utf-8")
+        (home_dir / "vi.json").write_text(json.dumps({"k2": "home"}), encoding="utf-8")
+        _write_config(self.root, layout="modular")
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "modular",
+                "stage": "draft",
+                "base_language": "vi",
+            }
+        )
+        scope = scope_from_config(config)
+        export = {
+            "modules": {"auth": {"vi": {"k1": "new"}}},
+            "unassigned": {},
+            "manifest": {},
+        }
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "push-index.json").write_text(
+                json.dumps(
+                    {
+                        **scope.__dict__,
+                        "entries": {
+                            scoped_key("auth", "k1"): hash_base_value("old"),
+                            scoped_key("home", "k2"): hash_base_value("home"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pending_file_path().write_text("", encoding="utf-8")
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            loaded = load_push_index(config)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.entries[scoped_key("auth", "k1")], hash_base_value("new"))
+            self.assertEqual(loaded.entries[scoped_key("home", "k2")], hash_base_value("home"))
+            self.assertTrue(push_pending_is_active())
+
+    def test_pull_locales_filter_skips_base_index_and_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"base":"x"}', encoding="utf-8")
+        (locales / "en.json").write_text('{"e":"E"}', encoding="utf-8")
+        _write_config(self.root, locales=["en"])
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "stage": "draft",
+                "base_language": "vi",
+                "locales": ["en"],
+            }
+        )
+        scope = scope_from_config(config)
+        export = {"vi": {"base": "remote"}, "en": {"e": "EN"}}
+        index_payload = json.dumps(
+            {**scope.__dict__, "entries": {"seed": "deadbeef"}},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text(index_payload, encoding="utf-8")
+            pending_file_path().write_text("", encoding="utf-8")
+            before = index_file_path().read_bytes()
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            self.assertEqual(index_file_path().read_bytes(), before)
+            self.assertTrue(push_pending_is_active())
+
+            pending_file_path().unlink(missing_ok=True)
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            self.assertFalse(push_pending_is_active())
+
+    def test_public_pull_removes_index_and_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text("{}", encoding="utf-8")
+        _write_config(self.root, stage="public")
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "stage": "public",
+                "base_language": "vi",
+            }
+        )
+        export = {"vi": {"k": "v"}}
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text('{"entries":{}}', encoding="utf-8")
+            pending_file_path().write_text("", encoding="utf-8")
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            self.assertFalse(index_file_path().exists())
+            self.assertFalse(push_pending_is_active())
+
+    def test_pull_index_refresh_oserror_keeps_marker_and_index_bytes(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text("{}", encoding="utf-8")
+        _write_config(self.root)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "stage": "draft",
+                "base_language": "vi",
+            }
+        )
+        scope = scope_from_config(config)
+        export = {"vi": {"k": "v"}}
+        index_payload = json.dumps(
+            {**scope.__dict__, "entries": {"keep": hash_base_value("me")}},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text(index_payload, encoding="utf-8")
+            pending_file_path().write_text("", encoding="utf-8")
+            before = index_file_path().read_bytes()
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+                patch(
+                    "x_locale_cli.push_index.atomic_write_push_index",
+                    side_effect=OSError("disk full"),
+                ),
+            ):
+                pull_translations(config)
+            self.assertTrue(push_pending_is_active())
+            self.assertEqual(index_file_path().read_bytes(), before)
+
+    def test_pull_manifest_write_failure_keeps_marker_and_index_bytes(self) -> None:
+        locales = self.root / "locales"
+        auth_dir = locales / "auth"
+        auth_dir.mkdir(parents=True)
+        (auth_dir / "vi.json").write_text("{}", encoding="utf-8")
+        _write_config(self.root, layout="modular", manifest=True)
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "modular",
+                "stage": "draft",
+                "base_language": "vi",
+                "manifest": True,
+            }
+        )
+        scope = scope_from_config(config)
+        export = {
+            "modules": {"auth": {"vi": {"k": "v"}}},
+            "unassigned": {},
+            "manifest": {"version": 1},
+        }
+        index_payload = json.dumps(
+            {**scope.__dict__, "entries": {"seed": "abcd"}},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+        original_write_text = Path.write_text
+
+        def _write_text(self: Path, *args: object, **kwargs: object) -> int:
+            if self.name == "manifest.json":
+                raise OSError("manifest fail")
+            return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text(index_payload, encoding="utf-8")
+            before = index_file_path().read_bytes()
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+                patch.object(Path, "write_text", _write_text),
+            ):
+                with self.assertRaises(OSError):
+                    pull_translations(config)
+            self.assertTrue(push_pending_is_active())
+            self.assertEqual(index_file_path().read_bytes(), before)
+
+    def test_empty_public_modular_pull_does_not_create_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        _write_config(self.root, layout="modular", stage="public")
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "modular",
+                "stage": "public",
+                "base_language": "vi",
+            }
+        )
+        export = {
+            "modules": {},
+            "unassigned": {"vi": {}, "en": {}},
+            "manifest": {"modules": [], "locales": ["vi", "en"], "base_language": "vi"},
+        }
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            self.assertFalse(push_pending_is_active())
+
+    def test_public_pull_delete_index_oserror_does_not_raise(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text("{}", encoding="utf-8")
+        _write_config(self.root, stage="public")
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "stage": "public",
+                "base_language": "vi",
+            }
+        )
+        export = {"vi": {"k": "v"}}
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text('{"entries":{}}', encoding="utf-8")
+            pending_file_path().write_text("", encoding="utf-8")
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+                patch(
+                    "x_locale_cli.push_index.delete_push_index",
+                    side_effect=OSError("permission denied"),
+                ),
+            ):
+                pull_translations(config)
+            self.assertTrue(index_file_path().exists())
             self.assertTrue(push_pending_is_active())
