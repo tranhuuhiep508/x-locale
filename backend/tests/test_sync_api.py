@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import uuid
 
+import pytest
+
 from tests.helpers import _json_upload, _make_project, publish_strings
 
 
@@ -155,6 +157,86 @@ def test_strings_import_modules_payload_keeps_key_and_module(client):
     assert by_key["auth.email"]["source_text"] == "Địa chỉ email"
     assert by_key["auth.email"]["module_slug"] == "auth"
     assert by_key["password"]["module_slug"] == "auth"
+
+
+def test_strings_import_partial_skips_orphans(client):
+    project = _make_project(client, "Partial CLI")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"keep": "A", "other": "B"}},
+    )
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"keep": "A2"}},
+        params={"partial": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["updated"] == 1
+    assert body["diff"]["orphan_count"] == 0
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s["source_text"] for s in items}
+    assert by_key == {"keep": "A2", "other": "B"}
+
+
+def test_strings_import_partial_modular_one_key(client):
+    project = _make_project(client, "Partial Modular")
+    pid = project["id"]
+    client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={
+            "modules": {
+                "auth": {"vi": {"a": "1", "b": "2"}},
+                "home": {"vi": {"c": "3"}},
+            }
+        },
+    )
+    r = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"modules": {"auth": {"vi": {"a": "1-up"}}}},
+        params={"partial": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+    assert r.json()["diff"]["orphan_count"] == 0
+    items = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    by_key = {s["key"]: s["source_text"] for s in items}
+    assert by_key["a"] == "1-up"
+    assert by_key["b"] == "2"
+    assert by_key["c"] == "3"
+
+
+@pytest.mark.parametrize(
+    ("payload", "params"),
+    [
+        ({"strings": {"key": "value"}}, {"partial": True, "dry_run": True}),
+        ({"vi": {"key": "value"}}, {"partial": True, "dry_run": True}),
+        ({"key": "value"}, {"partial": True, "dry_run": True, "locale": "vi"}),
+        ({"modules": {"auth": {"vi": {"key": "value"}}}}, {"partial": True, "dry_run": True}),
+    ],
+)
+def test_file_import_partial_loads_only_payload_keys(client, monkeypatch, payload, params):
+    from app.services import sync as sync_service
+
+    project = _make_project(client, "Partial Load Spy")
+    pid = project["id"]
+    captured: list[list[str] | None] = []
+    original = sync_service._load_import_index_entries
+
+    def spy(db, project_id, keys=None):
+        captured.append(keys)
+        return original(db, project_id, keys)
+
+    monkeypatch.setattr(sync_service, "_load_import_index_entries", spy)
+    r = client.post(
+        f"/api/projects/{pid}/import",
+        files=_json_upload(payload),
+        params=params,
+    )
+    assert r.status_code == 200, r.text
+    assert captured
+    assert captured[-1] == ["key"]
 
 
 def test_edit_public_string_keeps_published_export(client):

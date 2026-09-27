@@ -189,6 +189,7 @@ async def import_project(
             module_id=module_id,
             tag_ids=tag_ids,
             report_orphans=False if partial else None,
+            partial=partial,
         )
         if not dry_run:
             db.commit()
@@ -204,16 +205,28 @@ def import_strings_compat(
     project: ProjectAccess,
     db: DbSession,
     dry_run: Annotated[bool, Query()] = False,
+    partial: Annotated[bool, Query()] = False,
 ) -> ImportResult:
     """JSON-body import used by the CLI push command."""
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
     if payload.modules:
         result = import_json_data(
-            db, project, {"modules": payload.modules}, dry_run=dry_run
+            db,
+            project,
+            {"modules": payload.modules},
+            dry_run=dry_run,
+            partial=partial,
         )
-    elif payload.strings:
-        result = import_flat_strings(db, project, payload.strings, dry_run=dry_run)
+    elif payload.strings is not None:
+        result = import_flat_strings(
+            db,
+            project,
+            payload.strings,
+            dry_run=dry_run,
+            report_orphans=not partial,
+            partial=partial,
+        )
     else:
         raise HTTPException(status_code=400, detail="strings required")
     if not dry_run:

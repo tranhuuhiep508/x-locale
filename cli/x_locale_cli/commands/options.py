@@ -28,3 +28,10 @@ DryRunOption = Annotated[
     bool,
     typer.Option("--dry-run", help="Preview changes without applying"),
 ]
+FullPushOption = Annotated[
+    bool,
+    typer.Option(
+        "--full",
+        help="Push the entire base-language catalog (ignore push-index delta)",
+    ),
+]

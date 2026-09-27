@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from x_locale_cli.commands.options import (
     DryRunOption,
+    FullPushOption,
     LayoutOption,
     LocalesOption,
     OutputDirOption,
@@ -19,6 +20,7 @@ def push(
     stage: StageOption = None,
     locales: LocalesOption = None,
     dry_run: DryRunOption = False,
+    full: FullPushOption = False,
 ) -> None:
     """Push base-language source strings to x-locale.
 
@@ -28,4 +30,5 @@ def push(
     push_strings(
         runtime_config(output_dir=output_dir, layout=layout, stage=stage, locales=locales),
         dry_run=dry_run,
+        full=full,
     )
