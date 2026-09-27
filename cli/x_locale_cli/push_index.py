@@ -6,15 +6,18 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+
+import httpx
 from pathlib import Path
 from typing import Any
 
 from x_locale_cli.config import CONFIG_DIR
 from x_locale_cli.console import console
-from x_locale_cli.io import scoped_key, scan_modular_base
+from x_locale_cli.io import scoped_key
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport, Stage
 
 PUSH_INDEX_VERSION = 1
+ALLOWLISTED_PUSH_REJECT_STATUSES = frozenset({400, 401, 403, 404, 409, 413, 415, 422})
 INDEX_NAME = "push-index.json"
 PENDING_NAME = "push-index.pending"
 _TMP_NAME = "push-index.json.tmp"
@@ -142,8 +145,15 @@ def compute_push_diff(
     current_scope = scope_from_config(config)
     index_usable = False
     old_entries: dict[str, str] = {}
+    pending_active = push_pending_is_active()
 
-    if not full and loaded is not None:
+    if not full and pending_active:
+        console.print(
+            "[yellow]Warning:[/yellow] push-index.pending is present from an interrupted push or pull. "
+            "Performing a full push."
+        )
+
+    if not full and loaded is not None and not pending_active:
         if scopes_match(loaded.scope, current_scope):
             index_usable = True
             old_entries = dict(loaded.entries)
@@ -153,13 +163,13 @@ def compute_push_diff(
                 "(project, API URL, output dir, layout, or base language). "
                 "Performing a full push."
             )
-    elif not full and loaded is None and index_file_path().exists():
+    elif not full and loaded is None and index_file_path().exists() and not pending_active:
         console.print(
             "[yellow]Warning:[/yellow] push-index.json is missing or invalid. "
             "Performing a full push."
         )
 
-    use_full = full or not index_usable
+    use_full = full or pending_active or not index_usable
     if use_full:
         return PushDiff(
             keys_to_send=sorted(local_hashes),
@@ -276,6 +286,25 @@ def clear_push_pending() -> None:
         pending.unlink()
 
 
+def push_pending_is_active() -> bool:
+    return pending_file_path().exists()
+
+
+def maybe_clear_push_pending_after_failure(
+    *,
+    marker_existed_before: bool,
+    created_marker_this_run: bool,
+    exc: BaseException,
+) -> None:
+    """Clear the marker only when this run created it and the server rejected before commit."""
+    if marker_existed_before or not created_marker_this_run:
+        return
+    cause = exc.__cause__ if isinstance(exc, BaseException) else None
+    if isinstance(cause, httpx.HTTPStatusError):
+        if cause.response.status_code in ALLOWLISTED_PUSH_REJECT_STATUSES:
+            clear_push_pending()
+
+
 def merge_sent_hashes(
     old_entries: dict[str, str],
     sent_hashes: dict[str, str],
@@ -312,8 +341,45 @@ def apply_index_after_success(
             f"[yellow]Warning:[/yellow] Push was accepted by the server but push-index.json "
             f"could not be saved ({exc}). The next push may resend the same keys."
         )
-        clear_push_pending()
         return False
+
+
+def pull_should_mark_pending(config: Config, export: Any) -> bool:
+    """True when this pull will rewrite pushable base files and may update the snapshot."""
+    base = config.base_language
+    allowed = config.locale_filter
+    if allowed is not None and base not in allowed:
+        return False
+
+    if config.layout is Layout.flat:
+        if not isinstance(export, dict):
+            return False
+        return base in export and isinstance(export.get(base), dict)
+
+    if not isinstance(export, dict):
+        return False
+    modules = export.get("modules")
+    if not isinstance(modules, dict):
+        return False
+
+    if config.stage is Stage.public:
+        for locale_map in modules.values():
+            if isinstance(locale_map, dict) and base in locale_map:
+                return True
+        unassigned = export.get("unassigned")
+        if isinstance(unassigned, dict) and base in unassigned:
+            return True
+        return False
+
+    for slug, locale_map in modules.items():
+        if not isinstance(locale_map, dict) or base not in locale_map:
+            continue
+        if str(slug).startswith("_") or str(slug).startswith("."):
+            continue
+        if str(slug) == UNASSIGNED_SLUG:
+            continue
+        return True
+    return False
 
 
 def _module_base_maps_from_export(export: Any, base_language: str) -> dict[str, dict[str, str]]:
@@ -336,6 +402,7 @@ def refresh_push_index_after_pull(
     reports: list[PulledFileReport],
     *,
     output_dir: Path,
+    clear_pending_after_success: bool = False,
 ) -> None:
     from x_locale_cli.io import file_module_locale
 
@@ -401,7 +468,8 @@ def refresh_push_index_after_pull(
 
     try:
         atomic_write_push_index(scope, entries)
-        clear_push_pending()
+        if clear_pending_after_success:
+            clear_push_pending()
     except OSError as exc:
         console.print(
             f"[yellow]Warning:[/yellow] Locale files were written but push-index.json "

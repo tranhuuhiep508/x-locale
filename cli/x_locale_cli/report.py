@@ -296,10 +296,15 @@ def print_push_report(
     created = change_items(create_keys)
     updated = change_items(update_keys)
     remote_only = change_items(orphan_keys)
-    unchanged_count = max(0, local_key_count - create_count - update_count)
+    send_count = keys_to_send if keys_to_send is not None else local_key_count
+    if skipped_api:
+        unchanged_count = 0
+    elif delta_mode or keys_to_send is not None:
+        unchanged_count = max(0, send_count - create_count - update_count)
+    else:
+        unchanged_count = max(0, local_key_count - create_count - update_count)
 
     print_report_header("Push", details)
-    send_count = keys_to_send if keys_to_send is not None else local_key_count
     if delta_mode or keys_to_send is not None:
         console.print(f"  Keys to send (local)  {send_count:>4}")
     removed = removed_locally or []

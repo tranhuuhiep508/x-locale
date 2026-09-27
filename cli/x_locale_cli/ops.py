@@ -31,11 +31,13 @@ from x_locale_cli.push_index import (
     build_modular_delta_payload,
     catalog_hashes_flat,
     catalog_hashes_modular,
-    clear_push_pending,
     compute_push_diff,
     hashes_from_flat_payload,
     hashes_from_modular_payload,
     load_push_index,
+    maybe_clear_push_pending_after_failure,
+    pull_should_mark_pending,
+    push_pending_is_active,
     refresh_push_index_after_pull,
     set_push_pending,
 )
@@ -231,15 +233,17 @@ def push_strings(
         },
     }
 
-    if not diff.use_full and not keys_to_send:
-        skipped_api = True
-    else:
+    skipped_api = not keys_to_send and not (diff.use_full and push_pending_is_active())
+    if not skipped_api:
         params: dict[str, Any] = {"dry_run": dry_run}
         if use_partial:
             params["partial"] = True
         request_started = time.perf_counter()
+        pending_existed_before = push_pending_is_active()
+        created_marker_this_run = False
         if not dry_run:
             set_push_pending()
+            created_marker_this_run = not pending_existed_before
         try:
             with _client(config, client) as http:
                 result = request_json(
@@ -250,9 +254,13 @@ def push_strings(
                     params=params,
                     payload=payload,
                 )
-        except Exception:
+        except Exception as exc:
             if not dry_run:
-                clear_push_pending()
+                maybe_clear_push_pending_after_failure(
+                    marker_existed_before=pending_existed_before,
+                    created_marker_this_run=created_marker_this_run,
+                    exc=exc,
+                )
             raise
         request_seconds = time.perf_counter() - request_started
 
@@ -312,6 +320,12 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
     reports: list[PulledFileReport] = []
     manifest_written: Path | None = None
 
+    pending_existed_before = push_pending_is_active()
+    created_marker_this_run = False
+    if pull_should_mark_pending(config, data):
+        set_push_pending()
+        created_marker_this_run = not pending_existed_before
+
     if config.layout is Layout.modular:
         modules = data.get("modules", {})
         unassigned = data.get("unassigned", {})
@@ -349,6 +363,13 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
             target = resolve_under_output(output_root, f"{locale}.json")
             reports.append(write_locale_file_reported(target, strings))
 
+    refresh_push_index_after_pull(
+        config,
+        data,
+        reports,
+        output_dir=output_root,
+        clear_pending_after_success=created_marker_this_run,
+    )
     print_pull_report(
         reports,
         output_dir=output_dir,
@@ -357,12 +378,6 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         manifest_written=manifest_written,
         pending_remove=pending_remove,
         tombstones=tombstones,
-    )
-    refresh_push_index_after_pull(
-        config,
-        data,
-        reports,
-        output_dir=output_root,
     )
     return PullResult(export=data, state=state)
 

@@ -1033,6 +1033,7 @@ def import_json_data(
 
     strings = data.get("strings")
     if _is_str_map(strings):
+        orphans = False if partial else True if report_orphans is None else report_orphans
         return import_flat_strings(
             db,
             project,
@@ -1041,11 +1042,13 @@ def import_json_data(
             status=status,
             module_id=target_module_id,
             tags=tags,
-            report_orphans=True if report_orphans is None else report_orphans,
+            report_orphans=orphans,
+            partial=partial,
         )
 
     if _is_locale_maps(data) and set(data).issubset(project_locales(project)):
         # Exported `{ locale: { key: value } }` — import every locale in the file.
+        orphans = False if partial else True if report_orphans is None else report_orphans
         return import_locale_payload(
             db,
             project,
@@ -1054,7 +1057,8 @@ def import_json_data(
             status=status,
             module_id=target_module_id,
             tags=tags,
-            report_orphans=True if report_orphans is None else report_orphans,
+            report_orphans=orphans,
+            partial=partial,
         )
 
     if _is_str_map(data):
@@ -1062,7 +1066,9 @@ def import_json_data(
         if target not in project_locales(project):
             raise HTTPException(status_code=400, detail=f"Unknown locale '{target}'")
         orphans = (
-            report_orphans
+            False
+            if partial
+            else report_orphans
             if report_orphans is not None
             else target == project.base_language
         )
@@ -1075,6 +1081,7 @@ def import_json_data(
             module_id=target_module_id,
             tags=tags,
             report_orphans=orphans,
+            partial=partial,
         )
 
     if any(not isinstance(value, str) for value in data.values()):
