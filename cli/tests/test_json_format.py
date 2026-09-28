@@ -249,6 +249,11 @@ class GroupPullChangesTests(unittest.TestCase):
             [ChangeItem(key=f"{UNASSIGNED_SLUG}/123ewfewf", extra="vi")],
         )
 
+    def test_file_module_locale_resolves_relative_output_dir(self) -> None:
+        rel_root = Path("locales")
+        abs_file = (Path.cwd() / "locales" / UNASSIGNED_SLUG / "vi.json").resolve()
+        self.assertEqual(file_module_locale(abs_file, rel_root), (UNASSIGNED_SLUG, "vi"))
+
     def test_flat_layout_keeps_bare_key(self) -> None:
         root = Path("/tmp/locales")
         reports = [
@@ -337,17 +342,22 @@ class ModularStatusHelpersTests(unittest.TestCase):
             {"auth/auth.email": "Email", f"{UNASSIGNED_SLUG}/loose": "Hi"},
         )
 
-    def test_identical_pull_does_not_rewrite(self) -> None:
+    def test_identical_pull_rewrites_canonical_json(self) -> None:
         path = self.root / "en.json"
+        path.write_text('{"other":"B","keep":"A"}', encoding="utf-8")
         first = write_locale_file_reported(path, {"keep": "A", "other": "B"})
         self.assertTrue(first.written)
         mtime = path.stat().st_mtime_ns
         second = write_locale_file_reported(path, {"other": "B", "keep": "A"})
-        self.assertFalse(second.written)
+        self.assertTrue(second.written)
         self.assertEqual(second.new_keys, [])
         self.assertEqual(second.updated_keys, [])
         self.assertEqual(second.removed_keys, [])
-        self.assertEqual(path.stat().st_mtime_ns, mtime)
+        self.assertNotEqual(path.stat().st_mtime_ns, mtime)
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            '{\n  "keep": "A",\n  "other": "B"\n}\n',
+        )
 
 
 class ParseApiErrorTests(unittest.TestCase):

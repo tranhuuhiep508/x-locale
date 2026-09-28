@@ -153,15 +153,27 @@ Options:
 
 ### `locale pull`
 
-Pull translations from x-locale to local files.
+Pull translations from x-locale to local files. Each run downloads the full
+stage export and **replaces** in-scope locale files with that payload (canonical
+JSON). There is no revision or delta download. A draft pull refreshes
+`.x-locale/push-index.json` from the export base catalog so the next push can
+stay a delta push when values match.
 
-- **Flat** — writes `{output_dir}/{locale}.json`
+- **Flat** — writes `{output_dir}/{locale}.json` for each locale in scope,
+  including `{}` when the export has no keys for that locale.
 - **Modular** — writes `{output_dir}/{module}/{locale}.json` and, when
-  `manifest: true`, `{output_dir}/manifest.json`. Created/updated keys use the
-  same `module/key` labels as push, with locales listed beside them.
-- Keys that were in a rewritten file but are **not** in this stage’s export are
-  listed as **Removed from local files**, with a reason (pending remove,
-  tombstone, `_unassigned`, or local-only).
+  `manifest: true`, `{output_dir}/manifest.json`. Empty locale maps inside a
+  module are written as `{}`. When every in-scope `_unassigned` map is empty,
+  `_unassigned/` is removed.
+- **Prune** — deletes in-scope `{locale}.json` files (and empty module folders)
+  that are not in this export. Removed keys and file paths are listed in the
+  pull report. Locales outside `--locales` / config `locales` are left untouched.
+- Key diffs (Created / Updated / Removed) compare the previous file to the
+  export. Files are always rewritten even when values are unchanged.
+- Keys that exist only in rewritten files are removed from those files. Run
+  `locale push` first when new base-language keys in real modules should be
+  kept on x-locale. `_unassigned` is never pushed; pull deletes those files and
+  lists the keys (including after `locale sync`).
 
 ```
 Options:
@@ -270,10 +282,10 @@ directories.
 | 4 | `locale pull --stage draft` writes files; pending-delete omitted |
 | 5 | `locale pull --stage public` uses published snapshot |
 | 6 | `locale status` exit 0 in sync; exit 1 on mismatch |
-| 7 | `locale sync` push+pull; exit 1 when leftovers remain |
+| 7 | `locale sync` push+pull; local-only files in scope are replaced |
 | 8 | Bad/missing API key → non-zero exit, no hang |
 | 9 | Modular `_unassigned` not pushed |
-| 10 | Pull skips rewrite when map unchanged |
+| 10 | Pull rewrites from export even when key values unchanged |
 | 11 | Single-locale pull + status still correct for base |
 
 CI workflow: `.github/workflows/cli-e2e.yml` (job name: `cli-e2e`).

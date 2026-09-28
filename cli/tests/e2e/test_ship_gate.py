@@ -358,7 +358,7 @@ class TestSync:
         assert (workspace / "locales" / "vi.json").exists()
         assert (workspace / "locales" / "en.json").exists()
 
-    def test_sync_exit_one_when_leftovers_remain(
+    def test_sync_replaces_local_only_unassigned(
         self,
         workspace: Path,
         api_base_url: str,
@@ -378,10 +378,14 @@ class TestSync:
         )
 
         result = run_locale(workspace, "sync")
-        assert result.returncode == 1, combined_output(result)
         output = combined_output(result)
-        assert "issue" in output.lower()
-        assert "_unassigned" in output
+        assert result.returncode == 0, output
+        assert "stray" in output
+        assert not (locales_dir / "_unassigned").exists()
+        with api_key_client(api_base_url, modular_project.api_key) as client:
+            keys = list_string_keys(client, modular_project.id)
+        assert "sign_in" in keys
+        assert "stray" not in keys
 
 
 class TestAuth:
@@ -462,7 +466,7 @@ class TestShouldCoverage:
         assert status.returncode == 1, combined_output(status)
         assert "_unassigned" in combined_output(status)
 
-    def test_pull_skips_rewrite_when_unchanged(
+    def test_pull_rewrites_when_unchanged(
         self,
         workspace: Path,
         api_base_url: str,
@@ -486,9 +490,7 @@ class TestShouldCoverage:
         second = run_locale(workspace, "pull")
         assert second.returncode == 0, combined_output(second)
         output = combined_output(second)
-        assert "already up to date" in output.lower()
-        assert "Checked" in output
-        assert "Wrote" not in output
+        assert "match the export" in output.lower() or "rewrote" in output.lower()
         assert target.read_bytes() == content_before
 
     def test_single_locale_pull_and_status_for_base(
