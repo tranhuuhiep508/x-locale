@@ -378,7 +378,9 @@ class TestSync:
         )
 
         result = run_locale(workspace, "sync")
-        assert result.returncode == 0, combined_output(result)
+        output = combined_output(result)
+        assert result.returncode == 0, output
+        assert "stray" in output
         assert not (locales_dir / "_unassigned").exists()
         with api_key_client(api_base_url, modular_project.api_key) as client:
             keys = list_string_keys(client, modular_project.id)

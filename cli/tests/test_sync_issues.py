@@ -139,6 +139,59 @@ class ReportHintTests(unittest.TestCase):
         self.assertIn("_unassigned/123ewfewf", text)
         self.assertIn("_unassigned (CLI will not push)", text)
 
+    def test_pull_report_lists_pruned_file_and_keys(self) -> None:
+        root = Path("/tmp/locales")
+        pruned = [
+            PulledFileReport(
+                path=root / "_unassigned" / "vi.json",
+                removed_keys=["stray"],
+                written=False,
+            )
+        ]
+        deleted = [root / "_unassigned" / "vi.json"]
+        text = self._capture(
+            lambda: print_pull_report(
+                [],
+                output_dir=root,
+                layout="modular",
+                stage="draft",
+                deleted_paths=deleted,
+                pruned_reports=pruned,
+                pending_remove=[],
+                tombstones=[],
+            )
+        )
+        self.assertIn("Removed from local files", text)
+        self.assertIn("_unassigned/stray", text)
+        self.assertIn("Files removed", text)
+        self.assertIn("_unassigned/vi.json", text)
+
+    def test_pull_report_relative_output_dir_labels_unassigned(self) -> None:
+        from x_locale_cli.models import UNASSIGNED_SLUG
+
+        rel_root = Path("locales")
+        abs_file = (rel_root.resolve() / UNASSIGNED_SLUG / "vi.json").resolve()
+        pruned = [
+            PulledFileReport(
+                path=abs_file,
+                removed_keys=["stray"],
+                written=False,
+            )
+        ]
+        text = self._capture(
+            lambda: print_pull_report(
+                [],
+                output_dir=rel_root,
+                layout="modular",
+                stage="draft",
+                pruned_reports=pruned,
+                pending_remove=[],
+                tombstones=[],
+            )
+        )
+        self.assertIn("_unassigned/stray", text)
+        self.assertIn("_unassigned (CLI will not push)", text)
+
     def test_push_report_omits_pending_remove_and_uses_counts(self) -> None:
         text = self._capture(
             lambda: print_push_report(

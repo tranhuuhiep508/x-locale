@@ -249,6 +249,11 @@ class GroupPullChangesTests(unittest.TestCase):
             [ChangeItem(key=f"{UNASSIGNED_SLUG}/123ewfewf", extra="vi")],
         )
 
+    def test_file_module_locale_resolves_relative_output_dir(self) -> None:
+        rel_root = Path("locales")
+        abs_file = (Path.cwd() / "locales" / UNASSIGNED_SLUG / "vi.json").resolve()
+        self.assertEqual(file_module_locale(abs_file, rel_root), (UNASSIGNED_SLUG, "vi"))
+
     def test_flat_layout_keeps_bare_key(self) -> None:
         root = Path("/tmp/locales")
         reports = [

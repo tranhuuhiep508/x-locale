@@ -827,6 +827,67 @@ class PushIndexTests(unittest.TestCase):
                 pull_translations(config)
             self.assertFalse(push_pending_is_active())
 
+    def test_draft_pull_en_only_preserves_push_index_without_pending_marker(self) -> None:
+        locales = self.root / "locales"
+        locales.mkdir()
+        (locales / "vi.json").write_text('{"base":"local"}', encoding="utf-8")
+        (locales / "en.json").write_text('{"e":"E"}', encoding="utf-8")
+        _write_config(self.root, locales=["en"])
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "22222222-2222-2222-2222-222222222222",
+                "api_key": "k",
+                "output_dir": str(locales),
+                "layout": "flat",
+                "stage": "draft",
+                "base_language": "vi",
+                "locales": ["en"],
+            }
+        )
+        scope = scope_from_config(config)
+        export = {"en": {"e": "EN"}}
+        index_payload = json.dumps(
+            {**scope.__dict__, "entries": {"seed": "deadbeef"}},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+
+        class _Client:
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def _request_json(
+            client: object,
+            method: str,
+            path: str,
+            *,
+            action: str,
+            params: dict[str, Any] | None = None,
+            payload: Any = None,
+        ) -> Any:
+            if "export" in path:
+                return export
+            return {"pending_remove": [], "tombstones": []}
+
+        with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text(index_payload, encoding="utf-8")
+            vi_before = (locales / "vi.json").read_bytes()
+            index_before = index_file_path().read_bytes()
+            with (
+                patch("x_locale_cli.ops.api_client", return_value=_Client()),
+                patch("x_locale_cli.ops.request_json", side_effect=_request_json),
+            ):
+                pull_translations(config)
+            self.assertEqual((locales / "vi.json").read_bytes(), vi_before)
+            self.assertEqual(index_file_path().read_bytes(), index_before)
+            self.assertFalse(push_pending_is_active())
+
     def test_public_pull_removes_index_and_pending_marker(self) -> None:
         locales = self.root / "locales"
         locales.mkdir()

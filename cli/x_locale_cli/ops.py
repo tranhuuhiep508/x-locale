@@ -340,11 +340,12 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
     )
     print_pull_report(
         reports,
-        output_dir=output_dir,
+        output_dir=output_root,
         layout=config.layout.value,
         stage=config.stage.value,
         manifest_written=manifest_written,
         deleted_paths=apply_result.deleted_paths,
+        pruned_reports=apply_result.pruned_reports,
         pending_remove=pending_remove,
         tombstones=tombstones,
     )

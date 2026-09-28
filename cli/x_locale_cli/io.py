@@ -313,6 +313,7 @@ def _prune_empty_module_dirs(output_root: Path) -> None:
 @dataclass
 class PullApplyResult:
     reports: list[PulledFileReport]
+    pruned_reports: list[PulledFileReport]
     expected_paths: set[Path]
     deleted_paths: list[Path]
     manifest_written: Path | None
@@ -357,9 +358,11 @@ def apply_pull_export(
                     base_touched = True
 
         in_scope_unassigned: dict[str, dict[str, str]] = {}
-        for locale in scope:
-            raw = unassigned.get(locale) if isinstance(unassigned, dict) else None
-            in_scope_unassigned[locale] = string_map(raw)
+        if isinstance(unassigned, dict):
+            for locale in scope:
+                if locale not in unassigned:
+                    continue
+                in_scope_unassigned[locale] = string_map(unassigned.get(locale))
         has_unassigned_keys = any(strings for strings in in_scope_unassigned.values())
         if has_unassigned_keys:
             for locale, strings in in_scope_unassigned.items():
@@ -400,12 +403,22 @@ def apply_pull_export(
                 base_touched = True
 
     deleted: list[Path] = []
+    pruned_reports: list[PulledFileReport] = []
     for path in _owned_locale_paths(output_root, config.layout, scope):
         resolved = path.resolve()
         if resolved in expected:
             continue
         if not path.exists():
             continue
+        old_strings = _read_old_string_map(path)
+        pruned_reports.append(
+            PulledFileReport(
+                path=path,
+                keys=sorted(old_strings),
+                removed_keys=sorted(old_strings),
+                written=False,
+            )
+        )
         path.unlink()
         deleted.append(path)
         if path.stem == base:
@@ -422,6 +435,7 @@ def apply_pull_export(
 
     return PullApplyResult(
         reports=reports,
+        pruned_reports=pruned_reports,
         expected_paths=expected,
         deleted_paths=deleted,
         manifest_written=manifest_written if config.layout is Layout.modular else None,
@@ -505,7 +519,9 @@ def pull_will_touch_base_locale(config: Config, export: Any, output_root: Path) 
 
 def file_module_locale(path: Path, output_dir: Path) -> tuple[str | None, str]:
     """Return ``(module_or_none, locale)`` from a pulled locale file path."""
-    rel = path.relative_to(output_dir) if path.is_relative_to(output_dir) else Path(path.name)
+    root = output_dir.resolve()
+    target = path.resolve()
+    rel = target.relative_to(root) if target.is_relative_to(root) else Path(target.name)
     locale = Path(rel.name).stem
     module = rel.parts[0] if len(rel.parts) > 1 else None
     return module, locale

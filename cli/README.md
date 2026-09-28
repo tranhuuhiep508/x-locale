@@ -166,12 +166,14 @@ stay a delta push when values match.
   module are written as `{}`. When every in-scope `_unassigned` map is empty,
   `_unassigned/` is removed.
 - **Prune** — deletes in-scope `{locale}.json` files (and empty module folders)
-  that are not in this export. Locales outside `--locales` / config `locales`
-  are left untouched.
+  that are not in this export. Removed keys and file paths are listed in the
+  pull report. Locales outside `--locales` / config `locales` are left untouched.
 - Key diffs (Created / Updated / Removed) compare the previous file to the
   export. Files are always rewritten even when values are unchanged.
-- Keys that exist only in the local files are removed. Run `locale push` or
-  `locale sync` first when those base-language keys should be kept.
+- Keys that exist only in rewritten files are removed from those files. Run
+  `locale push` first when new base-language keys in real modules should be
+  kept on x-locale. `_unassigned` is never pushed; pull deletes those files and
+  lists the keys (including after `locale sync`).
 
 ```
 Options:

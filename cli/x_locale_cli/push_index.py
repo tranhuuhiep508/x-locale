@@ -393,6 +393,9 @@ def refresh_push_index_after_pull(
                 )
         return
 
+    if not base_locale_touched:
+        return
+
     scope = scope_from_config(config)
 
     if config.layout is Layout.flat:

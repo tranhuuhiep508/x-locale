@@ -74,9 +74,38 @@ class ApplyPullExportTests(unittest.TestCase):
             "unassigned": {"vi": {}},
             "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi"},
         }
-        apply_pull_export(config, export, output_root=self.root.resolve(), write_manifest=False)
+        result = apply_pull_export(
+            config, export, output_root=self.root.resolve(), write_manifest=False
+        )
         self.assertFalse(stale.exists())
         self.assertFalse((self.root / "gone").exists())
+        pruned = [r for r in result.pruned_reports if r.path.name == "vi.json"]
+        self.assertEqual(len(pruned), 1)
+        self.assertEqual(pruned[0].removed_keys, ["x"])
+
+    def test_unassigned_locale_absent_from_export_is_pruned_not_created(self) -> None:
+        config = Config.from_dict(
+            {
+                "api_url": "http://127.0.0.1:8000",
+                "project_id": "p",
+                "api_key": "k",
+                "output_dir": str(self.root),
+                "layout": "modular",
+                "base_language": "vi",
+                "locales": ["vi", "ko"],
+            }
+        )
+        stale_ko = self.root / UNASSIGNED_SLUG / "ko.json"
+        stale_ko.parent.mkdir(parents=True)
+        stale_ko.write_text('{"old": "x"}', encoding="utf-8")
+        export = {
+            "modules": {"auth": {"vi": {"k": "v"}}},
+            "unassigned": {"vi": {"loose": "Hi"}},
+            "manifest": {},
+        }
+        apply_pull_export(config, export, output_root=self.root.resolve(), write_manifest=False)
+        self.assertFalse(stale_ko.exists())
+        self.assertTrue((self.root / UNASSIGNED_SLUG / "vi.json").exists())
 
     def test_locale_filter_does_not_prune_other_locales(self) -> None:
         config = Config.from_dict(
