@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,19 +11,19 @@ from x_locale_cli.client import api_client, request_json
 from x_locale_cli.config import require_project_id
 from x_locale_cli.errors import XLocaleError, XLocaleExit
 from x_locale_cli.io import (
+    apply_pull_export,
     build_modular_push_body,
     collect_modular_local_keys,
     collect_modular_remote_keys,
     load_json_file,
     parse_locale_json,
+    pull_will_touch_base_locale,
     resolve_push_source,
-    resolve_under_output,
     scan_modular_base,
     string_map,
-    write_locale_file_reported,
 )
 from x_locale_cli.issues import StatusSnapshot, classify_sync_issues
-from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PullResult, PulledFileReport
+from x_locale_cli.models import Config, Layout, PullResult
 from x_locale_cli.push_index import (
     apply_index_after_success,
     build_flat_delta_payload,
@@ -36,7 +35,6 @@ from x_locale_cli.push_index import (
     hashes_from_modular_payload,
     load_push_index,
     maybe_clear_push_pending_after_failure,
-    pull_should_mark_pending,
     push_pending_is_active,
     refresh_push_index_after_pull,
     set_push_pending,
@@ -300,7 +298,6 @@ def push_strings(
 def pull_translations(config: Config, *, client: Any | None = None) -> PullResult:
     project_id = require_project_id(config)
     output_dir = config.output_path
-    allowed_locales = config.locale_filter
     write_manifest = config.manifest
 
     with _client(config, client) as http:
@@ -317,51 +314,21 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
 
     output_root = output_dir.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
-    reports: list[PulledFileReport] = []
-    manifest_written: Path | None = None
 
     pending_existed_before = push_pending_is_active()
     created_marker_this_run = False
-    if pull_should_mark_pending(config, data):
+    if pull_will_touch_base_locale(config, data, output_root):
         set_push_pending()
         created_marker_this_run = not pending_existed_before
 
-    if config.layout is Layout.modular:
-        modules = data.get("modules", {})
-        unassigned = data.get("unassigned", {})
-        manifest = data.get("manifest", {})
-
-        for module_slug, locale_map in modules.items():
-            for locale, strings in locale_map.items():
-                if allowed_locales and locale not in allowed_locales:
-                    continue
-                target = resolve_under_output(output_root, module_slug, f"{locale}.json")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                reports.append(write_locale_file_reported(target, strings))
-
-        has_unassigned = any(strings for strings in unassigned.values())
-        if has_unassigned:
-            for locale, strings in unassigned.items():
-                if not strings:
-                    continue
-                if allowed_locales and locale not in allowed_locales:
-                    continue
-                target = resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                reports.append(write_locale_file_reported(target, strings))
-
-        if write_manifest and manifest:
-            manifest_written = resolve_under_output(output_root, "manifest.json")
-            manifest_written.write_text(
-                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-    else:
-        for locale, strings in data.items():
-            if allowed_locales and locale not in allowed_locales:
-                continue
-            target = resolve_under_output(output_root, f"{locale}.json")
-            reports.append(write_locale_file_reported(target, strings))
+    apply_result = apply_pull_export(
+        config,
+        data,
+        output_root=output_root,
+        write_manifest=write_manifest,
+    )
+    reports = apply_result.reports
+    manifest_written = apply_result.manifest_written
 
     refresh_push_index_after_pull(
         config,
@@ -369,6 +336,7 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         reports,
         output_dir=output_root,
         clear_pending_after_success=created_marker_this_run,
+        base_locale_touched=apply_result.base_locale_touched,
     )
     print_pull_report(
         reports,
@@ -376,6 +344,7 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
         layout=config.layout.value,
         stage=config.stage.value,
         manifest_written=manifest_written,
+        deleted_paths=apply_result.deleted_paths,
         pending_remove=pending_remove,
         tombstones=tombstones,
     )

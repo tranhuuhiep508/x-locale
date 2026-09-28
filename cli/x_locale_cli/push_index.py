@@ -13,7 +13,7 @@ from typing import Any
 
 from x_locale_cli.config import CONFIG_DIR
 from x_locale_cli.console import console
-from x_locale_cli.io import scoped_key
+from x_locale_cli.io import scoped_key, pull_will_touch_base_locale
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport, Stage
 
 PUSH_INDEX_VERSION = 1
@@ -344,56 +344,10 @@ def apply_index_after_success(
         return False
 
 
-def pull_should_mark_pending(config: Config, export: Any) -> bool:
-    """True when this pull will rewrite pushable base files and may update the snapshot."""
-    base = config.base_language
-    allowed = config.locale_filter
-    if allowed is not None and base not in allowed:
-        return False
-
-    if config.layout is Layout.flat:
-        if not isinstance(export, dict):
-            return False
-        return base in export and isinstance(export.get(base), dict)
-
-    if not isinstance(export, dict):
-        return False
-    modules = export.get("modules")
-    if not isinstance(modules, dict):
-        return False
-
-    if config.stage is Stage.public:
-        return _modular_pull_writes_base_locale(config, export)
-
-    for slug, locale_map in modules.items():
-        if not isinstance(locale_map, dict) or base not in locale_map:
-            continue
-        if str(slug).startswith("_") or str(slug).startswith("."):
-            continue
-        if str(slug) == UNASSIGNED_SLUG:
-            continue
-        return True
-    return False
-
-
-def _modular_pull_writes_base_locale(config: Config, export: dict[str, Any]) -> bool:
-    """True when modular pull will write at least one base-locale file (matches ops.pull_translations)."""
-    base = config.base_language
-    allowed = config.locale_filter
-    modules = export.get("modules")
-    if isinstance(modules, dict):
-        for locale_map in modules.values():
-            if isinstance(locale_map, dict) and base in locale_map:
-                if allowed and base not in allowed:
-                    continue
-                return True
-    unassigned = export.get("unassigned")
-    if not isinstance(unassigned, dict):
-        return False
-    if not any(isinstance(strings, dict) and strings for strings in unassigned.values()):
-        return False
-    base_map = unassigned.get(base)
-    return isinstance(base_map, dict) and bool(base_map)
+def pull_should_mark_pending(config: Config, export: Any, *, output_dir: Path | None = None) -> bool:
+    """True when this pull will rewrite or prune push-relevant base-language files."""
+    root = (output_dir if output_dir is not None else config.output_path).resolve()
+    return pull_will_touch_base_locale(config, export, root)
 
 
 def _module_base_maps_from_export(export: Any, base_language: str) -> dict[str, dict[str, str]]:
@@ -417,74 +371,48 @@ def refresh_push_index_after_pull(
     *,
     output_dir: Path,
     clear_pending_after_success: bool = False,
+    base_locale_touched: bool = False,
 ) -> None:
-    from x_locale_cli.io import file_module_locale
-
     base = config.base_language
     allowed = config.locale_filter
     if allowed is not None and base not in allowed:
         return
 
     if config.stage is Stage.public:
-        for report in reports:
-            _module, locale = file_module_locale(report.path, output_dir)
-            if locale == base:
-                try:
-                    delete_push_index()
-                    console.print(
-                        "\n[dim]Public pull updated base-language files; push-index removed. "
-                        "The next push will be a full push.[/dim]"
-                    )
-                except OSError as exc:
-                    console.print(
-                        f"[yellow]Warning:[/yellow] Locale files were written but push-index could "
-                        f"not be removed ({exc})."
-                    )
-                return
+        if base_locale_touched:
+            try:
+                delete_push_index()
+                console.print(
+                    "\n[dim]Public pull updated base-language files; push-index removed. "
+                    "The next push will be a full push.[/dim]"
+                )
+            except OSError as exc:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Locale files were written but push-index could "
+                    f"not be removed ({exc})."
+                )
         return
 
-    loaded = load_push_index(config)
     scope = scope_from_config(config)
-    if loaded is not None and not scopes_match(loaded.scope, scope):
-        loaded = None
-
-    entries: dict[str, str] = dict(loaded.entries) if loaded else {}
 
     if config.layout is Layout.flat:
-        for report in reports:
-            _module, locale = file_module_locale(report.path, output_dir)
-            if locale != base:
-                continue
-            flat_map = export.get(base) if isinstance(export, dict) else None
-            if isinstance(flat_map, dict):
-                entries = catalog_hashes_flat(
-                    {k: v for k, v in flat_map.items() if isinstance(k, str) and isinstance(v, str)}
-                )
-            break
+        flat_map = export.get(base) if isinstance(export, dict) else None
+        if isinstance(flat_map, dict):
+            entries = catalog_hashes_flat(
+                {k: v for k, v in flat_map.items() if isinstance(k, str) and isinstance(v, str)}
+            )
+        else:
+            entries = {}
     else:
         module_maps = _module_base_maps_from_export(export, base)
-        touched_modules: set[str] = set()
-        for report in reports:
-            module, locale = file_module_locale(report.path, output_dir)
-            if locale != base or module is None:
-                continue
-            if module.startswith("_") or module.startswith("."):
-                continue
-            if module == UNASSIGNED_SLUG:
-                continue
-            touched_modules.add(module)
-
-        prefix_by_module = {slug: f"{slug}/" for slug in touched_modules}
-        if touched_modules:
-            entries = {
-                ident: digest
-                for ident, digest in entries.items()
-                if not any(ident.startswith(prefix) for prefix in prefix_by_module.values())
-            }
-            for slug in sorted(touched_modules):
-                strings = module_maps.get(slug, {})
-                for key, value in strings.items():
-                    entries[scoped_key(slug, key)] = hash_base_value(value)
+        pushable = {
+            slug: strings
+            for slug, strings in module_maps.items()
+            if not str(slug).startswith("_")
+            and not str(slug).startswith(".")
+            and str(slug) != UNASSIGNED_SLUG
+        }
+        entries = catalog_hashes_modular(pushable)
 
     try:
         atomic_write_push_index(scope, entries)

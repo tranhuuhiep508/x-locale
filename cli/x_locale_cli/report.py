@@ -205,10 +205,12 @@ def print_pull_report(
     layout: str,
     stage: str,
     manifest_written: Path | None = None,
+    deleted_paths: list[Path] | None = None,
     pending_remove: list[str] | None = None,
     tombstones: list[str] | None = None,
 ) -> None:
-    if not reports:
+    deleted = deleted_paths or []
+    if not reports and not deleted:
         console.print("[yellow]No locale files written.[/yellow]")
         return
 
@@ -225,14 +227,17 @@ def print_pull_report(
         for item in removed
     ]
 
-    details = [layout, stage, f"{len(reports)} files"]
+    file_count = len(reports)
+    details = [layout, stage, f"{file_count} files"]
     print_report_header("Pull", details)
     counts: list[tuple[str, int]] = [
         ("Created", len(created)),
         ("Updated", len(updated)),
         ("Removed", len(removed_labeled)),
-        ("Files", len(reports)),
+        ("Files", file_count),
     ]
+    if deleted:
+        counts.append(("Files removed", len(deleted)))
     _print_counts(counts)
     _print_change_section(
         "Created",
@@ -251,16 +256,14 @@ def print_pull_report(
         removed_labeled,
         style="yellow",
         hint="Dropped because they are not in this stage's export.",
-        action="→ Leftover keys in folders pull did not rewrite still show in `locale status`.",
     )
 
-    if not created and not updated and not removed_labeled:
-        console.print("\n[green]Local files are already up to date.[/green]")
+    if not created and not updated and not removed_labeled and not deleted:
+        console.print("\n[green]Local files match the export.[/green]")
     written_count = sum(1 for report in reports if report.written)
-    if written_count:
-        footer = f"Wrote {written_count} files to {output_dir}"
-    else:
-        footer = f"Checked {len(reports)} files in {output_dir}"
+    footer = f"Rewrote {written_count} files in {output_dir}"
+    if deleted:
+        footer += f"  ·  removed {len(deleted)} file(s)"
     if manifest_written is not None:
         footer += f"  ·  manifest {manifest_written.name}"
     console.print(f"\n[dim]{footer}[/dim]")

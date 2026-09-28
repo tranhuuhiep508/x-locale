@@ -506,18 +506,23 @@ class PushIndexTests(unittest.TestCase):
                 return export
             return {"pending_remove": [], "tombstones": []}
 
-        def _boom(*_a: object, **_k: object) -> PulledFileReport:
+        def _boom(*_a: object, **_k: object) -> Any:
             raise OSError("disk full")
 
         with chdir(self.root):
+            config_dir = self.root / ".x-locale"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            index_file_path().write_text('{"entries":{"keep":"abc"}}\n', encoding="utf-8")
+            before = index_file_path().read_bytes()
             with (
                 patch("x_locale_cli.ops.api_client", return_value=_Client()),
                 patch("x_locale_cli.ops.request_json", side_effect=_request_json),
-                patch("x_locale_cli.ops.write_locale_file_reported", side_effect=_boom),
+                patch("x_locale_cli.ops.apply_pull_export", side_effect=_boom),
             ):
                 with self.assertRaises(OSError):
                     pull_translations(config)
             self.assertTrue(push_pending_is_active())
+            self.assertEqual(index_file_path().read_bytes(), before)
 
     def test_push_5xx_keeps_pending_marker(self) -> None:
         locales = self.root / "locales"
@@ -750,7 +755,8 @@ class PushIndexTests(unittest.TestCase):
             loaded = load_push_index(config)
             self.assertIsNotNone(loaded)
             self.assertEqual(loaded.entries[scoped_key("auth", "k1")], hash_base_value("new"))
-            self.assertEqual(loaded.entries[scoped_key("home", "k2")], hash_base_value("home"))
+            self.assertNotIn(scoped_key("home", "k2"), loaded.entries)
+            self.assertFalse((home_dir / "vi.json").exists())
             self.assertTrue(push_pending_is_active())
 
     def test_pull_locales_filter_skips_base_index_and_marker(self) -> None:
