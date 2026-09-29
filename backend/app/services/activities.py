@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session, defer, joinedload
 
 from app.models import (
@@ -428,7 +428,7 @@ def list_activity_feed(
     grouped = base.with_entities(
         card_expr.label("card_id"),
         func.max(Activity.created_at).label("ts"),
-        func.max(Activity.id).label("tie"),
+        func.max(cast(Activity.id, String)).label("tie"),
     ).group_by(card_expr)
     sub = grouped.subquery()
     total = db.query(func.count()).select_from(sub).scalar() or 0

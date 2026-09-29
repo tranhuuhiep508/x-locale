@@ -1,0 +1,12 @@
+
+x-locale Status  project=e4317707-09ba-4640-8a4a-afc5a3d65ef5  layout=modular  
+stage=draft
+
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Category              ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Keys in export (base) │    10 │
+│ Local keys (base)     │    10 │
+└───────────────────────┴───────┘
+
+Draft export omits keys pending remove and tombstones.

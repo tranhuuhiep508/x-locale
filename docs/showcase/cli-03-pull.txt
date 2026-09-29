@@ -1,0 +1,11 @@
+
+Pull  modular · draft · 9 files
+
+  Created     0
+  Updated     0
+  Removed     0
+  Files       9
+
+Local files match the export.
+
+Rewrote 9 files in /tmp/x-locale-showcase/locales  ·  manifest manifest.json

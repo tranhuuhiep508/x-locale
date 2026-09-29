@@ -1,0 +1,9 @@
+Discovering project…
+Found: Demo App
+  id:      e4317707-09ba-4640-8a4a-afc5a3d65ef5
+  base:    vi
+  locales: vi, en, ja
+  layout:  modular  (from project)
+Initialized project=Demo App (e4317707-09ba-4640-8a4a-afc5a3d65ef5)
+  Base: vi  ·  Locales: vi, en, ja  ·  Layout: modular  ·  Stage: draft
+Config saved to .x-locale/config.yaml
