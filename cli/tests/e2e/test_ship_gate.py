@@ -50,7 +50,8 @@ class TestInit:
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         assert config["api_url"] == api_base_url
         assert config["api_key"] == flat_project.api_key
-        assert config["project_id"] == flat_project.id
+        assert config["project_slug"] == flat_project.slug
+        assert "project_id" not in config
         assert config["output_dir"] == "./src/locales"
         assert config["layout"] == "flat"
         assert config["base_language"] == "vi"
