@@ -418,12 +418,18 @@ export function StringsPage() {
     search.has_unpublished_changes,
     search.status,
     search.module,
+    search.unassigned_module,
     search.tag,
+    search.untagged,
     search.deleted,
     search.pending_delete,
+    search.never_published,
     search.q,
     search.missing_locale,
+    search.missing_any,
+    search.complete_locale,
     search.max_confidence,
+    search.updated_within_days,
   ])
 
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)

@@ -142,6 +142,124 @@ def test_list_strings_filters(client):
     assert login["updated_by_label"] == "dev@localhost"
 
 
+def test_list_strings_advanced_filters_and_filtered_actions(client):
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import StringEntry
+
+    project = _make_project(client, "Advanced Filters", targets=["en", "fr"])
+    pid = project["id"]
+    module = client.post(
+        f"/api/projects/{pid}/modules",
+        json={"slug": "common", "name": "Common"},
+    ).json()
+    tagged = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "tagged", "color": "#123456"},
+    ).json()
+
+    def create(key, *, assigned=False, translations=None, status="draft"):
+        payload = {
+            "key": key,
+            "source_text": key.title(),
+            "translations": translations or {},
+            "status": status,
+        }
+        if assigned:
+            payload["module_id"] = module["id"]
+            payload["tag_ids"] = [tagged["id"]]
+        response = client.post(f"/api/projects/{pid}/strings", json=payload)
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    ready = create(
+        "ready",
+        assigned=True,
+        translations={"en": "Ready", "fr": "Prêt"},
+        status="public",
+    )
+    unpublish = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "unpublish", "string_ids": [ready["id"]]},
+    )
+    assert unpublish.status_code == 200, unpublish.text
+
+    pending = create(
+        "pending",
+        assigned=True,
+        translations={"en": "Pending", "fr": "En attente"},
+        status="public",
+    )
+    assert client.delete(f"/api/projects/{pid}/strings/{pending['id']}").status_code == 204
+
+    create("new", translations={"en": "   "})
+    mid = create(
+        "mid",
+        assigned=True,
+        translations={"en": "Middle", "fr": "Milieu"},
+    )
+    old = create("old", translations={"en": "Old", "fr": "Ancien"})
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        db.info["activity_suppress"] = True
+        db.get(StringEntry, uuid.UUID(mid["id"])).updated_at = datetime.now(UTC) - timedelta(days=14)
+        db.get(StringEntry, uuid.UUID(old["id"])).updated_at = datetime.now(UTC) - timedelta(days=31)
+        db.commit()
+    finally:
+        db_gen.close()
+
+    def keys(params):
+        response = client.get(f"/api/projects/{pid}/strings", params=params)
+        assert response.status_code == 200, response.text
+        return {item["key"] for item in response.json()["items"]}
+
+    assert keys({"never_published": True}) == {"new", "mid", "old"}
+    assert keys({"pending_delete": True}) == {"pending"}
+    assert keys({"missing_any": True}) == {"new"}
+    assert keys({"missing_locale": "en"}) == {"new"}
+    assert keys({"complete_locale": "en"}) == {"ready", "pending", "mid", "old"}
+    assert keys({"unassigned_module": True}) == {"new", "old"}
+    assert keys({"untagged": True}) == {"new", "old"}
+    assert keys({"updated_within_days": 7}) == {"ready", "pending", "new"}
+    assert keys({"updated_within_days": 30}) == {"ready", "pending", "new", "mid"}
+
+    combined = {
+        "unassigned_module": True,
+        "untagged": True,
+        "complete_locale": "en",
+    }
+    assert keys(combined) == {"old"}
+    preview = client.post(
+        f"/api/projects/{pid}/strings/publish-preview",
+        json={"filter": combined},
+    )
+    assert preview.status_code == 200, preview.text
+    assert {item["key"] for item in preview.json()["items"]} == {"old"}
+
+    reviewed = client.post(
+        f"/api/projects/{pid}/tags",
+        json={"name": "reviewed", "color": "#654321"},
+    ).json()
+    batch = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={
+            "action": "add_tags",
+            "filter": {"never_published": True},
+            "payload": {"tag_ids": [reviewed["id"]]},
+        },
+    )
+    assert batch.status_code == 200, batch.text
+    assert batch.json()["affected"] == 3
+    for key in ("new", "mid", "old"):
+        row = next(item for item in client.get(f"/api/projects/{pid}/strings").json()["items"] if item["key"] == key)
+        assert "reviewed" in {tag["name"] for tag in row["tags"]}
+
+
 def test_string_author_survives_activity_prune(client):
     import uuid
 
@@ -453,4 +571,3 @@ def test_revert_redo_summaries_do_not_stack(client):
         "Restored previous value of 'cancel'",
         "Restored previous value of 'cancel'",
     ]
-

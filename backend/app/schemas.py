@@ -1,3 +1,4 @@
+from enum import IntEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -134,6 +135,11 @@ class TagOut(BaseModel):
 ConfidenceScore = Annotated[int, Field(ge=0, le=100)]
 
 
+class UpdatedWithinDays(IntEnum):
+    seven = 7
+    thirty = 30
+
+
 class TranslationOut(BaseModel):
     id: UUID | None = None
     locale: str
@@ -211,14 +217,20 @@ class StringListOut(BaseModel):
 
 class BatchFilter(BaseModel):
     module_id: UUID | None = None
+    unassigned_module: bool | None = None
     tag_id: UUID | None = None
+    untagged: bool | None = None
     q: str | None = None
     missing_locale: str | None = None
+    missing_any: bool | None = None
+    complete_locale: str | None = None
     status: TranslationStatus | None = None
     pending_delete: bool | None = None
+    never_published: bool | None = None
     has_unpublished_changes: bool | None = None
     deleted: bool | None = None
     max_confidence: ConfidenceScore | None = None
+    updated_within_days: UpdatedWithinDays | None = None
 
 
 class BatchRequest(BaseModel):

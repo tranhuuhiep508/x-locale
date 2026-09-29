@@ -7,10 +7,10 @@ import hmac
 import json
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy import distinct, exists, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
@@ -299,15 +299,21 @@ def string_query(
     project_id: uuid.UUID,
     *,
     module_id: uuid.UUID | None = None,
+    unassigned_module: bool | None = None,
     tag_id: uuid.UUID | None = None,
+    untagged: bool | None = None,
     q: str | None = None,
     missing_locale: str | None = None,
     missing_locales: Sequence[str] | None = None,
+    missing_any_locales: Sequence[str] | None = None,
+    complete_locale: str | None = None,
     status: TranslationStatus | None = None,
     pending_delete: bool | None = None,
+    never_published: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    updated_within_days: int | None = None,
     eager: bool = True,
 ):
     query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
@@ -324,8 +330,12 @@ def string_query(
         query = query.filter(StringEntry.deleted_at.is_(None))
     if module_id is not None:
         query = query.filter(StringEntry.module_id == module_id)
+    if unassigned_module is True:
+        query = query.filter(StringEntry.module_id.is_(None))
     if tag_id is not None:
         query = query.join(StringEntry.tags).filter(Tag.id == tag_id)
+    if untagged is True:
+        query = query.filter(~StringEntry.tags.any())
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -340,7 +350,7 @@ def string_query(
             db.query(Translation.string_id)
             .filter(
                 Translation.locale == missing_locale,
-                Translation.value != "",
+                func.trim(Translation.value) != "",
             )
             .subquery()
         )
@@ -357,10 +367,33 @@ def string_query(
         ]
         if missing_any:
             query = query.filter(or_(*missing_any))
+    if missing_any_locales is not None:
+        missing_any = [
+            ~StringEntry.id.in_(
+                db.query(Translation.string_id).filter(
+                    Translation.locale == locale,
+                    func.trim(Translation.value) != "",
+                )
+            )
+            for locale in missing_any_locales
+        ]
+        query = query.filter(or_(*missing_any) if missing_any else false())
+    if complete_locale:
+        complete = (
+            db.query(Translation.string_id)
+            .filter(
+                Translation.locale == complete_locale,
+                func.trim(Translation.value) != "",
+            )
+            .subquery()
+        )
+        query = query.filter(StringEntry.id.in_(db.query(complete.c.string_id)))
     if status is not None:
         query = query.filter(StringEntry.status == status)
     if pending_delete is not None:
         query = query.filter(StringEntry.pending_delete.is_(pending_delete))
+    if never_published is True:
+        query = query.filter(StringEntry.published_at.is_(None))
     if has_unpublished_changes is not None:
         clause = unpublished_changes_clause()
         query = query.filter(clause if has_unpublished_changes else ~clause)
@@ -375,6 +408,9 @@ def string_query(
             .subquery()
         )
         query = query.filter(StringEntry.id.in_(db.query(scored.c.string_id)))
+    if updated_within_days is not None:
+        cutoff = datetime.now(UTC) - timedelta(days=updated_within_days)
+        query = query.filter(StringEntry.updated_at >= cutoff)
     return query.distinct()
 
 
@@ -392,14 +428,22 @@ def resolve_string_ids(
         db,
         project.id,
         module_id=getattr(filt, "module_id", None),
+        unassigned_module=getattr(filt, "unassigned_module", None),
         tag_id=getattr(filt, "tag_id", None),
+        untagged=getattr(filt, "untagged", None),
         q=getattr(filt, "q", None),
         missing_locale=getattr(filt, "missing_locale", None),
+        missing_any_locales=(
+            project.target_languages if getattr(filt, "missing_any", None) else None
+        ),
+        complete_locale=getattr(filt, "complete_locale", None),
         status=getattr(filt, "status", None),
         pending_delete=getattr(filt, "pending_delete", None),
+        never_published=getattr(filt, "never_published", None),
         has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
         deleted=getattr(filt, "deleted", None),
         max_confidence=getattr(filt, "max_confidence", None),
+        updated_within_days=getattr(filt, "updated_within_days", None),
     )
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
@@ -456,14 +500,20 @@ def list_strings(
     project: Project,
     *,
     module: uuid.UUID | None = None,
+    unassigned_module: bool | None = None,
     tag: uuid.UUID | None = None,
+    untagged: bool | None = None,
     q: str | None = None,
     missing_locale: str | None = None,
+    missing_any: bool | None = None,
+    complete_locale: str | None = None,
     status: TranslationStatus | None = None,
     pending_delete: bool | None = None,
+    never_published: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    updated_within_days: int | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> StringListOut:
@@ -471,14 +521,20 @@ def list_strings(
         db,
         project.id,
         module_id=module,
+        unassigned_module=unassigned_module,
         tag_id=tag,
+        untagged=untagged,
         q=q,
         missing_locale=missing_locale,
+        missing_any_locales=project.target_languages if missing_any else None,
+        complete_locale=complete_locale,
         status=status,
         pending_delete=pending_delete,
+        never_published=never_published,
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
         max_confidence=max_confidence,
+        updated_within_days=updated_within_days,
     )
     total = (
         query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()
