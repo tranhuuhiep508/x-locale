@@ -8,7 +8,7 @@ import { ModulesPage } from './ModulesPage'
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
-    useParams: () => ({ projectId: 'p1' }),
+    useParams: () => ({ projectRef: 'p1' }),
     useSearch: () => ({}),
   }),
 }))

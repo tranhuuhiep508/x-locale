@@ -90,8 +90,8 @@ def init(
 
     console.print("Discovering project…", highlight=False)
     project = _discover_project(api_url, api_key)
-    project_id = str(project["id"])
-    project_name = str(project.get("name") or project_id)
+    project_slug = str(project["slug"])
+    project_name = str(project.get("name") or project_slug)
     project_base = base_language or project.get("base_language") or DEFAULT_BASE_LANGUAGE
     target_languages: list[str] = project.get("target_languages") or []
     locales = [project_base, *[lc for lc in target_languages if lc != project_base]]
@@ -99,7 +99,7 @@ def init(
 
     _print_discovered(
         name=project_name,
-        project_id=project_id,
+        project_slug=project_slug,
         base=project_base,
         locales=locales,
         layout=effective_layout,
@@ -115,7 +115,7 @@ def init(
 
     config = Config(
         api_url=api_url,
-        project_id=project_id,
+        project_slug=project_slug,
         api_key=api_key,
         output_dir=output_dir,
         layout=effective_layout,
@@ -128,7 +128,7 @@ def init(
 
     save_config(config)
     console.print(
-        f"[green]Initialized[/green] project=[bold]{escape(project_name)}[/bold] ({project_id})",
+        f"[green]Initialized[/green] project=[bold]{escape(project_name)}[/bold] ({project_slug})",
         highlight=False,
     )
     console.print(
@@ -216,7 +216,7 @@ def _discover_project(api_url: str, api_key: str) -> dict[str, Any]:
     bootstrap = Config(api_url=api_url, api_key=api_key)
     with api_client(bootstrap) as client:
         project = request_json(client, "GET", "/api/bootstrap", action="Bootstrap")
-    if not isinstance(project, dict) or not project.get("id"):
+    if not isinstance(project, dict) or not project.get("slug"):
         raise XLocaleError("Bootstrap failed: server did not return a project.")
     return project
 
@@ -224,13 +224,13 @@ def _discover_project(api_url: str, api_key: str) -> dict[str, Any]:
 def _print_discovered(
     *,
     name: str,
-    project_id: str,
+    project_slug: str,
     base: str,
     locales: list[str],
     layout: Layout,
 ) -> None:
     console.print(f"Found: [bold]{escape(name)}[/bold]", highlight=False)
-    console.print(f"  id:      {project_id}", highlight=False)
+    console.print(f"  slug:    {project_slug}", highlight=False)
     console.print(f"  base:    {base}", highlight=False)
     console.print(f"  locales: {', '.join(locales) if locales else '—'}", highlight=False)
     console.print(f"  layout:  {layout.value}  (from project)", highlight=False)

@@ -16,12 +16,13 @@ from typer.testing import CliRunner
 from tests.conftest import strip_ansi
 from x_locale_cli.app import app
 from x_locale_cli.commands.init import _normalize_api_url
-from x_locale_cli.config import load_config
+from x_locale_cli.config import load_config, require_project_ref
 from x_locale_cli.errors import XLocaleError
-from x_locale_cli.models import Layout, Stage
+from x_locale_cli.models import Config, Layout, Stage
 
 DEMO_PROJECT = {
     "id": "11111111-1111-1111-1111-111111111111",
+    "slug": "demo-app",
     "name": "Demo App",
     "base_language": "vi",
     "target_languages": ["en", "ko", "ja"],
@@ -63,6 +64,16 @@ class NormalizeApiUrlTests(unittest.TestCase):
     def test_keeps_https(self) -> None:
         self.assertEqual(_normalize_api_url(" https://x-locale.example.com "), "https://x-locale.example.com")
 
+    def test_project_ref_prefers_slug_and_accepts_legacy_id(self) -> None:
+        new = Config.from_dict({"api_url": "http://localhost", "api_key": "k", "project_slug": "demo-app"})
+        old = Config.from_dict({"api_url": "http://localhost", "api_key": "k", "project_id": "legacy-id"})
+        mixed = Config.from_dict({"api_url": "http://localhost", "api_key": "k", "project_slug": "demo-app", "project_id": "legacy-id"})
+        self.assertEqual(require_project_ref(new), "demo-app")
+        self.assertEqual(require_project_ref(old), "legacy-id")
+        self.assertEqual(require_project_ref(mixed), "demo-app")
+        self.assertNotIn("project_id", new.to_dict())
+        self.assertEqual(old.to_dict()["project_id"], "legacy-id")
+
 
 class InitCommandTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -103,6 +114,9 @@ class InitCommandTests(unittest.TestCase):
         with chdir(self.root):
             config = load_config()
         self.assertEqual(config.api_key, "xl_secret")
+        self.assertEqual(config.project_slug, "demo-app")
+        self.assertEqual(config.project_id, "")
+        self.assertNotIn("project_id:", (self.root / ".x-locale" / "config.yaml").read_text())
         self.assertEqual(config.api_url, "https://x-locale.example.com")
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.base_language, "vi")

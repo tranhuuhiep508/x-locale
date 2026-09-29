@@ -123,6 +123,7 @@ def login_admin_client(base_url: str) -> httpx.Client:
 @dataclass(frozen=True)
 class TestProject:
     id: str
+    slug: str
     api_key: str
     base_language: str
     target_languages: list[str]
@@ -158,6 +159,7 @@ def create_test_project(
     raw_key = key_response.json()["key"]
     return TestProject(
         id=project["id"],
+        slug=project["slug"],
         api_key=raw_key,
         base_language=base_language,
         target_languages=targets,

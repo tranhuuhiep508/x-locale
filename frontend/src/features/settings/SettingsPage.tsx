@@ -35,11 +35,11 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
-const routeApi = getRouteApi('/projects/$projectId/settings')
+const routeApi = getRouteApi('/projects/$projectRef/settings')
 
 
 export function SettingsPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
   const qc = useQueryClient()
   const toast = useToast()
 

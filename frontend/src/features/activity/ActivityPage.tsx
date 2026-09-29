@@ -53,7 +53,7 @@ const dateRangeFallback = (
   </Button>
 )
 
-const routeApi = getRouteApi('/projects/$projectId/activity')
+const routeApi = getRouteApi('/projects/$projectRef/activity')
 
 function changeKey(change: ActivityChange) {
   return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
@@ -124,7 +124,7 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
 }
 
 export function ActivityPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
   const rawSearch = routeApi.useSearch()
   const search = {
     page: rawSearch.page ?? 1,
@@ -135,7 +135,7 @@ export function ActivityPage() {
     since: rawSearch.since,
     until: rawSearch.until,
   }
-  const navigate = useNavigate({ from: '/projects/$projectId/activity' })
+  const navigate = useNavigate({ from: '/projects/$projectRef/activity' })
   const qc = useQueryClient()
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)

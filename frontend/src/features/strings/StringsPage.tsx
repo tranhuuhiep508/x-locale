@@ -80,7 +80,7 @@ import { useToast } from '@/lib/toast'
 
 const StringFormDialog = lazy(() => import('@/features/strings/StringFormDialog'))
 
-const stringsRoute = getRouteApi('/projects/$projectId/strings')
+const stringsRoute = getRouteApi('/projects/$projectRef/strings')
 
 const STRING_COLUMN_PINNING: ColumnPinningState = {
   left: ['select', 'key'],
@@ -88,10 +88,10 @@ const STRING_COLUMN_PINNING: ColumnPinningState = {
 }
 
 export function StringsPage() {
-  const { projectId } = stringsRoute.useParams()
+  const { projectRef: projectId } = stringsRoute.useParams()
   const rawSearch = stringsRoute.useSearch()
   const search = resolveStringsSearch(rawSearch)
-  const navigate = useNavigate({ from: '/projects/$projectId/strings' })
+  const navigate = useNavigate({ from: '/projects/$projectRef/strings' })
   const [, startTransition] = useTransition()
   const qc = useQueryClient()
   const toast = useToast()

@@ -60,7 +60,7 @@ locale status
 
 ```yaml
 api_url: http://localhost:8000   # x-locale server base URL
-project_id: <uuid>               # Auto-discovered from the API key
+project_slug: demo-app           # Auto-discovered from the API key; immutable
 api_key: xlocale_xxx                 # Project-scoped API key
 output_dir: ./src/locales        # Root directory for locale files
 layout: modular                  # flat | modular
@@ -69,6 +69,11 @@ base_language: vi                # Source language pushed by `locale push`
 locales: [vi, en, ko, ja]        # Locales to pull (all if omitted)
 manifest: true                   # Write manifest.json on modular pull
 ```
+
+Project slugs are permanent public references. Existing configurations with
+`project_id: <uuid>` continue to work; `locale init` writes `project_slug` for
+new configurations. Keep the generated slug or choose a different one when
+creating the project, because it cannot be changed later.
 
 ### Flat layout
 

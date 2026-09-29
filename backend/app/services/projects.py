@@ -120,8 +120,6 @@ def update_project(db: Session, project_id: uuid.UUID, payload: ProjectUpdate) -
     project = get_project(db, project_id)
     if payload.name is not None:
         project.name = payload.name
-    if payload.slug is not None:
-        project.slug = ensure_unique_slug(db, payload.slug, exclude_id=project.id)
     if payload.base_language is not None or payload.target_languages is not None:
         base = payload.base_language if payload.base_language is not None else project.base_language
         targets = (
@@ -209,4 +207,3 @@ def revoke_api_key(db: Session, project_id: uuid.UUID, key_id: uuid.UUID) -> Non
         raise HTTPException(status_code=404, detail="API key not found")
     api_key.revoked_at = datetime.now(UTC)
     db.commit()
-

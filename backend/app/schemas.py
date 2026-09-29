@@ -39,10 +39,11 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    slug: str | None = None
     base_language: str | None = None
     target_languages: list[str] | None = None
     layout: ProjectLayout | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class ProjectOut(BaseModel):

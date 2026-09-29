@@ -10,11 +10,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import Cookie, Depends, Header, HTTPException, Request
+from fastapi import Cookie, Depends, Header, HTTPException, Path, Request
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.helpers import resolve_project_ref
 from app.models import ApiKey, Project, User
 
 SESSION_COOKIE = "x_locale_session"
@@ -201,7 +202,7 @@ def project_from_api_key(
 
 
 def project_access(
-    project_id: uuid.UUID,
+    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_user),
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
@@ -210,9 +211,10 @@ def project_access(
     raw = x_api_key
     if raw:
         _, project = _resolve_api_key(db, raw)
-        if project.id != project_id:
+        resolved = resolve_project_ref(db, project_id)
+        if project.id != resolved.id:
             raise HTTPException(status_code=404, detail="Project not found")
-        return project
+        return resolved
 
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -226,10 +228,7 @@ def project_access(
             user=user,
         ),
     )
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return resolve_project_ref(db, project_id)
 
 
 # Type aliases for Annotated Depends

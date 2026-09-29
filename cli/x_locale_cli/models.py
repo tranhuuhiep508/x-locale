@@ -70,6 +70,7 @@ class Config:
     api_url: str
     api_key: str
     project_id: str = ""
+    project_slug: str = ""
     output_dir: str = DEFAULT_OUTPUT_DIR
     layout: Layout = DEFAULT_LAYOUT
     stage: Stage = DEFAULT_STAGE
@@ -85,6 +86,7 @@ class Config:
             api_url=str(raw.get("api_url") or DEFAULT_API_URL),
             api_key=str(raw.get("api_key") or ""),
             project_id=str(raw.get("project_id") or ""),
+            project_slug=str(raw.get("project_slug") or ""),
             output_dir=str(raw.get("output_dir") or DEFAULT_OUTPUT_DIR),
             layout=parse_layout(raw.get("layout")),
             stage=parse_stage(raw.get("stage")),
@@ -94,9 +96,8 @@ class Config:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "api_url": self.api_url,
-            "project_id": self.project_id,
             "api_key": self.api_key,
             "output_dir": self.output_dir,
             "layout": self.layout.value,
@@ -105,6 +106,15 @@ class Config:
             "locales": list(self.locales),
             "manifest": self.manifest,
         }
+        if self.project_slug:
+            data["project_slug"] = self.project_slug
+        elif self.project_id:
+            data["project_id"] = self.project_id
+        return data
+
+    @property
+    def project_ref(self) -> str:
+        return self.project_slug or self.project_id
 
     def with_overrides(
         self,

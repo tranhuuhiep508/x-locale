@@ -24,10 +24,10 @@ export function ProjectListPage() {
   const toast = useToast()
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => projectsApi.delete(id),
-    onSuccess: (_data, id) => {
+    mutationFn: (slug: string) => projectsApi.delete(slug),
+    onSuccess: (_data, slug) => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
-      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(slug) })
       toast.success('Project deleted')
       setDeleteTarget(null)
     },
@@ -75,8 +75,8 @@ export function ProjectListPage() {
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-2">
                     <Link
-                      to="/projects/$projectId/strings"
-                      params={{ projectId: p.id }}
+                      to="/projects/$projectRef/strings"
+                      params={{ projectRef: p.slug }}
                       search={{}}
                       className="min-w-0 flex-1"
                     >
@@ -132,7 +132,7 @@ export function ProjectListPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.slug)}
         title={`Delete "${deleteTarget?.name}"?`}
         description="This will permanently delete the project and all its strings, translations, and history."
         confirmLabel="Delete project"

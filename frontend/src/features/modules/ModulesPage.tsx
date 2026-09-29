@@ -27,13 +27,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { moduleColumns } from '@/features/modules/modules-columns'
-const routeApi = getRouteApi('/projects/$projectId/modules')
+const routeApi = getRouteApi('/projects/$projectRef/modules')
 
 
 type FormErrors = Partial<Record<keyof ModuleCreateForm, string>>
 
 export function ModulesPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
   const qc = useQueryClient()
   const toast = useToast()
 

@@ -6,7 +6,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
+import { Field, FieldGroup, FieldLabel, FieldDescription, FieldError } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
@@ -46,7 +46,7 @@ export function NewProjectPage() {
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
       toast.success(`Project "${project.name}" created`)
-      navigate({ to: '/projects/$projectId/strings', params: { projectId: project.id }, search: {} })
+      navigate({ to: '/projects/$projectRef/strings', params: { projectRef: project.slug }, search: {} })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to create project'),
   })
@@ -121,7 +121,7 @@ export function NewProjectPage() {
                 </Field>
 
                 <Field data-invalid={errors.slug ? 'true' : undefined}>
-                  <FieldLabel htmlFor="slug">Slug (optional)</FieldLabel>
+                  <FieldLabel htmlFor="slug">Project URL (permanent)</FieldLabel>
                   <Input
                     id="slug"
                     value={form.slug}
@@ -133,6 +133,9 @@ export function NewProjectPage() {
                     className="font-mono"
                     aria-invalid={errors.slug ? true : undefined}
                   />
+                  <FieldDescription>
+                    Generated from the name unless you change it. The URL cannot be changed later.
+                  </FieldDescription>
                   <FieldError>{errors.slug}</FieldError>
                 </Field>
 

@@ -7,6 +7,7 @@ import json
 import re
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import Project, StringEntry
@@ -41,18 +42,36 @@ def slugify(name: str) -> str:
     return s[:128]
 
 
-def ensure_unique_slug(db: Session, base: str, exclude_id: uuid.UUID | None = None) -> str:
+def ensure_unique_slug(db: Session, base: str) -> str:
     slug = slugify(base)
+    try:
+        uuid.UUID(slug)
+    except ValueError:
+        pass
+    else:
+        slug = f"p-{slug[:126]}"
     candidate = slug
     n = 2
     while True:
-        q = db.query(Project).filter(Project.slug == candidate)
-        if exclude_id:
-            q = q.filter(Project.id != exclude_id)
-        if not q.first():
+        if not db.query(Project).filter(Project.slug == candidate).first():
             return candidate
-        candidate = f"{slug}-{n}"
+        candidate = f"{slug[: 127 - len(str(n))]}-{n}"
         n += 1
+
+
+def resolve_project_ref(db: Session, project_ref: str) -> Project:
+    """Resolve a public slug or a legacy UUID without choosing an ambiguous match."""
+    by_slug = db.query(Project).filter(Project.slug == project_ref).first()
+    try:
+        project_id = uuid.UUID(project_ref)
+    except ValueError:
+        project_id = None
+    by_id = db.query(Project).filter(Project.id == project_id).first() if project_id else None
+    if by_slug and by_id and by_slug.id != by_id.id:
+        raise HTTPException(status_code=409, detail="Ambiguous project reference")
+    if by_slug or by_id:
+        return by_slug or by_id
+    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def export_key(entry: StringEntry, *, published: bool = False) -> str:

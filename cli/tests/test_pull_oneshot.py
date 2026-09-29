@@ -296,7 +296,7 @@ class PullOneshotIntegrationTests(unittest.TestCase):
         config = Config.from_dict(
             {
                 "api_url": "http://127.0.0.1:8000",
-                "project_id": "22222222-2222-2222-2222-222222222222",
+                "project_slug": "demo-app",
                 "api_key": "k",
                 "output_dir": str(locales),
                 "layout": "flat",
@@ -314,6 +314,7 @@ class PullOneshotIntegrationTests(unittest.TestCase):
                 return False
 
         calls: list[dict[str, Any]] = []
+        paths: list[str] = []
 
         def _request_json(
             client: object,
@@ -324,6 +325,7 @@ class PullOneshotIntegrationTests(unittest.TestCase):
             params: dict[str, Any] | None = None,
             payload: Any = None,
         ) -> Any:
+            paths.append(path)
             if "export" in path:
                 return export
             return {"pending_remove": [], "tombstones": []}
@@ -359,6 +361,8 @@ class PullOneshotIntegrationTests(unittest.TestCase):
                 patch("x_locale_cli.ops.request_json", side_effect=_request_json),
             ):
                 pull_translations(config)
+            self.assertTrue(paths)
+            self.assertTrue(all(path.startswith("/api/projects/demo-app/") for path in paths))
             loaded = load_push_index(config)
             self.assertIsNotNone(loaded)
             self.assertEqual(loaded.entries, catalog_hashes_flat({"a": "A"}))
