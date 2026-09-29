@@ -1,17 +1,27 @@
 import { useEffect } from 'react'
-import { createFileRoute, Outlet, notFound, useRouterState } from '@tanstack/react-router'
+import { createFileRoute, Outlet, notFound, redirect, useRouterState } from '@tanstack/react-router'
 import { AppHeader } from '@/components/layout/AppHeader'
 import { AppShell } from '@/components/layout/AppShell'
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
 import { ApiError } from '@/lib/api/client'
 import { projectQuery } from '@/lib/queries'
+import { queryKeys } from '@/lib/query-keys'
+import { canonicalProjectHref } from '@/lib/project-route'
 import { useQuery } from '@tanstack/react-query'
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 
-export const Route = createFileRoute('/projects/$projectId')({
-  loader: async ({ params, context }) => {
+export const Route = createFileRoute('/projects/$projectRef')({
+  loader: async ({ params, context, location }) => {
     try {
-      return await context.queryClient.ensureQueryData(projectQuery(params.projectId))
+      const project = await context.queryClient.ensureQueryData(projectQuery(params.projectRef))
+      if (params.projectRef !== project.slug) {
+        context.queryClient.setQueryData(queryKeys.projects.detail(project.slug), project)
+        throw redirect({
+          href: canonicalProjectHref(location.pathname, location.href, params.projectRef, project.slug),
+          replace: true,
+        })
+      }
+      return project
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) throw notFound()
       throw err
@@ -39,8 +49,8 @@ function CloseMobileSidebarOnNavigate() {
 }
 
 function ProjectLayout() {
-  const { projectId } = Route.useParams()
-  const { data: project } = useQuery(projectQuery(projectId))
+  const { projectRef } = Route.useParams()
+  const { data: project } = useQuery(projectQuery(projectRef))
 
   if (!project) return null
 

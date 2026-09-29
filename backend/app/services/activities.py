@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session, defer, joinedload
 
 from app.models import (
@@ -281,6 +281,11 @@ def _card_expr():
     return func.coalesce(Activity.batch_id, Activity.id)
 
 
+def _feed_tie_expr():
+    # PostgreSQL has no max(uuid); compare the canonical UUID strings instead.
+    return func.max(cast(Activity.id, String(36)))
+
+
 def _apply_feed_filters(
     q,
     *,
@@ -428,7 +433,7 @@ def list_activity_feed(
     grouped = base.with_entities(
         card_expr.label("card_id"),
         func.max(Activity.created_at).label("ts"),
-        func.max(Activity.id).label("tie"),
+        _feed_tie_expr().label("tie"),
     ).group_by(card_expr)
     sub = grouped.subquery()
     total = db.query(func.count()).select_from(sub).scalar() or 0

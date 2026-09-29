@@ -121,6 +121,7 @@ commit client IDs or secrets.
 
 ## Concepts
 
+- **Project references** use a permanent slug in browser URLs and new CLI configs. The API accepts either the slug or an existing project UUID in `/api/projects/{project_id}` paths; UUIDs remain the internal database identity.
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export/CLI shape. File keys are stored as-is (dots are not a module prefix). Flat import never creates modules; modular Excel uses sheet names as slugs and CLI uses folders.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `locale pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).

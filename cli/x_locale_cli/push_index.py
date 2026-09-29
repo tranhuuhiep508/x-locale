@@ -70,7 +70,7 @@ def scope_from_config(config: Config) -> PushIndexScope:
     output_resolved = str(config.output_path.resolve())
     return PushIndexScope(
         version=PUSH_INDEX_VERSION,
-        project_id=config.project_id,
+        project_id=config.project_ref,
         api_origin=normalize_api_origin(config.api_url),
         output_dir=output_resolved,
         layout=config.layout.value,

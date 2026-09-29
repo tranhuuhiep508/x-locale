@@ -228,8 +228,8 @@ export function ActivityCard({
         {!isBatch && card.string_key ? (
           <Button variant="ghost" size="sm" asChild>
             <Link
-              to="/projects/$projectId/strings"
-              params={{ projectId }}
+              to="/projects/$projectRef/strings"
+              params={{ projectRef: projectId }}
               search={{ q: card.string_key }}
             >
               Open

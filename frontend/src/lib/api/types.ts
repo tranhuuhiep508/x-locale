@@ -40,7 +40,6 @@ export interface ProjectCreate {
 
 export interface ProjectUpdate {
   name?: string
-  slug?: string
   base_language?: string
   target_languages?: string[]
   layout?: ProjectLayout

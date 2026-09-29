@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from x_locale_cli.client import api_client, request_json
-from x_locale_cli.config import require_project_id
+from x_locale_cli.config import require_project_ref
 from x_locale_cli.errors import XLocaleError, XLocaleExit
 from x_locale_cli.io import (
     apply_pull_export,
@@ -117,7 +117,7 @@ def load_status_snapshot(
     export: Any | None = None,
     state: dict[str, Any] | None = None,
 ) -> StatusSnapshot:
-    project_id = require_project_id(config)
+    project_id = require_project_ref(config)
     if export is None or state is None:
         with _client(config, client) as http:
             if export is None:
@@ -162,7 +162,7 @@ def push_strings(
     client: Any | None = None,
 ) -> None:
     started = time.perf_counter()
-    project_id = require_project_id(config)
+    project_id = require_project_ref(config)
     output_dir = config.output_path
     base_language = config.base_language
     flat_strings: dict[str, str] | None = None
@@ -296,7 +296,7 @@ def push_strings(
 
 
 def pull_translations(config: Config, *, client: Any | None = None) -> PullResult:
-    project_id = require_project_id(config)
+    project_id = require_project_ref(config)
     output_dir = config.output_path
     write_manifest = config.manifest
 

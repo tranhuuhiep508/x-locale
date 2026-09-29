@@ -27,13 +27,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { tagColumns } from '@/features/tags/tags-columns'
-const routeApi = getRouteApi('/projects/$projectId/tags')
+const routeApi = getRouteApi('/projects/$projectRef/tags')
 
 
 type FormErrors = Partial<Record<keyof TagCreateForm, string>>
 
 export function TagsPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
   const qc = useQueryClient()
   const toast = useToast()
 

@@ -149,8 +149,8 @@ export function ActivityDetailSheet({
           {detail?.string_key ? (
             <Button variant="ghost" size="sm" asChild>
               <Link
-                to="/projects/$projectId/strings"
-                params={{ projectId }}
+                to="/projects/$projectRef/strings"
+                params={{ projectRef: projectId }}
                 search={{ q: detail.string_key }}
               >
                 Open string

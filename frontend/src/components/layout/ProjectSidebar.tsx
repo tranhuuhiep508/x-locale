@@ -34,7 +34,7 @@ interface ProjectSidebarProps {
 }
 
 export function ProjectSidebar({ project }: ProjectSidebarProps) {
-  const id = project.id
+  const projectRef = project.slug
   const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   return (
@@ -69,10 +69,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '', true)}
+                  isActive={isProjectPath(pathname, projectRef, '', true)}
                   tooltip="Overview"
                 >
-                  <Link to="/projects/$projectId" params={{ projectId: id }}>
+                  <Link to="/projects/$projectRef" params={{ projectRef }}>
                     <LayoutDashboard />
                     <span>Overview</span>
                   </Link>
@@ -81,10 +81,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/strings')}
+                  isActive={isProjectPath(pathname, projectRef, '/strings')}
                   tooltip="Strings"
                 >
-                  <Link to="/projects/$projectId/strings" params={{ projectId: id }} search={{}}>
+                  <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
                     <AlignLeft />
                     <span>Strings</span>
                   </Link>
@@ -93,10 +93,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/modules')}
+                  isActive={isProjectPath(pathname, projectRef, '/modules')}
                   tooltip="Modules"
                 >
-                  <Link to="/projects/$projectId/modules" params={{ projectId: id }}>
+                  <Link to="/projects/$projectRef/modules" params={{ projectRef }}>
                     <Boxes />
                     <span>Modules</span>
                   </Link>
@@ -105,10 +105,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/tags')}
+                  isActive={isProjectPath(pathname, projectRef, '/tags')}
                   tooltip="Tags"
                 >
-                  <Link to="/projects/$projectId/tags" params={{ projectId: id }}>
+                  <Link to="/projects/$projectRef/tags" params={{ projectRef }}>
                     <Tags />
                     <span>Tags</span>
                   </Link>
@@ -117,10 +117,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/settings')}
+                  isActive={isProjectPath(pathname, projectRef, '/settings')}
                   tooltip="Settings"
                 >
-                  <Link to="/projects/$projectId/settings" params={{ projectId: id }}>
+                  <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
                     <Settings />
                     <span>Settings</span>
                   </Link>
@@ -129,10 +129,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/import-export')}
+                  isActive={isProjectPath(pathname, projectRef, '/import-export')}
                   tooltip="Import / Export"
                 >
-                  <Link to="/projects/$projectId/import-export" params={{ projectId: id }}>
+                  <Link to="/projects/$projectRef/import-export" params={{ projectRef }}>
                     <ArrowUpDown />
                     <span>Import / Export</span>
                   </Link>
@@ -141,10 +141,10 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, id, '/activity')}
+                  isActive={isProjectPath(pathname, projectRef, '/activity')}
                   tooltip="Activity"
                 >
-                  <Link to="/projects/$projectId/activity" params={{ projectId: id }} search={{}}>
+                  <Link to="/projects/$projectRef/activity" params={{ projectRef }} search={{}}>
                     <Activity />
                     <span>Activity</span>
                   </Link>

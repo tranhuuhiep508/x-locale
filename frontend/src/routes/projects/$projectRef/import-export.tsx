@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ImportExportPage } from '@/features/sync/ImportExportPage'
 
-export const Route = createFileRoute('/projects/$projectId/import-export')({
+export const Route = createFileRoute('/projects/$projectRef/import-export')({
   component: ImportExportPage,
 })

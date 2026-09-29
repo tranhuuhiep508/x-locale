@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 
-const routeApi = getRouteApi('/projects/$projectId/')
+const routeApi = getRouteApi('/projects/$projectRef/')
 
 
 function StatCard({
@@ -46,7 +46,7 @@ function StatCard({
 }
 
 export function ProjectOverviewPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
 
   const { data: project } = useQuery(projectQuery(projectId))
 
@@ -113,8 +113,8 @@ export function ProjectOverviewPage() {
               <div key={locale} className="flex items-center justify-between text-sm">
                 <span className="font-mono text-foreground">{locale}</span>
                 <Link
-                  to="/projects/$projectId/strings"
-                  params={{ projectId }}
+                  to="/projects/$projectRef/strings"
+                  params={{ projectRef: projectId }}
                   search={{ missing_locale: locale }}
                   className="text-xs text-primary hover:underline"
                 >
@@ -149,8 +149,8 @@ export function ProjectOverviewPage() {
               <p className="text-sm text-muted-foreground">No activity yet</p>
             )}
             <Link
-              to="/projects/$projectId/activity"
-              params={{ projectId }}
+              to="/projects/$projectRef/activity"
+              params={{ projectRef: projectId }}
               search={{}}
               className="mt-1 inline-block text-xs text-primary hover:underline"
             >

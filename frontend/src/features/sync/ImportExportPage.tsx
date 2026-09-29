@@ -16,7 +16,7 @@ import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import { DEMO_JSON_TEMPLATE, demoJsonFilename, demoJsonText } from '@/features/sync/import-templates'
 
-const routeApi = getRouteApi('/projects/$projectId/import-export')
+const routeApi = getRouteApi('/projects/$projectRef/import-export')
 const NONE_MODULE = '__none__'
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -36,7 +36,7 @@ function isExcelFile(file: File | null) {
 }
 
 export function ImportExportPage() {
-  const { projectId } = routeApi.useParams()
+  const { projectRef: projectId } = routeApi.useParams()
   const toast = useToast()
   const queryClient = useQueryClient()
 

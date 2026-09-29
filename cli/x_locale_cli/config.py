@@ -30,10 +30,10 @@ def save_config(config: Config, path: Path = CONFIG_FILE) -> None:
         pass
 
 
-def require_project_id(config: Config) -> str:
-    if not config.project_id:
-        raise XLocaleError("project_id missing from config. Run `locale init` first.")
-    return config.project_id
+def require_project_ref(config: Config) -> str:
+    if not config.project_ref:
+        raise XLocaleError("project_slug missing from config. Run `locale init` first.")
+    return config.project_ref
 
 
 def runtime_config(

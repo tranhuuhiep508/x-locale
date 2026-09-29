@@ -11,15 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
+import { Route as ProjectsProjectRefRouteImport } from './routes/projects/$projectRef'
 import { Route as ProjectsNewRouteImport } from './routes/projects/new'
-import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$projectId/index'
-import { Route as ProjectsProjectIdActivityRouteImport } from './routes/projects/$projectId/activity'
-import { Route as ProjectsProjectIdImportExportRouteImport } from './routes/projects/$projectId/import-export'
-import { Route as ProjectsProjectIdModulesRouteImport } from './routes/projects/$projectId/modules'
-import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
-import { Route as ProjectsProjectIdStringsRouteImport } from './routes/projects/$projectId/strings'
-import { Route as ProjectsProjectIdTagsRouteImport } from './routes/projects/$projectId/tags'
+import { Route as ProjectsProjectRefIndexRouteImport } from './routes/projects/$projectRef/index'
+import { Route as ProjectsProjectRefActivityRouteImport } from './routes/projects/$projectRef/activity'
+import { Route as ProjectsProjectRefImportExportRouteImport } from './routes/projects/$projectRef/import-export'
+import { Route as ProjectsProjectRefModulesRouteImport } from './routes/projects/$projectRef/modules'
+import { Route as ProjectsProjectRefSettingsRouteImport } from './routes/projects/$projectRef/settings'
+import { Route as ProjectsProjectRefStringsRouteImport } from './routes/projects/$projectRef/strings'
+import { Route as ProjectsProjectRefTagsRouteImport } from './routes/projects/$projectRef/tags'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -31,9 +31,9 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
-  id: '/projects/$projectId',
-  path: '/projects/$projectId',
+const ProjectsProjectRefRoute = ProjectsProjectRefRouteImport.update({
+  id: '/projects/$projectRef',
+  path: '/projects/$projectRef',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsNewRoute = ProjectsNewRouteImport.update({
@@ -41,131 +41,131 @@ const ProjectsNewRoute = ProjectsNewRouteImport.update({
   path: '/projects/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
+const ProjectsProjectRefIndexRoute = ProjectsProjectRefIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ProjectsProjectIdRoute,
+  getParentRoute: () => ProjectsProjectRefRoute,
 } as any)
-const ProjectsProjectIdActivityRoute =
-  ProjectsProjectIdActivityRouteImport.update({
+const ProjectsProjectRefActivityRoute =
+  ProjectsProjectRefActivityRouteImport.update({
     id: '/activity',
     path: '/activity',
-    getParentRoute: () => ProjectsProjectIdRoute,
+    getParentRoute: () => ProjectsProjectRefRoute,
   } as any)
-const ProjectsProjectIdImportExportRoute =
-  ProjectsProjectIdImportExportRouteImport.update({
+const ProjectsProjectRefImportExportRoute =
+  ProjectsProjectRefImportExportRouteImport.update({
     id: '/import-export',
     path: '/import-export',
-    getParentRoute: () => ProjectsProjectIdRoute,
+    getParentRoute: () => ProjectsProjectRefRoute,
   } as any)
-const ProjectsProjectIdModulesRoute =
-  ProjectsProjectIdModulesRouteImport.update({
+const ProjectsProjectRefModulesRoute =
+  ProjectsProjectRefModulesRouteImport.update({
     id: '/modules',
     path: '/modules',
-    getParentRoute: () => ProjectsProjectIdRoute,
+    getParentRoute: () => ProjectsProjectRefRoute,
   } as any)
-const ProjectsProjectIdSettingsRoute =
-  ProjectsProjectIdSettingsRouteImport.update({
+const ProjectsProjectRefSettingsRoute =
+  ProjectsProjectRefSettingsRouteImport.update({
     id: '/settings',
     path: '/settings',
-    getParentRoute: () => ProjectsProjectIdRoute,
+    getParentRoute: () => ProjectsProjectRefRoute,
   } as any)
-const ProjectsProjectIdStringsRoute =
-  ProjectsProjectIdStringsRouteImport.update({
+const ProjectsProjectRefStringsRoute =
+  ProjectsProjectRefStringsRouteImport.update({
     id: '/strings',
     path: '/strings',
-    getParentRoute: () => ProjectsProjectIdRoute,
+    getParentRoute: () => ProjectsProjectRefRoute,
   } as any)
-const ProjectsProjectIdTagsRoute = ProjectsProjectIdTagsRouteImport.update({
+const ProjectsProjectRefTagsRoute = ProjectsProjectRefTagsRouteImport.update({
   id: '/tags',
   path: '/tags',
-  getParentRoute: () => ProjectsProjectIdRoute,
+  getParentRoute: () => ProjectsProjectRefRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectRef': typeof ProjectsProjectRefRouteWithChildren
   '/projects/new': typeof ProjectsNewRoute
-  '/projects/$projectId/activity': typeof ProjectsProjectIdActivityRoute
-  '/projects/$projectId/import-export': typeof ProjectsProjectIdImportExportRoute
-  '/projects/$projectId/modules': typeof ProjectsProjectIdModulesRoute
-  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
-  '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
-  '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
+  '/projects/$projectRef/activity': typeof ProjectsProjectRefActivityRoute
+  '/projects/$projectRef/import-export': typeof ProjectsProjectRefImportExportRoute
+  '/projects/$projectRef/modules': typeof ProjectsProjectRefModulesRoute
+  '/projects/$projectRef/settings': typeof ProjectsProjectRefSettingsRoute
+  '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
+  '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
+  '/projects/$projectRef/': typeof ProjectsProjectRefIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/projects/new': typeof ProjectsNewRoute
-  '/projects/$projectId/activity': typeof ProjectsProjectIdActivityRoute
-  '/projects/$projectId/import-export': typeof ProjectsProjectIdImportExportRoute
-  '/projects/$projectId/modules': typeof ProjectsProjectIdModulesRoute
-  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
-  '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
-  '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
+  '/projects/$projectRef/activity': typeof ProjectsProjectRefActivityRoute
+  '/projects/$projectRef/import-export': typeof ProjectsProjectRefImportExportRoute
+  '/projects/$projectRef/modules': typeof ProjectsProjectRefModulesRoute
+  '/projects/$projectRef/settings': typeof ProjectsProjectRefSettingsRoute
+  '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
+  '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
+  '/projects/$projectRef': typeof ProjectsProjectRefIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectRef': typeof ProjectsProjectRefRouteWithChildren
   '/projects/new': typeof ProjectsNewRoute
-  '/projects/$projectId/activity': typeof ProjectsProjectIdActivityRoute
-  '/projects/$projectId/import-export': typeof ProjectsProjectIdImportExportRoute
-  '/projects/$projectId/modules': typeof ProjectsProjectIdModulesRoute
-  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
-  '/projects/$projectId/strings': typeof ProjectsProjectIdStringsRoute
-  '/projects/$projectId/tags': typeof ProjectsProjectIdTagsRoute
-  '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
+  '/projects/$projectRef/activity': typeof ProjectsProjectRefActivityRoute
+  '/projects/$projectRef/import-export': typeof ProjectsProjectRefImportExportRoute
+  '/projects/$projectRef/modules': typeof ProjectsProjectRefModulesRoute
+  '/projects/$projectRef/settings': typeof ProjectsProjectRefSettingsRoute
+  '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
+  '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
+  '/projects/$projectRef/': typeof ProjectsProjectRefIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
-    | '/projects/$projectId'
+    | '/projects/$projectRef'
     | '/projects/new'
-    | '/projects/$projectId/activity'
-    | '/projects/$projectId/import-export'
-    | '/projects/$projectId/modules'
-    | '/projects/$projectId/settings'
-    | '/projects/$projectId/strings'
-    | '/projects/$projectId/tags'
-    | '/projects/$projectId/'
+    | '/projects/$projectRef/activity'
+    | '/projects/$projectRef/import-export'
+    | '/projects/$projectRef/modules'
+    | '/projects/$projectRef/settings'
+    | '/projects/$projectRef/strings'
+    | '/projects/$projectRef/tags'
+    | '/projects/$projectRef/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/projects/new'
-    | '/projects/$projectId/activity'
-    | '/projects/$projectId/import-export'
-    | '/projects/$projectId/modules'
-    | '/projects/$projectId/settings'
-    | '/projects/$projectId/strings'
-    | '/projects/$projectId/tags'
-    | '/projects/$projectId'
+    | '/projects/$projectRef/activity'
+    | '/projects/$projectRef/import-export'
+    | '/projects/$projectRef/modules'
+    | '/projects/$projectRef/settings'
+    | '/projects/$projectRef/strings'
+    | '/projects/$projectRef/tags'
+    | '/projects/$projectRef'
   id:
     | '__root__'
     | '/'
     | '/login'
-    | '/projects/$projectId'
+    | '/projects/$projectRef'
     | '/projects/new'
-    | '/projects/$projectId/activity'
-    | '/projects/$projectId/import-export'
-    | '/projects/$projectId/modules'
-    | '/projects/$projectId/settings'
-    | '/projects/$projectId/strings'
-    | '/projects/$projectId/tags'
-    | '/projects/$projectId/'
+    | '/projects/$projectRef/activity'
+    | '/projects/$projectRef/import-export'
+    | '/projects/$projectRef/modules'
+    | '/projects/$projectRef/settings'
+    | '/projects/$projectRef/strings'
+    | '/projects/$projectRef/tags'
+    | '/projects/$projectRef/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRouteWithChildren
+  ProjectsProjectRefRoute: typeof ProjectsProjectRefRouteWithChildren
   ProjectsNewRoute: typeof ProjectsNewRoute
 }
 
@@ -185,11 +185,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$projectId': {
-      id: '/projects/$projectId'
-      path: '/projects/$projectId'
-      fullPath: '/projects/$projectId'
-      preLoaderRoute: typeof ProjectsProjectIdRouteImport
+    '/projects/$projectRef': {
+      id: '/projects/$projectRef'
+      path: '/projects/$projectRef'
+      fullPath: '/projects/$projectRef'
+      preLoaderRoute: typeof ProjectsProjectRefRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/new': {
@@ -199,85 +199,85 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$projectId/': {
-      id: '/projects/$projectId/'
+    '/projects/$projectRef/': {
+      id: '/projects/$projectRef/'
       path: '/'
-      fullPath: '/projects/$projectId/'
-      preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/'
+      preLoaderRoute: typeof ProjectsProjectRefIndexRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/activity': {
-      id: '/projects/$projectId/activity'
+    '/projects/$projectRef/activity': {
+      id: '/projects/$projectRef/activity'
       path: '/activity'
-      fullPath: '/projects/$projectId/activity'
-      preLoaderRoute: typeof ProjectsProjectIdActivityRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/activity'
+      preLoaderRoute: typeof ProjectsProjectRefActivityRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/import-export': {
-      id: '/projects/$projectId/import-export'
+    '/projects/$projectRef/import-export': {
+      id: '/projects/$projectRef/import-export'
       path: '/import-export'
-      fullPath: '/projects/$projectId/import-export'
-      preLoaderRoute: typeof ProjectsProjectIdImportExportRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/import-export'
+      preLoaderRoute: typeof ProjectsProjectRefImportExportRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/modules': {
-      id: '/projects/$projectId/modules'
+    '/projects/$projectRef/modules': {
+      id: '/projects/$projectRef/modules'
       path: '/modules'
-      fullPath: '/projects/$projectId/modules'
-      preLoaderRoute: typeof ProjectsProjectIdModulesRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/modules'
+      preLoaderRoute: typeof ProjectsProjectRefModulesRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/settings': {
-      id: '/projects/$projectId/settings'
+    '/projects/$projectRef/settings': {
+      id: '/projects/$projectRef/settings'
       path: '/settings'
-      fullPath: '/projects/$projectId/settings'
-      preLoaderRoute: typeof ProjectsProjectIdSettingsRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/settings'
+      preLoaderRoute: typeof ProjectsProjectRefSettingsRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/strings': {
-      id: '/projects/$projectId/strings'
+    '/projects/$projectRef/strings': {
+      id: '/projects/$projectRef/strings'
       path: '/strings'
-      fullPath: '/projects/$projectId/strings'
-      preLoaderRoute: typeof ProjectsProjectIdStringsRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/strings'
+      preLoaderRoute: typeof ProjectsProjectRefStringsRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
-    '/projects/$projectId/tags': {
-      id: '/projects/$projectId/tags'
+    '/projects/$projectRef/tags': {
+      id: '/projects/$projectRef/tags'
       path: '/tags'
-      fullPath: '/projects/$projectId/tags'
-      preLoaderRoute: typeof ProjectsProjectIdTagsRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
+      fullPath: '/projects/$projectRef/tags'
+      preLoaderRoute: typeof ProjectsProjectRefTagsRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
     }
   }
 }
 
-interface ProjectsProjectIdRouteChildren {
-  ProjectsProjectIdActivityRoute: typeof ProjectsProjectIdActivityRoute
-  ProjectsProjectIdImportExportRoute: typeof ProjectsProjectIdImportExportRoute
-  ProjectsProjectIdModulesRoute: typeof ProjectsProjectIdModulesRoute
-  ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
-  ProjectsProjectIdStringsRoute: typeof ProjectsProjectIdStringsRoute
-  ProjectsProjectIdTagsRoute: typeof ProjectsProjectIdTagsRoute
-  ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
+interface ProjectsProjectRefRouteChildren {
+  ProjectsProjectRefActivityRoute: typeof ProjectsProjectRefActivityRoute
+  ProjectsProjectRefImportExportRoute: typeof ProjectsProjectRefImportExportRoute
+  ProjectsProjectRefModulesRoute: typeof ProjectsProjectRefModulesRoute
+  ProjectsProjectRefSettingsRoute: typeof ProjectsProjectRefSettingsRoute
+  ProjectsProjectRefStringsRoute: typeof ProjectsProjectRefStringsRoute
+  ProjectsProjectRefTagsRoute: typeof ProjectsProjectRefTagsRoute
+  ProjectsProjectRefIndexRoute: typeof ProjectsProjectRefIndexRoute
 }
 
-const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
-  ProjectsProjectIdActivityRoute: ProjectsProjectIdActivityRoute,
-  ProjectsProjectIdImportExportRoute: ProjectsProjectIdImportExportRoute,
-  ProjectsProjectIdModulesRoute: ProjectsProjectIdModulesRoute,
-  ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
-  ProjectsProjectIdStringsRoute: ProjectsProjectIdStringsRoute,
-  ProjectsProjectIdTagsRoute: ProjectsProjectIdTagsRoute,
-  ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
+const ProjectsProjectRefRouteChildren: ProjectsProjectRefRouteChildren = {
+  ProjectsProjectRefActivityRoute: ProjectsProjectRefActivityRoute,
+  ProjectsProjectRefImportExportRoute: ProjectsProjectRefImportExportRoute,
+  ProjectsProjectRefModulesRoute: ProjectsProjectRefModulesRoute,
+  ProjectsProjectRefSettingsRoute: ProjectsProjectRefSettingsRoute,
+  ProjectsProjectRefStringsRoute: ProjectsProjectRefStringsRoute,
+  ProjectsProjectRefTagsRoute: ProjectsProjectRefTagsRoute,
+  ProjectsProjectRefIndexRoute: ProjectsProjectRefIndexRoute,
 }
 
-const ProjectsProjectIdRouteWithChildren =
-  ProjectsProjectIdRoute._addFileChildren(ProjectsProjectIdRouteChildren)
+const ProjectsProjectRefRouteWithChildren =
+  ProjectsProjectRefRoute._addFileChildren(ProjectsProjectRefRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
-  ProjectsProjectIdRoute: ProjectsProjectIdRouteWithChildren,
+  ProjectsProjectRefRoute: ProjectsProjectRefRouteWithChildren,
   ProjectsNewRoute: ProjectsNewRoute,
 }
 export const routeTree = rootRouteImport

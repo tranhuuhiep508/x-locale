@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy.dialects import postgresql
+
+from app.services.activities import _feed_tie_expr
 from tests.helpers import publish_strings
+
+
+def test_feed_tie_breaker_is_valid_for_postgres_uuid():
+    sql = str(_feed_tie_expr().compile(dialect=postgresql.dialect()))
+    assert "max(CAST(activities.id AS VARCHAR(36)))" in sql
 
 
 def _make_project(client, name: str, targets=None):
@@ -910,4 +918,3 @@ def test_feed_locale_filter_matches_snapshot_keys(client):
     assert feed.json()["total"] >= 1
     keys = {card.get("string_key") for card in feed.json()["items"]}
     assert "hi" in keys
-
