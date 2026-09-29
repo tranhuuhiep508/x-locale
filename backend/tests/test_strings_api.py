@@ -146,6 +146,8 @@ def test_list_strings_advanced_filters_and_filtered_actions(client):
     import uuid
     from datetime import UTC, datetime, timedelta
 
+    from sqlalchemy import update
+
     from app.database import get_db
     from app.main import app
     from app.models import StringEntry
@@ -206,9 +208,13 @@ def test_list_strings_advanced_filters_and_filtered_actions(client):
     db_gen = app.dependency_overrides[get_db]()
     db = next(db_gen)
     try:
-        db.info["activity_suppress"] = True
-        db.get(StringEntry, uuid.UUID(mid["id"])).updated_at = datetime.now(UTC) - timedelta(days=14)
-        db.get(StringEntry, uuid.UUID(old["id"])).updated_at = datetime.now(UTC) - timedelta(days=31)
+        now = datetime.now(UTC)
+        for entry, age_days in ((mid, 14), (old, 31)):
+            db.execute(
+                update(StringEntry)
+                .where(StringEntry.id == uuid.UUID(entry["id"]))
+                .values(updated_at=now - timedelta(days=age_days))
+            )
         db.commit()
     finally:
         db_gen.close()

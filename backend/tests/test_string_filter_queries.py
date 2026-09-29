@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from app.database import Base
@@ -19,7 +19,6 @@ def test_advanced_string_query_filters_compose():
     now = datetime.now(UTC)
 
     with Session(engine) as db:
-        db.info["activity_suppress"] = True
         project = Project(
             name="Filters",
             slug="filters",
@@ -28,6 +27,8 @@ def test_advanced_string_query_filters_compose():
         )
         module = Module(project=project, slug="common", name="Common")
         tag = Tag(project=project, name="tagged", color="#123456")
+        db.add_all([project, module, tag])
+        db.flush()
 
         def add(
             key: str,
@@ -36,17 +37,15 @@ def test_advanced_string_query_filters_compose():
             translations: dict[str, str] | None = None,
             published: bool = False,
             pending_delete: bool = False,
-            age_days: int = 0,
         ) -> StringEntry:
             entry = StringEntry(
-                project=project,
-                module=module if assigned else None,
+                project_id=project.id,
+                module_id=module.id if assigned else None,
                 key=key,
                 source_text=key.title(),
                 status=TranslationStatus.public if published else TranslationStatus.draft,
                 published_at=now if published else None,
                 pending_delete=pending_delete,
-                updated_at=now - timedelta(days=age_days),
             )
             if assigned:
                 entry.tags = [tag]
@@ -71,13 +70,19 @@ def test_advanced_string_query_filters_compose():
             pending_delete=True,
         )
         new = add("new", translations={"en": "   "})
-        add(
+        mid = add(
             "mid",
             assigned=True,
             translations={"en": "Middle", "fr": "Milieu"},
-            age_days=14,
         )
-        add("old", translations={"en": "Old", "fr": "Ancien"}, age_days=31)
+        old = add("old", translations={"en": "Old", "fr": "Ancien"})
+        db.commit()
+        for entry, age_days in ((mid, 14), (old, 31)):
+            db.execute(
+                update(StringEntry)
+                .where(StringEntry.id == entry.id)
+                .values(updated_at=now - timedelta(days=age_days))
+            )
         db.commit()
 
         def keys(**filters) -> set[str]:
