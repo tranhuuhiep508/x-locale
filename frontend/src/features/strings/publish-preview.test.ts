@@ -296,6 +296,7 @@ describe('searchToBatchFilter', () => {
       has_unpublished_changes: true,
       deleted: undefined,
       max_confidence: undefined,
+      batch_id: undefined,
     })
   })
 })

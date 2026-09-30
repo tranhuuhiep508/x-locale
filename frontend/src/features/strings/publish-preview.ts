@@ -305,6 +305,7 @@ export function searchToBatchFilter(
     | 'has_unpublished_changes'
     | 'deleted'
     | 'max_confidence'
+    | 'batch_id'
   >,
 ): BatchFilter {
   return {
@@ -317,6 +318,7 @@ export function searchToBatchFilter(
     has_unpublished_changes: search.has_unpublished_changes,
     deleted: search.deleted,
     max_confidence: search.max_confidence,
+    batch_id: search.batch_id,
   }
 }
 

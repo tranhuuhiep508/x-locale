@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, GitCompareArrows, Search, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   InputGroup,
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { batchFilterChipLabel } from '@/features/strings/batch-filter'
 import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
 import type { Module, Tag } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
@@ -50,7 +52,8 @@ export function hasActiveStringFilters(search: StringsSearch) {
       search.has_unpublished_changes ||
       search.pending_delete ||
       search.deleted ||
-      search.max_confidence != null,
+      search.max_confidence != null ||
+      search.batch_id,
   )
 }
 
@@ -338,6 +341,19 @@ export function StringsFilters({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {search.batch_id ? (
+          <Badge variant="secondary" className="h-7 px-2">
+            {batchFilterChipLabel(search.batch_kind)}
+            <button
+              type="button"
+              aria-label="Clear batch filter"
+              className="rounded-sm text-muted-foreground hover:text-foreground"
+              onClick={() => onFilter({ batch_id: undefined, batch_kind: undefined })}
+            >
+              <X className="size-3" />
+            </button>
+          </Badge>
+        ) : null}
         <FilterSelect label="Status" value={statusValue(search)} onValueChange={applyStatus}>
           <SelectItem value={STATUS_ALL}>All</SelectItem>
           <SelectItem value="draft">Draft</SelectItem>

@@ -27,8 +27,29 @@ export type StringListParams = {
   has_unpublished_changes?: boolean
   deleted?: boolean
   max_confidence?: number
+  batch_id?: string
   page?: number
   page_size?: number
+}
+
+/** Catalog query params. `batch_kind` is a chip label only and is not sent. */
+export function toStringListParams(
+  search: StringListParams & { batch_kind?: string },
+): StringListParams {
+  return {
+    module: search.module,
+    tag: search.tag,
+    q: search.q,
+    missing_locale: search.missing_locale,
+    status: search.status,
+    pending_delete: search.pending_delete,
+    has_unpublished_changes: search.has_unpublished_changes,
+    deleted: search.deleted,
+    max_confidence: search.max_confidence,
+    batch_id: search.batch_id,
+    page: search.page,
+    page_size: search.page_size,
+  }
 }
 
 export const stringsApi = {

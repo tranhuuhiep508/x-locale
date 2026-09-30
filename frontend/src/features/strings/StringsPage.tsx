@@ -23,6 +23,7 @@ import { ListPlus, Plus, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
+import { catalogEmptyCopy } from '@/features/strings/batch-filter'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { AddManyStringsDialog } from '@/features/strings/AddManyStringsDialog'
@@ -339,6 +340,7 @@ export function StringsPage() {
           ? proposalJobQuery.data.error ?? 'Translation job failed'
           : null
   const hasActiveFilters = hasActiveStringFilters(search)
+  const emptyCopy = catalogEmptyCopy(Boolean(search.batch_id), hasActiveFilters)
 
   const columns = useMemo(() => getStringColumns(locales), [locales])
   const pagination = useMemo<PaginationState>(
@@ -528,12 +530,8 @@ export function StringsPage() {
           </div>
         ) : data.length === 0 ? (
           <EmptyState
-            title="No strings found"
-            description={
-              hasActiveFilters
-                ? 'Try adjusting your filters.'
-                : 'Add your first string to get started.'
-            }
+            title={emptyCopy.title}
+            description={emptyCopy.description}
             action={
               !hasActiveFilters ? (
                 <div className="flex flex-wrap items-center justify-center gap-2">

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
 import { batchActivitiesQuery } from '@/lib/queries'
 import { Spinner } from '@/components/ui/spinner'
+import { reviewBatchTarget } from '@/features/activity/review-batch'
 import { formatRelativeTime } from '@/lib/utils'
 
 const VISIBLE_CHANGES = 5
@@ -161,6 +162,7 @@ export function ActivityCard({
 }) {
   const [open, setOpen] = useState(false)
   const isBatch = card.kind === 'batch'
+  const reviewBatch = reviewBatchTarget(card)
   const parts = countParts(card.counts)
   const visibleChanges = card.changed.slice(0, VISIBLE_CHANGES)
   const extraChanges = Math.max(0, card.changed_count - visibleChanges.length)
@@ -225,6 +227,17 @@ export function ActivityCard({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {reviewBatch ? (
+          <Button variant="ghost" size="sm" asChild>
+            <Link
+              to="/projects/$projectRef/strings"
+              params={{ projectRef: projectId }}
+              search={{ batch_id: reviewBatch.batchId, batch_kind: reviewBatch.batchKind }}
+            >
+              Review this batch
+            </Link>
+          </Button>
+        ) : null}
         {!isBatch && card.string_key ? (
           <Button variant="ghost" size="sm" asChild>
             <Link
