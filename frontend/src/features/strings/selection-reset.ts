@@ -15,12 +15,13 @@ export type SelectionResetSearch = Pick<
   | 'missing_locale'
   | 'max_confidence'
   | 'batch_id'
+  | 'batch_kind'
 >
 
 /**
  * Drop grid selection when the catalog filter changes.
- * `batch_id` is included so clearing the batch chip cannot leave soft-deleted
- * ids selected for a later batch action.
+ * `batch_id` and `batch_kind` are included so the batch chip and Clear-all
+ * cannot leave soft-deleted ids selected for a later batch action.
  */
 export function useClearStringSelection(
   search: SelectionResetSearch,
@@ -39,6 +40,7 @@ export function useClearStringSelection(
     search.missing_locale,
     search.max_confidence,
     search.batch_id,
+    search.batch_kind,
     setRowSelection,
   ])
 }
