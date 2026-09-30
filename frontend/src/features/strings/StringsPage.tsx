@@ -162,8 +162,7 @@ export function StringsPage() {
       locales,
       page,
       page_size: TRANSLATE_MISSING_PAGE_SIZE,
-      module_id: search.module,
-      tag_id: search.tag,
+      ...searchToBatchFilter(search),
       q: search.q?.trim() || undefined,
     }
   }
@@ -418,12 +417,18 @@ export function StringsPage() {
     search.has_unpublished_changes,
     search.status,
     search.module,
+    search.unassigned_module,
     search.tag,
+    search.untagged,
     search.deleted,
     search.pending_delete,
+    search.never_published,
     search.q,
     search.missing_locale,
+    search.missing_any,
+    search.complete_locale,
     search.max_confidence,
+    search.updated_within_days,
   ])
 
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)

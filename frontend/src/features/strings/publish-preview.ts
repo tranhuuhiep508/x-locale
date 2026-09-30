@@ -297,26 +297,38 @@ export function searchToBatchFilter(
   search: Pick<
     StringsSearch,
     | 'module'
+    | 'unassigned_module'
     | 'tag'
+    | 'untagged'
     | 'q'
     | 'missing_locale'
+    | 'missing_any'
+    | 'complete_locale'
     | 'status'
     | 'pending_delete'
+    | 'never_published'
     | 'has_unpublished_changes'
     | 'deleted'
     | 'max_confidence'
+    | 'updated_within_days'
   >,
 ): BatchFilter {
   return {
     module_id: search.module,
+    unassigned_module: search.unassigned_module,
     tag_id: search.tag,
+    untagged: search.untagged,
     q: search.q,
     missing_locale: search.missing_locale,
+    missing_any: search.missing_any,
+    complete_locale: search.complete_locale,
     status: search.status,
     pending_delete: search.pending_delete,
+    never_published: search.never_published,
     has_unpublished_changes: search.has_unpublished_changes,
     deleted: search.deleted,
     max_confidence: search.max_confidence,
+    updated_within_days: search.updated_within_days,
   }
 }
 

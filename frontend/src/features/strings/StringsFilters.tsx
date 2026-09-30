@@ -17,6 +17,8 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -27,11 +29,25 @@ import { cn } from '@/lib/utils'
 
 const STATUS_ALL = 'all'
 const CONFIDENCE_ALL = 'all'
+const UNASSIGNED_MODULE = 'unassigned'
+const UNTAGGED = 'untagged'
+const TRANSLATION_ALL = 'all'
+const MISSING_ANY = 'missing:any'
+const UPDATED_ALL = 'all'
 
 function statusValue(search: StringsSearch) {
   if (search.deleted) return 'deleted'
+  if (search.pending_delete) return 'pending_delete'
+  if (search.never_published) return 'never_published'
   if (search.has_unpublished_changes) return 'needs_publish'
   return search.status ?? STATUS_ALL
+}
+
+function translationValue(search: StringsSearch) {
+  if (search.missing_any) return MISSING_ANY
+  if (search.missing_locale) return `missing:${search.missing_locale}`
+  if (search.complete_locale) return `complete:${search.complete_locale}`
+  return TRANSLATION_ALL
 }
 
 function confidenceValue(search: StringsSearch) {
@@ -44,14 +60,66 @@ export function hasActiveStringFilters(search: StringsSearch) {
   return Boolean(
     search.q ||
       search.module ||
+      search.unassigned_module ||
       search.tag ||
+      search.untagged ||
       search.status ||
       search.missing_locale ||
+      search.missing_any ||
+      search.complete_locale ||
       search.has_unpublished_changes ||
       search.pending_delete ||
+      search.never_published ||
       search.deleted ||
-      search.max_confidence != null,
+      search.max_confidence != null ||
+      search.updated_within_days != null,
   )
+}
+
+export function statusFilterUpdates(value: string): Partial<StringsSearch> {
+  const cleared = {
+    status: undefined,
+    has_unpublished_changes: undefined,
+    pending_delete: undefined,
+    never_published: undefined,
+    deleted: undefined,
+  }
+  if (!value || value === STATUS_ALL) return cleared
+  if (value === 'needs_publish') return { ...cleared, has_unpublished_changes: true }
+  if (value === 'pending_delete') return { ...cleared, pending_delete: true }
+  if (value === 'never_published') return { ...cleared, never_published: true }
+  if (value === 'deleted') return { ...cleared, deleted: true }
+  return { ...cleared, status: value as StringsSearch['status'] }
+}
+
+export function moduleFilterUpdates(value: string): Partial<StringsSearch> {
+  return {
+    module: value === 'all' || value === UNASSIGNED_MODULE ? undefined : value,
+    unassigned_module: value === UNASSIGNED_MODULE ? true : undefined,
+  }
+}
+
+export function tagFilterUpdates(value: string): Partial<StringsSearch> {
+  return {
+    tag: value === 'all' || value === UNTAGGED ? undefined : value,
+    untagged: value === UNTAGGED ? true : undefined,
+  }
+}
+
+export function translationFilterUpdates(value: string): Partial<StringsSearch> {
+  const cleared = {
+    missing_any: undefined,
+    missing_locale: undefined,
+    complete_locale: undefined,
+  }
+  if (value === MISSING_ANY) return { ...cleared, missing_any: true }
+  if (value.startsWith('missing:')) {
+    return { ...cleared, missing_locale: value.slice('missing:'.length) }
+  }
+  if (value.startsWith('complete:')) {
+    return { ...cleared, complete_locale: value.slice('complete:'.length) }
+  }
+  return cleared
 }
 
 type FilterOption = {
@@ -241,6 +309,7 @@ export function StringsFilters({
   const moduleOptions = useMemo<FilterOption[]>(
     () => [
       ALL_OPTION,
+      { value: UNASSIGNED_MODULE, label: 'Unassigned' },
       ...modules.map((module) => ({
         value: module.id,
         label: module.name,
@@ -252,6 +321,7 @@ export function StringsFilters({
   const tagOptions = useMemo<FilterOption[]>(
     () => [
       ALL_OPTION,
+      { value: UNTAGGED, label: 'Untagged' },
       ...tags.map((tag) => ({
         value: tag.id,
         label: tag.name,
@@ -261,35 +331,19 @@ export function StringsFilters({
   )
 
   function applyStatus(value: string) {
-    if (!value || value === STATUS_ALL) {
-      onFilter({
-        status: undefined,
-        has_unpublished_changes: undefined,
-        deleted: undefined,
-      })
-      return
-    }
-    if (value === 'needs_publish') {
-      onFilter({
-        status: undefined,
-        has_unpublished_changes: true,
-        deleted: undefined,
-      })
-      return
-    }
-    if (value === 'deleted') {
-      onFilter({
-        status: undefined,
-        has_unpublished_changes: undefined,
-        deleted: true,
-      })
-      return
-    }
-    onFilter({
-      status: value as StringsSearch['status'],
-      has_unpublished_changes: undefined,
-      deleted: undefined,
-    })
+    onFilter(statusFilterUpdates(value))
+  }
+
+  function applyModule(value: string) {
+    onFilter(moduleFilterUpdates(value))
+  }
+
+  function applyTag(value: string) {
+    onFilter(tagFilterUpdates(value))
+  }
+
+  function applyTranslation(value: string) {
+    onFilter(translationFilterUpdates(value))
   }
 
   function applyConfidence(value: string) {
@@ -342,7 +396,9 @@ export function StringsFilters({
           <SelectItem value={STATUS_ALL}>All</SelectItem>
           <SelectItem value="draft">Draft</SelectItem>
           <SelectItem value="public">Public</SelectItem>
+          <SelectItem value="never_published">Never published</SelectItem>
           <SelectItem value="needs_publish">Needs publish</SelectItem>
+          <SelectItem value="pending_delete">Pending deletion</SelectItem>
           <SelectItem value="deleted">Deleted</SelectItem>
         </FilterSelect>
         {onReviewPublish ? (
@@ -355,39 +411,62 @@ export function StringsFilters({
         {modules.length > 0 ? (
           <FilterSearchSelect
             label="Module"
-            value={search.module ?? 'all'}
+            value={search.unassigned_module ? UNASSIGNED_MODULE : (search.module ?? 'all')}
             options={moduleOptions}
             searchPlaceholder="Search modules…"
-            onValueChange={(value) => onFilter({ module: value === 'all' ? undefined : value })}
+            onValueChange={applyModule}
           />
         ) : null}
 
         {tags.length > 0 ? (
           <FilterSearchSelect
             label="Tag"
-            value={search.tag ?? 'all'}
+            value={search.untagged ? UNTAGGED : (search.tag ?? 'all')}
             options={tagOptions}
             searchPlaceholder="Search tags…"
-            onValueChange={(value) => onFilter({ tag: value === 'all' ? undefined : value })}
+            onValueChange={applyTag}
           />
         ) : null}
 
         {locales.length > 0 ? (
           <FilterSelect
-            label="Missing"
-            value={search.missing_locale ?? 'all'}
-            onValueChange={(value) =>
-              onFilter({ missing_locale: value === 'all' ? undefined : value })
-            }
+            label="Translation"
+            value={translationValue(search)}
+            onValueChange={applyTranslation}
           >
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value={TRANSLATION_ALL}>All translations</SelectItem>
+            <SelectItem value={MISSING_ANY}>Missing any target</SelectItem>
+            <SelectSeparator />
+            <SelectLabel>Missing in locale</SelectLabel>
             {locales.map((locale) => (
-              <SelectItem key={locale} value={locale}>
-                {locale}
+              <SelectItem key={`missing-${locale}`} value={`missing:${locale}`}>
+                Missing {locale}
+              </SelectItem>
+            ))}
+            <SelectSeparator />
+            <SelectLabel>Complete in locale</SelectLabel>
+            {locales.map((locale) => (
+              <SelectItem key={`complete-${locale}`} value={`complete:${locale}`}>
+                Complete {locale}
               </SelectItem>
             ))}
           </FilterSelect>
         ) : null}
+
+        <FilterSelect
+          label="Updated"
+          value={search.updated_within_days?.toString() ?? UPDATED_ALL}
+          onValueChange={(value) =>
+            onFilter({
+              updated_within_days:
+                value === UPDATED_ALL ? undefined : (Number(value) as 7 | 30),
+            })
+          }
+        >
+          <SelectItem value={UPDATED_ALL}>Any time</SelectItem>
+          <SelectItem value="7">Last 7 days</SelectItem>
+          <SelectItem value="30">Last 30 days</SelectItem>
+        </FilterSelect>
 
         <FilterSelect
           label="AI"

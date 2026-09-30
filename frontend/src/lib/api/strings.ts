@@ -19,14 +19,20 @@ import type {
 
 export type StringListParams = {
   module?: string
+  unassigned_module?: boolean
   tag?: string
+  untagged?: boolean
   q?: string
   missing_locale?: string
+  missing_any?: boolean
+  complete_locale?: string
   status?: string
   pending_delete?: boolean
+  never_published?: boolean
   has_unpublished_changes?: boolean
   deleted?: boolean
   max_confidence?: number
+  updated_within_days?: 7 | 30
   page?: number
   page_size?: number
 }

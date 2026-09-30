@@ -185,14 +185,20 @@ export type BatchAction =
 
 export interface BatchFilter {
   module_id?: string
+  unassigned_module?: boolean
   tag_id?: string
+  untagged?: boolean
   q?: string
   missing_locale?: string
+  missing_any?: boolean
+  complete_locale?: string
   status?: TranslationStatus
   pending_delete?: boolean
+  never_published?: boolean
   has_unpublished_changes?: boolean
   deleted?: boolean
   max_confidence?: number
+  updated_within_days?: 7 | 30
 }
 
 export interface BatchRequest {
@@ -219,14 +225,11 @@ export interface PublishPreviewEntries {
 }
 
 // ── Translate ──────────────────────────────────────────────────────────
-export interface TranslateRequest {
+export interface TranslateRequest extends BatchFilter {
   scope?: 'missing' | 'strings' | 'module' | 'tag'
   string_ids?: string[]
-  module_id?: string
-  tag_id?: string
   locales?: string[]
   overwrite?: boolean
-  q?: string
   page?: number
   page_size?: number
   descriptions?: Record<string, string>
