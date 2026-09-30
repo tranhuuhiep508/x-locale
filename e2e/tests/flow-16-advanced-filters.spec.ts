@@ -51,8 +51,12 @@ async function seedFilterProject(page: Page) {
   }
   const stringsUrl = `/projects/${project.slug}/strings?page_size=50`
   await page.goto(stringsUrl)
-  await expect(page.getByRole('row').filter({ hasText: 'unassigned' })).toBeVisible()
+  await expect(stringRow(page, 'unassigned')).toBeVisible()
   return { project, module, tag, entries, stringsUrl }
+}
+
+function stringRow(page: Page, key: string) {
+  return page.getByRole('row').filter({ has: page.getByText(key, { exact: true }) })
 }
 
 async function chooseSelect(page: Page, label: string, option: string, index = 0) {
@@ -90,9 +94,9 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   })) {
     await expectParam(page, name, value)
   }
-  await expect(page.getByRole('row').filter({ hasText: 'unassigned' })).toBeVisible()
+  await expect(stringRow(page, 'unassigned')).toBeVisible()
   for (const key of ['empty', 'assigned', 'tagged']) {
-    await expect(page.getByRole('row').filter({ hasText: new RegExp(`\\b${key}\\b`) })).toHaveCount(0)
+    await expect(stringRow(page, key)).toHaveCount(0)
   }
 
   const filteredUrl = page.url()
@@ -103,7 +107,7 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await expect(page.getByRole('button', { name: 'Tag', exact: true })).toContainText('Untagged')
   await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('en')
   await expect(page.getByRole('combobox', { name: 'Updated', exact: true })).toContainText('Last 7 days')
-  await expect(page.getByRole('row').filter({ hasText: 'unassigned' })).toBeVisible()
+  await expect(stringRow(page, 'unassigned')).toBeVisible()
 
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   for (const name of [
@@ -114,7 +118,7 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await expectParam(page, 'page_size', '50')
   await expectParam(page, 'page', '1')
   for (const key of ['unassigned', 'empty', 'assigned', 'tagged']) {
-    await expect(page.getByRole('row').filter({ hasText: new RegExp(`\\b${key}\\b`) })).toBeVisible()
+    await expect(stringRow(page, key)).toBeVisible()
   }
   await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeHidden()
 })
@@ -161,7 +165,7 @@ test('switching exclusive filter choices removes their previous URL fields', asy
 
   await chooseSelect(page, 'Updated', 'Last 30 days')
   await expectParam(page, 'updated_within_days', '30')
-  await expect(page.getByRole('row').filter({ hasText: /\bassigned\b/ })).toBeVisible()
+  await expect(stringRow(page, 'assigned')).toBeVisible()
   expect(filterErrors).toEqual([])
 })
 
@@ -178,8 +182,8 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await chooseOrganization(page, 'Tag', 'Featured')
   await chooseSelect(page, 'Translation', 'en', 1)
   await chooseSelect(page, 'Updated', 'Last 7 days')
-  await expect(page.getByRole('row').filter({ hasText: /\bassigned\b/ })).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'unassigned' })).toHaveCount(0)
+  await expect(stringRow(page, 'assigned')).toBeVisible()
+  await expect(stringRow(page, 'unassigned')).toHaveCount(0)
 
   const previewResponse = page.waitForResponse(
     (res) => res.request().method() === 'POST' && res.url().endsWith('/strings/publish-preview'),
