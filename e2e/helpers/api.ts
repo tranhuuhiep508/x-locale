@@ -31,6 +31,70 @@ export async function deleteStringViaApi(page: Page, projectId: string, stringId
   expect(response.ok()).toBeTruthy()
 }
 
+export async function exportXlsxViaApi(page: Page, projectId: string): Promise<Buffer> {
+  const response = await page.request.get(`/api/projects/${projectId}/export`, {
+    params: { format: 'xlsx', stage: 'all' },
+  })
+  expect(response.ok()).toBeTruthy()
+  return Buffer.from(await response.body())
+}
+
+export async function importXlsxViaApi(
+  page: Page,
+  projectId: string,
+  content: Buffer,
+): Promise<ImportResult> {
+  const response = await page.request.post(`/api/projects/${projectId}/import`, {
+    multipart: {
+      file: {
+        name: 'e2e-batch.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: content,
+      },
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return response.json() as Promise<ImportResult>
+}
+
+export async function publishStringsViaApi(page: Page, projectId: string, stringIds: string[]) {
+  const previewResponse = await page.request.post(
+    `/api/projects/${projectId}/strings/publish-preview`,
+    { data: { string_ids: stringIds } },
+  )
+  expect(previewResponse.ok()).toBeTruthy()
+  const preview = (await previewResponse.json()) as { fingerprint: string }
+  const batchResponse = await page.request.post(`/api/projects/${projectId}/strings/batch`, {
+    data: {
+      action: 'publish',
+      string_ids: stringIds,
+      fingerprint: preview.fingerprint,
+    },
+  })
+  expect(batchResponse.ok()).toBeTruthy()
+}
+
+export async function translateApplyBatchViaApi(
+  page: Page,
+  projectId: string,
+  stringId: string,
+  locales: string[] = ['en', 'ja'],
+): Promise<{ batch_id: string; translated_count: number }> {
+  const proposalsResponse = await page.request.post(
+    `/api/projects/${projectId}/translate/proposals`,
+    { data: { scope: 'strings', string_ids: [stringId], locales } },
+  )
+  expect(proposalsResponse.ok()).toBeTruthy()
+  const proposals = (await proposalsResponse.json()) as { items: unknown[] }
+  expect(proposals.items.length).toBeGreaterThan(0)
+
+  const applyResponse = await page.request.post(`/api/projects/${projectId}/translate/apply`, {
+    data: { items: proposals.items },
+  })
+  expect(applyResponse.ok()).toBeTruthy()
+  return applyResponse.json() as Promise<{ batch_id: string; translated_count: number }>
+}
+
 export async function bootstrapWithApiKey(page: Page, apiKey: string) {
   const response = await page.request.get('/api/bootstrap', {
     headers: { 'X-API-Key': apiKey },
