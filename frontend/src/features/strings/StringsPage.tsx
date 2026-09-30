@@ -24,6 +24,7 @@ import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
 import { catalogEmptyCopy } from '@/features/strings/batch-filter'
+import { useClearStringSelection } from '@/features/strings/selection-reset'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { AddManyStringsDialog } from '@/features/strings/AddManyStringsDialog'
@@ -414,19 +415,7 @@ export function StringsPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [selectedCount, dialogOpen, reviewOpen, publishOpen, showMoveModule, showAddTags, deleteConfirm, unpublishConfirm])
 
-  useEffect(() => {
-    setRowSelection({})
-  }, [
-    search.has_unpublished_changes,
-    search.status,
-    search.module,
-    search.tag,
-    search.deleted,
-    search.pending_delete,
-    search.q,
-    search.missing_locale,
-    search.max_confidence,
-  ])
+  useClearStringSelection(search, setRowSelection)
 
   const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
   const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
