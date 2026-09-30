@@ -713,7 +713,13 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         for entry in entries:
             if discard_working_changes(entry):
                 affected += 1
-    elif action in ("discard_delete", "restore"):
+    elif action == "discard_delete":
+        # Mixed batch selections can include tombstones. Only cancel pending removals.
+        for entry in entries:
+            if entry.deleted_at is None and entry.pending_delete:
+                entry.pending_delete = False
+                affected += 1
+    elif action == "restore":
         for entry in entries:
             if restore_string(entry):
                 affected += 1

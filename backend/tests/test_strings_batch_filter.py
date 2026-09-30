@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from tests.helpers import make_project, preview_publish, publish_strings
 
 
@@ -192,3 +194,85 @@ def test_publish_preview_uses_the_same_batch_membership(client):
         filt={"batch_id": batch_id, "q": "welcome"},
     )
     assert [item["key"] for item in narrowed["items"]] == ["welcome"]
+
+
+@pytest.mark.parametrize("use_filter", [False, True])
+def test_discard_delete_in_mixed_batch_keeps_tombstones_hidden(client, use_filter):
+    project = make_project(client, "Batch Discard Delete", layout="flat")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={
+            "strings": {
+                "live": "Live member",
+                "pending": "Pending removal",
+                "draft_deleted": "Deleted draft",
+                "public_deleted": "Published removal",
+            }
+        },
+    )
+    assert imported.status_code == 200, imported.text
+    batch_id = imported.json()["batch_id"]
+    listed = client.get(f"/api/projects/{pid}/strings", params={"batch_id": batch_id})
+    assert listed.status_code == 200, listed.text
+    rows = {item["key"]: item for item in listed.json()["items"]}
+
+    publish_strings(client, pid, [rows["pending"]["id"], rows["public_deleted"]["id"]])
+    for key in ("pending", "draft_deleted", "public_deleted"):
+        deleted = client.delete(f"/api/projects/{pid}/strings/{rows[key]['id']}")
+        assert deleted.status_code == 204, deleted.text
+    publish_strings(client, pid, [rows["public_deleted"]["id"]])
+
+    reviewed = client.get(f"/api/projects/{pid}/strings", params={"batch_id": batch_id})
+    assert reviewed.status_code == 200, reviewed.text
+    before = {item["key"]: item for item in reviewed.json()["items"]}
+    assert len(before) == 4
+    assert before["pending"]["pending_delete"] is True
+    assert before["draft_deleted"]["deleted_at"] is not None
+    assert before["public_deleted"]["deleted_at"] is not None
+    assert before["public_deleted"]["status"] == "public"
+
+    selection = (
+        {"filter": {"batch_id": batch_id}}
+        if use_filter
+        else {"string_ids": [item["id"] for item in before.values()]}
+    )
+    discarded = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_delete", **selection},
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json()["affected"] == 1
+
+    reviewed = client.get(f"/api/projects/{pid}/strings", params={"batch_id": batch_id})
+    assert reviewed.status_code == 200, reviewed.text
+    after = {item["key"]: item for item in reviewed.json()["items"]}
+    assert after["pending"]["pending_delete"] is False
+    for key in ("live", "draft_deleted", "public_deleted"):
+        assert after[key] == before[key]
+
+    live = client.get(f"/api/projects/{pid}/strings")
+    assert _keys(live) == ["live", "pending"]
+    exported = client.get(f"/api/projects/{pid}/export", params={"stage": "public"})
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["vi"] == {"pending": "Pending removal"}
+
+    repeated = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_delete", **selection},
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["affected"] == 0
+
+    # Explicit Restore still revives tombstones when the user requests it.
+    restored = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={
+            "action": "restore",
+            "string_ids": [before[key]["id"] for key in ("draft_deleted", "public_deleted")],
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["affected"] == 2
+    live = client.get(f"/api/projects/{pid}/strings")
+    assert _keys(live) == ["draft_deleted", "live", "pending", "public_deleted"]
