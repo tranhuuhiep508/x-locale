@@ -440,14 +440,14 @@ export function StringsFilters({
             <SelectLabel>Missing in locale</SelectLabel>
             {locales.map((locale) => (
               <SelectItem key={`missing-${locale}`} value={`missing:${locale}`}>
-                {locale}
+                Missing {locale}
               </SelectItem>
             ))}
             <SelectSeparator />
             <SelectLabel>Complete in locale</SelectLabel>
             {locales.map((locale) => (
               <SelectItem key={`complete-${locale}`} value={`complete:${locale}`}>
-                {locale}
+                Complete {locale}
               </SelectItem>
             ))}
           </FilterSelect>

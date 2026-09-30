@@ -59,9 +59,9 @@ function stringRow(page: Page, key: string) {
   return page.getByRole('row').filter({ has: page.getByText(key, { exact: true }) })
 }
 
-async function chooseSelect(page: Page, label: string, option: string, index = 0) {
+async function chooseSelect(page: Page, label: string, option: string) {
   await page.getByRole('combobox', { name: label, exact: true }).click()
-  await page.getByRole('option', { name: option, exact: true }).nth(index).click()
+  await page.getByRole('option', { name: option, exact: true }).click()
 }
 
 async function chooseOrganization(page: Page, label: string, option: string) {
@@ -81,7 +81,7 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await chooseSelect(page, 'Status', 'Never published')
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
-  await chooseSelect(page, 'Translation', 'en', 1)
+  await chooseSelect(page, 'Translation', 'Complete en')
   await chooseSelect(page, 'Updated', 'Last 7 days')
 
   for (const [name, value] of Object.entries({
@@ -105,7 +105,7 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toContainText('Never published')
   await expect(page.getByRole('button', { name: 'Module', exact: true })).toContainText('Unassigned')
   await expect(page.getByRole('button', { name: 'Tag', exact: true })).toContainText('Untagged')
-  await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('en')
+  await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('Complete en')
   await expect(page.getByRole('combobox', { name: 'Updated', exact: true })).toContainText('Last 7 days')
   await expect(stringRow(page, 'unassigned')).toBeVisible()
 
@@ -146,10 +146,12 @@ test('switching exclusive filter choices removes their previous URL fields', asy
 
   await chooseSelect(page, 'Translation', 'Missing any target')
   await expectParam(page, 'missing_any', 'true')
-  await chooseSelect(page, 'Translation', 'en')
+  await chooseSelect(page, 'Translation', 'Missing en')
+  await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('Missing en')
   await expectParam(page, 'missing_locale', 'en')
   await expectParam(page, 'missing_any', null)
-  await chooseSelect(page, 'Translation', 'en', 1)
+  await chooseSelect(page, 'Translation', 'Complete en')
+  await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('Complete en')
   await expectParam(page, 'complete_locale', 'en')
   await expectParam(page, 'missing_locale', null)
   await expectParam(page, 'missing_any', null)
@@ -180,7 +182,7 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await chooseSelect(page, 'Status', 'Needs publish')
   await chooseOrganization(page, 'Module', 'Common')
   await chooseOrganization(page, 'Tag', 'Featured')
-  await chooseSelect(page, 'Translation', 'en', 1)
+  await chooseSelect(page, 'Translation', 'Complete en')
   await chooseSelect(page, 'Updated', 'Last 7 days')
   await expect(stringRow(page, 'assigned')).toBeVisible()
   await expect(stringRow(page, 'unassigned')).toHaveCount(0)
@@ -206,7 +208,7 @@ test('Translate missing honors combined grid filters through generation and Appl
   await chooseSelect(page, 'Status', 'Never published')
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
-  await chooseSelect(page, 'Translation', 'en', 1)
+  await chooseSelect(page, 'Translation', 'Complete en')
   await chooseSelect(page, 'Updated', 'Last 7 days')
   await expect(stringRow(page, 'unassigned')).toBeVisible()
   await expect(stringRow(page, 'empty')).toHaveCount(0)
