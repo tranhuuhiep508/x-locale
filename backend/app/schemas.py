@@ -219,6 +219,7 @@ class BatchFilter(BaseModel):
     has_unpublished_changes: bool | None = None
     deleted: bool | None = None
     max_confidence: ConfidenceScore | None = None
+    batch_id: UUID | None = None
 
 
 class BatchRequest(BaseModel):

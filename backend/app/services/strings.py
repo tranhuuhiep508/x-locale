@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import distinct, exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import Activity, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
     BatchRequest,
     BatchResult,
@@ -294,6 +294,22 @@ def apply_translation_values(
                 existing.confidence = None
 
 
+def _batch_member_ids(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID):
+    """Distinct string ids touched by activities in this project batch.
+
+    Equality on (project_id, batch_id) matches ix_activities_project_batch_id.
+    """
+    return (
+        db.query(Activity.string_id)
+        .filter(
+            Activity.project_id == project_id,
+            Activity.batch_id == batch_id,
+            Activity.string_id.isnot(None),
+        )
+        .distinct()
+    )
+
+
 def string_query(
     db: Session,
     project_id: uuid.UUID,
@@ -308,8 +324,12 @@ def string_query(
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    batch_id: uuid.UUID | None = None,
     eager: bool = True,
 ):
+    # Keep new catalog filters in this function. batch_id ANDs with them;
+    # conflict checks such as _validate_string_filters stay in front of the
+    # membership clause so a 400 still fires when those params are present.
     query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
     if eager:
         query = query.options(
@@ -318,9 +338,11 @@ def string_query(
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
+    # Default catalog is live-only. A batch review includes tombstones unless
+    # the caller explicitly sets deleted.
     if deleted is True:
         query = query.filter(StringEntry.deleted_at.isnot(None))
-    else:
+    elif deleted is False or batch_id is None:
         query = query.filter(StringEntry.deleted_at.is_(None))
     if module_id is not None:
         query = query.filter(StringEntry.module_id == module_id)
@@ -375,6 +397,8 @@ def string_query(
             .subquery()
         )
         query = query.filter(StringEntry.id.in_(db.query(scored.c.string_id)))
+    if batch_id is not None:
+        query = query.filter(StringEntry.id.in_(_batch_member_ids(db, project_id, batch_id)))
     return query.distinct()
 
 
@@ -400,6 +424,7 @@ def resolve_string_ids(
         has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
         deleted=getattr(filt, "deleted", None),
         max_confidence=getattr(filt, "max_confidence", None),
+        batch_id=getattr(filt, "batch_id", None),
     )
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
@@ -464,6 +489,7 @@ def list_strings(
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    batch_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> StringListOut:
@@ -479,6 +505,7 @@ def list_strings(
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
         max_confidence=max_confidence,
+        batch_id=batch_id,
     )
     total = (
         query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()

@@ -35,6 +35,7 @@ def list_strings(
     has_unpublished_changes: Annotated[bool | None, Query()] = None,
     deleted: Annotated[bool | None, Query()] = None,
     max_confidence: Annotated[int | None, Query(ge=0, le=100)] = None,
+    batch_id: Annotated[uuid.UUID | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> StringListOut:
@@ -50,6 +51,7 @@ def list_strings(
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
         max_confidence=max_confidence,
+        batch_id=batch_id,
         page=page,
         page_size=page_size,
     )
