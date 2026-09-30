@@ -129,6 +129,33 @@ commit client IDs or secrets.
 
 More detail: [docs/](docs/).
 
+### String filters
+
+The strings list, filtered publish preview, and filtered batch actions share the
+same predicates. Filters compose with AND; a missing-any group uses OR across
+its candidate locales. Complete EN with missing FR, or complete EN with
+missing-any across EN and FR, are valid combinations.
+
+Contradictory filters return HTTP 400 with a detail message naming the conflicting
+fields: a specific `module` (`module_id` in JSON filters) with
+`unassigned_module=true`, a specific `tag` (`tag_id` in JSON) with
+`untagged=true`, missing and complete for the same locale, or
+`missing_any=true` with complete for the sole configured target locale.
+False flags do not create these conflicts. Explicit non-empty `string_ids`
+continue to take precedence over a supplied filter.
+
+Missing, complete, and AI confidence filters use the same SQL-trimmed, non-empty
+translation predicate. Empty and space-only values count as missing and are
+excluded from confidence matches. Confidence thresholds are inclusive and
+unscored translations are excluded.
+
+**Updated** uses a rolling UTC window of 7 or 30 days against the string's
+`updated_at`. Translation-only edits also update that timestamp. Filter state
+persists in browser URLs; Clear resets filters while retaining the page size.
+
+**Translate missing** currently uses module, tag, and text search, independently
+of the new advanced grid filters.
+
 ## Development
 
 ```bash

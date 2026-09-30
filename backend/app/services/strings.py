@@ -294,6 +294,60 @@ def apply_translation_values(
                 existing.confidence = None
 
 
+def _translation_has_value():
+    """Keep missing, complete, and confidence filters on the same definition."""
+    return func.trim(Translation.value) != ""
+
+
+def _translated_string_ids(db: Session, locale: str):
+    return db.query(Translation.string_id).filter(
+        Translation.locale == locale,
+        _translation_has_value(),
+    )
+
+
+def _missing_locales_clause(db: Session, locales: Sequence[str]):
+    missing = [
+        ~StringEntry.id.in_(_translated_string_ids(db, locale))
+        for locale in dict.fromkeys(locales)
+    ]
+    return or_(*missing) if missing else false()
+
+
+def _validate_string_filters(
+    *,
+    module_id: uuid.UUID | None,
+    unassigned_module: bool | None,
+    tag_id: uuid.UUID | None,
+    untagged: bool | None,
+    missing_locale: str | None,
+    missing_locales: Sequence[str] | None,
+    missing_any_locales: Sequence[str] | None,
+    complete_locale: str | None,
+) -> None:
+    if module_id is not None and unassigned_module is True:
+        raise HTTPException(
+            status_code=400,
+            detail="Conflicting filters: module/module_id and unassigned_module=true",
+        )
+    if tag_id is not None and untagged is True:
+        raise HTTPException(
+            status_code=400,
+            detail="Conflicting filters: tag/tag_id and untagged=true",
+        )
+    if complete_locale:
+        for name, locales in (
+            ("missing_locale", [missing_locale] if missing_locale else []),
+            ("missing_locales", missing_locales),
+            ("missing_any", missing_any_locales),
+        ):
+            if locales and set(locales) == {complete_locale}:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Conflicting filters: {name} and complete_locale={complete_locale}",
+                )
+
+
 def string_query(
     db: Session,
     project_id: uuid.UUID,
@@ -316,6 +370,16 @@ def string_query(
     updated_within_days: int | None = None,
     eager: bool = True,
 ):
+    _validate_string_filters(
+        module_id=module_id,
+        unassigned_module=unassigned_module,
+        tag_id=tag_id,
+        untagged=untagged,
+        missing_locale=missing_locale,
+        missing_locales=missing_locales,
+        missing_any_locales=missing_any_locales,
+        complete_locale=complete_locale,
+    )
     query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
     if eager:
         query = query.options(
@@ -346,48 +410,13 @@ def string_query(
             )
         )
     if missing_locale:
-        subquery = (
-            db.query(Translation.string_id)
-            .filter(
-                Translation.locale == missing_locale,
-                func.trim(Translation.value) != "",
-            )
-            .subquery()
-        )
-        query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
+        query = query.filter(~StringEntry.id.in_(_translated_string_ids(db, missing_locale)))
     if missing_locales:
-        missing_any = [
-            ~StringEntry.id.in_(
-                db.query(Translation.string_id).filter(
-                    Translation.locale == locale,
-                    func.trim(Translation.value) != "",
-                )
-            )
-            for locale in missing_locales
-        ]
-        if missing_any:
-            query = query.filter(or_(*missing_any))
+        query = query.filter(_missing_locales_clause(db, missing_locales))
     if missing_any_locales is not None:
-        missing_any = [
-            ~StringEntry.id.in_(
-                db.query(Translation.string_id).filter(
-                    Translation.locale == locale,
-                    func.trim(Translation.value) != "",
-                )
-            )
-            for locale in missing_any_locales
-        ]
-        query = query.filter(or_(*missing_any) if missing_any else false())
+        query = query.filter(_missing_locales_clause(db, missing_any_locales))
     if complete_locale:
-        complete = (
-            db.query(Translation.string_id)
-            .filter(
-                Translation.locale == complete_locale,
-                func.trim(Translation.value) != "",
-            )
-            .subquery()
-        )
-        query = query.filter(StringEntry.id.in_(db.query(complete.c.string_id)))
+        query = query.filter(StringEntry.id.in_(_translated_string_ids(db, complete_locale)))
     if status is not None:
         query = query.filter(StringEntry.status == status)
     if pending_delete is not None:
@@ -403,7 +432,7 @@ def string_query(
             .filter(
                 Translation.confidence.isnot(None),
                 Translation.confidence <= max_confidence,
-                Translation.value != "",
+                _translation_has_value(),
             )
             .subquery()
         )
