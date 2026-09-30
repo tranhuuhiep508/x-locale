@@ -8,16 +8,27 @@ export function projectIdFromUrl(page: Page): string {
   return match[1]
 }
 
+export type ImportResult = {
+  created: number
+  updated: number
+  batch_id: string
+}
+
 export async function importStringsViaApi(
   page: Page,
   projectId: string,
   strings: Record<string, string>,
-) {
+): Promise<ImportResult> {
   const response = await page.request.post(`/api/projects/${projectId}/strings/import`, {
     data: { strings },
   })
   expect(response.ok()).toBeTruthy()
-  return response.json()
+  return response.json() as Promise<ImportResult>
+}
+
+export async function deleteStringViaApi(page: Page, projectId: string, stringId: string) {
+  const response = await page.request.delete(`/api/projects/${projectId}/strings/${stringId}`)
+  expect(response.ok()).toBeTruthy()
 }
 
 export async function bootstrapWithApiKey(page: Page, apiKey: string) {
