@@ -270,14 +270,11 @@ class PublishPreviewEntriesOut(BaseModel):
 # ── Translate ─────────────────────────────────────────────────────────
 
 
-class TranslateRequest(BaseModel):
+class TranslateRequest(BatchFilter):
     scope: Literal["missing", "strings", "module", "tag"] = "missing"
     string_ids: list[UUID] | None = None
-    module_id: UUID | None = None
-    tag_id: UUID | None = None
     locales: list[str] | None = None
     overwrite: bool = False
-    q: str | None = None
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
     descriptions: dict[UUID, str] | None = None

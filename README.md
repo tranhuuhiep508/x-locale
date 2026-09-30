@@ -153,8 +153,10 @@ unscored translations are excluded.
 `updated_at`. Translation-only edits also update that timestamp. Filter state
 persists in browser URLs; Clear resets filters while retaining the page size.
 
-**Translate missing** currently uses module, tag, and text search, independently
-of the new advanced grid filters.
+**Translate missing** honors all active grid filters across queue pages. It
+includes only matching live strings with empty cells in the requested locales;
+filled cells and deleted strings are excluded. A Complete filter can therefore
+produce an empty queue when no other target locale is missing.
 
 ## Development
 

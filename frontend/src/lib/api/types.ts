@@ -225,14 +225,11 @@ export interface PublishPreviewEntries {
 }
 
 // ── Translate ──────────────────────────────────────────────────────────
-export interface TranslateRequest {
+export interface TranslateRequest extends BatchFilter {
   scope?: 'missing' | 'strings' | 'module' | 'tag'
   string_ids?: string[]
-  module_id?: string
-  tag_id?: string
   locales?: string[]
   overwrite?: boolean
-  q?: string
   page?: number
   page_size?: number
   descriptions?: Record<string, string>

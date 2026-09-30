@@ -200,3 +200,60 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await expect(page.getByRole('heading', { name: 'Publish preview' })).toBeVisible()
   await page.getByRole('dialog').filter({ hasText: 'Publish preview' }).getByRole('button', { name: 'Cancel' }).click()
 })
+
+test('Translate missing honors combined grid filters through generation and Apply', async ({ page }) => {
+  const { project, entries } = await seedFilterProject(page)
+  await chooseSelect(page, 'Status', 'Never published')
+  await chooseOrganization(page, 'Module', 'Unassigned')
+  await chooseOrganization(page, 'Tag', 'Untagged')
+  await chooseSelect(page, 'Translation', 'en', 1)
+  await chooseSelect(page, 'Updated', 'Last 7 days')
+  await expect(stringRow(page, 'unassigned')).toBeVisible()
+  await expect(stringRow(page, 'empty')).toHaveCount(0)
+
+  const missingResponse = page.waitForResponse(
+    (res) => res.request().method() === 'POST' && res.url().endsWith('/translate/missing'),
+  )
+  await page.getByRole('button', { name: 'Translate missing', exact: true }).click()
+  const missing = await missingResponse
+  expect(missing.ok()).toBeTruthy()
+  expect(missing.request().postDataJSON()).toMatchObject({
+    never_published: true,
+    unassigned_module: true,
+    untagged: true,
+    complete_locale: 'en',
+    updated_within_days: 7,
+  })
+  const queue = await missing.json()
+  expect(queue.total).toBe(1)
+  expect(queue.items.map((item: { string_id: string }) => item.string_id)).toEqual([entries.unassigned.id])
+  expect(queue.items[0].translations).toEqual({ fr: '' })
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
+  await expect(dialog.locator('li')).toHaveCount(1)
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  const apply = dialog.getByRole('button', { name: 'Apply 1 translation', exact: true })
+  await expect(apply).toBeEnabled()
+  const refreshedResponse = page.waitForResponse(
+    (res) => res.request().method() === 'POST' && res.url().endsWith('/translate/missing'),
+  )
+  await apply.click()
+  const refreshed = await refreshedResponse
+  expect(refreshed.request().postDataJSON()).toMatchObject(missing.request().postDataJSON())
+  expect((await refreshed.json()).total).toBe(0)
+  await expect(dialog.getByText('Nothing to translate', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
+
+  const stored = await page.request.get(`/api/projects/${project.id}/strings`)
+  expect(stored.ok()).toBeTruthy()
+  const items = (await stored.json()).items
+  const translated = items.find((item: { id: string }) => item.id === entries.unassigned.id)
+  expect(translated.status).toBe('draft')
+  expect(translated.translations.find((t: { locale: string }) => t.locale === 'en').value).toBe('Ready')
+  expect(translated.translations.find((t: { locale: string }) => t.locale === 'fr').value).toBeTruthy()
+  for (const key of ['empty', 'tagged']) {
+    const outside = items.find((item: { id: string }) => item.id === entries[key].id)
+    expect(outside.translations.find((t: { locale: string }) => t.locale === 'fr').value).toBe('')
+  }
+})

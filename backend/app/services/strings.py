@@ -443,19 +443,12 @@ def string_query(
     return query.distinct()
 
 
-def resolve_string_ids(
-    db: Session,
-    project: Project,
-    string_ids: Sequence[uuid.UUID] | None,
-    filt,
-) -> list[uuid.UUID]:
-    if string_ids:
-        return list(string_ids)
-    if filt is None:
-        return []
-    q = string_query(
+def filtered_string_query(db: Session, project: Project, filt, *, eager: bool = True):
+    """Apply the same JSON filters to batch actions and translation scopes."""
+    return string_query(
         db,
         project.id,
+        eager=eager,
         module_id=getattr(filt, "module_id", None),
         unassigned_module=getattr(filt, "unassigned_module", None),
         tag_id=getattr(filt, "tag_id", None),
@@ -474,6 +467,19 @@ def resolve_string_ids(
         max_confidence=getattr(filt, "max_confidence", None),
         updated_within_days=getattr(filt, "updated_within_days", None),
     )
+
+
+def resolve_string_ids(
+    db: Session,
+    project: Project,
+    string_ids: Sequence[uuid.UUID] | None,
+    filt,
+) -> list[uuid.UUID]:
+    if string_ids:
+        return list(string_ids)
+    if filt is None:
+        return []
+    q = filtered_string_query(db, project, filt)
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
 

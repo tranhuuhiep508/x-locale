@@ -198,6 +198,9 @@ def assert_filter_conflict(client, pid, filters, fields):
     responses = [
         client.get(f"{base}/strings", params=params),
         client.post(f"{base}/strings/publish-preview", json={"filter": filters}),
+        client.post(f"{base}/translate/missing", json=filters),
+        client.post(f"{base}/translate/proposals", json=filters),
+        client.post(f"{base}/translate", json=filters),
         client.post(
             f"{base}/strings/batch",
             json={"action": "delete", "filter": filters},

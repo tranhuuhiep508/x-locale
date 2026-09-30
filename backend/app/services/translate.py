@@ -22,14 +22,10 @@ from app.ai import (
 from app.database import SessionLocal
 from app.models import Job, JobStatus, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
-from app.services.strings import string_query
+from app.services.strings import _missing_locales_clause, filtered_string_query
 
 SYNC_THRESHOLD = 20
 _progress_lock = threading.Lock()
-
-
-def _search_q(payload: TranslateRequest) -> str | None:
-    return (payload.q or "").strip() or None
 
 
 def _entries_query(
@@ -40,15 +36,17 @@ def _entries_query(
     *,
     eager: bool,
 ):
-    query = string_query(
+    query = filtered_string_query(
         db,
-        project.id,
-        module_id=payload.module_id,
-        tag_id=payload.tag_id,
-        q=_search_q(payload),
-        missing_locales=None if payload.overwrite else locales,
+        project,
+        payload.model_copy(update={"q": (payload.q or "").strip() or None}),
         eager=eager,
     )
+    # Translation work is the filtered grid intersected with actionable cells.
+    # A complete-locale filter can legitimately leave no missing work.
+    query = query.filter(StringEntry.deleted_at.is_(None))
+    if not payload.overwrite:
+        query = query.filter(_missing_locales_clause(db, locales))
     if payload.scope == "strings" and payload.string_ids:
         query = query.filter(StringEntry.id.in_(payload.string_ids))
     return query

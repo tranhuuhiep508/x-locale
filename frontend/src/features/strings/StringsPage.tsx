@@ -162,8 +162,7 @@ export function StringsPage() {
       locales,
       page,
       page_size: TRANSLATE_MISSING_PAGE_SIZE,
-      module_id: search.module,
-      tag_id: search.tag,
+      ...searchToBatchFilter(search),
       q: search.q?.trim() || undefined,
     }
   }
