@@ -167,8 +167,6 @@ def test_batch_id_ands_with_module_tag_and_q(client):
     )
     assert _keys(by_q) == ["welcome"]
 
-    # Advanced conflict pairs (module + unassigned_module, etc.) are not on master yet.
-    # When they land in string_query they still 400 before this membership clause.
 
 
 def test_publish_preview_uses_the_same_batch_membership(client):
@@ -276,3 +274,66 @@ def test_discard_delete_in_mixed_batch_keeps_tombstones_hidden(client, use_filte
     assert restored.json()["affected"] == 2
     live = client.get(f"/api/projects/{pid}/strings")
     assert _keys(live) == ["draft_deleted", "live", "pending", "public_deleted"]
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [("module", "unassigned_module"), ("tag", "untagged"), ("missing_locale", "complete_locale")],
+)
+def test_batch_membership_does_not_bypass_filter_conflicts(client, first, second):
+    project = make_project(client, "Batch Conflicting Filters")
+    pid = project["id"]
+    params = {"batch_id": str(uuid.uuid4())}
+    if first == "missing_locale":
+        params.update({first: "en", second: "en"})
+    else:
+        params.update({first: str(uuid.uuid4()), second: True})
+    listed = client.get(f"/api/projects/{pid}/strings", params=params)
+    assert listed.status_code == 400, listed.text
+
+    filt = {
+        {"module": "module_id", "tag": "tag_id"}.get(key, key): value
+        for key, value in params.items()
+    }
+    preview = client.post(
+        f"/api/projects/{pid}/strings/publish-preview", json={"filter": filt}
+    )
+    assert preview.status_code == 400, preview.text
+
+
+def test_batch_and_advanced_filters_share_list_preview_and_missing_queue(client):
+    project = make_project(client, "Batch Advanced Filters")
+    pid = project["id"]
+    batch_id = _import_pair(client, pid)
+    listed = client.get(f"/api/projects/{pid}/strings", params={"batch_id": batch_id})
+    assert listed.status_code == 200, listed.text
+    rows = {item["key"]: item for item in listed.json()["items"]}
+    patched = client.patch(
+        f"/api/projects/{pid}/strings/{rows['welcome']['id']}",
+        json={"translations": {"en": "Welcome"}},
+    )
+    assert patched.status_code == 200, patched.text
+    # A missing string outside the batch must not enter the translation queue.
+    outside = client.post(
+        f"/api/projects/{pid}/strings", json={"key": "outside", "source_text": "Outside batch"}
+    )
+    assert outside.status_code == 201, outside.text
+
+    filt = {
+        "batch_id": batch_id,
+        "unassigned_module": True,
+        "untagged": True,
+        "missing_any": True,
+        "never_published": True,
+        "updated_within_days": 30,
+    }
+    listed = client.get(f"/api/projects/{pid}/strings", params=filt)
+    assert _keys(listed) == ["login"]
+    preview = preview_publish(client, pid, filt=filt)
+    assert [item["id"] for item in preview["items"]] == [rows["login"]["id"]]
+    missing = client.post(
+        f"/api/projects/{pid}/translate/missing",
+        json={"scope": "missing", "locales": ["en"], **filt},
+    )
+    assert missing.status_code == 200, missing.text
+    assert [item["string_id"] for item in missing.json()["items"]] == [rows["login"]["id"]]

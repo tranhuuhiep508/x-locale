@@ -19,15 +19,21 @@ import type {
 
 export type StringListParams = {
   module?: string
+  unassigned_module?: boolean
   tag?: string
+  untagged?: boolean
   q?: string
   missing_locale?: string
+  missing_any?: boolean
+  complete_locale?: string
   status?: string
   pending_delete?: boolean
+  never_published?: boolean
   has_unpublished_changes?: boolean
   deleted?: boolean
   max_confidence?: number
   batch_id?: string
+  updated_within_days?: 7 | 30
   page?: number
   page_size?: number
 }
@@ -38,14 +44,20 @@ export function toStringListParams(
 ): StringListParams {
   return {
     module: search.module,
+    unassigned_module: search.unassigned_module,
     tag: search.tag,
+    untagged: search.untagged,
     q: search.q,
     missing_locale: search.missing_locale,
+    missing_any: search.missing_any,
+    complete_locale: search.complete_locale,
     status: search.status,
     pending_delete: search.pending_delete,
+    never_published: search.never_published,
     has_unpublished_changes: search.has_unpublished_changes,
     deleted: search.deleted,
     max_confidence: search.max_confidence,
+    updated_within_days: search.updated_within_days,
     batch_id: search.batch_id,
     page: search.page,
     page_size: search.page_size,

@@ -23,6 +23,22 @@ describe('catalogEmptyCopy', () => {
 })
 
 describe('toStringListParams', () => {
+  it('preserves advanced filters together with batch membership', () => {
+    const params = {
+      batch_id: '11111111-1111-4111-8111-111111111111',
+      unassigned_module: true,
+      untagged: true,
+      missing_any: false,
+      complete_locale: 'en',
+      never_published: true,
+      updated_within_days: 30 as const,
+    }
+    expect(toStringListParams({ ...params, batch_kind: 'import' })).toMatchObject(params)
+    expect(toStringListParams({ ...params, batch_kind: 'import' })).not.toHaveProperty(
+      'batch_kind',
+    )
+  })
+
   it('sends batch_id and omits the chip-only batch kind', () => {
     expect(
       toStringListParams({
@@ -33,14 +49,20 @@ describe('toStringListParams', () => {
       }),
     ).toEqual({
       module: 'm1',
+      unassigned_module: undefined,
       tag: undefined,
+      untagged: undefined,
       q: undefined,
       missing_locale: undefined,
+      missing_any: undefined,
+      complete_locale: undefined,
       status: undefined,
       pending_delete: undefined,
+      never_published: undefined,
       has_unpublished_changes: undefined,
       deleted: undefined,
       max_confidence: undefined,
+      updated_within_days: undefined,
       batch_id: '11111111-1111-4111-8111-111111111111',
       page: 2,
       page_size: undefined,

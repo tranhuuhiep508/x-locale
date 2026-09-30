@@ -1,26 +1,31 @@
 import { z } from 'zod'
 
+const booleanSearchParam = z
+  .union([z.boolean(), z.literal('true'), z.literal('false')])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v === true || v === 'true'))
+
 export const stringsSearchSchema = z.object({
   module: z.string().optional(),
+  unassigned_module: booleanSearchParam,
   tag: z.string().optional(),
+  untagged: booleanSearchParam,
   q: z.string().optional(),
   missing_locale: z.string().optional(),
+  missing_any: booleanSearchParam,
+  complete_locale: z.string().optional(),
   status: z.enum(['draft', 'public']).optional(),
-  has_unpublished_changes: z
-    .union([z.boolean(), z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
-  pending_delete: z
-    .union([z.boolean(), z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
-  deleted: z
-    .union([z.boolean(), z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === true || v === 'true')),
+  has_unpublished_changes: booleanSearchParam,
+  pending_delete: booleanSearchParam,
+  never_published: booleanSearchParam,
+  deleted: booleanSearchParam,
   max_confidence: z.coerce.number().int().min(0).max(100).optional(),
   batch_id: z.string().uuid().optional(),
   batch_kind: z.string().optional(),
+  updated_within_days: z.preprocess(
+    (value) => (typeof value === 'string' ? Number(value) : value),
+    z.union([z.literal(7), z.literal(30)]).optional(),
+  ),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
 })

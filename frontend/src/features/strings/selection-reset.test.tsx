@@ -63,6 +63,21 @@ function BatchCatalogProbe({ initial }: { initial: StringsSearch }) {
 }
 
 describe('useClearStringSelection', () => {
+  it.each<SelectionResetSearch>([
+    { unassigned_module: true },
+    { untagged: true },
+    { missing_any: true },
+    { complete_locale: 'en' },
+    { never_published: true },
+    { updated_within_days: 30 },
+  ])('clears selection when an advanced filter changes: %j', (filter) => {
+    const { rerender } = render(<Probe search={{ batch_id: BATCH }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'select' }))
+
+    rerender(<Probe search={{ batch_id: BATCH, ...filter }} />)
+    expect(screen.getByTestId('selected').textContent).toBe('none')
+  })
+
   it('clears the batch chip and drops selected ids, including soft-deleted rows', () => {
     render(
       <BatchCatalogProbe

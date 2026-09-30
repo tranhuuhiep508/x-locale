@@ -8,12 +8,18 @@ export type SelectionResetSearch = Pick<
   | 'has_unpublished_changes'
   | 'status'
   | 'module'
+  | 'unassigned_module'
   | 'tag'
+  | 'untagged'
   | 'deleted'
   | 'pending_delete'
+  | 'never_published'
   | 'q'
   | 'missing_locale'
+  | 'missing_any'
+  | 'complete_locale'
   | 'max_confidence'
+  | 'updated_within_days'
   | 'batch_id'
   | 'batch_kind'
 >
@@ -33,12 +39,18 @@ export function useClearStringSelection(
     search.has_unpublished_changes,
     search.status,
     search.module,
+    search.unassigned_module,
     search.tag,
+    search.untagged,
     search.deleted,
     search.pending_delete,
+    search.never_published,
     search.q,
     search.missing_locale,
+    search.missing_any,
+    search.complete_locale,
     search.max_confidence,
+    search.updated_within_days,
     search.batch_id,
     search.batch_kind,
     setRowSelection,

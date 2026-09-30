@@ -7,10 +7,10 @@ import hmac
 import json
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import distinct, exists, func, or_, select
+from sqlalchemy import distinct, exists, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Activity, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -310,26 +310,94 @@ def _batch_member_ids(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID):
     )
 
 
+def _translation_has_value():
+    """Keep missing, complete, and confidence filters on the same definition."""
+    return func.trim(Translation.value) != ""
+
+
+def _translated_string_ids(db: Session, locale: str):
+    return db.query(Translation.string_id).filter(
+        Translation.locale == locale,
+        _translation_has_value(),
+    )
+
+
+def _missing_locales_clause(db: Session, locales: Sequence[str]):
+    missing = [
+        ~StringEntry.id.in_(_translated_string_ids(db, locale))
+        for locale in dict.fromkeys(locales)
+    ]
+    return or_(*missing) if missing else false()
+
+
+def _validate_string_filters(
+    *,
+    module_id: uuid.UUID | None,
+    unassigned_module: bool | None,
+    tag_id: uuid.UUID | None,
+    untagged: bool | None,
+    missing_locale: str | None,
+    missing_locales: Sequence[str] | None,
+    missing_any_locales: Sequence[str] | None,
+    complete_locale: str | None,
+) -> None:
+    if module_id is not None and unassigned_module is True:
+        raise HTTPException(
+            status_code=400,
+            detail="Conflicting filters: module/module_id and unassigned_module=true",
+        )
+    if tag_id is not None and untagged is True:
+        raise HTTPException(
+            status_code=400,
+            detail="Conflicting filters: tag/tag_id and untagged=true",
+        )
+    if complete_locale:
+        for name, locales in (
+            ("missing_locale", [missing_locale] if missing_locale else []),
+            ("missing_locales", missing_locales),
+            ("missing_any", missing_any_locales),
+        ):
+            if locales and set(locales) == {complete_locale}:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Conflicting filters: {name} and complete_locale={complete_locale}",
+                )
+
+
 def string_query(
     db: Session,
     project_id: uuid.UUID,
     *,
     module_id: uuid.UUID | None = None,
+    unassigned_module: bool | None = None,
     tag_id: uuid.UUID | None = None,
+    untagged: bool | None = None,
     q: str | None = None,
     missing_locale: str | None = None,
     missing_locales: Sequence[str] | None = None,
+    missing_any_locales: Sequence[str] | None = None,
+    complete_locale: str | None = None,
     status: TranslationStatus | None = None,
     pending_delete: bool | None = None,
+    never_published: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
     batch_id: uuid.UUID | None = None,
+    updated_within_days: int | None = None,
     eager: bool = True,
 ):
-    # Keep new catalog filters in this function. batch_id ANDs with them;
-    # conflict checks such as _validate_string_filters stay in front of the
-    # membership clause so a 400 still fires when those params are present.
+    # Validate conflicting filters before resolving batch membership.
+    _validate_string_filters(
+        module_id=module_id,
+        unassigned_module=unassigned_module,
+        tag_id=tag_id,
+        untagged=untagged,
+        missing_locale=missing_locale,
+        missing_locales=missing_locales,
+        missing_any_locales=missing_any_locales,
+        complete_locale=complete_locale,
+    )
     query = db.query(StringEntry).filter(StringEntry.project_id == project_id)
     if eager:
         query = query.options(
@@ -346,8 +414,12 @@ def string_query(
         query = query.filter(StringEntry.deleted_at.is_(None))
     if module_id is not None:
         query = query.filter(StringEntry.module_id == module_id)
+    if unassigned_module is True:
+        query = query.filter(StringEntry.module_id.is_(None))
     if tag_id is not None:
         query = query.join(StringEntry.tags).filter(Tag.id == tag_id)
+    if untagged is True:
+        query = query.filter(~StringEntry.tags.any())
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -358,31 +430,19 @@ def string_query(
             )
         )
     if missing_locale:
-        subquery = (
-            db.query(Translation.string_id)
-            .filter(
-                Translation.locale == missing_locale,
-                Translation.value != "",
-            )
-            .subquery()
-        )
-        query = query.filter(~StringEntry.id.in_(db.query(subquery.c.string_id)))
+        query = query.filter(~StringEntry.id.in_(_translated_string_ids(db, missing_locale)))
     if missing_locales:
-        missing_any = [
-            ~StringEntry.id.in_(
-                db.query(Translation.string_id).filter(
-                    Translation.locale == locale,
-                    func.trim(Translation.value) != "",
-                )
-            )
-            for locale in missing_locales
-        ]
-        if missing_any:
-            query = query.filter(or_(*missing_any))
+        query = query.filter(_missing_locales_clause(db, missing_locales))
+    if missing_any_locales is not None:
+        query = query.filter(_missing_locales_clause(db, missing_any_locales))
+    if complete_locale:
+        query = query.filter(StringEntry.id.in_(_translated_string_ids(db, complete_locale)))
     if status is not None:
         query = query.filter(StringEntry.status == status)
     if pending_delete is not None:
         query = query.filter(StringEntry.pending_delete.is_(pending_delete))
+    if never_published is True:
+        query = query.filter(StringEntry.published_at.is_(None))
     if has_unpublished_changes is not None:
         clause = unpublished_changes_clause()
         query = query.filter(clause if has_unpublished_changes else ~clause)
@@ -392,14 +452,44 @@ def string_query(
             .filter(
                 Translation.confidence.isnot(None),
                 Translation.confidence <= max_confidence,
-                Translation.value != "",
+                _translation_has_value(),
             )
             .subquery()
         )
         query = query.filter(StringEntry.id.in_(db.query(scored.c.string_id)))
+    if updated_within_days is not None:
+        cutoff = datetime.now(UTC) - timedelta(days=updated_within_days)
+        query = query.filter(StringEntry.updated_at >= cutoff)
     if batch_id is not None:
         query = query.filter(StringEntry.id.in_(_batch_member_ids(db, project_id, batch_id)))
     return query.distinct()
+
+
+def filtered_string_query(db: Session, project: Project, filt, *, eager: bool = True):
+    """Apply the same JSON filters to batch actions and translation scopes."""
+    return string_query(
+        db,
+        project.id,
+        eager=eager,
+        module_id=getattr(filt, "module_id", None),
+        unassigned_module=getattr(filt, "unassigned_module", None),
+        tag_id=getattr(filt, "tag_id", None),
+        untagged=getattr(filt, "untagged", None),
+        q=getattr(filt, "q", None),
+        missing_locale=getattr(filt, "missing_locale", None),
+        missing_any_locales=(
+            project.target_languages if getattr(filt, "missing_any", None) else None
+        ),
+        complete_locale=getattr(filt, "complete_locale", None),
+        status=getattr(filt, "status", None),
+        pending_delete=getattr(filt, "pending_delete", None),
+        never_published=getattr(filt, "never_published", None),
+        has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
+        deleted=getattr(filt, "deleted", None),
+        max_confidence=getattr(filt, "max_confidence", None),
+        batch_id=getattr(filt, "batch_id", None),
+        updated_within_days=getattr(filt, "updated_within_days", None),
+    )
 
 
 def resolve_string_ids(
@@ -412,20 +502,7 @@ def resolve_string_ids(
         return list(string_ids)
     if filt is None:
         return []
-    q = string_query(
-        db,
-        project.id,
-        module_id=getattr(filt, "module_id", None),
-        tag_id=getattr(filt, "tag_id", None),
-        q=getattr(filt, "q", None),
-        missing_locale=getattr(filt, "missing_locale", None),
-        status=getattr(filt, "status", None),
-        pending_delete=getattr(filt, "pending_delete", None),
-        has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
-        deleted=getattr(filt, "deleted", None),
-        max_confidence=getattr(filt, "max_confidence", None),
-        batch_id=getattr(filt, "batch_id", None),
-    )
+    q = filtered_string_query(db, project, filt)
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
 
@@ -481,15 +558,21 @@ def list_strings(
     project: Project,
     *,
     module: uuid.UUID | None = None,
+    unassigned_module: bool | None = None,
     tag: uuid.UUID | None = None,
+    untagged: bool | None = None,
     q: str | None = None,
     missing_locale: str | None = None,
+    missing_any: bool | None = None,
+    complete_locale: str | None = None,
     status: TranslationStatus | None = None,
     pending_delete: bool | None = None,
+    never_published: bool | None = None,
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
     batch_id: uuid.UUID | None = None,
+    updated_within_days: int | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> StringListOut:
@@ -497,15 +580,21 @@ def list_strings(
         db,
         project.id,
         module_id=module,
+        unassigned_module=unassigned_module,
         tag_id=tag,
+        untagged=untagged,
         q=q,
         missing_locale=missing_locale,
+        missing_any_locales=project.target_languages if missing_any else None,
+        complete_locale=complete_locale,
         status=status,
         pending_delete=pending_delete,
+        never_published=never_published,
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
         max_confidence=max_confidence,
         batch_id=batch_id,
+        updated_within_days=updated_within_days,
     )
     total = (
         query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()

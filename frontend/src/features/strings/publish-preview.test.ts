@@ -282,21 +282,33 @@ describe('searchToBatchFilter', () => {
     expect(
       searchToBatchFilter({
         module: 'm1',
+        unassigned_module: undefined,
         tag: 't1',
+        untagged: undefined,
         q: 'save',
+        missing_any: true,
+        complete_locale: undefined,
+        never_published: true,
         has_unpublished_changes: true,
+        updated_within_days: 30,
       }),
     ).toEqual({
       module_id: 'm1',
+      unassigned_module: undefined,
       tag_id: 't1',
+      untagged: undefined,
       q: 'save',
       missing_locale: undefined,
+      missing_any: true,
+      complete_locale: undefined,
       status: undefined,
       pending_delete: undefined,
+      never_published: true,
       has_unpublished_changes: true,
       deleted: undefined,
       max_confidence: undefined,
       batch_id: undefined,
+      updated_within_days: 30,
     })
   })
 })
