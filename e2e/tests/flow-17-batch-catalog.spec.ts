@@ -27,9 +27,31 @@ test.beforeAll(() => {
   resetDemoDatabase()
 })
 
-async function expectBatchToolbar(page: import('@playwright/test').Page, open: boolean) {
-  const toolbar = page.getByRole('toolbar', { name: 'Batch actions' })
-  await expect(toolbar).toHaveAttribute('aria-hidden', open ? 'false' : 'true')
+async function expectRowBatchSelected(
+  page: import('@playwright/test').Page,
+  key: string,
+  selected: boolean,
+) {
+  const checkbox = page
+    .getByRole('row')
+    .filter({ hasText: key })
+    .first()
+    .getByRole('checkbox', { name: 'Select row' })
+  if (selected) {
+    await expect(checkbox).toBeChecked()
+    await expect(
+      page
+        .getByRole('toolbar', { name: 'Batch actions' })
+        .getByRole('button', { name: 'Publish', exact: true }),
+    ).toBeVisible()
+  } else {
+    await expect(checkbox).not.toBeChecked()
+    await expect(
+      page
+        .getByRole('toolbar', { name: 'Batch actions' })
+        .getByRole('button', { name: 'Publish', exact: true }),
+    ).toBeHidden()
+  }
 }
 
 async function openActivity(page: import('@playwright/test').Page) {
@@ -81,12 +103,12 @@ test('chip clear: drops batch filter, hides tombstone, clears selection', async 
 
   const liveRow = page.getByRole('row').filter({ hasText: liveKey }).first()
   await liveRow.getByRole('checkbox', { name: 'Select row' }).click()
-  await expectBatchToolbar(page, true)
+  await expectRowBatchSelected(page, liveKey, true)
 
   await page.getByRole('button', { name: 'Clear batch filter' }).click()
   await expect(page).not.toHaveURL(new RegExp(`batch_id=${batchId}`))
   await expect(page.getByText('Filtered to this push')).toHaveCount(0)
-  await expectBatchToolbar(page, false)
+  await expectRowBatchSelected(page, liveKey, false)
 
   await searchStrings(page, deletedKey)
   await expect(page.getByRole('row').filter({ hasText: deletedKey })).toHaveCount(0)
@@ -101,12 +123,12 @@ test('Clear all: removes batch filter and selection', async ({ page }) => {
 
   const liveRow = page.getByRole('row').filter({ hasText: liveKey }).first()
   await liveRow.getByRole('checkbox', { name: 'Select row' }).click()
-  await expectBatchToolbar(page, true)
+  await expectRowBatchSelected(page, liveKey, true)
 
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page).not.toHaveURL(/batch_id=/)
   await expect(page.getByText('Filtered to this push')).toHaveCount(0)
-  await expectBatchToolbar(page, false)
+  await expectRowBatchSelected(page, liveKey, false)
 })
 
 test('unknown batch_id shows batch empty state; chip remains clearable', async ({ page }) => {
