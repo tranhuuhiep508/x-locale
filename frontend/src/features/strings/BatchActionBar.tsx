@@ -143,7 +143,7 @@ export function BatchActionBar({
         <div className="flex shrink-0 items-center gap-2 px-1">
           <Badge>{selectedCount}</Badge>
           <span className="text-sm">selected</span>
-          {busy ? <Spinner className="size-3.5 text-muted-foreground" /> : null}
+          {busy ? <Spinner aria-hidden="true" className="size-3.5 text-muted-foreground" /> : null}
         </div>
         <Separator orientation="vertical" className="mx-0.5 h-5" />
         <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}

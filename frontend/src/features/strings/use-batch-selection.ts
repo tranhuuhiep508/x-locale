@@ -27,7 +27,10 @@ export function useBatchSelection(
     enabled: needsLookup,
     retry: false,
   })
-  const entries = needsLookup ? selectedQuery.data?.items ?? [] : visibleSelected
+  const entries = useMemo(
+    () => needsLookup ? selectedQuery.data?.items ?? [] : visibleSelected,
+    [needsLookup, selectedQuery.data, visibleSelected],
+  )
   const actions = useMemo(() => batchActionSelection(entries), [entries])
   const ready = !needsLookup || (selectedQuery.isSuccess && !selectedQuery.isFetching)
   const error = needsLookup && selectedQuery.isError
