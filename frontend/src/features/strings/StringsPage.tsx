@@ -26,11 +26,13 @@ import { DataTableViewOptions } from '@/components/data-table/data-table-view-op
 import { catalogEmptyCopy } from '@/features/strings/batch-filter'
 import { useClearStringSelection } from '@/features/strings/selection-reset'
 import { BatchActionBar } from '@/features/strings/BatchActionBar'
+import { useBatchSelection } from '@/features/strings/use-batch-selection'
+import { batchSkippedMessage, type SelectionBatchRequest } from '@/features/strings/batch-selection'
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { AddManyStringsDialog } from '@/features/strings/AddManyStringsDialog'
 import { StringsFilters, hasActiveStringFilters } from '@/features/strings/StringsFilters'
 import { getStringColumns } from '@/features/strings/string-columns'
-import { canDiscardWorkingCopy, releaseRowClassName, releaseState } from '@/features/strings/working-copy'
+import { releaseRowClassName, releaseState } from '@/features/strings/working-copy'
 import {
   TranslateReviewDialog,
   jobStillRunning,
@@ -63,7 +65,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { jobsApi } from '@/lib/api/jobs'
 import { stringsApi } from '@/lib/api/strings'
 import type {
-  BatchRequest,
+  BatchAction,
   PublishPreviewRequest,
   StringEntry,
   TranslateProposalItem,
@@ -190,8 +192,8 @@ export function StringsPage() {
   })
 
   const batchMut = useMutation({
-    mutationFn: (req: BatchRequest) => stringsApi.batch(projectId, req),
-    onSuccess: (data, req) => {
+    mutationFn: ({ request }: SelectionBatchRequest) => stringsApi.batch(projectId, request),
+    onSuccess: (data, { request: req, selectedCount }) => {
       invalidateStrings()
       setRowSelection({})
       setShowMoveModule(false)
@@ -205,10 +207,10 @@ export function StringsPage() {
         setPublishFingerprint(null)
         publishRequestRef.current = null
       }
-      const message = batchSuccessMessage(req.action, data.affected)
+      const message = batchSuccessMessage(req.action, data.affected, selectedCount)
       if (message) toast.success(message)
     },
-    onError: (e, req) => {
+    onError: (e, { request: req }) => {
       if (req.action === 'publish' && isPublishFingerprintMismatch(e)) {
         const body = publishRequestRef.current
         if (body) {
@@ -389,9 +391,19 @@ export function StringsPage() {
     meta: tableMeta,
   })
 
-  const selectedList = Object.keys(rowSelection).filter((id) => rowSelection[id])
+  const selection = useBatchSelection(projectId, rowSelection, data)
+  const selectedList = selection.ids
   const selectedCount = selectedList.length
-  const selectedEntries = data.filter((entry) => rowSelection[entry.id])
+  const selectedEntries = selection.entries
+  const actionIds = selection.actions
+
+  function runSelectedAction(action: BatchAction, payload?: Record<string, unknown>) {
+    if (!selection.ready || batchMut.isPending || actionIds[action].length === 0) return
+    batchMut.mutate({
+      request: { action, string_ids: actionIds[action], payload },
+      selectedCount,
+    })
+  }
 
   useEffect(() => {
     if (selectedCount === 0) return
@@ -416,12 +428,9 @@ export function StringsPage() {
 
   useClearStringSelection(search, setRowSelection)
 
-  const showDiscardChanges = selectedEntries.some(canDiscardWorkingCopy)
-  const showDiscardDelete = selectedEntries.some((entry) => entry.pending_delete)
-  const showRestore = selectedEntries.some((entry) => Boolean(entry.deleted_at))
-  const unpublishCopy = unpublishConfirmCopy(selectedCount)
+  const unpublishCopy = unpublishConfirmCopy(actionIds.unpublish.length, selectedCount)
   const selectedReleased = selectedEntries.some(
-    (entry) => entry.status === 'public' || entry.published_at,
+    (entry) => actionIds.delete.includes(entry.id) && (entry.status === 'public' || entry.published_at),
   )
   const publishPreview = useMemo(
     () => (publishEntries ? buildPublishPreview(publishEntries) : null),
@@ -429,7 +438,11 @@ export function StringsPage() {
   )
 
   function openReviewPublishPreview() {
-    const source = reviewPublishSource(selectedEntries, searchToBatchFilter(search))
+    if (selectedCount > 0) {
+      requestPublishPreview({ string_ids: selectedList })
+      return
+    }
+    const source = reviewPublishSource([], searchToBatchFilter(search))
     if ('entries' in source) {
       requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) })
       return
@@ -451,7 +464,10 @@ export function StringsPage() {
 
   function confirmPublishPreview() {
     if (!publishPreview || !publishFingerprint || publishPreview.publishableIds.length === 0) return
-    batchMut.mutate(publishConfirmRequest(publishPreview.publishableIds, publishFingerprint))
+    batchMut.mutate({
+      request: publishConfirmRequest(publishPreview.publishableIds, publishFingerprint),
+      selectedCount: publishEntries?.length ?? publishPreview.publishableIds.length,
+    })
   }
 
   return (
@@ -557,6 +573,10 @@ export function StringsPage() {
                 selectedCount={selectedCount}
                 visible={selectedCount > 0}
                 pending={batchMut.isPending}
+                actions={actionIds}
+                checking={selection.checking}
+                selectionError={selection.error}
+                onRetry={() => { void selection.retry() }}
                 modules={modules}
                 tags={tags}
                 onPublish={() => openSelectedPublishPreview()}
@@ -564,18 +584,10 @@ export function StringsPage() {
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}
                 onDelete={() => setDeleteConfirm(true)}
-                onDiscardChanges={() =>
-                  batchMut.mutate({ action: 'discard_changes', string_ids: selectedList })
-                }
-                onDiscardDelete={() =>
-                  batchMut.mutate({ action: 'discard_delete', string_ids: selectedList })
-                }
-                onRestore={() => batchMut.mutate({ action: 'restore', string_ids: selectedList })}
+                onDiscardChanges={() => runSelectedAction('discard_changes')}
+                onDiscardDelete={() => runSelectedAction('discard_delete')}
+                onRestore={() => runSelectedAction('restore')}
                 onRestoreLastEdit={() => setRestoreLastConfirm(true)}
-                showDiscardChanges={showDiscardChanges}
-                showDiscardDelete={showDiscardDelete}
-                showRestore={showRestore}
-                showRestoreLastEdit={!showRestore}
                 onClear={() => setRowSelection({})}
               />
             }
@@ -659,11 +671,7 @@ export function StringsPage() {
         onClose={() => setShowMoveModule(false)}
         modules={modules}
         onSelect={(moduleId) =>
-          batchMut.mutate({
-            action: 'move_module',
-            string_ids: selectedList,
-            payload: { module_id: moduleId },
-          })
+          runSelectedAction('move_module', { module_id: moduleId })
         }
         isLoading={batchMut.isPending}
       />
@@ -673,11 +681,7 @@ export function StringsPage() {
         onClose={() => setShowAddTags(false)}
         tags={tags}
         onApply={(tagIds) =>
-          batchMut.mutate({
-            action: 'add_tags',
-            string_ids: selectedList,
-            payload: { tag_ids: tagIds },
-          })
+          runSelectedAction('add_tags', { tag_ids: tagIds })
         }
         isLoading={batchMut.isPending}
       />
@@ -686,11 +690,12 @@ export function StringsPage() {
         open={unpublishConfirm}
         onClose={() => setUnpublishConfirm(false)}
         onConfirm={() =>
-          batchMut.mutate({ action: 'unpublish', string_ids: selectedList })
+          runSelectedAction('unpublish')
         }
         title={unpublishCopy.title}
         description={unpublishCopy.description}
         confirmLabel={unpublishCopy.confirmLabel}
+        confirmDisabled={!selection.ready || actionIds.unpublish.length === 0}
         variant="default"
         isLoading={batchMut.isPending}
       />
@@ -699,15 +704,17 @@ export function StringsPage() {
         open={deleteConfirm}
         onClose={() => setDeleteConfirm(false)}
         onConfirm={() =>
-          batchMut.mutate({ action: 'delete', string_ids: selectedList })
+          runSelectedAction('delete')
         }
-        title={`Delete ${selectedCount} string${selectedCount > 1 ? 's' : ''}?`}
+        title={`Delete ${actionIds.delete.length} string${actionIds.delete.length === 1 ? '' : 's'}?`}
         description={
-          selectedReleased
+          (selectedReleased
             ? 'Published strings stay on prod until you publish the removal. Staging draft pull hides pending deletes. Never-published strings are hidden and can be restored from Deleted.'
-            : 'Strings are hidden from the grid. Restore them from the Deleted filter.'
+            : 'Strings are hidden from the grid. Restore them from the Deleted filter.') +
+          ' ' + batchSkippedMessage(selectedCount, actionIds.delete.length, true)
         }
         confirmLabel="Delete"
+        confirmDisabled={!selection.ready || actionIds.delete.length === 0}
         isLoading={batchMut.isPending}
       />
 
@@ -715,11 +722,12 @@ export function StringsPage() {
         open={restoreLastConfirm}
         onClose={() => setRestoreLastConfirm(false)}
         onConfirm={() =>
-          batchMut.mutate({ action: 'restore_last_history', string_ids: selectedList })
+          runSelectedAction('restore_last_history')
         }
         title="Restore last edit?"
-        description={`This restores the previous working copy for ${selectedCount} selected string${selectedCount === 1 ? '' : 's'}. Production snapshots are unchanged.`}
+        description={`Restore the previous working copy for up to ${actionIds.restore_last_history.length} selected string${actionIds.restore_last_history.length === 1 ? '' : 's'}. Strings without edit history are skipped. Production snapshots are unchanged. ${batchSkippedMessage(selectedCount, actionIds.restore_last_history.length, true)}`}
         confirmLabel="Restore last edit"
+        confirmDisabled={!selection.ready || actionIds.restore_last_history.length === 0}
         isLoading={batchMut.isPending}
       />
     </div>

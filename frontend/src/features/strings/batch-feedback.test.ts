@@ -32,3 +32,27 @@ describe('unpublishConfirmCopy', () => {
     expect(unpublishConfirmCopy(3).title).toBe('Unpublish 3 strings?')
   })
 })
+
+describe('mixed-selection feedback', () => {
+  it('reports affected rows and skips, including server-side no-ops', () => {
+    expect(batchSuccessMessage('discard_delete', 1, 3)).toBe(
+      'Discarded pending delete on 1 string. 2 selected strings skipped because they do not qualify.',
+    )
+    expect(batchSuccessMessage('restore_last_history', 0, 1)).toBe(
+      'Restored last edit on 0 strings. 1 selected string skipped because it does not qualify.',
+    )
+    expect(batchSuccessMessage('delete', 1, 2)).toBe(
+      'Marked 1 string for deletion. 1 selected string skipped because it does not qualify.',
+    )
+  })
+
+  it('does not mistake tag assignment counts for affected string counts', () => {
+    expect(batchSuccessMessage('add_tags', 4, 2)).toBeNull()
+  })
+
+  it('describes eligible unpublishes and skipped rows before confirmation', () => {
+    const copy = unpublishConfirmCopy(1, 3)
+    expect(copy.title).toBe('Unpublish this string?')
+    expect(copy.description).toContain('2 selected strings will be skipped')
+  })
+})

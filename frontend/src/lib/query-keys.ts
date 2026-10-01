@@ -11,6 +11,8 @@ const projectKeys = {
   tags: (id: string) => [...projectKeys.detail(id), 'tags'] as const,
   strings: {
     all: (id: string) => [...projectKeys.detail(id), 'strings'] as const,
+    selection: (id: string, ids: string[]) =>
+      [...projectKeys.strings.all(id), 'selection', ids] as const,
     list: (id: string, search: StringListParams) =>
       [...projectKeys.strings.all(id), search] as const,
   },
