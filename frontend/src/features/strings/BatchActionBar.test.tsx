@@ -36,16 +36,16 @@ describe('BatchActionBar', () => {
   it('shows eligible counts with distinct descriptions for pending removals and deleted rows', () => {
     const callbacks = props()
     render(<BatchActionBar {...callbacks} />)
-    const discard = screen.getByRole('button', { name: 'Discard delete', exact: true })
+    const discard = screen.getByRole('button', { name: 'Discard delete' })
     expect(discard.textContent).toContain('1')
     expect(discard.getAttribute('aria-description')).toContain('1 of 3')
     expect(discard.getAttribute('aria-description')).toContain('Deleted strings stay deleted')
     fireEvent.click(discard)
     expect(callbacks.onDiscardDelete).toHaveBeenCalledOnce()
-    const restore = screen.getByRole('button', { name: 'Restore', exact: true })
+    const restore = screen.getByRole('button', { name: 'Restore' })
     expect(restore.textContent).toContain('1')
     expect(restore.getAttribute('aria-description')).toContain('Pending removals stay queued')
-    const history = screen.getByRole('button', { name: 'Restore last edit', exact: true })
+    const history = screen.getByRole('button', { name: 'Restore last edit' })
     expect(history.textContent).toContain('≤ 2')
     expect(history.getAttribute('aria-description')).toContain('Up to 2 of 3')
   })
@@ -56,14 +56,14 @@ describe('BatchActionBar', () => {
       entry('deleted', { deleted_at: '2026-02-01T00:00:00Z' }),
     ])} selectedCount={1} />)
     for (const name of ['Publish', 'Unpublish', 'Delete']) {
-      const button = screen.getByRole('button', { name, exact: true })
+      const button = screen.getByRole('button', { name })
       expect((button as HTMLButtonElement).disabled).toBe(true)
       fireEvent.click(button)
     }
     expect(callbacks.onPublish).not.toHaveBeenCalled()
     expect(callbacks.onUnpublish).not.toHaveBeenCalled()
     expect(callbacks.onDelete).not.toHaveBeenCalled()
-    expect((screen.getByRole('button', { name: 'Restore', exact: true }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Restore' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('blocks actions while checking but lets users clear their selection', () => {
@@ -78,7 +78,7 @@ describe('BatchActionBar', () => {
   it('offers retry when selection lookup fails', () => {
     const retry = vi.fn()
     render(<BatchActionBar {...props()} selectionError onRetry={retry} />)
-    expect((screen.getByRole('button', { name: 'Publish', exact: true }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByRole('status').textContent).toContain('Retry to enable actions')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalledOnce()
