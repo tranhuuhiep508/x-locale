@@ -63,7 +63,11 @@ def to_module_out(
     else:
         n = (
             db.query(func.count(StringEntry.id))
-            .filter(StringEntry.module_id == module.id, StringEntry.deleted_at.is_(None))
+            .filter(
+                StringEntry.module_id == module.id,
+                StringEntry.project_id == module.project_id,
+                StringEntry.deleted_at.is_(None),
+            )
             .scalar()
             or 0
         )
@@ -108,6 +112,28 @@ def get_module(db: Session, project_id: uuid.UUID, module_id: uuid.UUID) -> Modu
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
     return module
+
+
+def require_module_in_project(
+    db: Session,
+    project_id: uuid.UUID,
+    module_id: uuid.UUID | None,
+) -> uuid.UUID | None:
+    """Return module_id when it belongs to the project.
+
+    None stays unassigned. A missing id, or a module owned by another project,
+    is rejected so string responses cannot serialize a foreign slug.
+    """
+    if module_id is None:
+        return None
+    mod = (
+        db.query(Module)
+        .filter(Module.project_id == project_id, Module.id == module_id)
+        .first()
+    )
+    if not mod:
+        raise HTTPException(status_code=400, detail="Unknown module")
+    return mod.id
 
 
 def create_module(db: Session, project: Project, payload: ModuleCreate) -> ModuleOut:

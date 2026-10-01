@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.helpers import content_hash, export_key, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
+from app.services.catalog import require_module_in_project
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
@@ -394,14 +395,7 @@ def resolve_json_import_module(
             status_code=400,
             detail="Flat projects do not assign modules on JSON import",
         )
-    mod = (
-        db.query(Module)
-        .filter(Module.project_id == project.id, Module.id == module_id)
-        .first()
-    )
-    if not mod:
-        raise HTTPException(status_code=400, detail="Unknown module")
-    return mod.id
+    return require_module_in_project(db, project.id, module_id)
 
 
 def resolve_json_import_tags(

@@ -25,6 +25,7 @@ from app.schemas import (
     TranslationOut,
     TranslationUpdate,
 )
+from app.services.catalog import require_module_in_project
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
@@ -637,11 +638,12 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
 
     validate_locales(project, payload.translations)
+    module_id = require_module_in_project(db, project.id, payload.module_id)
 
     entry = StringEntry(
         id=uuid.uuid4(),
         project_id=project.id,
-        module_id=payload.module_id,
+        module_id=module_id,
         key=payload.key,
         source_text=payload.source_text,
         description=payload.description,
@@ -693,7 +695,7 @@ def update_string(
     if "description" in payload.model_fields_set:
         entry.description = payload.description or None
     if "module_id" in payload.model_fields_set:
-        entry.module_id = payload.module_id
+        entry.module_id = require_module_in_project(db, project.id, payload.module_id)
     if payload.tag_ids is not None:
         tags = (
             db.query(Tag)
@@ -819,6 +821,7 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
         mid = uuid.UUID(module_id) if module_id else None
+        mid = require_module_in_project(db, project.id, mid)
         for entry in entries:
             entry.module_id = mid
             affected += 1
