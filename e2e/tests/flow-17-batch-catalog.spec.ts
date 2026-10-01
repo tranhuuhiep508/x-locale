@@ -13,6 +13,7 @@ import {
 import { resetDemoDatabase } from '../helpers/database'
 import {
   cancelPublish,
+  clearStringSearch,
   expectPublishDialog,
   openDemoStrings,
   searchStrings,
@@ -123,6 +124,31 @@ test('happy path: Review this batch lists live, soft-deleted, and pending_delete
   await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: deletedKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: pendingKey })).toBeVisible()
+})
+
+test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', async ({ page }) => {
+  await openDemoStrings(page)
+  await reviewBatchFromActivityCard(
+    page,
+    /Imported · \d+ strings?/,
+    batchId,
+    'Filtered to this push',
+  )
+
+  await searchStrings(page, liveKey)
+  await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: deletedKey })).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'sign_in' })).toHaveCount(0)
+
+  await clearStringSearch(page)
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()
+  await expect(page).toHaveURL(new RegExp(`batch_id=${batchId}`))
+  await expect(page.getByText('Filtered to this push')).toBeVisible()
+
+  await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: deletedKey })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: pendingKey })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'sign_in' })).toHaveCount(0)
 })
 
 test('chip clear: drops batch filter, hides tombstone, clears selection', async ({ page }) => {
