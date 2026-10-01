@@ -21,6 +21,7 @@ from app.models import (
     TranslationStatus,
 )
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult
+from app.services.catalog import owned_module
 from app.services.strings import live_module_label, promote_string, restore_string
 from app.services.sync import IMPORT_DIFF_SAMPLE
 
@@ -66,10 +67,9 @@ def build_workbook(
     if _is_modular(project):
         by_module: dict[str | None, list[StringEntry]] = {}
         for e in entries:
-            if stage == "public":
-                slug = e.published_module.slug if e.published_module else None
-            else:
-                slug = e.module.slug if e.module else None
+            module = e.published_module if stage == "public" else e.module
+            owned = owned_module(project.id, module)
+            slug = owned.slug if owned else None
             by_module.setdefault(slug, []).append(e)
         for slug in sorted(k for k in by_module if k is not None):
             _write_sheet(wb, slug, by_module[slug], locales, project, stage)

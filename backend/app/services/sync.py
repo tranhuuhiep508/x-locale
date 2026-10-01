@@ -247,6 +247,7 @@ def build_modular_export(
         if stage == "public":
             if entry.status != TranslationStatus.public:
                 continue
+            # Slug comes from a project-scoped module map (see load_export_rows).
             module = entry.published_module
             key = entry.published_key or entry.key
         else:

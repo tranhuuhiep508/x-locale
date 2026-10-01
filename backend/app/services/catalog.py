@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -118,11 +119,13 @@ def require_module_in_project(
     db: Session,
     project_id: uuid.UUID,
     module_id: uuid.UUID | None,
+    *,
+    on_missing: Literal["error", "clear"] = "error",
 ) -> uuid.UUID | None:
     """Return module_id when it belongs to the project.
 
     None stays unassigned. A missing id, or a module owned by another project,
-    is rejected so string responses cannot serialize a foreign slug.
+    raises 400 unless on_missing is "clear", which drops the reference instead.
     """
     if module_id is None:
         return None
@@ -132,8 +135,46 @@ def require_module_in_project(
         .first()
     )
     if not mod:
+        if on_missing == "clear":
+            return None
         raise HTTPException(status_code=400, detail="Unknown module")
     return mod.id
+
+
+def owned_module(project_id: uuid.UUID, module: Module | None) -> Module | None:
+    """Module attached to this project. A foreign module is treated as unset."""
+    if module is None or module.project_id != project_id:
+        return None
+    return module
+
+
+SCRUB_FOREIGN_MODULE_IDS = """
+UPDATE strings
+SET module_id = NULL
+WHERE module_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM modules
+    WHERE modules.id = strings.module_id
+      AND modules.project_id = strings.project_id
+  )
+"""
+
+SCRUB_FOREIGN_PUBLISHED_MODULE_IDS = """
+UPDATE strings
+SET published_module_id = NULL
+WHERE published_module_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM modules
+    WHERE modules.id = strings.published_module_id
+      AND modules.project_id = strings.project_id
+  )
+"""
+
+
+def scrub_foreign_module_refs(connection) -> None:
+    """Null module refs that point at another project's module."""
+    connection.exec_driver_sql(SCRUB_FOREIGN_MODULE_IDS)
+    connection.exec_driver_sql(SCRUB_FOREIGN_PUBLISHED_MODULE_IDS)
 
 
 def create_module(db: Session, project: Project, payload: ModuleCreate) -> ModuleOut:

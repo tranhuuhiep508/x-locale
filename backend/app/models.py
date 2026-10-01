@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -147,7 +148,11 @@ class ApiKey(Base):
 
 class Module(Base):
     __tablename__ = "modules"
-    __table_args__ = (UniqueConstraint("project_id", "slug", name="uq_project_module_slug"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "slug", name="uq_project_module_slug"),
+        # Composite FK target so strings can require module.project_id = string.project_id.
+        UniqueConstraint("project_id", "id", name="uq_module_project_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -205,6 +210,20 @@ class StringEntry(Base):
             unique=True,
             sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
+        ),
+        # NO ACTION (not SET NULL): a composite SET NULL would also clear project_id.
+        # The single-column module FKs still SET NULL when a module row is deleted.
+        ForeignKeyConstraint(
+            ["project_id", "module_id"],
+            ["modules.project_id", "modules.id"],
+            name="fk_strings_project_module",
+            ondelete="NO ACTION",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "published_module_id"],
+            ["modules.project_id", "modules.id"],
+            name="fk_strings_project_published_module",
+            ondelete="NO ACTION",
         ),
     )
 

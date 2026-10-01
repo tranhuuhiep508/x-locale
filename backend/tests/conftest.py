@@ -6,7 +6,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -30,7 +30,7 @@ def client(tmp_path, monkeypatch):
     # Re-import with patched settings is tricky; create tables on a fresh engine
     from app import models  # noqa: F401
     from app.config import settings
-    from app.database import Base, get_db, register_activity_listener
+    from app.database import Base, enable_sqlite_foreign_keys, get_db, register_activity_listener
     from app.main import app
 
     monkeypatch.setattr(settings, "auth_dev_bypass", True)
@@ -39,6 +39,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "oidc_client_secret", "")
 
     engine = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    event.listen(engine, "connect", enable_sqlite_foreign_keys)
     TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     register_activity_listener()

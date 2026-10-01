@@ -5,13 +5,30 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+import pytest
+from alembic.config import Config
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.pool import StaticPool
 
-from app.database import Base
-from app.models import Module, Project, StringEntry, TranslationStatus
-from app.services.catalog import to_module_out
-from tests.helpers import make_project
+from alembic import command
+from app.config import settings
+from app.database import Base, enable_sqlite_foreign_keys
+from app.models import (
+    Activity,
+    ActivityAction,
+    ActorType,
+    EntityType,
+    Module,
+    Project,
+    StringEntry,
+    TranslationStatus,
+)
+from app.services.activities import apply_revert, revert_activity
+from app.services.catalog import scrub_foreign_module_refs, to_module_out
+from app.services.strings import serialize_string
+from tests.helpers import make_project, publish_strings
 
 FOREIGN_SLUG = "secret-b"
 
@@ -221,3 +238,341 @@ def test_to_module_out_counts_only_strings_in_the_module_project():
         out = to_module_out(db, module_a)
         assert out.string_count == 1
         assert out.slug == "auth"
+
+
+def test_module_crud_still_404s_for_another_project(client):
+    project_a, project_b, _, module_b = _projects_and_modules(client)
+    foreign_id = module_b["id"]
+
+    listed = client.get(f"/api/projects/{project_a['id']}/modules").json()
+    assert FOREIGN_SLUG not in {row["slug"] for row in listed}
+
+    patched = client.patch(
+        f"/api/projects/{project_a['id']}/modules/{foreign_id}",
+        json={"name": "Hijack"},
+    )
+    assert patched.status_code == 404, patched.text
+    assert patched.json()["detail"] == "Module not found"
+
+    deleted = client.delete(f"/api/projects/{project_a['id']}/modules/{foreign_id}")
+    assert deleted.status_code == 404, deleted.text
+
+    still_there = client.get(f"/api/projects/{project_b['id']}/modules").json()
+    assert any(row["id"] == foreign_id and row["slug"] == FOREIGN_SLUG for row in still_there)
+
+
+def test_delete_module_clears_working_and_published_module(client):
+    project_a, _, module_a, _ = _projects_and_modules(client)
+    pid = project_a["id"]
+    created = _string_in(client, pid, module_a["id"])
+    publish_strings(client, pid, [created["id"]])
+
+    deleted = client.delete(f"/api/projects/{pid}/modules/{module_a['id']}")
+    assert deleted.status_code == 204, deleted.text
+
+    row = client.get(f"/api/projects/{pid}/strings/{created['id']}").json()
+    assert row["module_id"] is None
+    assert row["module_slug"] is None
+    assert row["published_module_id"] is None
+    assert row["published_module_slug"] is None
+
+
+def _project_pair(db: Session):
+    project_a = Project(name="A", slug="project-a", base_language="vi", target_languages=["en"])
+    project_b = Project(name="B", slug="project-b", base_language="vi", target_languages=["en"])
+    module_a = Module(project=project_a, slug="auth", name="Auth")
+    module_b = Module(project=project_b, slug=FOREIGN_SLUG, name="Secret")
+    db.add_all([project_a, project_b, module_a, module_b])
+    db.flush()
+    return project_a, project_b, module_a, module_b
+
+
+def _fk_engine():
+    engine = create_engine("sqlite://")
+    event.listen(engine, "connect", enable_sqlite_foreign_keys)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_serialize_string_hides_foreign_module_slug():
+    engine = _fk_engine()
+    with Session(engine) as db:
+        project_a, _, module_a, module_b = _project_pair(db)
+        entry = StringEntry(
+            project_id=project_a.id,
+            module_id=module_a.id,
+            published_module_id=module_a.id,
+            key="login",
+            source_text="Đăng nhập",
+            status=TranslationStatus.draft,
+        )
+        db.add(entry)
+        db.commit()
+        entry = (
+            db.query(StringEntry)
+            .options(
+                joinedload(StringEntry.module),
+                joinedload(StringEntry.published_module),
+                joinedload(StringEntry.translations),
+                joinedload(StringEntry.tags),
+            )
+            .one()
+        )
+        db.refresh(module_b)
+        with db.no_autoflush:
+            entry.module = module_b
+            entry.published_module = module_b
+            out = serialize_string(entry)
+        dumped = out.model_dump_json()
+        assert out.module_id is None
+        assert out.module_slug is None
+        assert out.published_module_id is None
+        assert out.published_module_slug is None
+        assert FOREIGN_SLUG not in dumped
+        assert str(module_b.id) not in dumped
+
+
+def test_database_rejects_cross_project_module_refs():
+    engine = _fk_engine()
+    with Session(engine) as db:
+        project_a, _, module_a, module_b = _project_pair(db)
+        db.add(
+            StringEntry(
+                project_id=project_a.id,
+                module_id=module_a.id,
+                key="ok",
+                source_text="Ok",
+                status=TranslationStatus.draft,
+            )
+        )
+        db.commit()
+
+        db.add(
+            StringEntry(
+                project_id=project_a.id,
+                module_id=module_b.id,
+                key="foreign-working",
+                source_text="Nope",
+                status=TranslationStatus.draft,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        db.add(
+            StringEntry(
+                project_id=project_a.id,
+                published_module_id=module_b.id,
+                key="foreign-published",
+                source_text="Nope",
+                status=TranslationStatus.draft,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        kept = db.scalars(select(StringEntry.key)).all()
+        assert kept == ["ok"]
+
+
+def test_scrub_clears_foreign_module_refs():
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+
+    @event.listens_for(engine, "connect")
+    def _fk_off(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=OFF")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        project_a, _, _, module_b = _project_pair(db)
+        entry = StringEntry(
+            project_id=project_a.id,
+            module_id=module_b.id,
+            published_module_id=module_b.id,
+            key="leak",
+            source_text="Leak",
+            status=TranslationStatus.draft,
+        )
+        db.add(entry)
+        db.commit()
+        scrub_foreign_module_refs(db.connection())
+        db.commit()
+        db.refresh(entry)
+        assert entry.module_id is None
+        assert entry.published_module_id is None
+
+        out = serialize_string(entry)
+        assert out.module_slug is None
+        assert out.published_module_slug is None
+        assert FOREIGN_SLUG not in out.model_dump_json()
+
+
+def test_revert_clears_foreign_module_and_restores_same_project_module():
+    engine = _fk_engine()
+    with Session(engine) as db:
+        project_a, _, module_a, module_b = _project_pair(db)
+        entry = StringEntry(
+            project_id=project_a.id,
+            module_id=module_a.id,
+            published_module_id=module_a.id,
+            key="login",
+            source_text="Đăng nhập",
+            status=TranslationStatus.draft,
+        )
+        db.add(entry)
+        db.flush()
+        foreign = Activity(
+            project_id=project_a.id,
+            actor_type=ActorType.user,
+            actor_label="tester",
+            action=ActivityAction.update,
+            entity_type=EntityType.string,
+            entity_id=str(entry.id),
+            string_id=entry.id,
+            before={
+                "module_id": str(module_b.id),
+                "published_module_id": str(module_b.id),
+            },
+            after={
+                "module_id": str(module_a.id),
+                "published_module_id": str(module_a.id),
+            },
+            event_type="string.updated",
+            summary="Moved module",
+            is_revertible=True,
+        )
+        db.add(foreign)
+        db.commit()
+
+        revert_activity(db, project_a, foreign.id)
+        reloaded = (
+            db.query(StringEntry)
+            .options(
+                joinedload(StringEntry.module),
+                joinedload(StringEntry.published_module),
+                joinedload(StringEntry.translations),
+                joinedload(StringEntry.tags),
+            )
+            .filter(StringEntry.id == entry.id)
+            .one()
+        )
+        assert reloaded.module_id is None
+        assert reloaded.published_module_id is None
+        out = serialize_string(reloaded)
+        assert out.module_id is None
+        assert out.module_slug is None
+        assert out.published_module_id is None
+        assert out.published_module_slug is None
+        assert FOREIGN_SLUG not in out.model_dump_json()
+        assert str(module_b.id) not in out.model_dump_json()
+
+        restored_id = uuid.uuid4()
+        recreate = Activity(
+            project_id=project_a.id,
+            actor_type=ActorType.user,
+            actor_label="tester",
+            action=ActivityAction.delete,
+            entity_type=EntityType.string,
+            entity_id=str(restored_id),
+            string_id=restored_id,
+            before={
+                "id": str(restored_id),
+                "project_id": str(project_a.id),
+                "key": "from-delete",
+                "source_text": "Back",
+                "status": "draft",
+                "module_id": str(module_a.id),
+                "published_module_id": str(module_a.id),
+            },
+            after=None,
+            event_type="string.deleted",
+            summary="Deleted",
+            is_revertible=True,
+        )
+        db.add(recreate)
+        db.commit()
+        apply_revert(db, recreate)
+        db.commit()
+        brought_back = (
+            db.query(StringEntry)
+            .options(joinedload(StringEntry.module), joinedload(StringEntry.published_module))
+            .filter(StringEntry.id == restored_id)
+            .one()
+        )
+        assert brought_back.module_id == module_a.id
+        assert brought_back.published_module_id == module_a.id
+        restored_out = serialize_string(brought_back)
+        assert restored_out.module_slug == "auth"
+        assert restored_out.published_module_slug == "auth"
+        assert FOREIGN_SLUG not in restored_out.model_dump_json()
+
+
+def test_migration_scrubs_foreign_modules_then_enforces(tmp_path, monkeypatch):
+    url = f"sqlite:///{tmp_path / 'migrate.db'}"
+    monkeypatch.setattr(settings, "database_url", url)
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "k0f16d7e8f9a")
+
+    engine = create_engine(url)
+    event.listen(engine, "connect", enable_sqlite_foreign_keys)
+    with Session(engine) as db:
+        project_a, _, module_a, module_b = _project_pair(db)
+        db.add(
+            StringEntry(
+                project_id=project_a.id,
+                module_id=module_b.id,
+                published_module_id=module_b.id,
+                key="leak",
+                source_text="Leak",
+                status=TranslationStatus.public,
+            )
+        )
+        db.add(
+            StringEntry(
+                project_id=project_a.id,
+                module_id=module_a.id,
+                key="keep",
+                source_text="Keep",
+                status=TranslationStatus.draft,
+            )
+        )
+        db.commit()
+        project_a_id = project_a.id
+        module_a_id = module_a.id
+        module_b_id = module_b.id
+
+    command.upgrade(cfg, "head")
+
+    with Session(engine) as db:
+        leaked = db.scalar(select(StringEntry).where(StringEntry.key == "leak"))
+        assert leaked is not None
+        assert leaked.module_id is None
+        assert leaked.published_module_id is None
+        kept = db.scalar(select(StringEntry).where(StringEntry.key == "keep"))
+        assert kept is not None
+        assert kept.module_id == module_a_id
+
+        db.add(
+            StringEntry(
+                project_id=project_a_id,
+                module_id=module_b_id,
+                key="again",
+                source_text="Again",
+                status=TranslationStatus.draft,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    with engine.connect() as conn:
+        index_sql = conn.exec_driver_sql(
+            "SELECT sql FROM sqlite_master WHERE name = 'uq_project_key_alive'"
+        ).scalar()
+    assert index_sql
+    assert "deleted_at" in index_sql.lower()
