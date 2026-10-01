@@ -28,6 +28,7 @@ from app.models import (
 from app.services.activities import apply_revert, revert_activity
 from app.services.catalog import scrub_foreign_module_refs, to_module_out
 from app.services.strings import serialize_string
+from app.services.sync import build_modular_export
 from tests.helpers import make_project, publish_strings
 
 FOREIGN_SLUG = "secret-b"
@@ -330,6 +331,54 @@ def test_serialize_string_hides_foreign_module_slug():
         assert out.published_module_slug is None
         assert FOREIGN_SLUG not in dumped
         assert str(module_b.id) not in dumped
+
+
+def test_modular_export_orm_rows_omit_foreign_module_slug():
+    engine = _fk_engine()
+    with Session(engine) as db:
+        project_a, _, module_a, module_b = _project_pair(db)
+        own = StringEntry(
+            project_id=project_a.id,
+            module_id=module_a.id,
+            published_module_id=module_a.id,
+            key="own",
+            source_text="Own",
+            published_key="own",
+            published_source_text="Own",
+            status=TranslationStatus.public,
+        )
+        foreign = StringEntry(
+            project_id=project_a.id,
+            module_id=module_a.id,
+            published_module_id=module_a.id,
+            key="leak",
+            source_text="Leak",
+            published_key="leak",
+            published_source_text="Leak",
+            status=TranslationStatus.public,
+        )
+        db.add_all([own, foreign])
+        db.commit()
+        db.refresh(module_b)
+        own.translations = []
+        foreign.translations = []
+        with db.no_autoflush:
+            foreign.module = module_b
+            foreign.published_module = module_b
+            draft = build_modular_export(project_a, [own, foreign], "draft")
+            public = build_modular_export(project_a, [own, foreign], "public")
+
+    assert "auth" in draft["modules"]
+    assert "own" in draft["modules"]["auth"]["vi"]
+    assert FOREIGN_SLUG not in draft["modules"]
+    assert "leak" in draft["unassigned"]["vi"]
+    assert FOREIGN_SLUG not in draft["manifest"]["modules"]
+
+    assert "auth" in public["modules"]
+    assert "own" in public["modules"]["auth"]["vi"]
+    assert FOREIGN_SLUG not in public["modules"]
+    assert "leak" in public["unassigned"]["vi"]
+    assert FOREIGN_SLUG not in public["manifest"]["modules"]
 
 
 def test_database_rejects_cross_project_module_refs():

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.helpers import content_hash, export_key, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
-from app.services.catalog import require_module_in_project
+from app.services.catalog import owned_module, require_module_in_project
 from app.services.strings import (
     apply_translation_values,
     ensure_translation_rows,
@@ -231,6 +231,17 @@ def build_flat_export(
     return result
 
 
+def _scoped_export_module(project_id, module: Module | _ExportSlug | None):
+    """Keep a module slug only when it belongs to this project.
+
+    JSON export rows carry a slug already loaded for the project. ORM modules
+    still need the same ownership check as string serialization.
+    """
+    if isinstance(module, Module):
+        return owned_module(project_id, module)
+    return module
+
+
 def build_modular_export(
     project: Project,
     entries: list[StringEntry],
@@ -247,13 +258,12 @@ def build_modular_export(
         if stage == "public":
             if entry.status != TranslationStatus.public:
                 continue
-            # Slug comes from a project-scoped module map (see load_export_rows).
-            module = entry.published_module
+            module = _scoped_export_module(project.id, entry.published_module)
             key = entry.published_key or entry.key
         else:
             if entry.pending_delete:
                 continue
-            module = entry.module
+            module = _scoped_export_module(project.id, entry.module)
             key = entry.key
         bucket_key = module.slug if module else None
         if bucket_key:
