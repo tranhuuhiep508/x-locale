@@ -198,6 +198,7 @@ export interface BatchFilter {
   has_unpublished_changes?: boolean
   deleted?: boolean
   max_confidence?: number
+  batch_id?: string
   updated_within_days?: 7 | 30
 }
 

@@ -20,6 +20,8 @@ export const stringsSearchSchema = z.object({
   never_published: booleanSearchParam,
   deleted: booleanSearchParam,
   max_confidence: z.coerce.number().int().min(0).max(100).optional(),
+  batch_id: z.string().uuid().optional(),
+  batch_kind: z.string().optional(),
   updated_within_days: z.preprocess(
     (value) => (typeof value === 'string' ? Number(value) : value),
     z.union([z.literal(7), z.literal(30)]).optional(),

@@ -58,3 +58,7 @@ Restore always writes a **new** activity. History restore does not use the rever
 `pending_delete` is still `action=update`; the classifier labels it `string.pending_delete`. Publish/unpublish are `action=update` labeled from `status` / `published_*` diffs. Public snapshots are rolled back only by Publish / Unpublish (or **batch** undo of a publish/unpublish event), not by History restore. Restoring an older **content** version while the string is pending-delete restores text only and leaves `pending_delete` set; the API `notice` tells the user to use grid **Restore** to cancel the removal.
 
 The UI `changed` list is working-copy fields only (`key`, `source_text`, translations, `status`). It does not dump `module_id`, `published_*`, or `deleted_at`.
+
+### Review a push from Activity
+
+`GET /strings` accepts optional `batch_id`. Membership is the distinct `activities.string_id` values for that `(project_id, batch_id)` (`ix_activities_project_batch_id`). An unknown or other-project id returns an empty list (200). When `batch_id` is set and `deleted` is omitted, the list includes soft-deleted and `pending_delete` members; an explicit `deleted` or `pending_delete` value still applies. `batch_id` AND-composes with the other catalog filters (module, tag, `q`, and any later advanced filters). None of those filters are ignored. The same `BatchFilter.batch_id` is used by publish-preview and batch actions. The Activity card opens the catalog with `?batch_id=` — not a long `string_ids=` list.

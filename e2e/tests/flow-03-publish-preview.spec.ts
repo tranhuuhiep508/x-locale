@@ -67,19 +67,17 @@ test('edit public string shows content updates in publish preview', async ({ pag
   await expect(page.getByRole('row').filter({ hasText: 'Version 2' })).toBeVisible()
 })
 
-test('in-sync public string shows nothing to publish with confirm disabled', async ({ page }) => {
+test('in-sync public selection disables Publish with zero eligible strings', async ({ page }) => {
   await searchStrings(page, publicKey)
   const row = page.getByRole('row').filter({ hasText: publicKey }).first()
   await row.getByRole('checkbox', { name: 'Select row' }).click()
-  await page
-    .getByRole('toolbar', { name: 'Batch actions' })
-    .getByRole('button', { name: 'Publish', exact: true })
-    .click()
-  await expectPublishDialog(page)
-  await expect(page.getByText('Nothing to publish')).toBeVisible()
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Publish preview' })
-  await expect(dialog.getByRole('button', { name: 'Publish' })).toBeDisabled()
-  await cancelPublish(page)
+  const toolbar = page.getByRole('toolbar', { name: 'Batch actions' })
+  const publish = toolbar.getByRole('button', { name: 'Publish', exact: true })
+  await expect(publish).toBeDisabled()
+  await expect(publish).toHaveAttribute('aria-description', /0 of 1 selected strings/)
+  await expect(page.getByRole('heading', { name: 'Publish preview' })).toBeHidden()
+  await expect(row.getByRole('switch', { name: 'Public' })).toBeVisible()
+  await toolbar.getByRole('button', { name: 'Clear selection' }).click()
 })
 
 test('needs publish filter opens review publish changes', async ({ page }) => {

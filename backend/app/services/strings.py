@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import distinct, exists, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import Activity, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
     BatchRequest,
     BatchResult,
@@ -294,6 +294,22 @@ def apply_translation_values(
                 existing.confidence = None
 
 
+def _batch_member_ids(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID):
+    """Distinct string ids touched by activities in this project batch.
+
+    Equality on (project_id, batch_id) matches ix_activities_project_batch_id.
+    """
+    return (
+        db.query(Activity.string_id)
+        .filter(
+            Activity.project_id == project_id,
+            Activity.batch_id == batch_id,
+            Activity.string_id.isnot(None),
+        )
+        .distinct()
+    )
+
+
 def _translation_has_value():
     """Keep missing, complete, and confidence filters on the same definition."""
     return func.trim(Translation.value) != ""
@@ -367,9 +383,11 @@ def string_query(
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    batch_id: uuid.UUID | None = None,
     updated_within_days: int | None = None,
     eager: bool = True,
 ):
+    # Validate conflicting filters before resolving batch membership.
     _validate_string_filters(
         module_id=module_id,
         unassigned_module=unassigned_module,
@@ -388,9 +406,11 @@ def string_query(
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
         )
+    # Default catalog is live-only. A batch review includes tombstones unless
+    # the caller explicitly sets deleted.
     if deleted is True:
         query = query.filter(StringEntry.deleted_at.isnot(None))
-    else:
+    elif deleted is False or batch_id is None:
         query = query.filter(StringEntry.deleted_at.is_(None))
     if module_id is not None:
         query = query.filter(StringEntry.module_id == module_id)
@@ -440,6 +460,8 @@ def string_query(
     if updated_within_days is not None:
         cutoff = datetime.now(UTC) - timedelta(days=updated_within_days)
         query = query.filter(StringEntry.updated_at >= cutoff)
+    if batch_id is not None:
+        query = query.filter(StringEntry.id.in_(_batch_member_ids(db, project_id, batch_id)))
     return query.distinct()
 
 
@@ -465,6 +487,7 @@ def filtered_string_query(db: Session, project: Project, filt, *, eager: bool = 
         has_unpublished_changes=getattr(filt, "has_unpublished_changes", None),
         deleted=getattr(filt, "deleted", None),
         max_confidence=getattr(filt, "max_confidence", None),
+        batch_id=getattr(filt, "batch_id", None),
         updated_within_days=getattr(filt, "updated_within_days", None),
     )
 
@@ -548,6 +571,7 @@ def list_strings(
     has_unpublished_changes: bool | None = None,
     deleted: bool | None = None,
     max_confidence: int | None = None,
+    batch_id: uuid.UUID | None = None,
     updated_within_days: int | None = None,
     page: int = 1,
     page_size: int = 50,
@@ -569,6 +593,7 @@ def list_strings(
         has_unpublished_changes=has_unpublished_changes,
         deleted=deleted,
         max_confidence=max_confidence,
+        batch_id=batch_id,
         updated_within_days=updated_within_days,
     )
     total = (
@@ -777,7 +802,13 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         for entry in entries:
             if discard_working_changes(entry):
                 affected += 1
-    elif action in ("discard_delete", "restore"):
+    elif action == "discard_delete":
+        # Mixed batch selections can include tombstones. Only cancel pending removals.
+        for entry in entries:
+            if entry.deleted_at is None and entry.pending_delete:
+                entry.pending_delete = False
+                affected += 1
+    elif action == "restore":
         for entry in entries:
             if restore_string(entry):
                 affected += 1

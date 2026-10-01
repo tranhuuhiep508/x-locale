@@ -310,6 +310,7 @@ export function searchToBatchFilter(
     | 'has_unpublished_changes'
     | 'deleted'
     | 'max_confidence'
+    | 'batch_id'
     | 'updated_within_days'
   >,
 ): BatchFilter {
@@ -328,6 +329,7 @@ export function searchToBatchFilter(
     has_unpublished_changes: search.has_unpublished_changes,
     deleted: search.deleted,
     max_confidence: search.max_confidence,
+    batch_id: search.batch_id,
     updated_within_days: search.updated_within_days,
   }
 }

@@ -4,7 +4,7 @@ import type { ActivityFeedParams } from '@/lib/api/activities'
 import { authApi } from '@/lib/api/auth'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
 import { projectsApi } from '@/lib/api/projects'
-import { stringsApi } from '@/lib/api/strings'
+import { stringsApi, toStringListParams } from '@/lib/api/strings'
 import type { StringListParams } from '@/lib/api/strings'
 import { queryKeys } from '@/lib/query-keys'
 
@@ -53,12 +53,14 @@ export const tagsQuery = (projectId: string) =>
     queryFn: () => tagsApi.list(projectId),
   })
 
-export const stringsQuery = (projectId: string, search: StringListParams) =>
-  queryOptions({
-    queryKey: queryKeys.projects.strings.list(projectId, search),
-    queryFn: () => stringsApi.list(projectId, search),
+export const stringsQuery = (projectId: string, search: StringListParams) => {
+  const params = toStringListParams(search)
+  return queryOptions({
+    queryKey: queryKeys.projects.strings.list(projectId, params),
+    queryFn: () => stringsApi.list(projectId, params),
     placeholderData: (prev) => prev,
   })
+}
 
 export const activitiesQuery = (projectId: string, page: number, pageSize?: number) =>
   queryOptions({

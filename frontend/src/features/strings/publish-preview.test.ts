@@ -307,6 +307,7 @@ describe('searchToBatchFilter', () => {
       has_unpublished_changes: true,
       deleted: undefined,
       max_confidence: undefined,
+      batch_id: undefined,
       updated_within_days: 30,
     })
   })
