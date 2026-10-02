@@ -55,6 +55,7 @@ from app.services.activity_events import (
     published_fields_changed,
     snapshot_key,
 )
+from app.services.catalog import require_module_in_project
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -840,6 +841,17 @@ def _set_entry_published_translations(
             existing.published_value = value
 
 
+def _snapshot_module_id(db: Session, project_id: uuid.UUID, raw: Any) -> uuid.UUID | None:
+    """Module id from an activity snapshot, only when it still belongs to the project."""
+    if not raw:
+        return None
+    try:
+        module_id = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+    except (ValueError, TypeError):
+        return None
+    return require_module_in_project(db, project_id, module_id, on_missing="clear")
+
+
 def _parse_datetime(raw: Any) -> datetime | None:
     if raw is None or raw == "":
         return None
@@ -862,12 +874,9 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
     if "published_at" in snap:
         entry.published_at = _parse_datetime(snap.get("published_at"))
     if "published_module_id" in snap:
-        pmid = snap.get("published_module_id")
-        if pmid:
-            module = db.query(Module).filter(Module.id == uuid.UUID(pmid)).first()
-            entry.published_module_id = module.id if module else None
-        else:
-            entry.published_module_id = None
+        entry.published_module_id = _snapshot_module_id(
+            db, entry.project_id, snap.get("published_module_id")
+        )
     if "published_translations" in snap:
         _set_entry_published_translations(
             db, entry, _translations_from_snapshot(snap.get("published_translations"))
@@ -1061,12 +1070,7 @@ def _apply_working_copy_only(
     if include_status and "status" in snap:
         entry.status = TranslationStatus(snap["status"])
     if "module_id" in snap:
-        mid = snap.get("module_id")
-        if mid:
-            module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
-            entry.module_id = module.id if module else None
-        else:
-            entry.module_id = None
+        entry.module_id = _snapshot_module_id(db, entry.project_id, snap.get("module_id"))
     if "tag_ids" in snap:
         _set_entry_tags(db, entry, snap.get("tag_ids") or [])
     if "translations" in snap:
@@ -1135,11 +1139,9 @@ def apply_revert(db: Session, activity: Activity) -> None:
             if existing:
                 _apply_working_snapshot(db, existing, before)
             else:
-                mid = before.get("module_id")
-                module_id = None
-                if mid:
-                    module = db.query(Module).filter(Module.id == uuid.UUID(mid)).first()
-                    module_id = module.id if module else None
+                module_id = _snapshot_module_id(
+                    db, uuid.UUID(before["project_id"]), before.get("module_id")
+                )
                 entry = StringEntry(
                     id=uuid.UUID(before["id"]),
                     project_id=uuid.UUID(before["project_id"]),

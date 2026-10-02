@@ -12,6 +12,18 @@ engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=c
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
+def enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+    """SQLite ignores foreign keys unless this pragma is set on each connection."""
+    del connection_record
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+if settings.database_url.startswith("sqlite"):
+    event.listen(engine, "connect", enable_sqlite_foreign_keys)
+
+
 class Base(DeclarativeBase):
     pass
 

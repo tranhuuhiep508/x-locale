@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import distinct, exists, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Activity, Project, StringEntry, Tag, Translation, TranslationStatus
+from app.models import Activity, Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
     BatchRequest,
     BatchResult,
@@ -25,6 +25,7 @@ from app.schemas import (
     TranslationOut,
     TranslationUpdate,
 )
+from app.services.catalog import owned_module, require_module_in_project
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
@@ -207,7 +208,23 @@ def _actor_type_value(actor_type) -> str | None:
     return actor_type.value if hasattr(actor_type, "value") else str(actor_type)
 
 
+def _visible_module_ref(
+    entry: StringEntry,
+    module_id: uuid.UUID | None,
+    module: Module | None,
+) -> tuple[uuid.UUID | None, str | None]:
+    """Drop a module that belongs to another project so its slug cannot leak."""
+    owned = owned_module(entry.project_id, module)
+    if module is not None and owned is None:
+        return None, None
+    return module_id, owned.slug if owned else None
+
+
 def serialize_string(entry: StringEntry) -> StringOut:
+    module_id, module_slug = _visible_module_ref(entry, entry.module_id, entry.module)
+    published_module_id, published_module_slug = _visible_module_ref(
+        entry, entry.published_module_id, entry.published_module
+    )
     return StringOut(
         id=entry.id,
         key=entry.key,
@@ -220,10 +237,10 @@ def serialize_string(entry: StringEntry) -> StringOut:
         published_at=entry.published_at,
         published_key=entry.published_key,
         published_source_text=entry.published_source_text,
-        published_module_id=entry.published_module_id,
-        published_module_slug=entry.published_module.slug if entry.published_module else None,
-        module_id=entry.module_id,
-        module_slug=entry.module.slug if entry.module else None,
+        published_module_id=published_module_id,
+        published_module_slug=published_module_slug,
+        module_id=module_id,
+        module_slug=module_slug,
         tags=[
             TagOut(id=t.id, name=t.name, color=t.color, string_count=0) for t in (entry.tags or [])
         ],
@@ -614,10 +631,8 @@ def list_strings(
 
 
 def live_module_label(entry: StringEntry) -> str:
-    """Slug of a live row's module. Null module_id is 'unassigned'."""
-    if entry.module_id is None:
-        return "unassigned"
-    module = entry.module
+    """Slug of a live row's module. Null or foreign module_id is 'unassigned'."""
+    module = owned_module(entry.project_id, entry.module)
     if module is None or not module.slug:
         return "unassigned"
     return module.slug
@@ -637,11 +652,12 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
 
     validate_locales(project, payload.translations)
+    module_id = require_module_in_project(db, project.id, payload.module_id)
 
     entry = StringEntry(
         id=uuid.uuid4(),
         project_id=project.id,
-        module_id=payload.module_id,
+        module_id=module_id,
         key=payload.key,
         source_text=payload.source_text,
         description=payload.description,
@@ -693,7 +709,7 @@ def update_string(
     if "description" in payload.model_fields_set:
         entry.description = payload.description or None
     if "module_id" in payload.model_fields_set:
-        entry.module_id = payload.module_id
+        entry.module_id = require_module_in_project(db, project.id, payload.module_id)
     if payload.tag_ids is not None:
         tags = (
             db.query(Tag)
@@ -819,6 +835,7 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
         mid = uuid.UUID(module_id) if module_id else None
+        mid = require_module_in_project(db, project.id, mid)
         for entry in entries:
             entry.module_id = mid
             affected += 1
