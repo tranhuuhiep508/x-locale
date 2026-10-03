@@ -19,6 +19,36 @@ async function goToImportExport(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: 'Import / Export' })).toBeVisible()
 }
 
+test('activity date range works after navigation and a direct reload', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await openDemoStrings(page)
+  await page.getByRole('link', { name: 'Activity' }).click()
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+  await page.getByRole('button', { name: 'Date range', exact: true }).click()
+
+  const calendar = page.locator('[data-slot="calendar"]')
+  await expect(calendar.getByRole('grid')).toHaveCount(2)
+  await calendar.getByRole('button', { name: 'Go to the Previous Month' }).click()
+
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth() - 1, 10)
+  const to = new Date(now.getFullYear(), now.getMonth() - 1, 12)
+  await calendar.locator(`button[data-day="${from.toLocaleDateString('en-US')}"]`).click()
+  await calendar.locator(`button[data-day="${to.toLocaleDateString('en-US')}"]`).click()
+
+  await expect.poll(() => new URL(page.url()).searchParams.get('since')).toContain('T00:00:00')
+  await expect.poll(() => new URL(page.url()).searchParams.get('until')).toContain('T23:59:59')
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Date range', exact: true })).toBeEnabled()
+  expect(pageErrors).toEqual([])
+})
+
 test('activity undo reverts a batch import', async ({ page }) => {
   await goToImportExport(page)
 
