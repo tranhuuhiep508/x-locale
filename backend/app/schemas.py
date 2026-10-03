@@ -517,10 +517,9 @@ class RevertPreviewItemOut(BaseModel):
     activity_id: UUID
     string_id: UUID | None = None
     string_key: str | None = None
-    outcome: Literal[
-        "restore_values", "move_to_deleted", "recreate", "already_reverted", "missing"
-    ]
+    outcome: Literal["restore_values", "move_to_deleted", "recreate", "already_reverted", "missing"]
     conflict: bool = False
+    blocked_reason: str | None = None
     affects_published: bool = False
     change_count: int = 0
     changes: list[ActivityChangeOut] = Field(default_factory=list)
@@ -535,6 +534,8 @@ class RevertPreviewOutcomeCountsOut(BaseModel):
 
 
 class RevertPreviewOut(BaseModel):
+    can_revert: bool = True
+    blocked_reason: str | None = None
     items: list[RevertPreviewItemOut]
     conflicts: list[RevertPreviewConflictOut] = Field(default_factory=list)
     total: int

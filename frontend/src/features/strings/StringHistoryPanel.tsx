@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
+import { ApiError } from '@/lib/api/client'
 import type { ActivityChange, RestorePreview } from '@/lib/api/types'
 import { restoreVersionPreviewQuery, stringActivitiesInfiniteQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
@@ -9,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
+import { PreviewFailure } from '@/features/activity/PreviewFailure'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
 import {
   historyRestoreBlockedReason,
@@ -25,7 +27,10 @@ function changeKey(change: ActivityChange) {
 }
 
 function ChangeLine({ change, wrap = false }: { change: ActivityChange; wrap?: boolean }) {
-  const label = change.scope === 'published' ? `${changeFieldLabel(change)} (published)` : changeFieldLabel(change)
+  const label =
+    change.scope === 'published'
+      ? `${changeFieldLabel(change)} (published)`
+      : changeFieldLabel(change)
   const before = changeDisplayValue(change, change.before)
   const after = changeDisplayValue(change, change.after)
   const lineClass = wrap
@@ -86,7 +91,7 @@ export function StringHistoryPanel({
   const toast = useToast()
   const qc = useQueryClient()
   const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    stringActivitiesInfiniteQuery(projectId, stringId),
+    stringActivitiesInfiniteQuery(projectId, stringId)
   )
 
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
@@ -97,16 +102,6 @@ export function StringHistoryPanel({
     enabled: restoreTarget !== null,
   })
   const preview = previewQuery.data
-
-  // Safety net: if the authoritative preview disagrees with the client-side
-  // heuristic (e.g. a race with another edit), bail out with an explanation
-  // instead of leaving a stuck confirm dialog.
-  useEffect(() => {
-    if (restoreTarget && preview && !preview.can_restore) {
-      toast.warning(preview.blocked_reason ?? 'This version cannot be restored')
-      setRestoreTarget(null)
-    }
-  }, [restoreTarget, preview, toast])
 
   const restoreMut = useMutation({
     mutationFn: (activityId: string) =>
@@ -124,7 +119,9 @@ export function StringHistoryPanel({
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'Restore failed')
-      setRestoreTarget(null)
+      if (e instanceof ApiError && e.status === 409) {
+        void previewQuery.refetch()
+      }
     },
   })
 
@@ -191,14 +188,14 @@ export function StringHistoryPanel({
                       disabled={restoreMut.isPending}
                       onClick={() => setRestoreTarget(activity.id)}
                     >
-                      Restore
+                      Restore working copy
                     </Button>
                   ) : (
                     <Tooltip delayDuration={200}>
                       <TooltipTrigger asChild>
                         <span>
                           <Button type="button" variant="ghost" size="sm" disabled>
-                            Restore
+                            Restore working copy
                           </Button>
                         </span>
                       </TooltipTrigger>
@@ -228,12 +225,23 @@ export function StringHistoryPanel({
         open={restoreTarget !== null}
         onClose={() => setRestoreTarget(null)}
         onConfirm={() => restoreTarget && restoreMut.mutate(restoreTarget)}
-        title="Restore this version?"
-        description={<RestorePreviewBody preview={preview} />}
-        confirmLabel="Restore"
+        title="Restore working copy?"
+        description={
+          previewQuery.isError ? (
+            <PreviewFailure
+              error={previewQuery.error}
+              onRetry={() => {
+                void previewQuery.refetch()
+              }}
+            />
+          ) : (
+            <RestorePreviewBody preview={previewQuery.isFetching ? undefined : preview} />
+          )
+        }
+        confirmLabel="Restore working copy"
         variant="default"
         isLoading={restoreMut.isPending}
-        confirmDisabled={!preview?.can_restore}
+        confirmDisabled={previewQuery.isFetching || previewQuery.isError || !preview?.can_restore}
         contentClassName="sm:max-w-lg"
       />
 
