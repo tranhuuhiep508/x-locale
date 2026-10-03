@@ -24,6 +24,7 @@ function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
     string_key: 'welcome',
     outcome: 'restore_values',
     conflict: false,
+    blocked_reason: null,
     affects_published: false,
     change_count: 0,
     changes: [],
@@ -32,7 +33,7 @@ function previewItem(overrides: Partial<RevertPreviewItem>): RevertPreviewItem {
 }
 
 function outcomeCounts(
-  overrides: Partial<RevertPreviewOutcomeCounts> = {},
+  overrides: Partial<RevertPreviewOutcomeCounts> = {}
 ): RevertPreviewOutcomeCounts {
   return {
     restore_values: 0,
@@ -51,6 +52,8 @@ function preview(overrides: Partial<RevertPreview>): RevertPreview {
     total: 0,
     conflict_count: 0,
     requires_force: false,
+    can_revert: true,
+    blocked_reason: null,
     affects_published: false,
     outcome_counts: outcomeCounts(),
     ...overrides,
@@ -90,7 +93,7 @@ describe('undoDescription', () => {
   it('uses singular nouns for a one-string create undo', () => {
     expect(undoDescription(card({ children_count: 1, counts: { created: 1 } }))).toBe(
       'This undoes 1 string. 1 new string will be moved to Deleted ' +
-        '(or queued for public removal if already published).',
+        '(or queued for public removal if already published).'
     )
   })
 
@@ -106,6 +109,16 @@ describe('isUndoConflict', () => {
     expect(isUndoConflict(new ApiError(400, 'Bad'))).toBe(false)
     expect(isUndoConflict(new Error('nope'))).toBe(false)
   })
+
+  it('never offers overwrite for a reused key', () => {
+    expect(
+      isUndoConflict(
+        new ApiError(409, 'Key is taken', {
+          detail: { code: 'key_conflict', key: 'welcome' },
+        })
+      )
+    ).toBe(false)
+  })
 })
 
 describe('undoOverwriteDescription', () => {
@@ -117,6 +130,13 @@ describe('undoOverwriteDescription', () => {
     const text = undoOverwriteDescription(preview({ conflict_count: 2 }))
     expect(text).toContain('2 strings')
     expect(text).toContain('overwritten')
+  })
+
+  it('warns about published data when overwriting later edits', () => {
+    expect(
+      undoOverwriteDescription(preview({ conflict_count: 1, affects_published: true }))
+    ).toContain('published content or publish status')
+    expect(undoOverwriteDescription(preview({ conflict_count: 1 }))).toContain('1 string was')
   })
 })
 
@@ -131,7 +151,7 @@ describe('undoDescription with preview', () => {
           previewItem({ outcome: 'restore_values' }),
         ],
         outcome_counts: outcomeCounts({ move_to_deleted: 1, restore_values: 1 }),
-      }),
+      })
     )
     expect(text).toContain('This undoes 2 strings')
     expect(text).toContain('1 new string')
@@ -139,7 +159,7 @@ describe('undoDescription with preview', () => {
 
   it('uses full-batch outcome tallies when Deleted outcomes sit past the item cap', () => {
     const items = Array.from({ length: 20 }, (_, index) =>
-      previewItem({ activity_id: `a${index}`, outcome: 'restore_values' }),
+      previewItem({ activity_id: `a${index}`, outcome: 'restore_values' })
     )
     const text = undoDescription(
       card({ counts: { created: 0 } }),
@@ -147,7 +167,7 @@ describe('undoDescription with preview', () => {
         total: 25,
         items,
         outcome_counts: outcomeCounts({ restore_values: 20, move_to_deleted: 5 }),
-      }),
+      })
     )
     expect(items.filter((item) => item.outcome === 'move_to_deleted')).toHaveLength(0)
     expect(text).toContain('This undoes 25 strings')
@@ -157,7 +177,7 @@ describe('undoDescription with preview', () => {
   it('mentions the published snapshot when the preview flags it', () => {
     const text = undoDescription(
       card({ counts: { updated: 1 } }),
-      preview({ total: 1, affects_published: true }),
+      preview({ total: 1, affects_published: true })
     )
     expect(text).toContain('published snapshot')
   })
@@ -190,14 +210,14 @@ describe('previewItemsShowingCaption', () => {
         preview({
           total: 2,
           items: [previewItem({ activity_id: 'a1' }), previewItem({ activity_id: 'a2' })],
-        }),
-      ),
+        })
+      )
     ).toBeNull()
   })
 
   it('names the truncated window when the batch is larger than the item cap', () => {
     const items = Array.from({ length: 20 }, (_, index) =>
-      previewItem({ activity_id: `a${index}` }),
+      previewItem({ activity_id: `a${index}` })
     )
     expect(previewItemsShowingCaption(preview({ total: 25, items }))).toBe('Showing 20 of 25')
   })
@@ -213,8 +233,8 @@ describe('previewConflictsShowingCaption', () => {
             { activity_id: 'a1', string_key: 'k1' },
             { activity_id: 'a2', string_key: 'k2' },
           ],
-        }),
-      ),
+        })
+      )
     ).toBeNull()
   })
 
@@ -223,9 +243,9 @@ describe('previewConflictsShowingCaption', () => {
       activity_id: `a${index}`,
       string_key: `k${index}`,
     }))
-    expect(
-      previewConflictsShowingCaption(preview({ conflict_count: 15, conflicts })),
-    ).toBe('Showing 10 of 15')
+    expect(previewConflictsShowingCaption(preview({ conflict_count: 15, conflicts }))).toBe(
+      'Showing 10 of 15'
+    )
   })
 })
 

@@ -166,7 +166,7 @@ export function ActivityDetailSheet({
           {onRestore && detail?.is_history_restorable ? (
             <Button size="sm" disabled={restorePending} onClick={onRestore}>
               {restorePending ? <Spinner data-icon="inline-start" /> : null}
-              Restore this version
+              Restore working copy
             </Button>
           ) : null}
         </SheetFooter>

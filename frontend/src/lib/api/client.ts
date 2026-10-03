@@ -38,6 +38,9 @@ function buildUrl(path: string, params?: QueryParams): string {
 function errorMessage(errBody: unknown, statusText: string): string {
   const detail = (errBody as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') {
+    return detail.message
+  }
   if (Array.isArray(detail)) {
     const first = detail[0] as { msg?: string } | undefined
     if (first?.msg) return first.msg
