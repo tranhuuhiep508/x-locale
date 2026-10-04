@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import StringEntry, Tag
+from app.models import Module, StringEntry, Tag
 from app.services.catalog import require_module_in_project
 
 
@@ -61,7 +61,9 @@ class InvalidSnapshot(HTTPException):
         )
 
 
-def validate_undo_timestamps(activity_id: uuid.UUID, before: dict | None, after: dict | None) -> None:
+def validate_undo_timestamps(
+    activity_id: uuid.UUID, before: dict | None, after: dict | None
+) -> None:
     # Validate independently of comparison's short circuit and force's conflict bypass.
     for side, snapshot in (("before", before), ("after", after)):
         for field in ("published_at", "deleted_at"):
@@ -72,6 +74,75 @@ def validate_undo_timestamps(activity_id: uuid.UUID, before: dict | None, after:
                     raise InvalidSnapshot(activity_id, f"{side}.{field}") from error
 
 
+def _reference_id(raw: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(raw)) if raw else None
+    except ValueError, TypeError:
+        return None
+
+
+class SnapshotReferences:
+    """Project-scoped, request-local reference resolution; cache misses as well as hits."""
+
+    def __init__(self, db: Session, project_id: uuid.UUID, snapshots: list[dict | None]):
+        self.db = db
+        self.project_id = project_id
+        self.modules: set[uuid.UUID] = set()
+        self.tags: dict[uuid.UUID, Tag] = {}
+        self._known_modules: set[uuid.UUID] = set()
+        self._known_tags: set[uuid.UUID] = set()
+        module_ids = set()
+        tag_ids = set()
+        for snapshot in snapshots:
+            if snapshot is None:
+                continue
+            for name in ("module_id", "published_module_id"):
+                mid = _reference_id(snapshot.get(name))
+                if mid:
+                    module_ids.add(mid)
+            tag_ids.update(
+                tid for raw in snapshot.get("tag_ids") or [] if (tid := _reference_id(raw))
+            )
+        self._load_modules(module_ids)
+        self._load_tags(tag_ids)
+
+    def _load_modules(self, ids: set[uuid.UUID]) -> None:
+        missing = list(ids - self._known_modules)
+        for offset in range(0, len(missing), 400):
+            chunk = missing[offset : offset + 400]
+            self.modules.update(
+                mid
+                for (mid,) in self.db.query(Module.id)
+                .filter(Module.project_id == self.project_id, Module.id.in_(chunk))
+                .all()
+            )
+            self._known_modules.update(chunk)
+
+    def _load_tags(self, ids: set[uuid.UUID]) -> None:
+        missing = list(ids - self._known_tags)
+        for offset in range(0, len(missing), 400):
+            chunk = missing[offset : offset + 400]
+            rows = (
+                self.db.query(Tag)
+                .filter(Tag.project_id == self.project_id, Tag.id.in_(chunk))
+                .all()
+            )
+            self.tags.update((tag.id, tag) for tag in rows)
+            self._known_tags.update(chunk)
+
+    def module(self, raw: Any) -> str | None:
+        mid = _reference_id(raw)
+        if mid is None:
+            return None
+        self._load_modules({mid})
+        return str(mid) if mid in self.modules else None
+
+    def tag_rows(self, raw_ids: list) -> list[Tag]:
+        ids = {tid for raw in raw_ids if (tid := _reference_id(raw))}
+        self._load_tags(ids)
+        return [self.tags[tid] for tid in sorted(ids, key=str) if tid in self.tags]
+
+
 def project_snapshot(
     db: Session,
     project_id: uuid.UUID,
@@ -79,6 +150,7 @@ def project_snapshot(
     historical: dict,
     *,
     full_state: bool = False,
+    references: SnapshotReferences | None = None,
 ) -> dict:
     target = deepcopy(current)
     fields = ["key", "source_text", "description"]
@@ -100,6 +172,9 @@ def project_snapshot(
     for name in ["module_id"] + (["published_module_id"] if full_state else []):
         if name in historical:
             raw = historical[name]
+            if references is not None:
+                target[name] = references.module(raw)
+                continue
             try:
                 mid = uuid.UUID(str(raw)) if raw else None
             except ValueError, TypeError:
@@ -113,7 +188,13 @@ def project_snapshot(
                 ids.append(uuid.UUID(str(raw)))
             except ValueError, TypeError:
                 continue
-        tags = db.query(Tag).filter(Tag.project_id == project_id, Tag.id.in_(ids)).all()
+        tags = (
+            references.tag_rows(historical["tag_ids"] or [])
+            if references is not None
+            else db.query(Tag).filter(Tag.project_id == project_id, Tag.id.in_(ids)).all()
+            if ids
+            else []
+        )
         tags.sort(key=lambda tag: str(tag.id))
         target["tag_ids"] = [str(tag.id) for tag in tags]
         target["tag_names"] = [tag.name for tag in tags]

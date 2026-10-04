@@ -87,12 +87,18 @@ def test_invalid_timestamp_outside_preview_cap_rolls_back_all_steps(client):
     assert len(preview["items"]) == 20
     assert all(item["blocked_reason"] is None for item in preview["items"])
     assert not preview["can_revert"] and "published_at" in preview["blocked_reason"]
-    assert client.post(f"{root}/activities/batch/{batch}/revert", params={"force": True}).status_code == 409
+    assert (
+        client.post(f"{root}/activities/batch/{batch}/revert", params={"force": True}).status_code
+        == 409
+    )
     generator = app.dependency_overrides[get_db]()
     db = next(generator)
     try:
         assert db.query(Activity).count() == count_before
-        assert all(a.reverted_by_id is None for a in db.query(Activity).filter(Activity.batch_id == uuid.UUID(batch)))
+        assert all(
+            a.reverted_by_id is None
+            for a in db.query(Activity).filter(Activity.batch_id == uuid.UUID(batch))
+        )
     finally:
         generator.close()
     strings = client.get(f"{root}/strings", params={"page_size": 100}).json()["items"]
@@ -107,4 +113,38 @@ def test_history_ignores_malformed_publication_dates(client):
     preview = client.get(f"{root}/strings/{sid}/activities/{original}/restore/preview")
     assert preview.status_code == 200 and preview.json()["can_restore"]
     assert client.post(f"{root}/strings/{sid}/activities/{original}/restore").status_code == 200
+    assert client.get(f"{root}/strings/{sid}").json()["source_text"] == "A1"
+
+
+@pytest.mark.parametrize("timezone", ["UTC", "Asia/Bangkok", "Europe/Berlin"])
+def test_preview_and_execution_follow_same_order_for_repeated_edits(client, monkeypatch, timezone):
+    if not hasattr(time, "tzset"):
+        pytest.skip("tzset is unavailable")
+    _, sid, root, _ = setup_string(client)
+    batch = edit_batch(client, root)
+    second = client.post(f"{root}/strings/import", json={"strings": {"a": "A3"}}).json()["batch_id"]
+    generator = app.dependency_overrides[get_db]()
+    db = next(generator)
+    try:
+        earlier = db.query(Activity).filter(Activity.batch_id == uuid.UUID(batch)).one()
+        later = db.query(Activity).filter(Activity.batch_id == uuid.UUID(second)).one()
+        earlier.created_at = datetime(2026, 3, 29, 2, 30)
+        later.created_at = datetime(2026, 3, 29, 3, 15)
+        later.batch_id = earlier.batch_id
+        ordered_ids = [str(later.id), str(earlier.id)]
+        db.commit()
+    finally:
+        generator.close()
+    with monkeypatch.context() as context:
+        context.setenv("TZ", timezone)
+        time.tzset()
+        try:
+            preview = client.get(f"{root}/activities/batch/{batch}/revert/preview").json()
+            assert [item["activity_id"] for item in preview["items"]] == ordered_ids
+            assert preview["can_revert"] and not preview["requires_force"]
+            response = client.post(f"{root}/activities/batch/{batch}/revert")
+            assert response.status_code == 200, response.text
+        finally:
+            context.undo()
+            time.tzset()
     assert client.get(f"{root}/strings/{sid}").json()["source_text"] == "A1"

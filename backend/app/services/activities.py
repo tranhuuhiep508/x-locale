@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import String, and_, case, cast, func, or_
-from sqlalchemy.orm import Session, defer, joinedload
+from sqlalchemy.orm import Session, defer, selectinload
 
 from app.models import (
     Activity,
@@ -56,6 +56,7 @@ from app.services.activity_events import (
 )
 from app.services.activity_state import (
     InvalidSnapshot,
+    SnapshotReferences,
     check_key_available,
     key_conflict_message,
     normalized_time,
@@ -65,7 +66,6 @@ from app.services.activity_state import (
     translation_map,
     validate_undo_timestamps,
 )
-from app.services.catalog import require_module_in_project
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -252,12 +252,7 @@ def list_activities(
     if until:
         q = q.filter(Activity.created_at <= until)
     total = q.count()
-    items = (
-        q.order_by(*_inverse_order())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    items = q.order_by(*_inverse_order()).offset((page - 1) * page_size).limit(page_size).all()
     names = module_name_map(db, project.id)
     return ActivityListOut(
         items=[serialize_list_item(a, names) for a in items],
@@ -602,7 +597,8 @@ def restore_activity_version(
             detail="Restore the string from Deleted before restoring a version",
         )
     still_pending = bool(entry.pending_delete)
-    target = _history_target(db, entry, activity.after)
+    references = SnapshotReferences(db, project.id, [activity.after, _live_snapshot(entry)])
+    target = _history_target(db, entry, activity.after, references=references)
     if _working_copy_matches(entry, target):
         raise HTTPException(
             status_code=400,
@@ -611,7 +607,7 @@ def restore_activity_version(
     with restore_transaction(db):
         check_key_available(db, project.id, entry.id, target)
         set_restore_intent(db)
-        _apply_working_copy_only(db, entry, target, include_status=False)
+        _apply_working_copy_only(db, entry, target, references=references)
         db.commit()
     db.expire_all()
     latest = (
@@ -711,8 +707,16 @@ def _history_restore_noop_detail(pending_delete: bool) -> str:
     return "Working copy already matches this version. Publish status is unchanged."
 
 
-def _history_target(db: Session, entry: StringEntry, snap: dict[str, Any]) -> dict:
-    return project_snapshot(db, entry.project_id, _live_snapshot(entry), snap)
+def _history_target(
+    db: Session,
+    entry: StringEntry,
+    snap: dict[str, Any],
+    *,
+    references: SnapshotReferences | None = None,
+) -> dict:
+    return project_snapshot(
+        db, entry.project_id, _live_snapshot(entry), snap, references=references
+    )
 
 
 def _working_copy_matches(entry: StringEntry, target: dict[str, Any]) -> bool:
@@ -723,31 +727,44 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
     from app.activity import set_restore_intent
 
     affected = 0
+    active = [entry for entry in entries if entry.deleted_at is None]
+    latest_by_string = {}
+    ids = [entry.id for entry in active]
+    for offset in range(0, len(ids), 400):
+        candidates = (
+            db.query(Activity)
+            .filter(
+                Activity.project_id == project.id,
+                Activity.string_id.in_(ids[offset : offset + 400]),
+                Activity.before.isnot(None),
+            )
+            .order_by(*_inverse_order())
+            .all()
+        )
+        for candidate in candidates:
+            if candidate.string_id not in latest_by_string and is_history_restorable(
+                candidate.event_type, candidate.action
+            ):
+                latest_by_string[candidate.string_id] = candidate
+    references = SnapshotReferences(
+        db,
+        project.id,
+        [
+            *[_live_snapshot(entry) for entry in active],
+            *[a.before for a in latest_by_string.values()],
+        ],
+    )
     with restore_transaction(db):
         set_restore_intent(db)
-        for entry in entries:
-            if entry.deleted_at is not None:
-                continue
-            candidates = (
-                db.query(Activity)
-                .filter(
-                    Activity.project_id == project.id,
-                    Activity.string_id == entry.id,
-                    Activity.before.isnot(None),
-                )
-                .order_by(*_inverse_order())
-                .all()
-            )
-            latest = next(
-                (a for a in candidates if is_history_restorable(a.event_type, a.action)), None
-            )
+        for entry in active:
+            latest = latest_by_string.get(entry.id)
             if not latest or not latest.before:
                 continue
-            target = _history_target(db, entry, latest.before)
+            target = _history_target(db, entry, latest.before, references=references)
             if _working_copy_matches(entry, target):
                 continue
             check_key_available(db, project.id, entry.id, target)
-            _apply_working_copy_only(db, entry, target, include_status=False)
+            _apply_working_copy_only(db, entry, target, references=references)
             db.flush()
             affected += 1
     return affected
@@ -783,11 +800,25 @@ def _live_snapshot(entry: StringEntry) -> dict[str, Any]:
     }
 
 
-def _set_entry_tags(db: Session, entry: StringEntry, tag_ids: list[str] | None) -> None:
+def _set_entry_tags(
+    db: Session,
+    entry: StringEntry,
+    tag_ids: list[str] | None,
+    *,
+    references: SnapshotReferences | None = None,
+) -> None:
     if tag_ids is None:
         return
     ids = [uuid.UUID(tid) for tid in tag_ids]
-    tags = db.query(Tag).filter(Tag.id.in_(ids)).all() if ids else []
+    tags = (
+        references.tag_rows(tag_ids)
+        if references is not None
+        else (
+            db.query(Tag).filter(Tag.project_id == entry.project_id, Tag.id.in_(ids)).all()
+            if ids
+            else []
+        )
+    )
     entry.tags = tags
 
 
@@ -821,17 +852,6 @@ def _set_entry_published_translations(
             existing.published_value = value
 
 
-def _snapshot_module_id(db: Session, project_id: uuid.UUID, raw: Any) -> uuid.UUID | None:
-    """Module id from an activity snapshot, only when it still belongs to the project."""
-    if not raw:
-        return None
-    try:
-        module_id = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
-    except ValueError, TypeError:
-        return None
-    return require_module_in_project(db, project_id, module_id, on_missing="clear")
-
-
 def _parse_datetime(raw: Any) -> datetime | None:
     if raw is None or raw == "":
         return None
@@ -854,8 +874,8 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
     if "published_at" in snap:
         entry.published_at = _parse_datetime(snap.get("published_at"))
     if "published_module_id" in snap:
-        entry.published_module_id = _snapshot_module_id(
-            db, entry.project_id, snap.get("published_module_id")
+        entry.published_module_id = (
+            uuid.UUID(snap["published_module_id"]) if snap.get("published_module_id") else None
         )
     if "published_translations" in snap:
         _set_entry_published_translations(
@@ -881,7 +901,7 @@ def _load_string_entries(db: Session, string_ids: set[uuid.UUID]) -> dict[uuid.U
         return {}
     rows = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+        .options(selectinload(StringEntry.translations), selectinload(StringEntry.tags))
         .filter(StringEntry.id.in_(string_ids))
         .all()
     )
@@ -900,7 +920,7 @@ def current_matches_after(
         if entry is None:
             entry = (
                 db.query(StringEntry)
-                .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
+                .options(selectinload(StringEntry.translations), selectinload(StringEntry.tags))
                 .filter(StringEntry.id == uuid.UUID(activity.entity_id))
                 .first()
             )
@@ -974,12 +994,14 @@ def _make_revert_marker(
 
 
 def _apply_working_copy_only(
-    db: Session, entry: StringEntry, snap: dict[str, Any], *, include_status: bool = False
+    db: Session,
+    entry: StringEntry,
+    target: dict[str, Any],
+    *,
+    include_status: bool = False,
+    references: SnapshotReferences | None = None,
 ) -> None:
-    target = project_snapshot(
-        db, entry.project_id, _live_snapshot(entry), snap, full_state=include_status
-    )
-    check_key_available(db, entry.project_id, entry.id, target)
+    """Apply an already resolved target; validation belongs to the caller."""
     db.info["restore_key"] = target["key"]
     entry.key = target["key"]
     entry.source_text = target["source_text"]
@@ -987,17 +1009,29 @@ def _apply_working_copy_only(
     if include_status:
         entry.status = TranslationStatus(target["status"])
     entry.module_id = uuid.UUID(target["module_id"]) if target.get("module_id") else None
-    _set_entry_tags(db, entry, target.get("tag_ids") or [])
+    _set_entry_tags(db, entry, target.get("tag_ids") or [], references=references)
     _set_entry_translations(db, entry, target.get("translations") or {})
 
 
-def _apply_working_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
-    target = project_snapshot(db, entry.project_id, _live_snapshot(entry), snap, full_state=True)
-    _apply_working_copy_only(db, entry, target, include_status=True)
+def _apply_working_snapshot(
+    db: Session,
+    entry: StringEntry,
+    target: dict[str, Any],
+    *,
+    references: SnapshotReferences,
+) -> None:
+    _apply_working_copy_only(db, entry, target, include_status=True, references=references)
     _apply_published_snapshot(db, entry, target)
 
 
-def apply_revert(db: Session, activity: Activity) -> None:
+def apply_revert(
+    db: Session,
+    activity: Activity,
+    *,
+    entry: StringEntry | None = None,
+    target: dict | None = None,
+    references: SnapshotReferences | None = None,
+) -> None:
     before = activity.before or {}
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     etype = (
@@ -1007,14 +1041,21 @@ def apply_revert(db: Session, activity: Activity) -> None:
     )
 
     if etype == "string":
-        current = _activity_snapshot(db, activity)
-        target = _revert_target(db, activity, current)
+        if references is None:
+            references = SnapshotReferences(
+                db, activity.project_id, [activity.before, activity.after]
+            )
+        if target is None:
+            validate_undo_timestamps(activity.id, activity.before, activity.after)
+            entry = _load_activity_entry(db, activity)
+            current = _live_snapshot(entry) if entry else None
+            target = _revert_target(db, activity, current, references=references)
+            if target is not None:
+                check_key_available(db, activity.project_id, uuid.UUID(activity.entity_id), target)
         if target is None:
             raise HTTPException(status_code=404, detail="String no longer exists")
         string_id = uuid.UUID(activity.entity_id)
-        check_key_available(db, activity.project_id, string_id, target)
         db.info["restore_key"] = target["key"]
-        entry = db.get(StringEntry, string_id)
         if entry is None:
             entry = StringEntry(
                 id=string_id,
@@ -1025,7 +1066,7 @@ def apply_revert(db: Session, activity: Activity) -> None:
                 pending_delete=False,
             )
             db.add(entry)
-        _apply_working_snapshot(db, entry, target)
+        _apply_working_snapshot(db, entry, target, references=references)
 
     elif etype == "translation":
         if action == "update":
@@ -1074,26 +1115,13 @@ def revert_activity(
     if activity.reverted_by_id and not force:
         raise HTTPException(status_code=400, detail="Activity already reverted")
 
-    validate_undo_timestamps(activity.id, activity.before, activity.after)
-    _check_revert_key(db, activity)
-    if not force and not current_matches_after(db, activity):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Conflict: current state does not match activity after-state. "
-                "Pass force=true to override."
-            ),
-        )
-
     from app.activity import attach_batch
 
     batch_id = uuid.uuid4()
     with restore_transaction(db):
         existing = attach_batch(db, batch_id, "revert")
-        before = _activity_snapshot(db, activity)
-        apply_revert(db, activity)
-        db.flush()
-        after = _activity_snapshot(db, activity)
+        references = SnapshotReferences(db, project.id, [activity.before, activity.after])
+        before, after = _execute_inverse(db, activity, force=force, references=references)
         revert_marker = _make_revert_marker(
             db,
             project_id=project.id,
@@ -1138,18 +1166,11 @@ def revert_batch(
     reverted = 0
     with restore_transaction(db):
         existing = attach_batch(db, new_batch, "revert")
+        references = SnapshotReferences(
+            db, project.id, [snapshot for a in activities for snapshot in (a.before, a.after)]
+        )
         for activity in activities:
-            validate_undo_timestamps(activity.id, activity.before, activity.after)
-            _check_revert_key(db, activity)
-            if not force and not current_matches_after(db, activity):
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Conflict on activity {activity.id}. Pass force=true to override.",
-                )
-            before = _activity_snapshot(db, activity)
-            apply_revert(db, activity)
-            db.flush()
-            after = _activity_snapshot(db, activity)
+            before, after = _execute_inverse(db, activity, force=force, references=references)
             marker = _make_revert_marker(
                 db,
                 project_id=project.id,
@@ -1167,23 +1188,49 @@ def revert_batch(
     return {"reverted": reverted, "batch_id": str(new_batch)}
 
 
-def _check_revert_key(db: Session, activity: Activity) -> None:
-    if activity.entity_type != EntityType.string:
-        return
-    target = _revert_target(db, activity, _activity_snapshot(db, activity))
-    if target is not None:
+def _load_activity_entry(db: Session, activity: Activity) -> StringEntry | None:
+    return (
+        db.query(StringEntry)
+        .options(selectinload(StringEntry.translations), selectinload(StringEntry.tags))
+        .populate_existing()
+        .filter(StringEntry.id == uuid.UUID(activity.entity_id))
+        .first()
+    )
+
+
+def _execute_inverse(
+    db: Session,
+    activity: Activity,
+    *,
+    force: bool,
+    references: SnapshotReferences,
+) -> tuple[dict | None, dict | None]:
+    validate_undo_timestamps(activity.id, activity.before, activity.after)
+    if activity.entity_type == EntityType.string:
+        entry = _load_activity_entry(db, activity)
+        before = _live_snapshot(entry) if entry else None
+        target = _revert_target(db, activity, before, references=references)
+        if target is None:
+            raise HTTPException(status_code=404, detail="String no longer exists")
         check_key_available(db, activity.project_id, uuid.UUID(activity.entity_id), target)
+        matches = snapshots_match(before, activity.after) if not force else True
+    else:
+        entry, target = None, None
+        before = _activity_snapshot(db, activity)
+        matches = current_matches_after(db, activity) if not force else True
+    if not matches:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Conflict on activity {activity.id}. Pass force=true to override.",
+        )
+    apply_revert(db, activity, entry=entry, target=target, references=references)
+    db.flush()
+    return before, _activity_snapshot(db, activity)
 
 
 def _activity_snapshot(db: Session, activity: Activity) -> dict | None:
     if activity.entity_type == EntityType.string:
-        entry = (
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.translations), joinedload(StringEntry.tags))
-            .populate_existing()
-            .filter(StringEntry.id == uuid.UUID(activity.entity_id))
-            .first()
-        )
+        entry = _load_activity_entry(db, activity)
         return _live_snapshot(entry) if entry else None
     translation = db.get(Translation, uuid.UUID(activity.entity_id))
     if not translation:
@@ -1196,7 +1243,13 @@ def _activity_snapshot(db: Session, activity: Activity) -> dict | None:
     }
 
 
-def _revert_target(db: Session, activity: Activity, current: dict | None) -> dict | None:
+def _revert_target(
+    db: Session,
+    activity: Activity,
+    current: dict | None,
+    *,
+    references: SnapshotReferences | None = None,
+) -> dict | None:
     """Read-only destination of one string inverse operation."""
     if activity.action == ActivityAction.create:
         if current is None:
@@ -1231,7 +1284,12 @@ def _revert_target(db: Session, activity: Activity, current: dict | None) -> dic
             "published_translations": {},
         }
     return project_snapshot(
-        db, activity.project_id, current, activity.before or {}, full_state=True
+        db,
+        activity.project_id,
+        current,
+        activity.before or {},
+        full_state=True,
+        references=references,
     )
 
 
@@ -1241,6 +1299,7 @@ def _revert_preview_item(
     module_names: dict[str, str],
     states: dict[uuid.UUID, dict | None],
     owners: dict[str, uuid.UUID],
+    references: SnapshotReferences,
 ) -> RevertPreviewItemOut:
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     etype = (
@@ -1286,7 +1345,7 @@ def _revert_preview_item(
         "restore_values", "move_to_deleted", "recreate", "already_reverted", "missing"
     ] = "restore_values"
     if etype == "string":
-        target = _revert_target(db, activity, current_snap)
+        target = _revert_target(db, activity, current_snap, references=references)
         if target is None:
             outcome = "missing"
             blocked_reason = "String no longer exists"
@@ -1363,8 +1422,13 @@ def build_revert_preview(
         )
         .all()
     )
+    references = SnapshotReferences(
+        db,
+        project.id,
+        [*states.values(), *[snapshot for a in activities for snapshot in (a.before, a.after)]],
+    )
     all_items = [
-        _revert_preview_item(db, activity, names, states, owners)
+        _revert_preview_item(db, activity, names, states, owners, references)
         for activity in _sort_feed_rows(activities)
     ]
     blocked_reason = next((item.blocked_reason for item in all_items if item.blocked_reason), None)
@@ -1466,7 +1530,8 @@ def preview_restore_activity_version(
         )
 
     still_pending = bool(entry.pending_delete)
-    target = _history_target(db, entry, activity.after)
+    references = SnapshotReferences(db, project.id, [activity.after, _live_snapshot(entry)])
+    target = _history_target(db, entry, activity.after, references=references)
     if _working_copy_matches(entry, target):
         return RestorePreviewOut(
             string_id=string_id,
