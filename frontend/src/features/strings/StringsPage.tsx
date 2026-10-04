@@ -421,6 +421,12 @@ export function StringsPage() {
     stringsResult.error.status === 400 &&
     Boolean(rawSearch.sort || rawSearch.order)
 
+  const catalogRefetchingEmpty =
+    stringsResult.isFetching &&
+    !stringsResult.isLoading &&
+    data.length === 0 &&
+    !search.batch_id
+
   const table = useReactTable({
     data,
     columns,
@@ -596,7 +602,7 @@ export function StringsPage() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {stringsResult.isLoading || catalogSortListError ? (
+        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner />
           </div>
