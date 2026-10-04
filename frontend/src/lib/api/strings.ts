@@ -36,6 +36,8 @@ export type StringListParams = {
   updated_within_days?: 7 | 30
   page?: number
   page_size?: number
+  sort?: string
+  order?: 'asc' | 'desc'
 }
 
 /** Catalog query params. `batch_kind` is a chip label only and is not sent. */
@@ -61,6 +63,8 @@ export function toStringListParams(
     batch_id: search.batch_id,
     page: search.page,
     page_size: search.page_size,
+    sort: search.sort,
+    order: search.order,
   }
 }
 

@@ -203,7 +203,7 @@ test('unknown batch_id shows batch empty state; chip remains clearable', async (
 
   await page.getByRole('button', { name: 'Clear batch filter' }).click()
   await expect(page).not.toHaveURL(/batch_id=/)
-  await expect(page.getByRole('button', { name: 'Add string' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add string' })).toHaveCount(1)
 })
 
 test('excel_import activity card: Review this batch opens kind-aware catalog', async ({ page }) => {

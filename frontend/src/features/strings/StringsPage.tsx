@@ -31,6 +31,12 @@ import { batchSkippedMessage, type SelectionBatchRequest } from '@/features/stri
 import { BatchMoveDialog, BatchTagDialog } from '@/features/strings/BatchDialogs'
 import { AddManyStringsDialog } from '@/features/strings/AddManyStringsDialog'
 import { StringsFilters, hasActiveStringFilters } from '@/features/strings/StringsFilters'
+import {
+  catalogSortChanged,
+  catalogSortSearchUpdates,
+  sortingStateFromSearch,
+} from '@/features/strings/catalog-sort'
+import type { CatalogSortField } from '@/features/strings/catalog-sort'
 import { getStringColumns } from '@/features/strings/string-columns'
 import { releaseRowClassName, releaseState } from '@/features/strings/working-copy'
 import {
@@ -63,6 +69,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { jobsApi } from '@/lib/api/jobs'
+import { ApiError } from '@/lib/api/client'
 import { stringsApi } from '@/lib/api/strings'
 import type {
   BatchAction,
@@ -155,6 +162,45 @@ export function StringsPage() {
   }, [searchInput, search.q])
 
   const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  const catalogSortSearch = useMemo(
+    () => ({ sort: rawSearch.sort, order: rawSearch.order }),
+    [rawSearch.sort, rawSearch.order],
+  )
+  const sorting = useMemo(() => sortingStateFromSearch(catalogSortSearch), [catalogSortSearch])
+
+  const handleCatalogSortToggle = useCallback(
+    (columnId: CatalogSortField) => {
+      const updates = catalogSortSearchUpdates(catalogSortSearch, columnId)
+      const sortChanged = catalogSortChanged(catalogSortSearch, updates)
+      startTransition(() => {
+        navigate({
+          search: (prev) => ({
+            ...prev,
+            ...updates,
+            page: sortChanged ? 1 : prev.page,
+          }),
+        })
+      })
+    },
+    [catalogSortSearch, navigate],
+  )
+
+  useEffect(() => {
+    if (!stringsResult.isError) return
+    const err = stringsResult.error
+    if (!(err instanceof ApiError) || err.status !== 400) return
+    if (!rawSearch.sort && !rawSearch.order) return
+    toast.error(err.message)
+    startTransition(() => {
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          sort: undefined,
+          order: undefined,
+        }),
+      })
+    })
+  }, [stringsResult.isError, stringsResult.error, rawSearch.sort, rawSearch.order, navigate, toast])
   const { data: modules = [] } = useQuery(modulesQuery(projectId))
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
   const { data: project } = useQuery(projectQuery(projectId))
@@ -356,14 +402,35 @@ export function StringsPage() {
       onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
       onRefresh: invalidateStrings,
       onPublishPreview: (entry: StringEntry) => requestPublishPreview({ string_ids: [entry.id] }),
+      catalogSort: catalogSortSearch,
+      onCatalogSortToggle: handleCatalogSortToggle,
     }),
-    [projectId, openEditor, requestPublishPreview, invalidateStrings],
+    [
+      projectId,
+      openEditor,
+      requestPublishPreview,
+      invalidateStrings,
+      catalogSortSearch,
+      handleCatalogSortToggle,
+    ],
   )
+
+  const catalogSortListError =
+    stringsResult.isError &&
+    stringsResult.error instanceof ApiError &&
+    stringsResult.error.status === 400 &&
+    Boolean(rawSearch.sort || rawSearch.order)
+
+  const catalogRefetchingEmpty =
+    stringsResult.isFetching &&
+    !stringsResult.isLoading &&
+    data.length === 0 &&
+    !search.batch_id
 
   const table = useReactTable({
     data,
     columns,
-    state: { pagination, rowSelection, columnVisibility },
+    state: { pagination, rowSelection, columnVisibility, sorting },
     initialState: { columnPinning: STRING_COLUMN_PINNING },
     enableColumnPinning: true,
     onRowSelectionChange: setRowSelection,
@@ -382,7 +449,9 @@ export function StringsPage() {
     },
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
-    enableSorting: false,
+    enableSorting: true,
+    enableMultiSort: false,
+    manualSorting: true,
     enableRowSelection: true,
     manualPagination: true,
     autoResetPageIndex: false,
@@ -487,7 +556,12 @@ export function StringsPage() {
           onClear={() => {
             setSearchInput('')
             navigate({
-              search: { page: 1, page_size: search.page_size },
+              search: {
+                page: 1,
+                page_size: search.page_size,
+                sort: rawSearch.sort,
+                order: rawSearch.order,
+              },
             })
           }}
           actions={
@@ -528,9 +602,13 @@ export function StringsPage() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {stringsResult.isLoading ? (
+        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner />
+          </div>
+        ) : stringsResult.isError ? (
+          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+            Failed to load strings.
           </div>
         ) : data.length === 0 ? (
           <EmptyState
