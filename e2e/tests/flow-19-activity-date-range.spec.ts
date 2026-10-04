@@ -18,8 +18,17 @@ async function openActivity(page: Page) {
   await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
 }
 
+function activityTimePopover(page: Page) {
+  return page.locator('main [data-slot="popover-content"]')
+}
+
 async function openTimePicker(page: Page) {
-  await page.getByRole('button', { name: /All time|Last / }).click()
+  await page.locator('main [data-slot="popover-trigger"]').click()
+}
+
+async function pickTimePreset(page: Page, label: string) {
+  await openTimePicker(page)
+  await activityTimePopover(page).getByRole('button', { name: label, exact: true }).click()
 }
 
 test('activity time presets and custom ranges persist in the URL', async ({ page }) => {
@@ -27,16 +36,16 @@ test('activity time presets and custom ranges persist in the URL', async ({ page
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   await openActivity(page)
-  await openTimePicker(page)
-  await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
+  await pickTimePreset(page, 'Last 7 days')
   await expectParam(page, 'period', '7d')
   await expectParam(page, 'since', null)
   await expectParam(page, 'until', null)
 
   await openTimePicker(page)
-  await page.locator('#time-range-since').fill('2026-01-10T08:30')
-  await page.locator('#time-range-until').fill('2026-01-12T18:45')
-  await page.getByRole('button', { name: 'Apply range', exact: true }).click()
+  const popover = activityTimePopover(page)
+  await popover.locator('#time-range-since').fill('2026-01-10T08:30')
+  await popover.locator('#time-range-until').fill('2026-01-12T18:45')
+  await popover.getByRole('button', { name: 'Apply range', exact: true }).click()
   await expectParam(page, 'period', null)
   await expect.poll(() => new URL(page.url()).searchParams.get('since')).toContain('2026-01-10')
   await expect.poll(() => new URL(page.url()).searchParams.get('until')).toContain('2026-01-12')
@@ -47,24 +56,22 @@ test('activity time presets and custom ranges persist in the URL', async ({ page
   await expect.poll(() => new URL(page.url()).searchParams.get('since')).toContain('2026-01-10')
 
   await openTimePicker(page)
-  await page.getByRole('button', { name: 'Clear time', exact: true }).click()
+  await activityTimePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
   await expectParam(page, 'period', null)
   await expectParam(page, 'since', null)
   await expectParam(page, 'until', null)
 
   await page.getByRole('combobox').first().click()
   await page.getByRole('option', { name: 'Import' }).click()
-  await openTimePicker(page)
-  await page.getByRole('button', { name: 'Last 24 hours', exact: true }).click()
+  await pickTimePreset(page, 'Last 24 hours')
   await expectParam(page, 'event_type', 'import')
   await expectParam(page, 'period', '24h')
   await openTimePicker(page)
-  await page.getByRole('button', { name: 'Clear time', exact: true }).click()
+  await activityTimePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
   await expectParam(page, 'event_type', 'import')
   await expectParam(page, 'period', null)
 
-  await openTimePicker(page)
-  await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
+  await pickTimePreset(page, 'Last 7 days')
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expectParam(page, 'period', null)
   await expectParam(page, 'event_type', null)
