@@ -29,7 +29,7 @@ export function undoDescription(card: ActivityFeedCard, preview?: RevertPreview)
   if (created > 0) {
     parts.push(
       `This undoes ${total} ${stringNoun(total)}. ${created} new ${stringNoun(created)} will be moved to Deleted ` +
-        '(or queued for public removal if already published).',
+        '(or queued for public removal if already published).'
     )
   } else {
     parts.push(`This restores ${total} ${stringNoun(total)} to their values before this action.`)
@@ -88,6 +88,6 @@ export function outcomeLabel(item: RevertPreviewItem): string {
 
 export function isUndoConflict(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 409) return false
-  const detail = (error.body as { detail?: { code?: string } } | undefined)?.detail
-  return detail?.code !== 'key_conflict'
+  const detail = (error.body as { detail?: unknown } | undefined)?.detail
+  return typeof detail === 'string' && detail.includes('Pass force=true to override.')
 }

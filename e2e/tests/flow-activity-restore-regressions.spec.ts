@@ -77,7 +77,13 @@ test('forced undo history records the value actually overwritten', async ({ page
   ).toBeOK()
   const dialog = await openBatchUndo(page, pid, batch)
   await expect(dialog).toContainText('Source text “A3” → “A1”')
+  await expect(page.getByRole('alertdialog', { name: 'Overwrite later edits?' })).toBeVisible()
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' && request.url().includes(`/activities/batch/${batch}/revert`)
+  )
   await dialog.getByRole('button', { name: 'Overwrite and undo' }).click()
+  expect(new URL((await submitted).url()).searchParams.get('force')).toBe('true')
   await expect(dialog).toBeHidden()
   const restored = page.locator('div.rounded-lg').filter({ hasText: 'Restored 1 string' })
   await restored.getByRole('button', { name: /Show 1 strings/ }).click()
@@ -88,6 +94,126 @@ test('forced undo history records the value actually overwritten', async ({ page
   await expect(details.getByText('A3', { exact: true })).toBeVisible()
   await expect(details.getByText('A1', { exact: true })).toBeVisible()
   await expect(details.getByText('A2', { exact: true })).toHaveCount(0)
+})
+
+test('incompatible undo preview fails closed and can be retried', async ({ page }) => {
+  const { pid, root } = await project(page)
+  await create(page, root)
+  const batch = await updateImport(page, root)
+  let incompatible = true
+  await page.route('**/activities/batch/*/revert/preview', async (route) => {
+    const response = await route.fetch()
+    const body = await response.json()
+    if (incompatible) delete body.can_revert
+    await route.fulfill({ response, json: body })
+  })
+  const dialog = await openBatchUndo(page, pid, batch)
+  await expect(dialog.getByRole('alert')).toContainText('incompatible preview')
+  await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+  incompatible = false
+  await dialog.getByRole('button', { name: 'Retry preview' }).click()
+  await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
+})
+
+test('execution conflicts refresh preview and block a newly reused key', async ({ page }) => {
+  const { pid, root } = await project(page)
+  const sid = await create(page, root)
+  const batch = await updateImport(page, root)
+  const dialog = await openBatchUndo(page, pid, batch)
+  const undo = dialog.getByRole('button', { name: 'Undo', exact: true })
+  await expect(undo).toBeEnabled()
+  await page.request.patch(`${root}/strings/${sid}`, {
+    data: { source_text: 'A3' },
+  })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/activities/batch/*/revert/preview', async (route) => {
+    await gate
+    await route.continue()
+  })
+  await undo.click()
+  await expect(undo).toBeDisabled()
+  release()
+  const overwrite = dialog.getByRole('button', { name: 'Overwrite and undo' })
+  await expect(overwrite).toBeEnabled()
+  // Another edit now makes the key unavailable; the stale force-capable preview must not bypass it.
+  await page.request.patch(`${root}/strings/${sid}`, {
+    data: { key: 'renamed_demo' },
+  })
+  await create(page, root)
+  await overwrite.click()
+  await expect(dialog).toContainText("Key 'restore_demo' is already used")
+  await expect(dialog.getByRole('button', { name: 'Overwrite and undo' })).toBeDisabled()
+})
+
+test('refreshed preview returns to normal undo when the conflict disappears', async ({ page }) => {
+  const { pid, root } = await project(page)
+  const sid = await create(page, root)
+  const batch = await updateImport(page, root)
+  await page.request.patch(`${root}/strings/${sid}`, {
+    data: { source_text: 'A3' },
+  })
+  const dialog = await openBatchUndo(page, pid, batch)
+  await expect(dialog.getByRole('button', { name: 'Overwrite and undo' })).toBeEnabled()
+  await page.request.patch(`${root}/strings/${sid}`, {
+    data: { source_text: 'A2' },
+  })
+  // Simulate a transient execution conflict, keeping the real authoritative refreshed preview.
+  await page.route(
+    `**/activities/batch/${batch}/revert?*`,
+    async (route) => {
+      await route.fulfill({
+        status: 409,
+        json: {
+          detail: 'Conflict on activity x. Pass force=true to override.',
+        },
+      })
+    },
+    { times: 1 }
+  )
+  await dialog.getByRole('button', { name: 'Overwrite and undo' }).click()
+  await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
+  await expect(dialog).toContainText('Undo this batch?')
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' && request.url().includes(`/activities/batch/${batch}/revert`)
+  )
+  await dialog.getByRole('button', { name: 'Undo', exact: true }).click()
+  expect(new URL((await submitted).url()).searchParams.get('force')).toBe('false')
+  await expect(dialog).toBeHidden()
+})
+
+test('structured invalid snapshot error refreshes into a hard blocker', async ({ page }) => {
+  const { pid, root } = await project(page)
+  await create(page, root)
+  const batch = await updateImport(page, root)
+  const dialog = await openBatchUndo(page, pid, batch)
+  await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
+  const message =
+    'Cannot undo this activity because its saved before.published_at timestamp is invalid.'
+  await page.route(`**/activities/batch/${batch}/revert?*`, async (route) => {
+    await route.fulfill({
+      status: 409,
+      json: { detail: { code: 'invalid_snapshot', message } },
+    })
+  })
+  await page.route('**/activities/batch/*/revert/preview', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        can_revert: false,
+        blocked_reason: message,
+      },
+    })
+  })
+  await dialog.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(dialog).toContainText(message)
+  await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Overwrite and undo' })).toHaveCount(0)
 })
 
 test('forced undo explicitly warns about later publication', async ({ page }) => {
@@ -210,7 +336,7 @@ test('history clears a language added after the selected version', async ({ page
     })
   ).toBeOK()
   const dialog = await openCreationRestore(page, pid)
-  await expect(dialog).toContainText('Bonjour')
+  await expect(dialog).toContainText('FR “Bonjour” → “—”')
   await dialog.getByRole('button', { name: 'Restore working copy', exact: true }).click()
   await expect(dialog).toBeHidden()
   const live = await (await page.request.get(`${root}/strings/${sid}`)).json()

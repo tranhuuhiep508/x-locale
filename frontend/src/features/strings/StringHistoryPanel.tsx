@@ -26,7 +26,15 @@ function changeKey(change: ActivityChange) {
   return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
 }
 
-function ChangeLine({ change, wrap = false }: { change: ActivityChange; wrap?: boolean }) {
+export function ChangeLine({
+  change,
+  wrap = false,
+  preview = false,
+}: {
+  change: ActivityChange
+  wrap?: boolean
+  preview?: boolean
+}) {
   const label =
     change.scope === 'published'
       ? `${changeFieldLabel(change)} (published)`
@@ -36,14 +44,14 @@ function ChangeLine({ change, wrap = false }: { change: ActivityChange; wrap?: b
   const lineClass = wrap
     ? 'break-words text-xs text-muted-foreground'
     : 'truncate text-xs text-muted-foreground'
-  if (!change.before) {
+  if (!preview && !change.before) {
     return (
       <p className={lineClass}>
         <span className="font-medium text-foreground/80">{label}</span> “{after}”
       </p>
     )
   }
-  if (!change.after) {
+  if (!preview && !change.after) {
     return (
       <p className={lineClass}>
         <span className="font-medium text-foreground/80">{label}</span> “{before}”
@@ -71,7 +79,7 @@ function RestorePreviewBody({ preview }: { preview: RestorePreview | undefined }
       {preview.changes.length > 0 ? (
         <div className="flex max-h-48 min-w-0 flex-col gap-1 overflow-y-auto rounded-md border p-2">
           {preview.changes.map((change) => (
-            <ChangeLine key={changeKey(change)} change={change} wrap />
+            <ChangeLine key={changeKey(change)} change={change} wrap preview />
           ))}
         </div>
       ) : null}

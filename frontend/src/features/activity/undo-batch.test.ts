@@ -105,20 +105,29 @@ describe('undoDescription', () => {
 
 describe('isUndoConflict', () => {
   it('detects 409 from the revert API', () => {
-    expect(isUndoConflict(new ApiError(409, 'Conflict'))).toBe(true)
+    expect(
+      isUndoConflict(
+        new ApiError(409, 'Conflict', {
+          detail: 'Conflict on activity x. Pass force=true to override.',
+        })
+      )
+    ).toBe(true)
     expect(isUndoConflict(new ApiError(400, 'Bad'))).toBe(false)
     expect(isUndoConflict(new Error('nope'))).toBe(false)
   })
 
-  it('never offers overwrite for a reused key', () => {
-    expect(
-      isUndoConflict(
-        new ApiError(409, 'Key is taken', {
-          detail: { code: 'key_conflict', key: 'welcome' },
-        })
-      )
-    ).toBe(false)
-  })
+  it.each(['key_conflict', 'invalid_snapshot', 'unknown_error'])(
+    'never offers overwrite for %s',
+    (code) => {
+      expect(
+        isUndoConflict(
+          new ApiError(409, 'Key is taken', {
+            detail: { code, key: 'welcome' },
+          })
+        )
+      ).toBe(false)
+    }
+  )
 })
 
 describe('undoOverwriteDescription', () => {

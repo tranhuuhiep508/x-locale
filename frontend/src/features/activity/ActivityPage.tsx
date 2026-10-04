@@ -1,6 +1,6 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
@@ -13,7 +13,6 @@ import { PreviewFailure } from '@/features/activity/PreviewFailure'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
 import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels'
 import {
-  isUndoConflict,
   outcomeLabel,
   previewConflictsShowingCaption,
   previewItemsShowingCaption,
@@ -138,7 +137,6 @@ export function ActivityPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
-  const [undoOverwrite, setUndoOverwrite] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
@@ -160,17 +158,13 @@ export function ActivityPage() {
   })
   const undoPreview = undoPreviewQuery.data
 
-  // Surface conflicts as soon as the preview loads, instead of waiting for a 409
-  // from the actual revert attempt.
-  useEffect(() => {
-    if (!undoPreviewQuery.isFetching && !undoPreviewQuery.isError && undoPreview?.requires_force) {
-      setUndoOverwrite(true)
-    }
-  }, [undoPreview, undoPreviewQuery.isFetching, undoPreviewQuery.isError])
+  const undoOverwrite =
+    !undoPreviewQuery.isFetching &&
+    !undoPreviewQuery.isError &&
+    Boolean(undoPreview?.requires_force)
 
   function closeUndo() {
     setUndoTarget(null)
-    setUndoOverwrite(false)
   }
 
   const undoMut = useMutation({
@@ -185,10 +179,6 @@ export function ActivityPage() {
     onError: (e) => {
       if (e instanceof ApiError && e.status === 409) {
         void undoPreviewQuery.refetch()
-      }
-      if (isUndoConflict(e) && !undoOverwrite) {
-        setUndoOverwrite(true)
-        return
       }
       toast.error(e instanceof Error ? e.message : 'Undo failed')
     },
@@ -338,7 +328,7 @@ export function ActivityPage() {
           undoTarget?.batch_id &&
           undoMut.mutate({
             batchId: undoTarget.batch_id,
-            force: undoOverwrite || Boolean(undoPreview?.requires_force),
+            force: undoOverwrite,
           })
         }
         title={undoOverwrite ? 'Overwrite later edits?' : 'Undo this batch?'}
