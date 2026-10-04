@@ -2,7 +2,9 @@ import { expect, type Locator, type Page } from '@playwright/test'
 
 /** TimeRangePicker popover is portaled to document body, not inside `<main>`. */
 export function timeRangePopover(page: Page) {
-  return page.locator('[data-slot="popover-content"]').filter({ has: page.locator('#time-range-since') })
+  return page
+    .locator('[data-slot="popover-content"]')
+    .filter({ has: page.getByTestId('time-range-calendar') })
 }
 
 function timeRangeTrigger(root: Locator) {
