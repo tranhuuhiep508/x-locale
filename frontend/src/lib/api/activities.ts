@@ -1,12 +1,11 @@
 import { api } from '@/lib/api/client'
 import { resolveTimeRange } from '@/lib/time-range'
+import { parseRestorePreview, parseRevertPreview } from './preview-contract'
 import type {
   ActivityDetail,
   ActivityFeedResponse,
   ActivityListResponse,
-  RestorePreview,
   RestoreVersionResult,
-  RevertPreview,
 } from '@/lib/api/types'
 
 export type ActivityListParams = {
@@ -43,26 +42,38 @@ export const activitiesApi = {
     api.get<ActivityListResponse>(`/projects/${projectId}/activities`, params),
   feed: (projectId: string, params?: ActivityFeedParams) =>
     api.get<ActivityFeedResponse>(`/projects/${projectId}/activities/feed`, params),
-  forString: (projectId: string, stringId: string, params?: { page?: number; page_size?: number }) =>
+  forString: (
+    projectId: string,
+    stringId: string,
+    params?: { page?: number; page_size?: number }
+  ) =>
     api.get<ActivityListResponse>(`/projects/${projectId}/strings/${stringId}/activities`, params),
   detail: (projectId: string, activityId: string) =>
     api.get<ActivityDetail>(`/projects/${projectId}/activities/${activityId}`),
   restoreVersion: (projectId: string, stringId: string, activityId: string) =>
-    api.post<RestoreVersionResult>(`/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore`),
-  restoreVersionPreview: (projectId: string, stringId: string, activityId: string) =>
-    api.get<RestorePreview>(
-      `/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore/preview`,
+    api.post<RestoreVersionResult>(
+      `/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore`
     ),
+  restoreVersionPreview: (projectId: string, stringId: string, activityId: string) =>
+    api
+      .get<unknown>(
+        `/projects/${projectId}/strings/${stringId}/activities/${activityId}/restore/preview`
+      )
+      .then(parseRestorePreview),
   revert: (projectId: string, activityId: string) =>
     api.post(`/projects/${projectId}/activities/${activityId}/revert`),
   revertPreview: (projectId: string, activityId: string) =>
-    api.get<RevertPreview>(`/projects/${projectId}/activities/${activityId}/revert/preview`),
+    api
+      .get<unknown>(`/projects/${projectId}/activities/${activityId}/revert/preview`)
+      .then(parseRevertPreview),
   revertBatch: (projectId: string, batchId: string, force = false) =>
     api.post<{ reverted: number; batch_id: string }>(
       `/projects/${projectId}/activities/batch/${batchId}/revert`,
       undefined,
-      { force },
+      { force }
     ),
   revertBatchPreview: (projectId: string, batchId: string) =>
-    api.get<RevertPreview>(`/projects/${projectId}/activities/batch/${batchId}/revert/preview`),
+    api
+      .get<unknown>(`/projects/${projectId}/activities/batch/${batchId}/revert/preview`)
+      .then(parseRevertPreview),
 }

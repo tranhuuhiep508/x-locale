@@ -127,12 +127,16 @@ export const revertPreviewQuery = (projectId: string, activityId: string) =>
   queryOptions({
     queryKey: queryKeys.projects.activities.revertPreview(projectId, activityId),
     queryFn: () => activitiesApi.revertPreview(projectId, activityId),
+    staleTime: 0,
+    retry: false,
   })
 
 export const batchRevertPreviewQuery = (projectId: string, batchId: string) =>
   queryOptions({
     queryKey: queryKeys.projects.activities.batchRevertPreview(projectId, batchId),
     queryFn: () => activitiesApi.revertBatchPreview(projectId, batchId),
+    staleTime: 0,
+    retry: false,
   })
 
 export const restoreVersionPreviewQuery = (
@@ -143,4 +147,6 @@ export const restoreVersionPreviewQuery = (
   queryOptions({
     queryKey: queryKeys.projects.activities.restorePreview(projectId, stringId, activityId),
     queryFn: () => activitiesApi.restoreVersionPreview(projectId, stringId, activityId),
+    staleTime: 0,
+    retry: false,
   })

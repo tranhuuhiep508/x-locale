@@ -1,17 +1,18 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
+import { ApiError } from '@/lib/api/client'
 import type { ActivityChange, ActivityFeedCard, RevertPreview } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { activityFeedQuery, batchRevertPreviewQuery, projectQuery } from '@/lib/queries'
 import { ActivityCard } from '@/features/activity/ActivityCard'
 import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
+import { PreviewFailure } from '@/features/activity/PreviewFailure'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
 import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels'
 import {
-  isUndoConflict,
   outcomeLabel,
   previewConflictsShowingCaption,
   previewItemsShowingCaption,
@@ -62,6 +63,14 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
 
   return (
     <div className="flex flex-col gap-2 text-left">
+      {preview.blocked_reason ? (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 p-2 text-sm text-destructive"
+        >
+          {preview.blocked_reason}
+        </p>
+      ) : null}
       {preview.conflict_count > 0 ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
           <p className="font-medium">
@@ -78,9 +87,7 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
               <li className="font-mono text-destructive/80">…</li>
             ) : null}
           </ul>
-          {conflictsCaption ? (
-            <p className="mt-1 text-destructive/80">{conflictsCaption}</p>
-          ) : null}
+          {conflictsCaption ? <p className="mt-1 text-destructive/80">{conflictsCaption}</p> : null}
         </div>
       ) : null}
       <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border p-2">
@@ -92,10 +99,15 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
             </div>
             {item.changes.map((change) => (
               <p key={changeKey(change)} className="truncate">
-                <span className="font-medium text-foreground/70">{changeFieldLabel(change)}</span>{' '}
-                “{changeDisplayValue(change, change.before)}” → “{changeDisplayValue(change, change.after)}”
+                <span className="font-medium text-foreground/70">
+                  {changeFieldLabel(change)}
+                  {change.scope === 'published' ? ' (published)' : ''}
+                </span>{' '}
+                “{changeDisplayValue(change, change.before)}” → “
+                {changeDisplayValue(change, change.after)}”
               </p>
             ))}
+            {item.blocked_reason ? <p className="text-destructive">{item.blocked_reason}</p> : null}
             {previewTruncated(item.changes.length, item.change_count) ? (
               <p className="text-muted-foreground/80">…</p>
             ) : null}
@@ -127,7 +139,6 @@ export function ActivityPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
-  const [undoOverwrite, setUndoOverwrite] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
@@ -141,7 +152,7 @@ export function ActivityPage() {
       period: search.period,
       since: search.since,
       until: search.until,
-    }),
+    })
   )
 
   const undoPreviewQuery = useQuery({
@@ -150,17 +161,13 @@ export function ActivityPage() {
   })
   const undoPreview = undoPreviewQuery.data
 
-  // Surface conflicts as soon as the preview loads, instead of waiting for a 409
-  // from the actual revert attempt.
-  useEffect(() => {
-    if (undoPreview?.requires_force) {
-      setUndoOverwrite(true)
-    }
-  }, [undoPreview])
+  const undoOverwrite =
+    !undoPreviewQuery.isFetching &&
+    !undoPreviewQuery.isError &&
+    Boolean(undoPreview?.requires_force)
 
   function closeUndo() {
     setUndoTarget(null)
-    setUndoOverwrite(false)
   }
 
   const undoMut = useMutation({
@@ -173,9 +180,8 @@ export function ActivityPage() {
       closeUndo()
     },
     onError: (e) => {
-      if (isUndoConflict(e) && !undoOverwrite) {
-        setUndoOverwrite(true)
-        return
+      if (e instanceof ApiError && e.status === 409) {
+        void undoPreviewQuery.refetch()
       }
       toast.error(e instanceof Error ? e.message : 'Undo failed')
     },
@@ -185,7 +191,7 @@ export function ActivityPage() {
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / search.page_size)
   const locales = [project?.base_language, ...(project?.target_languages ?? [])].filter(
-    (code, index, all): code is string => Boolean(code) && all.indexOf(code) === index,
+    (code, index, all): code is string => Boolean(code) && all.indexOf(code) === index
   )
 
   const grouped = useMemo(() => {
@@ -240,15 +246,11 @@ export function ActivityPage() {
             className="w-40"
             placeholder="Person"
             defaultValue={search.actor ?? ''}
-            onBlur={(event) =>
-              setSearch({ actor: event.target.value.trim() || undefined })
-            }
+            onBlur={(event) => setSearch({ actor: event.target.value.trim() || undefined })}
           />
           <Select
             value={search.locale || 'all'}
-            onValueChange={(value) =>
-              setSearch({ locale: value === 'all' ? undefined : value })
-            }
+            onValueChange={(value) => setSearch({ locale: value === 'all' ? undefined : value })}
           >
             <SelectTrigger className="w-28">
               <SelectValue placeholder="Locale" />
@@ -330,7 +332,7 @@ export function ActivityPage() {
           undoTarget?.batch_id &&
           undoMut.mutate({
             batchId: undoTarget.batch_id,
-            force: undoOverwrite || Boolean(undoPreview?.requires_force),
+            force: undoOverwrite,
           })
         }
         title={undoOverwrite ? 'Overwrite later edits?' : 'Undo this batch?'}
@@ -343,12 +345,24 @@ export function ActivityPage() {
                   ? undoDescription(undoTarget, undoPreview)
                   : ''}
             </p>
-            <UndoPreviewList preview={undoPreview} />
+            {undoPreviewQuery.isError ? (
+              <PreviewFailure
+                error={undoPreviewQuery.error}
+                onRetry={() => {
+                  void undoPreviewQuery.refetch()
+                }}
+              />
+            ) : (
+              <UndoPreviewList preview={undoPreviewQuery.isFetching ? undefined : undoPreview} />
+            )}
           </div>
         }
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
         isLoading={undoMut.isPending}
+        confirmDisabled={
+          undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
+        }
         contentClassName="sm:max-w-lg"
       />
 

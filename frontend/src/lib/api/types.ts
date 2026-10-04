@@ -438,6 +438,7 @@ export interface RevertPreviewItem {
   string_key: string | null
   outcome: RevertPreviewOutcome
   conflict: boolean
+  blocked_reason: string | null
   affects_published: boolean
   change_count: number
   changes: ActivityChange[]
@@ -452,6 +453,8 @@ export interface RevertPreviewOutcomeCounts {
 }
 
 export interface RevertPreview {
+  can_revert: boolean
+  blocked_reason: string | null
   items: RevertPreviewItem[]
   conflicts: RevertPreviewConflict[]
   total: number

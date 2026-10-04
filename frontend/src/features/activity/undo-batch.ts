@@ -29,25 +29,29 @@ export function undoDescription(card: ActivityFeedCard, preview?: RevertPreview)
   if (created > 0) {
     parts.push(
       `This undoes ${total} ${stringNoun(total)}. ${created} new ${stringNoun(created)} will be moved to Deleted ` +
-        '(or queued for public removal if already published).',
+        '(or queued for public removal if already published).'
     )
   } else {
     parts.push(`This restores ${total} ${stringNoun(total)} to their values before this action.`)
   }
   if (preview.affects_published) {
-    parts.push('This also changes the published snapshot.')
+    parts.push('This also changes the published snapshot or publish status.')
   }
   return parts.join(' ')
 }
 
 export function undoOverwriteDescription(preview?: RevertPreview): string {
+  const publicationWarning = preview?.affects_published
+    ? ' This also changes published content or publish status.'
+    : ''
   if (preview && preview.conflict_count > 0) {
     return (
       `${preview.conflict_count} ${stringNoun(preview.conflict_count)} ` +
-      'were edited since this action and will be overwritten.'
+      `${preview.conflict_count === 1 ? 'was' : 'were'} edited since this action and will be overwritten.` +
+      publicationWarning
     )
   }
-  return 'Later edits will be overwritten.'
+  return 'Later edits will be overwritten.' + publicationWarning
 }
 
 export function previewTruncated(shown: number, total: number): boolean {
@@ -83,5 +87,7 @@ export function outcomeLabel(item: RevertPreviewItem): string {
 }
 
 export function isUndoConflict(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409
+  if (!(error instanceof ApiError) || error.status !== 409) return false
+  const detail = (error.body as { detail?: unknown } | undefined)?.detail
+  return typeof detail === 'string' && detail.includes('Pass force=true to override.')
 }
