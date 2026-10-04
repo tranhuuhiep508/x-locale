@@ -10,7 +10,18 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import asc, desc, distinct, exists, false, func, nulls_first, nulls_last, or_, select
+from sqlalchemy import (
+    asc,
+    desc,
+    distinct,
+    exists,
+    false,
+    func,
+    nulls_first,
+    nulls_last,
+    or_,
+    select,
+)
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Activity, Module, Project, StringEntry, Tag, Translation, TranslationStatus

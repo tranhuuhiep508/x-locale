@@ -1,10 +1,5 @@
 import type { SortingState } from '@tanstack/react-table'
 
-export type CatalogSortSearch = {
-  sort?: string
-  order?: string
-}
-
 export const CATALOG_SORT_FIELDS = [
   'key',
   'source_text',
@@ -17,6 +12,11 @@ export const CATALOG_SORT_FIELDS = [
 
 export type CatalogSortField = (typeof CATALOG_SORT_FIELDS)[number]
 export type CatalogSortOrder = 'asc' | 'desc'
+
+export type CatalogSortSearch = {
+  sort?: CatalogSortField
+  order?: CatalogSortOrder
+}
 
 const FIELD_SET = new Set<string>(CATALOG_SORT_FIELDS)
 
@@ -46,7 +46,10 @@ export function catalogSortSearchUpdates(
   columnId: string,
 ): CatalogSortSearch {
   if (!isCatalogSortField(columnId)) {
-    return { sort: current.sort, order: current.order }
+    return {
+      sort: parseCatalogSortField(current.sort),
+      order: parseCatalogSortOrder(current.order),
+    }
   }
   const resolved = resolvedCatalogSort(current)
   if (columnId !== resolved.sort) {

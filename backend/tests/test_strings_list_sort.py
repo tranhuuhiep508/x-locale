@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, event
 
+from alembic import command
 from app.config import settings
 from app.database import enable_sqlite_foreign_keys
 
@@ -33,8 +33,8 @@ def _list(client, pid, **params):
 
 def test_list_sort_default_matches_key_asc(client):
     pid = _project(client)
-    b = _string(client, pid, "b-key", "B")
-    a = _string(client, pid, "a-key", "A")
+    _string(client, pid, "b-key", "B")
+    _string(client, pid, "a-key", "A")
 
     default = _list(client, pid, page_size=50).json()["items"]
     explicit = _list(
