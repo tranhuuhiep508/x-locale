@@ -60,9 +60,11 @@ import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
   applySuccessMessage,
+  createMissingReviewRequest,
   descriptionsFromDrafts,
   filledStringCount,
   mergeProposalResults,
+  type MissingReviewRequest,
 } from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -118,6 +120,7 @@ export function StringsPage() {
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
   const [reviewPage, setReviewPage] = useState(1)
   const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
   const [reviewTotal, setReviewTotal] = useState(0)
@@ -207,14 +210,9 @@ export function StringsPage() {
   const locales = useMemo(() => project?.target_languages ?? [], [project?.target_languages])
 
   function missingRequest(page: number): TranslateRequest {
-    return {
-      scope: 'missing',
-      locales,
-      page,
-      page_size: TRANSLATE_MISSING_PAGE_SIZE,
-      ...searchToBatchFilter(search),
-      q: search.q?.trim() || undefined,
-    }
+    const request = reviewRequestRef.current
+    if (!request) throw new Error('Translation review session is not open')
+    return { ...request, page }
   }
 
   const invalidateStrings = useCallback(() => {
@@ -337,13 +335,14 @@ export function StringsPage() {
   function closeReview() {
     if (applyMut.isPending || proposeMut.isPending) return
     setReviewOpen(false)
+    reviewRequestRef.current = null
     setProposalJobId(null)
     setProposalsReady(false)
     proposeMut.reset()
   }
 
   function loadMissingPage(page: number) {
-    if (applyMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
+    if (!reviewRequestRef.current || applyMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
     setProposalJobId(null)
     missingMut.mutate(missingRequest(page))
   }
@@ -571,6 +570,7 @@ export function StringsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
+                  reviewRequestRef.current = createMissingReviewRequest(search, locales)
                   setProposalItems([])
                   setProposalJobId(null)
                   setProposalsReady(false)

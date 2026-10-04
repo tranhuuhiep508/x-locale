@@ -2,6 +2,7 @@ import { differs, isReleased } from '@/features/strings/working-copy'
 import { ApiError } from '@/lib/api/client'
 import type { BatchFilter, BatchRequest, StringEntry } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
+import { resolveStringTimeForApi } from '@/lib/time-range'
 
 export type PublishKind = 'new' | 'update' | 'removal' | 'noop'
 
@@ -312,8 +313,12 @@ export function searchToBatchFilter(
     | 'max_confidence'
     | 'batch_id'
     | 'updated_within_days'
+    | 'period'
+    | 'since'
+    | 'until'
   >,
 ): BatchFilter {
+  const time = resolveStringTimeForApi(search)
   return {
     module_id: search.module,
     unassigned_module: search.unassigned_module,
@@ -330,7 +335,9 @@ export function searchToBatchFilter(
     deleted: search.deleted,
     max_confidence: search.max_confidence,
     batch_id: search.batch_id,
-    updated_within_days: search.updated_within_days,
+    since: time.since,
+    until: time.until,
+    updated_within_days: time.updated_within_days,
   }
 }
 

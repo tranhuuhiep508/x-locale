@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -43,6 +44,8 @@ def list_strings(
     max_confidence: Annotated[int | None, Query(ge=0, le=100)] = None,
     batch_id: Annotated[uuid.UUID | None, Query()] = None,
     updated_within_days: Annotated[UpdatedWithinDays | None, Query()] = None,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
     sort: Annotated[str | None, Query()] = None,
     order: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -67,6 +70,8 @@ def list_strings(
         max_confidence=max_confidence,
         batch_id=batch_id,
         updated_within_days=updated_within_days,
+        since=since,
+        until=until,
         sort=sort,
         order=order,
         page=page,

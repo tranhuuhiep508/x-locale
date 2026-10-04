@@ -9,6 +9,20 @@ import {
 } from './StringsFilters'
 
 describe('advanced string filter URL state', () => {
+  it('gives period precedence over custom time range query parameters', () => {
+    expect(
+      stringsSearchSchema.parse({
+        period: '7d',
+        since: '2026-01-01T00:00:00.000Z',
+        until: '2026-01-02T00:00:00.000Z',
+      }),
+    ).toMatchObject({
+      period: '7d',
+      since: undefined,
+      until: undefined,
+    })
+  })
+
   it('parses boolean and rolling-window query parameters', () => {
     expect(
       stringsSearchSchema.parse({
@@ -41,6 +55,8 @@ describe('advanced string filter URL state', () => {
     { never_published: true },
     { pending_delete: true },
     { updated_within_days: 7 },
+    { period: '24h' },
+    { since: '2026-01-01' },
   ])('detects an active advanced filter: %o', (search) => {
     expect(hasActiveStringFilters(search)).toBe(true)
   })

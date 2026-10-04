@@ -1,20 +1,33 @@
 import { test, expect, type Page } from '@playwright/test'
 import { resetDemoDatabase } from '../helpers/database'
 import { openDemoStrings } from '../helpers/strings'
+import {
+  activityFilterBar,
+  openTimeRangePicker,
+  pickTimeRangePreset,
+  timeRangePopover,
+} from '../helpers/time-range'
 
-// Calendar day buttons format data-day with the browser default locale.
-// Pin both so the selector and the URL dates do not follow the host environment.
 test.use({ locale: 'en-US', timezoneId: 'UTC' })
 
 test.beforeAll(() => {
   resetDemoDatabase()
 })
 
+async function expectParam(page: Page, name: string, value: string | null) {
+  await expect.poll(() => new URL(page.url()).searchParams.get(name)).toBe(value)
+}
+
+async function openActivity(page: Page) {
+  await openDemoStrings(page)
+  await page.getByRole('link', { name: 'Activity' }).click()
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+}
+
 function pad(value: number) {
   return String(value).padStart(2, '0')
 }
 
-/** Previous calendar month in UTC, matching the timezone pinned on this file. */
 function previousUtcMonth(now = new Date()) {
   const monthIndex = now.getUTCMonth() - 1
   if (monthIndex >= 0) {
@@ -25,7 +38,7 @@ function previousUtcMonth(now = new Date()) {
 
 function dateParam(year: number, monthIndex: number, day: number, endOfDay = false) {
   const stamp = `${year}-${pad(monthIndex + 1)}-${pad(day)}`
-  return endOfDay ? `${stamp}T23:59:59` : `${stamp}T00:00:00`
+  return endOfDay ? `${stamp}T23:59:59.999999Z` : `${stamp}T00:00:00.000Z`
 }
 
 async function browserDayLabel(page: Page, year: number, monthIndex: number, day: number) {
@@ -35,49 +48,82 @@ async function browserDayLabel(page: Page, year: number, monthIndex: number, day
   )
 }
 
-async function expectDateParams(page: Page, since: string | null, until: string | null) {
-  await expect.poll(() => new URL(page.url()).searchParams.get('since')).toBe(since)
-  await expect.poll(() => new URL(page.url()).searchParams.get('until')).toBe(until)
+async function pickCalendarRange(
+  page: Page,
+  year: number,
+  monthIndex: number,
+  fromDay: number,
+  toDay: number,
+) {
+  const popover = timeRangePopover(page)
+  const calendar = popover.getByTestId('time-range-calendar')
+  await calendar.getByRole('button', { name: 'Go to the Previous Month' }).click()
+  const fromLabel = await browserDayLabel(page, year, monthIndex, fromDay)
+  const toLabel = await browserDayLabel(page, year, monthIndex, toDay)
+  await calendar.locator(`button[data-day="${fromLabel}"]`).click()
+  await calendar.locator(`button[data-day="${toLabel}"]`).click()
 }
 
-test('activity date range works after navigation and a direct reload', async ({ page }) => {
+test('activity time presets and custom ranges persist in the URL', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
+  const activityFilters = activityFilterBar(page)
   const { year, monthIndex } = previousUtcMonth()
   const since = dateParam(year, monthIndex, 10)
   const until = dateParam(year, monthIndex, 12, true)
 
-  await openDemoStrings(page)
-  await page.getByRole('link', { name: 'Activity' }).click()
-  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
-  await page.getByRole('button', { name: 'Date range', exact: true }).click()
+  await openActivity(page)
+  await pickTimeRangePreset(page, 'Last 7 days', activityFilters)
+  await expectParam(page, 'period', '7d')
+  await expectParam(page, 'since', null)
+  await expectParam(page, 'until', null)
 
-  const calendar = page.locator('[data-slot="calendar"]')
-  await expect(calendar.getByRole('grid')).toHaveCount(2)
-  await calendar.getByRole('button', { name: 'Go to the Previous Month' }).click()
+  await openTimeRangePicker(page, activityFilters)
+  await pickCalendarRange(page, year, monthIndex, 10, 12)
+  await timeRangePopover(page).getByRole('button', { name: 'Apply range', exact: true }).click()
+  await expectParam(page, 'period', null)
+  await expectParam(page, 'since', since)
+  await expectParam(page, 'until', until)
 
-  const fromLabel = await browserDayLabel(page, year, monthIndex, 10)
-  const toLabel = await browserDayLabel(page, year, monthIndex, 12)
-  await calendar.locator(`button[data-day="${fromLabel}"]`).click()
-  await calendar.locator(`button[data-day="${toLabel}"]`).click()
-
-  await expectDateParams(page, since, until)
-  await page.keyboard.press('Escape')
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
-  await expectDateParams(page, since, until)
-  await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeVisible()
+  await expectParam(page, 'period', null)
+  await expectParam(page, 'since', since)
+  await expectParam(page, 'until', until)
 
+  await openTimeRangePicker(page, activityFilters)
+  await timeRangePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
+  await expectParam(page, 'period', null)
+  await expectParam(page, 'since', null)
+  await expectParam(page, 'until', null)
+
+  await page.getByRole('combobox').first().click()
+  await page.getByRole('option', { name: 'Import' }).click()
+  await pickTimeRangePreset(page, 'Last 24 hours', activityFilters)
+  await expectParam(page, 'event_type', 'import')
+  await expectParam(page, 'period', '24h')
+  await openTimeRangePicker(page, activityFilters)
+  await timeRangePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
+  await expectParam(page, 'event_type', 'import')
+  await expectParam(page, 'period', null)
+
+  await pickTimeRangePreset(page, 'Last 7 days', activityFilters)
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
-  await expectDateParams(page, null, null)
-  await expect(page.getByRole('button', { name: 'Date range', exact: true })).toBeEnabled()
+  await expectParam(page, 'period', null)
+  await expectParam(page, 'event_type', null)
+  await expectParam(page, 'page', '1')
 
-  await page.reload()
-  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
-  await expectDateParams(page, null, null)
-  await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0)
-
-  // Smoke check only. A clean pageerror list does not reproduce the original dynamic-import failure.
   expect(pageErrors).toEqual([])
+})
+
+test('activity date-only bookmarks still load', async ({ page }) => {
+  await openActivity(page)
+  const url = new URL(page.url())
+  url.searchParams.set('since', '2026-01-10')
+  url.searchParams.set('until', '2026-01-12')
+  await page.goto(url.toString())
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+  await expectParam(page, 'since', '2026-01-10')
+  await expectParam(page, 'until', '2026-01-12')
 })

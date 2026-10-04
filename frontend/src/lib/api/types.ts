@@ -200,6 +200,8 @@ export interface BatchFilter {
   max_confidence?: number
   batch_id?: string
   updated_within_days?: 7 | 30
+  since?: string
+  until?: string
 }
 
 export interface BatchRequest {

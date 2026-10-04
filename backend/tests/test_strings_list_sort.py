@@ -115,6 +115,27 @@ def test_list_sort_with_status_filter(client):
     assert items[0]["id"] == pub["id"]
 
 
+def test_list_sort_with_time_range(client):
+    pid = _project(client)
+    _string(client, pid, "a", "A")
+    _string(client, pid, "b", "B")
+
+    r = _list(
+        client, pid, sort="key", order="desc",
+        since="2000-01-01T00:00:00Z", until="2100-01-01T00:00:00Z",
+    )
+    assert r.status_code == 200
+    assert [row["key"] for row in r.json()["items"]] == ["b", "a"]
+
+    for bounds in (
+        {"since": "2100-01-01T00:00:00Z"},
+        {"until": "2000-01-01T00:00:00Z"},
+    ):
+        r = _list(client, pid, sort="key", order="desc", **bounds)
+        assert r.status_code == 200
+        assert r.json()["items"] == []
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -150,3 +171,46 @@ def test_migration_creates_updated_at_partial_index(tmp_path, monkeypatch):
     assert index_sql
     assert "deleted_at" in index_sql.lower()
     assert "updated_at" in index_sql.lower()
+
+
+@pytest.mark.parametrize("starting_state", ["fresh", "catalog_sort", "time_range"])
+def test_shared_index_migration_upgrade_and_downgrade(tmp_path, monkeypatch, starting_state):
+    url = f"sqlite:///{tmp_path / 'shared-index.db'}"
+    monkeypatch.setattr(settings, "database_url", url)
+    cfg = Config("alembic.ini")
+    engine = create_engine(url)
+
+    if starting_state == "catalog_sort":
+        command.upgrade(cfg, "m2d49g0b1234")
+    elif starting_state == "time_range":
+        # Reproduce the original PR's schema and revision before its parent
+        # changed to reuse the catalog sorting migration.
+        command.upgrade(cfg, "l1c38f9a0123")
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "CREATE INDEX ix_strings_project_updated_at_alive "
+                "ON strings (project_id, updated_at) WHERE deleted_at IS NULL"
+            )
+        command.stamp(cfg, "m2d49a0b1234")
+
+    def index_count():
+        with engine.connect() as conn:
+            return conn.exec_driver_sql(
+                "SELECT count(*) FROM sqlite_master "
+                "WHERE name = 'ix_strings_project_updated_at_alive'"
+            ).scalar()
+
+    command.upgrade(cfg, "head")
+    assert index_count() == 1
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
+            ("m2d49a0b1234",)
+        ]
+
+    command.downgrade(cfg, "m2d49g0b1234")
+    assert index_count() == 1
+    command.downgrade(cfg, "l1c38f9a0123")
+    assert index_count() == 0
+    command.upgrade(cfg, "head")
+    assert index_count() == 1
+    engine.dispose()

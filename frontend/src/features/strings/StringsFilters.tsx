@@ -26,7 +26,9 @@ import {
 import { batchFilterChipLabel } from '@/features/strings/batch-filter'
 import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
 import type { Module, Tag } from '@/lib/api/types'
+import { TimeRangePicker } from '@/components/ui/time-range-picker'
 import type { StringsSearch } from '@/lib/schemas'
+import { hasActiveTimeFilter } from '@/lib/time-range'
 import { cn } from '@/lib/utils'
 
 const STATUS_ALL = 'all'
@@ -35,8 +37,6 @@ const UNASSIGNED_MODULE = 'unassigned'
 const UNTAGGED = 'untagged'
 const TRANSLATION_ALL = 'all'
 const MISSING_ANY = 'missing:any'
-const UPDATED_ALL = 'all'
-
 function statusValue(search: StringsSearch) {
   if (search.deleted) return 'deleted'
   if (search.pending_delete) return 'pending_delete'
@@ -74,7 +74,7 @@ export function hasActiveStringFilters(search: StringsSearch) {
       search.never_published ||
       search.deleted ||
       search.max_confidence != null ||
-      search.updated_within_days != null ||
+      hasActiveTimeFilter(search) ||
       search.batch_id,
   )
 }
@@ -469,20 +469,15 @@ export function StringsFilters({
           </FilterSelect>
         ) : null}
 
-        <FilterSelect
-          label="Updated"
-          value={search.updated_within_days?.toString() ?? UPDATED_ALL}
-          onValueChange={(value) =>
-            onFilter({
-              updated_within_days:
-                value === UPDATED_ALL ? undefined : (Number(value) as 7 | 30),
-            })
-          }
-        >
-          <SelectItem value={UPDATED_ALL}>Any time</SelectItem>
-          <SelectItem value="7">Last 7 days</SelectItem>
-          <SelectItem value="30">Last 30 days</SelectItem>
-        </FilterSelect>
+        <TimeRangePicker
+          value={{
+            period: search.period,
+            since: search.since,
+            until: search.until,
+            updated_within_days: search.updated_within_days,
+          }}
+          onChange={(updates) => onFilter(updates)}
+        />
 
         <FilterSelect
           label="AI"

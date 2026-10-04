@@ -1,4 +1,5 @@
 import { api } from '@/lib/api/client'
+import { resolveStringTimeForApi } from '@/lib/time-range'
 import type {
   BatchRequest,
   BatchResult,
@@ -34,6 +35,9 @@ export type StringListParams = {
   max_confidence?: number
   batch_id?: string
   updated_within_days?: 7 | 30
+  period?: string
+  since?: string
+  until?: string
   page?: number
   page_size?: number
   sort?: string
@@ -44,6 +48,7 @@ export type StringListParams = {
 export function toStringListParams(
   search: StringListParams & { batch_kind?: string },
 ): StringListParams {
+  const time = resolveStringTimeForApi(search)
   return {
     module: search.module,
     unassigned_module: search.unassigned_module,
@@ -59,8 +64,10 @@ export function toStringListParams(
     has_unpublished_changes: search.has_unpublished_changes,
     deleted: search.deleted,
     max_confidence: search.max_confidence,
-    updated_within_days: search.updated_within_days,
     batch_id: search.batch_id,
+    since: time.since,
+    until: time.until,
+    updated_within_days: time.updated_within_days,
     page: search.page,
     page_size: search.page_size,
     sort: search.sort,

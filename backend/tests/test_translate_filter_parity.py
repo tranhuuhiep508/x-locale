@@ -48,6 +48,33 @@ def translation_catalog(client):
     return base, entries
 
 
+def test_translation_endpoints_match_grid_with_since_until(
+    client, monkeypatch, translation_catalog
+):
+    since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    filters = {"since": since}
+    base, _ = translation_catalog
+    grid = client.get(f"{base}/strings", params=filters)
+    assert grid.status_code == 200, grid.text
+    expected = {
+        item["id"]
+        for item in grid.json()["items"]
+        if not item["deleted_at"]
+        and any(not t["value"].strip() for t in item["translations"] if t["locale"] in {"en", "fr"})
+    }
+
+    def fake_batch(source_locale, items, on_progress=None):
+        return {item.id: {lc: f"{lc}:{item.source_text}" for lc in item.locales} for item in items}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+    response = client.post(
+        f"{base}/translate/missing",
+        json={"locales": ["en", "fr"], **filters},
+    )
+    assert response.status_code == 200, response.text
+    assert {item["string_id"] for item in response.json()["items"]} == expected
+
+
 @pytest.mark.parametrize("endpoint", ["missing", "proposals", "direct"])
 @pytest.mark.parametrize(
     "filters",

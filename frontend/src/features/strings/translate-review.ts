@@ -1,6 +1,31 @@
-import type { TranslateProposalItem } from '@/lib/api/types'
+import type { TranslateProposalItem, TranslateRequest } from '@/lib/api/types'
+import type { StringsSearch } from '@/lib/schemas'
+import { searchToBatchFilter } from '@/features/strings/publish-preview'
 
 export const TRANSLATE_MISSING_PAGE_SIZE = 50
+
+export type MissingReviewRequest = Omit<TranslateRequest, 'page'>
+
+/** Capture the queue's filters once per review session, before any paging. */
+export function createMissingReviewRequest(
+  search: StringsSearch,
+  locales: readonly string[],
+): MissingReviewRequest {
+  const filter = searchToBatchFilter(search)
+  if (filter.updated_within_days != null) {
+    // The legacy API filter rolls on the server, so freeze it as an absolute
+    // cutoff too. Each new review session captures a fresh window.
+    filter.since = new Date(Date.now() - filter.updated_within_days * 86_400_000).toISOString()
+    filter.updated_within_days = undefined
+  }
+  return {
+    ...filter,
+    scope: 'missing',
+    locales: [...locales],
+    page_size: TRANSLATE_MISSING_PAGE_SIZE,
+    q: search.q?.trim() || undefined,
+  }
+}
 
 export function cloneItem(item: TranslateProposalItem): TranslateProposalItem {
   return {

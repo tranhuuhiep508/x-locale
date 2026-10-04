@@ -23,7 +23,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
-import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { TimeRangePicker } from '@/components/ui/time-range-picker'
+import { hasActiveTimeFilter } from '@/lib/time-range'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import {
@@ -130,6 +131,7 @@ export function ActivityPage() {
     event_type: rawSearch.event_type,
     actor: rawSearch.actor,
     locale: rawSearch.locale,
+    period: rawSearch.period,
     since: rawSearch.since,
     until: rawSearch.until,
   }
@@ -147,6 +149,7 @@ export function ActivityPage() {
       event_type: search.event_type,
       actor: search.actor,
       locale: search.locale,
+      period: search.period,
       since: search.since,
       until: search.until,
     })
@@ -263,13 +266,14 @@ export function ActivityPage() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <DateRangePicker
-            value={{ since: search.since, until: search.until }}
-            onChange={({ since, until }) => setSearch({ since, until })}
-            placeholder="Date range"
-            disabled={{ after: new Date() }}
+          <TimeRangePicker
+            value={{ period: search.period, since: search.since, until: search.until }}
+            onChange={(updates) => setSearch(updates)}
           />
-          {search.event_type || search.actor || search.locale || search.since || search.until ? (
+          {search.event_type ||
+          search.actor ||
+          search.locale ||
+          hasActiveTimeFilter(search) ? (
             <Button variant="ghost" size="sm" onClick={() => navigate({ search: { page: 1 } })}>
               Clear
             </Button>

@@ -1,6 +1,7 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
-import type { ActivityFeedParams } from '@/lib/api/activities'
+import type { ActivityFeedSearchParams } from '@/lib/api/activities'
+import { toActivityFeedApiParams } from '@/lib/api/activities'
 import { authApi } from '@/lib/api/auth'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
 import { projectsApi } from '@/lib/api/projects'
@@ -53,11 +54,14 @@ export const tagsQuery = (projectId: string) =>
     queryFn: () => tagsApi.list(projectId),
   })
 
-export const stringsQuery = (projectId: string, search: StringListParams) => {
-  const params = toStringListParams(search)
+export const stringsQuery = (
+  projectId: string,
+  search: StringListParams & { batch_kind?: string },
+) => {
+  const { batch_kind: _batchKind, ...keySearch } = search
   return queryOptions({
-    queryKey: queryKeys.projects.strings.list(projectId, params),
-    queryFn: () => stringsApi.list(projectId, params),
+    queryKey: queryKeys.projects.strings.list(projectId, keySearch),
+    queryFn: () => stringsApi.list(projectId, toStringListParams(search)),
     placeholderData: (prev) => prev,
   })
 }
@@ -68,10 +72,19 @@ export const activitiesQuery = (projectId: string, page: number, pageSize?: numb
     queryFn: () => activitiesApi.list(projectId, { page, page_size: pageSize }),
   })
 
-export const activityFeedQuery = (projectId: string, params: ActivityFeedParams) =>
+export const activityFeedQuery = (projectId: string, params: ActivityFeedSearchParams) =>
   queryOptions({
-    queryKey: queryKeys.projects.activities.feed(projectId, params),
-    queryFn: () => activitiesApi.feed(projectId, params),
+    queryKey: queryKeys.projects.activities.feed(projectId, {
+      page: params.page,
+      page_size: params.page_size,
+      event_type: params.event_type,
+      actor: params.actor,
+      locale: params.locale,
+      period: params.period,
+      since: params.since,
+      until: params.until,
+    }),
+    queryFn: () => activitiesApi.feed(projectId, toActivityFeedApiParams(params)),
   })
 
 export const HISTORY_PAGE_SIZE = 50

@@ -407,6 +407,33 @@ def _missing_locales_clause(db: Session, locales: Sequence[str]):
     return or_(*missing) if missing else false()
 
 
+def _normalize_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _validate_string_time_filters(
+    *,
+    since: datetime | None,
+    until: datetime | None,
+    updated_within_days: int | None,
+) -> tuple[datetime | None, datetime | None]:
+    if updated_within_days is not None and (since is not None or until is not None):
+        raise HTTPException(
+            status_code=400,
+            detail="Conflicting filters: updated_within_days cannot be combined with since/until",
+        )
+    norm_since = _normalize_utc(since) if since is not None else None
+    norm_until = _normalize_utc(until) if until is not None else None
+    if norm_since is not None and norm_until is not None and norm_since > norm_until:
+        raise HTTPException(
+            status_code=400,
+            detail="since must be before or equal to until",
+        )
+    return norm_since, norm_until
+
+
 def _validate_string_filters(
     *,
     module_id: uuid.UUID | None,
@@ -462,8 +489,15 @@ def string_query(
     max_confidence: int | None = None,
     batch_id: uuid.UUID | None = None,
     updated_within_days: int | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
     eager: bool = True,
 ):
+    norm_since, norm_until = _validate_string_time_filters(
+        since=since,
+        until=until,
+        updated_within_days=updated_within_days,
+    )
     # Validate conflicting filters before resolving batch membership.
     _validate_string_filters(
         module_id=module_id,
@@ -537,6 +571,10 @@ def string_query(
     if updated_within_days is not None:
         cutoff = datetime.now(UTC) - timedelta(days=updated_within_days)
         query = query.filter(StringEntry.updated_at >= cutoff)
+    if norm_since is not None:
+        query = query.filter(StringEntry.updated_at >= norm_since)
+    if norm_until is not None:
+        query = query.filter(StringEntry.updated_at <= norm_until)
     if batch_id is not None:
         query = query.filter(StringEntry.id.in_(_batch_member_ids(db, project_id, batch_id)))
     return query.distinct()
@@ -566,6 +604,8 @@ def filtered_string_query(db: Session, project: Project, filt, *, eager: bool = 
         max_confidence=getattr(filt, "max_confidence", None),
         batch_id=getattr(filt, "batch_id", None),
         updated_within_days=getattr(filt, "updated_within_days", None),
+        since=getattr(filt, "since", None),
+        until=getattr(filt, "until", None),
     )
 
 
@@ -650,6 +690,8 @@ def list_strings(
     max_confidence: int | None = None,
     batch_id: uuid.UUID | None = None,
     updated_within_days: int | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
     page: int = 1,
     page_size: int = 50,
     sort: str | None = None,
@@ -676,6 +718,8 @@ def list_strings(
         max_confidence=max_confidence,
         batch_id=batch_id,
         updated_within_days=updated_within_days,
+        since=since,
+        until=until,
     )
     total = (
         query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()

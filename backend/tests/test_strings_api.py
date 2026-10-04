@@ -266,6 +266,31 @@ def test_list_strings_advanced_filters_and_filtered_actions(client):
         assert "reviewed" in {tag["name"] for tag in row["tags"]}
 
 
+def test_strings_time_filter_conflicts_return_400(client):
+    from datetime import UTC, datetime, timedelta
+
+    from tests.helpers import make_project
+
+    project = make_project(client, "Time filter 400")
+    pid = project["id"]
+    since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    conflict = client.get(
+        f"/api/projects/{pid}/strings",
+        params={"updated_within_days": 7, "since": since},
+    )
+    assert conflict.status_code == 400
+    assert "updated_within_days" in conflict.json()["detail"]
+
+    invalid_range = client.get(
+        f"/api/projects/{pid}/strings",
+        params={
+            "since": datetime.now(UTC).isoformat(),
+            "until": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        },
+    )
+    assert invalid_range.status_code == 400
+
+
 def test_string_author_survives_activity_prune(client):
     import uuid
 

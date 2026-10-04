@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeTimeSearch } from '@/lib/time-range'
 import {
   CATALOG_SORT_FIELDS,
   parseCatalogSortField,
@@ -31,11 +32,14 @@ export const stringsSearchSchema = z.object({
     (value) => (typeof value === 'string' ? Number(value) : value),
     z.union([z.literal(7), z.literal(30)]).optional(),
   ),
+  period: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
   sort: z.preprocess(parseCatalogSortField, z.enum(CATALOG_SORT_FIELDS).optional()),
   order: z.preprocess(parseCatalogSortOrder, z.enum(['asc', 'desc']).optional()),
-})
+}).transform(normalizeTimeSearch)
 
 export type StringsSearch = z.infer<typeof stringsSearchSchema>
 
@@ -50,9 +54,10 @@ export const activitySearchSchema = z.object({
   event_type: z.string().optional(),
   actor: z.string().optional(),
   locale: z.string().optional(),
+  period: z.string().optional(),
   since: z.string().optional(),
   until: z.string().optional(),
-})
+}).transform(normalizeTimeSearch)
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>
 

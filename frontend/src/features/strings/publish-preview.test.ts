@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api/client'
 import type { StringEntry } from '@/lib/api/types'
 import {
@@ -310,6 +310,37 @@ describe('searchToBatchFilter', () => {
       batch_id: undefined,
       updated_within_days: 30,
     })
+  })
+
+  it('resolves period presets to since/until for batch filters', () => {
+    const now = new Date('2026-03-08T12:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+    expect(
+      searchToBatchFilter({
+        period: '24h',
+      }),
+    ).toEqual({
+      module_id: undefined,
+      unassigned_module: undefined,
+      tag_id: undefined,
+      untagged: undefined,
+      q: undefined,
+      missing_locale: undefined,
+      missing_any: undefined,
+      complete_locale: undefined,
+      status: undefined,
+      pending_delete: undefined,
+      never_published: undefined,
+      has_unpublished_changes: undefined,
+      deleted: undefined,
+      max_confidence: undefined,
+      batch_id: undefined,
+      since: '2026-03-07T12:00:00.000Z',
+      until: undefined,
+      updated_within_days: undefined,
+    })
+    vi.useRealTimers()
   })
 })
 
