@@ -29,9 +29,18 @@ def parse_api_error(response: httpx.Response) -> str:
     except json.JSONDecodeError:
         text = response.text.strip()
         return text or f"HTTP {response.status_code}"
+    if not isinstance(body, dict):
+        return response.text.strip() or f"HTTP {response.status_code}"
     detail = body.get("detail")
     if isinstance(detail, str):
         return detail
+    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        parts = [detail["message"]]
+        for field, label in (("pending_remove", "Pending remove"), ("tombstones", "Tombstones")):
+            keys = detail.get(field)
+            if isinstance(keys, list) and keys:
+                parts.append(f"{label}: {', '.join(str(key) for key in keys)}")
+        return "\n".join(parts)
     if isinstance(detail, list):
         parts: list[str] = []
         for item in detail:
@@ -65,4 +74,7 @@ def request_json(
         raise XLocaleError(f"{action} failed ({exc.response.status_code}): {detail}") from exc
     except httpx.RequestError as exc:
         raise XLocaleError(f"{action} failed: cannot reach server ({exc})") from exc
-    return response.json()
+    try:
+        return response.json()
+    except json.JSONDecodeError as exc:
+        raise XLocaleError(f"{action} failed: server returned invalid JSON") from exc

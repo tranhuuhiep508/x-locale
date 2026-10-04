@@ -39,6 +39,15 @@ Project setting chooses the default; export query param overrides.
 5. Deleting a string that has a published snapshot sets `pending_delete` instead of removing the row. Public export still ships the snapshot until you publish that delete. Publishing the delete sets `deleted_at` (soft tombstone) rather than hard-deleting. Never-published strings set `deleted_at` immediately. **Restore** / **Discard delete** clear those flags. The same key can be created again while a tombstone exists.
 6. Import / Excel `status=public` applies on **create** (create then publish). Updates never flip status.
 
+CLI `POST /strings/import` rejects an entire request containing a pending-delete
+key or a tombstoned key without a live replacement (HTTP 409,
+`push_deleted_keys`). It never implicitly restores strings; general JSON upload
+imports retain restoration behavior. CLI payloads may provide `base_language`;
+a mismatch returns HTTP 409, `base_language_mismatch`, before content writes.
+`GET /sync-state` includes all project `locales` and omits tombstones shadowed by
+live replacement keys. Explicitly empty source values in JSON imports remain
+empty; a newly imported target-only key still uses the key as its initial source.
+
 ## Version control
 
 `activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (default 90; 0 = keep forever) deletes activity rows older than that many days via `uv run python -m app.cli prune-activities`. Pruning is not run on API startup. Pruning removes feed, History, and Undo for those old events; it does not delete strings.

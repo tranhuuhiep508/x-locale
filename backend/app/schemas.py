@@ -361,6 +361,7 @@ class JobOut(BaseModel):
 class ImportPayload(BaseModel):
     strings: dict[str, str] | None = None
     modules: dict[str, dict[str, dict[str, str]]] | None = None
+    base_language: str | None = None
 
 
 class ImportDiffItem(BaseModel):
@@ -392,6 +393,7 @@ class SyncStateOut(BaseModel):
     stage: str
     layout: str
     base_language: str
+    locales: list[str] = Field(default_factory=list)
     exported: list[str] = Field(default_factory=list)
     pending_remove: list[str] = Field(default_factory=list)
     tombstones: list[str] = Field(default_factory=list)

@@ -320,10 +320,11 @@ def build_sync_state(
     tombstones: list[str] = []
     seen_pending: set[str] = set()
     seen_tombstones: set[str] = set()
+    live_keys = {entry.key for entry in entries if entry.deleted_at is None}
     for entry in entries:
         label = _cli_identity(entry, layout, published=False)
         if entry.deleted_at is not None:
-            if label not in seen_tombstones:
+            if entry.key not in live_keys and label not in seen_tombstones:
                 tombstones.append(label)
                 seen_tombstones.add(label)
         elif entry.pending_delete:
@@ -334,6 +335,7 @@ def build_sync_state(
         stage=stage,
         layout=layout,
         base_language=project.base_language,
+        locales=project_locales(project),
         exported=[],
         pending_remove=sorted(pending_remove),
         tombstones=sorted(tombstones),
@@ -378,11 +380,7 @@ def _get_or_create_module(
         slug = validate_module_slug(slug)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    mod = (
-        db.query(Module)
-        .filter(Module.project_id == project.id, Module.slug == slug)
-        .first()
-    )
+    mod = db.query(Module).filter(Module.project_id == project.id, Module.slug == slug).first()
     if mod or dry_run:
         return mod
     mod = Module(
@@ -416,11 +414,7 @@ def resolve_json_import_tags(
     if not tag_ids:
         return []
     unique_ids = list(dict.fromkeys(tag_ids))
-    tags = (
-        db.query(Tag)
-        .filter(Tag.project_id == project.id, Tag.id.in_(unique_ids))
-        .all()
-    )
+    tags = db.query(Tag).filter(Tag.project_id == project.id, Tag.id.in_(unique_ids)).all()
     if len(tags) != len(unique_ids):
         raise HTTPException(status_code=400, detail="Unknown tag")
     by_id = {tag.id: tag for tag in tags}
@@ -568,9 +562,7 @@ def _prepare_import_collections(
     if tags:
         _preload_collections(db, matched_entries, translations=False, tags=True)
     changing = [
-        entry
-        for entry, values in matched
-        if _import_row_will_change(entry, project, values, tags)
+        entry for entry, values in matched if _import_row_will_change(entry, project, values, tags)
     ]
     _preload_collections(db, changing, translations=True, tags=True)
 
@@ -582,9 +574,7 @@ def _preview_source_text(
     entry: StringEntry | None = None,
 ) -> str:
     if project.base_language in values:
-        text = values[project.base_language]
-        if text:
-            return text
+        return values[project.base_language]
     if entry is not None:
         return entry.source_text
     return key
@@ -614,7 +604,7 @@ def _upsert_imported_string(
         )
     if entry is None:
         if not dry_run:
-            source_text = values.get(project.base_language, "") or key
+            source_text = values.get(project.base_language, key)
             entry = StringEntry(
                 id=uuid4(),
                 project_id=project.id,
@@ -720,8 +710,7 @@ def _import_locale_maps(
 
 def _scope_items(slug: str, items: list[ImportDiffItem]) -> list[ImportDiffItem]:
     return [
-        ImportDiffItem(key=f"{slug}/{item.key}", source_text=item.source_text)
-        for item in items
+        ImportDiffItem(key=f"{slug}/{item.key}", source_text=item.source_text) for item in items
     ]
 
 
@@ -757,11 +746,7 @@ def _payload_keys(project: Project, locale_maps: dict[str, dict[str, str]]) -> l
 
 
 def _module_slug_for_id(db: Session, project: Project, module_id: UUID) -> str:
-    mod = (
-        db.query(Module)
-        .filter(Module.project_id == project.id, Module.id == module_id)
-        .first()
-    )
+    mod = db.query(Module).filter(Module.project_id == project.id, Module.id == module_id).first()
     if mod is None:
         return "unassigned"
     return mod.slug
@@ -811,6 +796,7 @@ def import_flat_strings(
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
     partial: bool = False,
+    reject_deleted: bool = False,
 ) -> ImportResult:
     """CLI / source-locale import: `{ key: source_text }` stored as-is."""
     return import_locale_payload(
@@ -823,10 +809,43 @@ def import_flat_strings(
         tags=tags,
         report_orphans=report_orphans,
         partial=partial,
+        reject_deleted=reject_deleted,
     )
 
 
 _IMPORT_INDEX_KEY_BATCH = 500
+
+
+def _reject_deleted_payload_keys(
+    entries: list[StringEntry], keys: list[str], *, modular: bool
+) -> None:
+    """CLI imports must not cancel removals, even when the module has changed."""
+    wanted = set(keys)
+    live_keys = {entry.key for entry in entries if entry.deleted_at is None}
+    pending: set[str] = set()
+    tombstones: set[str] = set()
+    for entry in entries:
+        if entry.key not in wanted:
+            continue
+        label = _cli_identity(entry, "modular" if modular else "flat")
+        if entry.deleted_at is not None:
+            if entry.key not in live_keys:
+                tombstones.add(label)
+        elif entry.pending_delete:
+            pending.add(label)
+    if pending or tombstones:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "push_deleted_keys",
+                "message": (
+                    "Push includes keys removed on x-locale. Restore them in x-locale "
+                    "or remove them from local source files before pushing."
+                ),
+                "pending_remove": sorted(pending),
+                "tombstones": sorted(tombstones),
+            },
+        )
 
 
 def _union_modular_payload_keys(
@@ -884,6 +903,7 @@ def import_locale_payload(
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
     partial: bool = False,
+    reject_deleted: bool = False,
 ) -> ImportResult:
     if partial:
         key_list = _payload_keys(project, locale_maps)
@@ -891,6 +911,8 @@ def import_locale_payload(
     else:
         entries = _load_import_index_entries(db, project.id)
     index = _ImportIndex(entries)
+    if reject_deleted:
+        _reject_deleted_payload_keys(entries, _payload_keys(project, locale_maps), modular=False)
     if module_id is not None:
         _preflight_named_keys(
             index,
@@ -929,6 +951,7 @@ def import_modular_payload(
     tags: list[Tag] | None = None,
     report_orphans: bool = True,
     partial: bool = False,
+    reject_deleted: bool = False,
 ) -> ImportResult:
     if partial:
         key_list = _union_modular_payload_keys(project, modules, unassigned)
@@ -937,6 +960,10 @@ def import_modular_payload(
         entries = _load_import_index_entries(db, project.id)
     import_tags = tags or []
     index = _ImportIndex(entries)
+    if reject_deleted:
+        _reject_deleted_payload_keys(
+            entries, _union_modular_payload_keys(project, modules, unassigned), modular=True
+        )
     owners: dict[str, str] = {}
     for slug, locale_maps in modules.items():
         if not isinstance(locale_maps, dict):
@@ -1008,6 +1035,7 @@ def import_json_data(
     tag_ids: list[UUID] | None = None,
     report_orphans: bool | None = None,
     partial: bool = False,
+    reject_deleted: bool = False,
 ) -> ImportResult:
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="JSON import must be an object")
@@ -1016,9 +1044,13 @@ def import_json_data(
     tags = resolve_json_import_tags(db, project, tag_ids)
 
     modules = data.get("modules")
-    if isinstance(modules, dict) and modules and all(
-        isinstance(v, dict) and (not v or _is_locale_maps(v) or _is_str_map(v))
-        for v in modules.values()
+    if (
+        isinstance(modules, dict)
+        and modules
+        and all(
+            isinstance(v, dict) and (not v or _is_locale_maps(v) or _is_str_map(v))
+            for v in modules.values()
+        )
     ):
         # Modular export: { modules: { slug: { locale: { key: value } } }, unassigned: {...} }
         if any(_is_locale_maps(v) or not v for v in modules.values()):
@@ -1034,6 +1066,7 @@ def import_json_data(
                 tags=tags,
                 report_orphans=orphans,
                 partial=partial,
+                reject_deleted=reject_deleted,
             )
 
     strings = data.get("strings")
@@ -1049,6 +1082,7 @@ def import_json_data(
             tags=tags,
             report_orphans=orphans,
             partial=partial,
+            reject_deleted=reject_deleted,
         )
 
     if _is_locale_maps(data) and set(data).issubset(project_locales(project)):
@@ -1064,6 +1098,7 @@ def import_json_data(
             tags=tags,
             report_orphans=orphans,
             partial=partial,
+            reject_deleted=reject_deleted,
         )
 
     if _is_str_map(data):
@@ -1087,14 +1122,14 @@ def import_json_data(
             tags=tags,
             report_orphans=orphans,
             partial=partial,
+            reject_deleted=reject_deleted,
         )
 
     if any(not isinstance(value, str) for value in data.values()):
         raise HTTPException(
             status_code=400,
             detail=(
-                "JSON import values must be strings "
-                "(nested objects and arrays are not supported)"
+                "JSON import values must be strings (nested objects and arrays are not supported)"
             ),
         )
 

@@ -13,12 +13,14 @@ from typing import Any
 from unittest.mock import patch
 
 import yaml
+from tests.sync_support import sync_state
 from typer.testing import CliRunner
+from x_locale_cli.app import app
+from x_locale_cli.config import load_config
+from x_locale_cli.models import Config
+from x_locale_cli.ops import push_strings
 
 from tests.conftest import strip_ansi
-from x_locale_cli.app import app
-from x_locale_cli.ops import push_strings
-from x_locale_cli.models import Config
 
 
 def _write_workspace(
@@ -85,6 +87,7 @@ def chdir(path: Path) -> Iterator[None]:
 @contextmanager
 def mock_strings_import(
     response: dict[str, Any] | None = None,
+    config: Config | None = None,
 ) -> Iterator[list[dict[str, Any]]]:
     """Patch push HTTP; record each ``request_json`` call (no real network)."""
     calls: list[dict[str, Any]] = []
@@ -107,6 +110,8 @@ def mock_strings_import(
         params: dict[str, Any] | None = None,
         payload: Any = None,
     ) -> Any:
+        if path.endswith("/sync-state"):
+            return sync_state(config or load_config(), stage=params["stage"])
         calls.append(
             {
                 "method": method,
@@ -148,7 +153,7 @@ class PushDryRunCliTests(unittest.TestCase):
         self.assertEqual(call["method"], "POST")
         self.assertIn("/strings/import", call["path"])
         self.assertTrue(call["params"].get("dry_run"))
-        self.assertEqual(call["payload"], {"strings": {"hello": "Xin chào"}})
+        self.assertEqual(call["payload"], {"strings": {"hello": "Xin chào"}, "base_language": "vi"})
 
     def test_dry_run_stdout_and_single_preview_request(self) -> None:
         _write_workspace(self.root, locale_data={"a": "A"})
@@ -214,7 +219,7 @@ class PushDryRunOpsTests(unittest.TestCase):
                 "base_language": "vi",
             }
         )
-        with mock_strings_import(_sample_import_result(dry_run=True)) as calls:
+        with mock_strings_import(_sample_import_result(dry_run=True), config) as calls:
             push_strings(config, dry_run=True)
         self.assertEqual(len(calls), 1)
         self.assertTrue(calls[0]["params"]["dry_run"])
@@ -237,7 +242,7 @@ class PushDryRunOpsTests(unittest.TestCase):
         applied = _sample_import_result(dry_run=False)
         applied["created"] = 1
         applied["updated"] = 1
-        with mock_strings_import(applied) as calls:
+        with mock_strings_import(applied, config) as calls:
             push_strings(config, dry_run=False)
         self.assertEqual(len(calls), 1)
         self.assertFalse(calls[0]["params"]["dry_run"])

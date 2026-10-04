@@ -389,7 +389,11 @@ def test_import_revives_tombstone(client):
     assert created.status_code == 201, created.text
     deleted = client.delete(f"/api/projects/{pid}/strings/{created.json()['id']}")
     assert deleted.status_code == 204, deleted.text
-    result = _push(client, pid, {"save": "Lưu lại"})
+    response = client.post(
+        f"/api/projects/{pid}/import", files=json_upload({"strings": {"save": "Lưu lại"}})
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
     _assert_or_record(
         "import_revive",
         {

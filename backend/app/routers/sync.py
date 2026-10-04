@@ -67,9 +67,7 @@ def export_project(
         )
 
     target_locales = [
-        loc
-        for loc in resolve_export_locales(project, locale)
-        if loc != project.base_language
+        loc for loc in resolve_export_locales(project, locale) if loc != project.base_language
     ]
     rows = load_export_rows(db, project.id, target_locales)
     if effective_layout == "modular":
@@ -164,9 +162,7 @@ async def import_project(
 
         db.info["activity"]["batch_kind"] = "excel_import"
         try:
-            result = import_workbook(
-                db, project, raw, dry_run=dry_run, status=import_status
-            )
+            result = import_workbook(db, project, raw, dry_run=dry_run, status=import_status)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not dry_run:
@@ -208,6 +204,19 @@ def import_strings_compat(
     partial: Annotated[bool, Query()] = False,
 ) -> ImportResult:
     """JSON-body import used by the CLI push command."""
+    if payload.base_language is not None and payload.base_language != project.base_language:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "base_language_mismatch",
+                "message": (
+                    f"Configured base language '{payload.base_language}' does not match "
+                    f"project base language '{project.base_language}'. Refresh config with locale init."
+                ),
+                "configured": payload.base_language,
+                "expected": project.base_language,
+            },
+        )
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
     if payload.modules:
@@ -217,6 +226,7 @@ def import_strings_compat(
             {"modules": payload.modules},
             dry_run=dry_run,
             partial=partial,
+            reject_deleted=True,
         )
     elif payload.strings is not None:
         result = import_flat_strings(
@@ -226,6 +236,7 @@ def import_strings_compat(
             dry_run=dry_run,
             report_orphans=not partial,
             partial=partial,
+            reject_deleted=True,
         )
     else:
         raise HTTPException(status_code=400, detail="strings required")
