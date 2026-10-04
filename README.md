@@ -161,8 +161,10 @@ store explicit UTC timestamps, including the final day's last microsecond.
 Legacy date-only bookmarks still represent full UTC days.
 
 **Translate missing** honors all active grid filters across queue pages. It
-includes only matching live strings with empty cells in the requested locales;
-filled cells and deleted strings are excluded. A Complete filter can therefore
+captures the filters and relative time cutoff when review opens, reusing that
+window for paging and refreshes after Apply. Reopening review captures a fresh
+window. It includes only matching live strings with empty cells in the requested
+locales; filled cells and deleted strings are excluded. A Complete filter can therefore
 produce an empty queue when no other target locale is missing.
 
 ## Development

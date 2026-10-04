@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TranslateProposalItem } from '@/lib/api/types'
 import {
   applyPayloadFromDrafts,
   applySuccessMessage,
   clampPage,
+  createMissingReviewRequest,
   descriptionsFromDrafts,
   draftsFromItems,
   filledCount,
@@ -15,6 +16,57 @@ import {
   updateDraftDescription,
   updateDraftTranslation,
 } from './translate-review'
+
+describe('createMissingReviewRequest', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it.each([
+    { search: { period: '1h' }, hours: 1 },
+    { search: { updated_within_days: 7 as const }, hours: 7 * 24 },
+    { search: { updated_within_days: 30 as const }, hours: 30 * 24 },
+  ])('captures a fresh cutoff only when a review starts: $search', ({ search, hours }) => {
+    vi.useFakeTimers()
+    const now = new Date('2026-10-04T12:00:00Z')
+    vi.setSystemTime(now)
+    const request = createMissingReviewRequest(search, ['en'])
+    const cutoff = new Date(now.getTime() - hours * 3_600_000).toISOString()
+    expect(request.since).toBe(cutoff)
+    expect(request.updated_within_days).toBeUndefined()
+
+    vi.setSystemTime(new Date(now.getTime() + 2 * 3_600_000))
+    expect(request.since).toBe(cutoff)
+    expect(createMissingReviewRequest(search, ['en']).since).toBe(
+      new Date(now.getTime() + (2 - hours) * 3_600_000).toISOString(),
+    )
+  })
+
+  it('preserves an absolute range and captures filters and target locales', () => {
+    const search = {
+      since: '2026-10-01T17:00:00.000Z',
+      until: '2026-10-02T16:59:59.999999Z',
+      q: '  login  ',
+      module: 'auth',
+      tag: 'urgent',
+      missing_locale: 'en',
+      status: 'draft' as const,
+    }
+    const locales = ['en', 'fr']
+    const request = createMissingReviewRequest(search, locales)
+    search.module = 'home'
+    search.q = 'logout'
+    locales.push('ja')
+    expect(request).toMatchObject({
+      since: '2026-10-01T17:00:00.000Z',
+      until: '2026-10-02T16:59:59.999999Z',
+      q: 'login',
+      module_id: 'auth',
+      tag_id: 'urgent',
+      missing_locale: 'en',
+      status: 'draft',
+      locales: ['en', 'fr'],
+    })
+  })
+})
 
 function item(
   overrides: Partial<TranslateProposalItem> & Pick<TranslateProposalItem, 'string_id'>,

@@ -262,11 +262,7 @@ test('Translate missing honors combined grid filters through generation and Appl
   await apply.click()
   const refreshed = await refreshedResponse
   const refreshedBody = refreshed.request().postDataJSON()
-  const { since: refreshedSince, ...refreshedRest } = refreshedBody
-  const { since: missingSince, ...missingRest } = missing.request().postDataJSON()
-  expect(refreshedRest).toEqual(missingRest)
-  expect(refreshedSince).toBeTruthy()
-  expect(missingSince).toBeTruthy()
+  expect(refreshedBody).toEqual(missingBody)
   expect((await refreshed.json()).total).toBe(0)
   await expect(dialog.getByText('Nothing to translate', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
