@@ -9,7 +9,7 @@ import {
 } from './StringsFilters'
 
 describe('advanced string filter URL state', () => {
-  it('parses period and custom time range query parameters', () => {
+  it('gives period precedence over custom time range query parameters', () => {
     expect(
       stringsSearchSchema.parse({
         period: '7d',
@@ -18,8 +18,8 @@ describe('advanced string filter URL state', () => {
       }),
     ).toMatchObject({
       period: '7d',
-      since: '2026-01-01T00:00:00.000Z',
-      until: '2026-01-02T00:00:00.000Z',
+      since: undefined,
+      until: undefined,
     })
   })
 

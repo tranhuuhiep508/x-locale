@@ -3,7 +3,10 @@ import {
   clearTimeSearch,
   expandDatetimeParam,
   hasActiveTimeFilter,
+  isKnownPeriod,
   resolveTimeRange,
+  resolveStringTimeForApi,
+  timeRangeLabel,
 } from '@/lib/time-range'
 
 describe('resolveTimeRange', () => {
@@ -39,9 +42,14 @@ describe('resolveTimeRange', () => {
     ).toEqual({ since: '2026-03-07T15:30:00.000Z' })
   })
 
-  it('returns no bounds for an unknown period', () => {
-    expect(resolveTimeRange({ period: 'bogus' }, now)).toEqual({})
-  })
+  it.each(['bogus', 'constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'falls back to all time for unknown period %s',
+    (period) => {
+      expect(isKnownPeriod(period)).toBe(false)
+      expect(resolveTimeRange({ period }, now)).toEqual({})
+      expect(timeRangeLabel({ period })).toBe('All time')
+    },
+  )
 
   it('expands date-only bookmarks to UTC day bounds', () => {
     expect(resolveTimeRange({ since: '2026-01-10', until: '2026-01-12' }, now)).toEqual({
@@ -54,6 +62,19 @@ describe('resolveTimeRange', () => {
     expect(resolveTimeRange({ since: '2026-01-10' }, now)).toEqual({
       since: '2026-01-10T00:00:00.000Z',
     })
+  })
+
+  it('uses all time consistently when an unknown period is mixed with absolute and legacy bounds', () => {
+    const search = {
+      period: 'bogus',
+      since: '2026-01-10',
+      until: '2026-01-12',
+      updated_within_days: 7 as const,
+    }
+    expect(resolveTimeRange(search, now)).toEqual({})
+    expect(resolveStringTimeForApi(search)).toEqual({})
+    expect(timeRangeLabel(search)).toBe('All time')
+    expect(hasActiveTimeFilter(search)).toBe(false)
   })
 })
 

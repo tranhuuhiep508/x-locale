@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeTimeSearch } from '@/lib/time-range'
 
 const booleanSearchParam = z
   .union([z.boolean(), z.literal('true'), z.literal('false')])
@@ -31,7 +32,7 @@ export const stringsSearchSchema = z.object({
   until: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
-})
+}).transform(normalizeTimeSearch)
 
 export type StringsSearch = z.infer<typeof stringsSearchSchema>
 
@@ -49,7 +50,7 @@ export const activitySearchSchema = z.object({
   period: z.string().optional(),
   since: z.string().optional(),
   until: z.string().optional(),
-})
+}).transform(normalizeTimeSearch)
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>
 

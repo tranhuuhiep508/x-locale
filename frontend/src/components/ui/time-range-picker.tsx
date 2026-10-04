@@ -11,6 +11,7 @@ import {
   TIME_PRESETS,
   clearTimeSearch,
   hasActiveTimeFilter,
+  normalizeTimeSearch,
   timeRangeLabel,
   type TimeSearchInput,
 } from '@/lib/time-range'
@@ -25,11 +26,12 @@ type TimeRangePickerProps = {
 }
 
 export function TimeRangePicker({
-  value,
+  value: rawValue,
   onChange,
   className,
   placeholder = 'All time',
 }: TimeRangePickerProps) {
+  const value = normalizeTimeSearch(rawValue)
   const [open, setOpen] = useState(false)
   const [customRange, setCustomRange] = useState<DateRange | undefined>()
   const [customError, setCustomError] = useState<string | null>(null)

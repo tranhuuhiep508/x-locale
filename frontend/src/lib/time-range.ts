@@ -30,7 +30,21 @@ export type ResolvedTimeRange = {
 }
 
 export function isKnownPeriod(period: string | undefined): period is TimePeriod {
-  return period !== undefined && period in PRESET_HOURS
+  return period !== undefined && Object.prototype.hasOwnProperty.call(PRESET_HOURS, period)
+}
+
+export function normalizeTimeSearch<T extends TimeSearchInput>(search: T): T {
+  if (search.period) {
+    return {
+      ...search,
+      ...clearTimeSearch(),
+      period: isKnownPeriod(search.period) ? search.period : undefined,
+    }
+  }
+  if (search.since || search.until) {
+    return { ...search, updated_within_days: undefined }
+  }
+  return search
 }
 
 export function expandDatetimeParam(value: string, kind: 'since' | 'until'): string {
@@ -50,13 +64,11 @@ export function expandDatetimeParam(value: string, kind: 'since' | 'until'): str
 }
 
 export function resolveTimeRange(
-  search: TimeSearchInput,
+  input: TimeSearchInput,
   now: Date = new Date(),
 ): ResolvedTimeRange {
-  if (search.period) {
-    if (!isKnownPeriod(search.period)) {
-      return {}
-    }
+  const search = normalizeTimeSearch(input)
+  if (isKnownPeriod(search.period)) {
     const sinceMs = now.getTime() - PRESET_HOURS[search.period] * 60 * 60 * 1000
     return { since: new Date(sinceMs).toISOString() }
   }
@@ -69,11 +81,12 @@ export function resolveTimeRange(
   }
 }
 
-export function resolveStringTimeForApi(search: TimeSearchInput): {
+export function resolveStringTimeForApi(input: TimeSearchInput): {
   since?: string
   until?: string
   updated_within_days?: 7 | 30
 } {
+  const search = normalizeTimeSearch(input)
   const usesNewTime = Boolean(search.period || search.since || search.until)
   if (usesNewTime) {
     const { since, until } = resolveTimeRange(search)
@@ -94,7 +107,8 @@ export function clearTimeSearch() {
   }
 }
 
-export function hasActiveTimeFilter(search: TimeSearchInput): boolean {
+export function hasActiveTimeFilter(input: TimeSearchInput): boolean {
+  const search = normalizeTimeSearch(input)
   return Boolean(
     search.period ||
       search.since ||
@@ -103,7 +117,8 @@ export function hasActiveTimeFilter(search: TimeSearchInput): boolean {
   )
 }
 
-export function timeRangeLabel(search: TimeSearchInput): string {
+export function timeRangeLabel(input: TimeSearchInput): string {
+  const search = normalizeTimeSearch(input)
   if (search.period && isKnownPeriod(search.period)) {
     return TIME_PRESETS.find((p) => p.period === search.period)!.label
   }

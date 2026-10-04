@@ -58,11 +58,10 @@ export const stringsQuery = (
   projectId: string,
   search: StringListParams & { batch_kind?: string },
 ) => {
-  const params = toStringListParams(search)
   const { batch_kind: _batchKind, ...keySearch } = search
   return queryOptions({
     queryKey: queryKeys.projects.strings.list(projectId, keySearch),
-    queryFn: () => stringsApi.list(projectId, params),
+    queryFn: () => stringsApi.list(projectId, toStringListParams(search)),
     placeholderData: (prev) => prev,
   })
 }
