@@ -55,6 +55,7 @@ from app.services.activity_events import (
     snapshot_key,
 )
 from app.services.activity_state import (
+    InvalidSnapshot,
     check_key_available,
     key_conflict_message,
     normalized_time,
@@ -62,6 +63,7 @@ from app.services.activity_state import (
     restore_transaction,
     snapshots_match,
     translation_map,
+    validate_undo_timestamps,
 )
 from app.services.catalog import require_module_in_project
 
@@ -251,7 +253,7 @@ def list_activities(
         q = q.filter(Activity.created_at <= until)
     total = q.count()
     items = (
-        q.order_by(Activity.created_at.desc(), Activity.id.desc())
+        q.order_by(*_inverse_order())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -345,11 +347,16 @@ def _feed_counts(type_n: dict[str, int]) -> dict[str, int]:
     }
 
 
+def _inverse_order():
+    """SQL counterpart of the UTC/ID order used by feed and inverse previews."""
+    return Activity.created_at.desc(), Activity.id.desc()
+
+
 def _sort_feed_rows(rows: list[Activity]) -> list[Activity]:
     return sorted(
         rows,
         key=lambda item: (
-            item.created_at.timestamp() if item.created_at else 0.0,
+            normalized_time(item.created_at).timestamp() if item.created_at else 0.0,
             str(item.id),
         ),
         reverse=True,
@@ -610,7 +617,7 @@ def restore_activity_version(
     latest = (
         db.query(Activity)
         .filter(Activity.project_id == project.id, Activity.string_id == string_id)
-        .order_by(Activity.created_at.desc(), Activity.id.desc())
+        .order_by(*_inverse_order())
         .first()
     )
     out = serialize_activity(latest or activity, module_name_map(db, project.id))
@@ -728,7 +735,7 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
                     Activity.string_id == entry.id,
                     Activity.before.isnot(None),
                 )
-                .order_by(Activity.created_at.desc(), Activity.id.desc())
+                .order_by(*_inverse_order())
                 .all()
             )
             latest = next(
@@ -1067,6 +1074,7 @@ def revert_activity(
     if activity.reverted_by_id and not force:
         raise HTTPException(status_code=400, detail="Activity already reverted")
 
+    validate_undo_timestamps(activity.id, activity.before, activity.after)
     _check_revert_key(db, activity)
     if not force and not current_matches_after(db, activity):
         raise HTTPException(
@@ -1118,7 +1126,7 @@ def revert_batch(
             Activity.is_revertible.is_(True),
             Activity.reverted_by_id.is_(None),
         )
-        .order_by(Activity.created_at.desc(), Activity.id.desc())
+        .order_by(*_inverse_order())
         .all()
     )
     if not activities:
@@ -1131,6 +1139,7 @@ def revert_batch(
     with restore_transaction(db):
         existing = attach_batch(db, new_batch, "revert")
         for activity in activities:
+            validate_undo_timestamps(activity.id, activity.before, activity.after)
             _check_revert_key(db, activity)
             if not force and not current_matches_after(db, activity):
                 raise HTTPException(
@@ -1251,6 +1260,17 @@ def _revert_preview_item(
             affects_published=False,
             change_count=0,
             changes=[],
+        )
+
+    try:
+        validate_undo_timestamps(activity.id, activity.before, activity.after)
+    except InvalidSnapshot as error:
+        return RevertPreviewItemOut(
+            activity_id=activity.id,
+            string_id=activity.string_id,
+            string_key=string_key,
+            outcome="restore_values",
+            blocked_reason=error.detail["message"],
         )
 
     current_snap = states.get(uuid.UUID(activity.entity_id)) if etype == "string" else None
@@ -1377,7 +1397,7 @@ def preview_revert_batch(db: Session, project: Project, batch_id: uuid.UUID) -> 
             Activity.is_revertible.is_(True),
             Activity.reverted_by_id.is_(None),
         )
-        .order_by(Activity.created_at.desc(), Activity.id.desc())
+        .order_by(*_inverse_order())
         .all()
     )
     if not activities:

@@ -38,10 +38,38 @@ def translation_map(raw: Any, *, published: bool = False) -> dict:
 
 
 def normalized_time(value: Any) -> datetime | None:
-    if not value:
+    if value is None or (isinstance(value, str) and value == ""):
         return None
+    if not isinstance(value, (str, datetime)):
+        raise ValueError("Expected an ISO timestamp or datetime")
     parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
+class InvalidSnapshot(HTTPException):
+    """A recorded field cannot be safely interpreted, even with forced undo."""
+
+    def __init__(self, activity_id: uuid.UUID, field: str):
+        super().__init__(
+            status_code=409,
+            detail={
+                "code": "invalid_snapshot",
+                "message": f"Cannot undo this activity because its saved {field} timestamp is invalid.",
+                "activity_id": str(activity_id),
+                "field": field,
+            },
+        )
+
+
+def validate_undo_timestamps(activity_id: uuid.UUID, before: dict | None, after: dict | None) -> None:
+    # Validate independently of comparison's short circuit and force's conflict bypass.
+    for side, snapshot in (("before", before), ("after", after)):
+        for field in ("published_at", "deleted_at"):
+            if snapshot is not None and field in snapshot:
+                try:
+                    normalized_time(snapshot[field])
+                except (ValueError, TypeError, OverflowError) as error:
+                    raise InvalidSnapshot(activity_id, f"{side}.{field}") from error
 
 
 def project_snapshot(
