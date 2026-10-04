@@ -240,3 +240,71 @@ def test_conflicting_organization_filters_and_explicit_ids(filter_catalog):
         [entries["low"].id],
         SimpleNamespace(module_id=module.id, unassigned_module=True),
     ) == [entries["low"].id]
+
+
+def test_string_time_since_until_filters():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    now = datetime.now(UTC)
+
+    with Session(engine) as db:
+        project = Project(
+            name="Time",
+            slug="time",
+            base_language="vi",
+            target_languages=["en"],
+        )
+        db.add(project)
+        db.flush()
+        recent = StringEntry(project_id=project.id, key="recent", source_text="Recent")
+        stale = StringEntry(project_id=project.id, key="stale", source_text="Stale")
+        db.add_all([recent, stale])
+        db.commit()
+        db.execute(
+            update(StringEntry)
+            .where(StringEntry.id == stale.id)
+            .values(updated_at=now - timedelta(days=10))
+        )
+        db.commit()
+
+        def keys(**filters) -> set[str]:
+            return {row.key for row in string_query(db, project.id, **filters).all()}
+
+        assert keys(since=now - timedelta(days=1)) == {"recent"}
+        assert keys(since=now - timedelta(days=20)) == {"recent", "stale"}
+        assert keys(until=now - timedelta(days=5)) == {"stale"}
+        assert keys(
+            since=now - timedelta(days=20),
+            until=now - timedelta(days=5),
+        ) == {"stale"}
+
+
+def test_string_time_filter_conflicts():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    now = datetime.now(UTC)
+
+    with Session(engine) as db:
+        project = Project(name="Time conflicts", slug="time-conflicts", base_language="vi")
+        db.add(project)
+        db.commit()
+
+        with pytest.raises(HTTPException) as error:
+            string_query(
+                db,
+                project.id,
+                updated_within_days=7,
+                since=now - timedelta(days=1),
+            )
+        assert error.value.status_code == 400
+        assert "updated_within_days" in error.value.detail
+
+        with pytest.raises(HTTPException) as error:
+            string_query(
+                db,
+                project.id,
+                since=now,
+                until=now - timedelta(days=1),
+            )
+        assert error.value.status_code == 400
+        assert "since" in error.value.detail

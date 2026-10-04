@@ -26,6 +26,9 @@ export const stringsSearchSchema = z.object({
     (value) => (typeof value === 'string' ? Number(value) : value),
     z.union([z.literal(7), z.literal(30)]).optional(),
   ),
+  period: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
 })
@@ -43,6 +46,7 @@ export const activitySearchSchema = z.object({
   event_type: z.string().optional(),
   actor: z.string().optional(),
   locale: z.string().optional(),
+  period: z.string().optional(),
   since: z.string().optional(),
   until: z.string().optional(),
 })

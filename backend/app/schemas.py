@@ -232,6 +232,8 @@ class BatchFilter(BaseModel):
     max_confidence: ConfidenceScore | None = None
     batch_id: UUID | None = None
     updated_within_days: UpdatedWithinDays | None = None
+    since: UtcDateTime | None = None
+    until: UtcDateTime | None = None
 
 
 class BatchRequest(BaseModel):

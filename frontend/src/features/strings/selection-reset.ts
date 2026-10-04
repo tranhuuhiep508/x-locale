@@ -20,6 +20,9 @@ export type SelectionResetSearch = Pick<
   | 'complete_locale'
   | 'max_confidence'
   | 'updated_within_days'
+  | 'period'
+  | 'since'
+  | 'until'
   | 'batch_id'
   | 'batch_kind'
 >
@@ -51,6 +54,9 @@ export function useClearStringSelection(
     search.complete_locale,
     search.max_confidence,
     search.updated_within_days,
+    search.period,
+    search.since,
+    search.until,
     search.batch_id,
     search.batch_kind,
     setRowSelection,

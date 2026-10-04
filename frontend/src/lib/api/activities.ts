@@ -1,4 +1,5 @@
 import { api } from '@/lib/api/client'
+import { resolveTimeRange } from '@/lib/time-range'
 import type {
   ActivityDetail,
   ActivityFeedResponse,
@@ -25,6 +26,16 @@ export type ActivityFeedParams = {
   locale?: string
   since?: string
   until?: string
+}
+
+export type ActivityFeedSearchParams = ActivityFeedParams & {
+  period?: string
+}
+
+export function toActivityFeedApiParams(params: ActivityFeedSearchParams): ActivityFeedParams {
+  const { period, since, until, ...rest } = params
+  const resolved = resolveTimeRange({ period, since, until })
+  return { ...rest, ...resolved }
 }
 
 export const activitiesApi = {

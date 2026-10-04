@@ -82,14 +82,15 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await chooseSelect(page, 'Updated', 'Last 7 days')
+  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
 
   for (const [name, value] of Object.entries({
     never_published: 'true',
     unassigned_module: 'true',
     untagged: 'true',
     complete_locale: 'en',
-    updated_within_days: '7',
+    period: '7d',
     page_size: '50',
   })) {
     await expectParam(page, name, value)
@@ -106,12 +107,12 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await expect(page.getByRole('button', { name: 'Module', exact: true })).toContainText('Unassigned')
   await expect(page.getByRole('button', { name: 'Tag', exact: true })).toContainText('Untagged')
   await expect(page.getByRole('combobox', { name: 'Translation', exact: true })).toContainText('Complete en')
-  await expect(page.getByRole('combobox', { name: 'Updated', exact: true })).toContainText('Last 7 days')
+  await expect(page.getByRole('button', { name: 'Last 7 days', exact: true })).toBeVisible()
   await expect(stringRow(page, 'unassigned')).toBeVisible()
 
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   for (const name of [
-    'never_published', 'unassigned_module', 'untagged', 'complete_locale', 'updated_within_days',
+    'never_published', 'unassigned_module', 'untagged', 'complete_locale', 'period',
   ]) {
     await expectParam(page, name, null)
   }
@@ -165,10 +166,22 @@ test('switching exclusive filter choices removes their previous URL fields', asy
   await expectParam(page, 'status', 'public')
   await expectParam(page, 'pending_delete', null)
 
-  await chooseSelect(page, 'Updated', 'Last 30 days')
-  await expectParam(page, 'updated_within_days', '30')
+  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Last 30 days', exact: true }).click()
+  await expectParam(page, 'period', '30d')
   await expect(stringRow(page, 'assigned')).toBeVisible()
   expect(filterErrors).toEqual([])
+})
+
+test('legacy updated_within_days bookmark still filters', async ({ page }) => {
+  await seedFilterProject(page)
+  const url = new URL(page.url())
+  url.searchParams.set('updated_within_days', '7')
+  await page.goto(url.toString())
+  await expectParam(page, 'updated_within_days', '7')
+  await expect(page.getByRole('button', { name: 'Last 7 days', exact: true })).toBeVisible()
+  await expect(stringRow(page, 'assigned')).toBeVisible()
+  await expect(stringRow(page, 'old')).toHaveCount(0)
 })
 
 test('filtered publish preview contains the same strings as the grid', async ({ page }) => {
@@ -183,7 +196,8 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await chooseOrganization(page, 'Module', 'Common')
   await chooseOrganization(page, 'Tag', 'Featured')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await chooseSelect(page, 'Updated', 'Last 7 days')
+  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
   await expect(stringRow(page, 'assigned')).toBeVisible()
   await expect(stringRow(page, 'unassigned')).toHaveCount(0)
 
@@ -193,11 +207,13 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await page.getByRole('button', { name: 'Review publish changes' }).click()
   const preview = await previewResponse
   expect(preview.ok()).toBeTruthy()
-  expect(preview.request().postDataJSON().filter).toMatchObject({
+  const previewFilter = preview.request().postDataJSON().filter
+  expect(previewFilter).toMatchObject({
     has_unpublished_changes: true,
     complete_locale: 'en',
-    updated_within_days: 7,
   })
+  expect(previewFilter.since).toBeTruthy()
+  expect(previewFilter.updated_within_days).toBeUndefined()
   expect((await preview.json()).items.map((item: { id: string }) => item.id)).toEqual([entries.assigned.id])
   await expect(page.getByRole('heading', { name: 'Publish preview' })).toBeVisible()
   await page.getByRole('dialog').filter({ hasText: 'Publish preview' }).getByRole('button', { name: 'Cancel' }).click()
@@ -209,7 +225,8 @@ test('Translate missing honors combined grid filters through generation and Appl
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await chooseSelect(page, 'Updated', 'Last 7 days')
+  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
   await expect(stringRow(page, 'unassigned')).toBeVisible()
   await expect(stringRow(page, 'empty')).toHaveCount(0)
 
@@ -219,13 +236,15 @@ test('Translate missing honors combined grid filters through generation and Appl
   await page.getByRole('button', { name: 'Translate missing', exact: true }).click()
   const missing = await missingResponse
   expect(missing.ok()).toBeTruthy()
-  expect(missing.request().postDataJSON()).toMatchObject({
+  const missingBody = missing.request().postDataJSON()
+  expect(missingBody).toMatchObject({
     never_published: true,
     unassigned_module: true,
     untagged: true,
     complete_locale: 'en',
-    updated_within_days: 7,
   })
+  expect(missingBody.since).toBeTruthy()
+  expect(missingBody.updated_within_days).toBeUndefined()
   const queue = await missing.json()
   expect(queue.total).toBe(1)
   expect(queue.items.map((item: { string_id: string }) => item.string_id)).toEqual([entries.unassigned.id])

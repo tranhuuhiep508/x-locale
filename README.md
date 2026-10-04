@@ -149,9 +149,13 @@ translation predicate. Empty and space-only values count as missing and are
 excluded from confidence matches. Confidence thresholds are inclusive and
 unscored translations are excluded.
 
-**Updated** uses a rolling UTC window of 7 or 30 days against the string's
-`updated_at`. Translation-only edits also update that timestamp. Filter state
-persists in browser URLs; Clear resets filters while retaining the page size.
+**Updated** filters the string row's `updated_at` (translation-only edits also
+bump it). The grid uses the same Sentry-style time control as Activity: presets
+(`1h`–`90d` in the URL as `period`) or a custom `since`/`until` range. Only
+`since` and `until` are sent to the API; presets are recomputed in UTC on each
+request. Legacy bookmarks with `updated_within_days=7` or `30` still work. Filter
+state persists in browser URLs; Clear resets filters while retaining the page
+size. The time control's own Clear removes only time params.
 
 **Translate missing** honors all active grid filters across queue pages. It
 includes only matching live strings with empty cells in the requested locales;
