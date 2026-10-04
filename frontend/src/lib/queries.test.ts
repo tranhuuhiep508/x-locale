@@ -18,7 +18,9 @@ describe('stringsQuery', () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     })
-    const options = stringsQuery('project', { period: '1h' })
+    const options = stringsQuery('project', {
+      period: '1h', sort: 'updated_at', order: 'desc',
+    })
 
     try {
       await client.fetchQuery(options)
@@ -31,6 +33,8 @@ describe('stringsQuery', () => {
       for (const [, params] of list.mock.calls) {
         expect(params.until).toBeUndefined()
         expect(params.period).toBeUndefined()
+        expect(params.sort).toBe('updated_at')
+        expect(params.order).toBe('desc')
       }
     } finally {
       client.clear()

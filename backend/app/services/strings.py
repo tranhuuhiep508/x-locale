@@ -10,7 +10,18 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import distinct, exists, false, func, or_, select
+from sqlalchemy import (
+    asc,
+    desc,
+    distinct,
+    exists,
+    false,
+    func,
+    nulls_first,
+    nulls_last,
+    or_,
+    select,
+)
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Activity, Module, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -29,6 +40,55 @@ from app.services.catalog import owned_module, require_module_in_project
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
+
+STRING_LIST_SORT_FIELDS = frozenset(
+    {
+        "key",
+        "source_text",
+        "status",
+        "updated_at",
+        "updated_by_label",
+        "created_at",
+        "created_by_label",
+    }
+)
+STRING_LIST_SORT_ORDERS = frozenset({"asc", "desc"})
+_NULLABLE_LABEL_SORT_FIELDS = frozenset({"updated_by_label", "created_by_label"})
+
+
+def resolve_string_list_sort(
+    sort: str | None,
+    order: str | None,
+) -> tuple[str, str]:
+    if sort is not None and sort not in STRING_LIST_SORT_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Invalid sort field '{sort}'")
+    if order is not None and order not in STRING_LIST_SORT_ORDERS:
+        raise HTTPException(status_code=400, detail=f"Invalid order '{order}'")
+    field = sort if sort is not None else "key"
+    direction = order if order is not None else "asc"
+    return field, direction
+
+
+def string_list_order_clauses(field: str, direction: str):
+    columns = {
+        "key": StringEntry.key,
+        "source_text": StringEntry.source_text,
+        "status": StringEntry.status,
+        "updated_at": StringEntry.updated_at,
+        "updated_by_label": StringEntry.updated_by_label,
+        "created_at": StringEntry.created_at,
+        "created_by_label": StringEntry.created_by_label,
+    }
+    column = columns[field]
+    if direction == "asc":
+        primary = asc(column)
+        if field in _NULLABLE_LABEL_SORT_FIELDS:
+            primary = nulls_last(primary)
+    else:
+        primary = desc(column)
+        if field in _NULLABLE_LABEL_SORT_FIELDS:
+            primary = nulls_first(primary)
+    return primary, StringEntry.id.asc()
 
 
 def mark_deleted(entry: StringEntry) -> None:
@@ -634,7 +694,11 @@ def list_strings(
     until: datetime | None = None,
     page: int = 1,
     page_size: int = 50,
+    sort: str | None = None,
+    order: str | None = None,
 ) -> StringListOut:
+    sort_field, sort_order = resolve_string_list_sort(sort, order)
+    primary_order, tie_break = string_list_order_clauses(sort_field, sort_order)
     query = string_query(
         db,
         project.id,
@@ -661,7 +725,7 @@ def list_strings(
         query.with_entities(func.count(distinct(StringEntry.id))).order_by(None).scalar()
     )
     entries = (
-        query.order_by(StringEntry.key)
+        query.order_by(primary_order, tie_break)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

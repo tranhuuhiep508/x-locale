@@ -46,6 +46,8 @@ def list_strings(
     updated_within_days: Annotated[UpdatedWithinDays | None, Query()] = None,
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
+    sort: Annotated[str | None, Query()] = None,
+    order: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> StringListOut:
@@ -70,6 +72,8 @@ def list_strings(
         updated_within_days=updated_within_days,
         since=since,
         until=until,
+        sort=sort,
+        order=order,
         page=page,
         page_size=page_size,
     )

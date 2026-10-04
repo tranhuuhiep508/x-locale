@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { activitySearchSchema, stringsSearchSchema } from '@/lib/schemas'
 
 describe.each([
-  { name: 'strings', schema: stringsSearchSchema, otherFilters: { q: 'save', page_size: 50 } },
+  { name: 'strings', schema: stringsSearchSchema, otherFilters: {
+    q: 'save', page_size: 50, sort: 'updated_at', order: 'desc',
+  } },
   { name: 'activity', schema: activitySearchSchema, otherFilters: { event_type: 'import', actor: 'Dev User' } },
 ])('$name time search normalization', ({ schema, otherFilters }) => {
   const dates = { since: '2026-01-10', until: '2026-01-12' }
