@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { stringsSearchSchema } from '@/lib/schemas'
 import { toStringListParams } from '@/lib/api/strings'
 import {
+  type CatalogSortSearch,
   catalogSortChanged,
   catalogSortSearchUpdates,
   resolvedCatalogSort,
@@ -59,7 +60,7 @@ describe('catalogSortSearchUpdates', () => {
   })
 
   it('does not count unchanged sort as changed', () => {
-    const current = { sort: 'key', order: 'asc' }
+    const current: CatalogSortSearch = { sort: 'key', order: 'asc' }
     expect(catalogSortChanged(current, current)).toBe(false)
   })
 })
