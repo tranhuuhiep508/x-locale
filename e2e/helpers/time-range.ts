@@ -6,7 +6,8 @@ export function timeRangePopover(page: Page) {
 }
 
 function timeRangeTrigger(root: Locator) {
-  return root.locator('[data-slot="popover-trigger"]').filter({ hasText: /All time|Last / })
+  // Trigger label varies (presets, custom range, legacy updated_within_days); icon is stable.
+  return root.locator('button:has([data-icon="inline-start"])').first()
 }
 
 export async function openTimeRangePicker(page: Page, scope: Locator = page.locator('main')) {
