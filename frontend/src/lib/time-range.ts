@@ -126,8 +126,8 @@ export function timeRangeLabel(input: TimeSearchInput): string {
     return search.updated_within_days === 7 ? 'Last 7 days' : 'Last 30 days'
   }
   if (search.since || search.until) {
-    const sinceDate = search.since ? parseDisplayDate(search.since) : null
-    const untilDate = search.until ? parseDisplayDate(search.until) : null
+    const sinceDate = search.since ? parseDisplayDate(search.since, 'since') : null
+    const untilDate = search.until ? parseDisplayDate(search.until, 'until') : null
     const fmt = (d: Date) =>
       d.toLocaleString(undefined, {
         month: 'short',
@@ -149,10 +149,6 @@ export function timeRangeLabel(input: TimeSearchInput): string {
   return 'All time'
 }
 
-function parseDisplayDate(value: string): Date {
-  const expanded =
-    DATE_ONLY.test(value.trim())
-      ? expandDatetimeParam(value, 'since')
-      : expandDatetimeParam(value, 'since')
-  return new Date(expanded)
+function parseDisplayDate(value: string, kind: 'since' | 'until'): Date {
+  return new Date(expandDatetimeParam(value, kind))
 }

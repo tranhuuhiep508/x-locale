@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   clearTimeSearch,
   expandDatetimeParam,
@@ -95,5 +95,23 @@ describe('clearTimeSearch', () => {
     })
     expect(hasActiveTimeFilter({ period: '7d' })).toBe(true)
     expect(hasActiveTimeFilter(clearTimeSearch())).toBe(false)
+  })
+})
+
+describe('timeRangeLabel', () => {
+  it('displays the same date-only upper bound as the API', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(function (this: Date) {
+      return this.toISOString()
+    })
+    try {
+      const search = { since: '2026-01-10', until: '2026-01-12' }
+      const resolved = resolveTimeRange(search)
+      const start = new Date(resolved.since!).toISOString()
+      const end = new Date(resolved.until!).toISOString()
+      expect(timeRangeLabel(search)).toBe(`${start} – ${end}`)
+      expect(timeRangeLabel({ until: search.until })).toBe(`Until ${end}`)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

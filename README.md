@@ -156,6 +156,9 @@ bump it). The grid uses the same Sentry-style time control as Activity: presets
 request. Legacy bookmarks with `updated_within_days=7` or `30` still work. Filter
 state persists in browser URLs; Clear resets filters while retaining the page
 size. The time control's own Clear removes only time params.
+New custom calendar ranges cover full days in the browser's local timezone and
+store explicit UTC timestamps, including the final day's last microsecond.
+Legacy date-only bookmarks still represent full UTC days.
 
 **Translate missing** honors all active grid filters across queue pages. It
 includes only matching live strings with empty cells in the requested locales;

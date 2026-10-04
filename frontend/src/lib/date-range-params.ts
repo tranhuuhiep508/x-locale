@@ -1,28 +1,41 @@
 import type { DateRange } from 'react-day-picker'
+import { expandDatetimeParam } from '@/lib/time-range'
 
 export type DateRangeValue = {
   since?: string
   until?: string
 }
 
-function parseDateParam(value?: string): Date | undefined {
+function parseDateParam(value: string | undefined, kind: 'since' | 'until'): Date | undefined {
   if (!value) return undefined
-  const datePart = value.slice(0, 10)
-  const [year, month, day] = datePart.split('-').map(Number)
-  if (!year || !month || !day) return undefined
-  return new Date(year, month - 1, day)
+  const trimmed = value.trim()
+  // Legacy date-only bookmarks name UTC calendar dates. Timestamp bookmarks
+  // represent instants, so restore their dates in the browser's timezone.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [year, month, day] = trimmed.split('-').map(Number)
+    if (!year || !month || !day) return undefined
+    return new Date(year, month - 1, day)
+  }
+  const date = new Date(expandDatetimeParam(trimmed, kind))
+  if (Number.isNaN(date.getTime())) return undefined
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 function formatDateParam(date: Date, endOfDay = false): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return endOfDay ? `${year}-${month}-${day}T23:59:59` : `${year}-${month}-${day}T00:00:00`
+  const boundary = new Date(date)
+  if (endOfDay) {
+    boundary.setHours(23, 59, 59, 999)
+    // JavaScript stores milliseconds; the API stores microseconds and uses
+    // inclusive upper bounds. Include every instant in the final second.
+    return boundary.toISOString().replace('.999Z', '.999999Z')
+  }
+  boundary.setHours(0, 0, 0, 0)
+  return boundary.toISOString()
 }
 
 export function dateRangeFromParams(since?: string, until?: string): DateRange | undefined {
-  const from = parseDateParam(since)
-  const to = parseDateParam(until)
+  const from = parseDateParam(since, 'since')
+  const to = parseDateParam(until, 'until')
   if (!from && !to) return undefined
   return { from, to }
 }

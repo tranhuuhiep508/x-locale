@@ -33,12 +33,31 @@ export function TimeRangePicker({
 }: TimeRangePickerProps) {
   const value = normalizeTimeSearch(rawValue)
   const [open, setOpen] = useState(false)
-  const [customRange, setCustomRange] = useState<DateRange | undefined>()
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(
+    () => dateRangeFromParams(value.since, value.until),
+  )
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => customRange?.from ?? customRange?.to ?? new Date(),
+  )
   const [customError, setCustomError] = useState<string | null>(null)
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      const range = dateRangeFromParams(value.since, value.until)
+      setCustomRange(range)
+      setCalendarMonth(range?.from ?? range?.to ?? new Date())
+      setCustomError(null)
+    }
+    setOpen(nextOpen)
+  }
+
+  // Keep an open editor in sync with external URL changes (for example Back).
+  // Opening itself seeds these values synchronously before Calendar mounts.
   useEffect(() => {
     if (!open) return
-    setCustomRange(dateRangeFromParams(value.since, value.until))
+    const range = dateRangeFromParams(value.since, value.until)
+    setCustomRange(range)
+    setCalendarMonth(range?.from ?? range?.to ?? new Date())
     setCustomError(null)
   }, [open, value.period, value.since, value.until])
 
@@ -79,7 +98,7 @@ export function TimeRangePicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -113,7 +132,8 @@ export function TimeRangePicker({
             <Calendar
               data-testid="time-range-calendar"
               mode="range"
-              defaultMonth={customRange?.from}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
               selected={customRange}
               onSelect={setCustomRange}
               numberOfMonths={2}

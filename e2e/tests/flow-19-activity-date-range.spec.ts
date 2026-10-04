@@ -38,7 +38,7 @@ function previousUtcMonth(now = new Date()) {
 
 function dateParam(year: number, monthIndex: number, day: number, endOfDay = false) {
   const stamp = `${year}-${pad(monthIndex + 1)}-${pad(day)}`
-  return endOfDay ? `${stamp}T23:59:59` : `${stamp}T00:00:00`
+  return endOfDay ? `${stamp}T23:59:59.999999Z` : `${stamp}T00:00:00.000Z`
 }
 
 async function browserDayLabel(page: Page, year: number, monthIndex: number, day: number) {
