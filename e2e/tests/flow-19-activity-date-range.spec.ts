@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { resetDemoDatabase } from '../helpers/database'
 import { openDemoStrings } from '../helpers/strings'
 import {
+  activityFilterBar,
   openTimeRangePicker,
   pickTimeRangePreset,
   timeRangePopover,
@@ -27,13 +28,15 @@ test('activity time presets and custom ranges persist in the URL', async ({ page
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
+  const activityFilters = activityFilterBar(page)
+
   await openActivity(page)
-  await pickTimeRangePreset(page, 'Last 7 days')
+  await pickTimeRangePreset(page, 'Last 7 days', activityFilters)
   await expectParam(page, 'period', '7d')
   await expectParam(page, 'since', null)
   await expectParam(page, 'until', null)
 
-  await openTimeRangePicker(page)
+  await openTimeRangePicker(page, activityFilters)
   const popover = timeRangePopover(page)
   await popover.locator('#time-range-since').fill('2026-01-10T08:30')
   await popover.locator('#time-range-until').fill('2026-01-12T18:45')
@@ -47,7 +50,7 @@ test('activity time presets and custom ranges persist in the URL', async ({ page
   await expectParam(page, 'period', null)
   await expect.poll(() => new URL(page.url()).searchParams.get('since')).toContain('2026-01-10')
 
-  await openTimeRangePicker(page)
+  await openTimeRangePicker(page, activityFilters)
   await timeRangePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
   await expectParam(page, 'period', null)
   await expectParam(page, 'since', null)
@@ -55,15 +58,15 @@ test('activity time presets and custom ranges persist in the URL', async ({ page
 
   await page.getByRole('combobox').first().click()
   await page.getByRole('option', { name: 'Import' }).click()
-  await pickTimeRangePreset(page, 'Last 24 hours')
+  await pickTimeRangePreset(page, 'Last 24 hours', activityFilters)
   await expectParam(page, 'event_type', 'import')
   await expectParam(page, 'period', '24h')
-  await openTimeRangePicker(page)
+  await openTimeRangePicker(page, activityFilters)
   await timeRangePopover(page).getByRole('button', { name: 'Clear time', exact: true }).click()
   await expectParam(page, 'event_type', 'import')
   await expectParam(page, 'period', null)
 
-  await pickTimeRangePreset(page, 'Last 7 days')
+  await pickTimeRangePreset(page, 'Last 7 days', activityFilters)
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expectParam(page, 'period', null)
   await expectParam(page, 'event_type', null)

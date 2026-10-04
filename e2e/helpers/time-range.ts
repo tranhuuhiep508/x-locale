@@ -1,16 +1,24 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /** TimeRangePicker popover is portaled to document body, not inside `<main>`. */
 export function timeRangePopover(page: Page) {
   return page.locator('[data-slot="popover-content"]').filter({ has: page.locator('#time-range-since') })
 }
 
-export async function openTimeRangePicker(page: Page) {
-  await page.locator('main [data-slot="popover-trigger"]').first().click()
+function timeRangeTrigger(root: Locator) {
+  return root.locator('[data-slot="popover-trigger"]').filter({ hasText: /All time|Last / })
+}
+
+export async function openTimeRangePicker(page: Page, scope: Locator = page.locator('main')) {
+  await timeRangeTrigger(scope).click()
   await expect(timeRangePopover(page)).toBeVisible()
 }
 
-export async function pickTimeRangePreset(page: Page, label: string) {
-  await openTimeRangePicker(page)
+export async function pickTimeRangePreset(page: Page, label: string, scope: Locator = page.locator('main')) {
+  await openTimeRangePicker(page, scope)
   await timeRangePopover(page).getByRole('button', { name: label, exact: true }).click()
+}
+
+export function activityFilterBar(page: Page) {
+  return page.locator('div.shrink-0.border-b').filter({ has: page.getByRole('heading', { name: 'Activity' }) })
 }
