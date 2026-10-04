@@ -43,6 +43,8 @@ def list_strings(
     max_confidence: Annotated[int | None, Query(ge=0, le=100)] = None,
     batch_id: Annotated[uuid.UUID | None, Query()] = None,
     updated_within_days: Annotated[UpdatedWithinDays | None, Query()] = None,
+    sort: Annotated[str | None, Query()] = None,
+    order: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> StringListOut:
@@ -65,6 +67,8 @@ def list_strings(
         max_confidence=max_confidence,
         batch_id=batch_id,
         updated_within_days=updated_within_days,
+        sort=sort,
+        order=order,
         page=page,
         page_size=page_size,
     )

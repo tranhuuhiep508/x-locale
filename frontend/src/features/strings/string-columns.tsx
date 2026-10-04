@@ -1,7 +1,22 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
-import { CheckCircle, EllipsisVertical, History, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  CheckCircle,
+  EllipsisVertical,
+  History,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  Undo2,
+} from 'lucide-react'
+import {
+  type CatalogSortField,
+  type CatalogSortSearch,
+  resolvedCatalogSort,
+} from '@/features/strings/catalog-sort'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -39,6 +54,45 @@ export type StringTableMeta = {
   onHistory: (entry: StringEntry) => void
   onRefresh: () => void
   onPublishPreview: (entry: StringEntry) => void
+  catalogSort: CatalogSortSearch
+  onCatalogSortToggle: (columnId: CatalogSortField) => void
+}
+
+function CatalogSortableHeader({
+  columnId,
+  label,
+  table,
+}: {
+  columnId: CatalogSortField
+  label: string
+  table: Table<StringEntry>
+}) {
+  const meta = metaOf(table)
+  const resolved = resolvedCatalogSort(meta.catalogSort)
+  const isActive = resolved.sort === columnId
+  const ariaSort = isActive ? (resolved.order === 'asc' ? 'ascending' : 'descending') : 'none'
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        '-ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-left text-xs font-medium',
+        'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        isActive && 'text-foreground',
+      )}
+      aria-sort={ariaSort}
+      onClick={() => meta.onCatalogSortToggle(columnId)}
+    >
+      <span>{label}</span>
+      {isActive ? (
+        resolved.order === 'asc' ? (
+          <ArrowUp className="size-3.5 shrink-0 opacity-70" aria-hidden />
+        ) : (
+          <ArrowDown className="size-3.5 shrink-0 opacity-70" aria-hidden />
+        )
+      ) : null}
+    </button>
+  )
 }
 
 function metaOf(table: Table<StringEntry>) {
@@ -337,8 +391,8 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     },
     {
       accessorKey: 'key',
-      header: 'Key',
-      enableSorting: false,
+      header: ({ table }) => <CatalogSortableHeader columnId="key" label="Key" table={table} />,
+      enableSorting: true,
       size: 220,
       minSize: 180,
       meta: {
@@ -391,8 +445,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     },
     {
       accessorKey: 'source_text',
-      header: 'Source',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="source_text" label="Source" table={table} />
+      ),
+      enableSorting: true,
       meta: {
         headerClassName: 'min-w-[200px]',
         className: 'align-middle max-w-[260px] whitespace-normal',
@@ -417,8 +473,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     ...localeColumns,
     {
       accessorKey: 'status',
-      header: 'Published',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="status" label="Published" table={table} />
+      ),
+      enableSorting: true,
       meta: { headerClassName: 'w-20', className: 'align-middle' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
@@ -435,8 +493,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     {
       id: 'updated_at',
       accessorKey: 'updated_at',
-      header: 'Last updated',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="updated_at" label="Last updated" table={table} />
+      ),
+      enableSorting: true,
       meta: {
         label: 'Last updated',
         headerClassName: 'min-w-[7rem]',
@@ -462,8 +522,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     {
       id: 'updated_by_label',
       accessorKey: 'updated_by_label',
-      header: 'Updated by',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="updated_by_label" label="Updated by" table={table} />
+      ),
+      enableSorting: true,
       meta: {
         label: 'Updated by',
         headerClassName: 'min-w-[7rem]',
@@ -488,8 +550,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     {
       id: 'created_at',
       accessorKey: 'created_at',
-      header: 'Created',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="created_at" label="Created" table={table} />
+      ),
+      enableSorting: true,
       meta: {
         label: 'Created',
         headerClassName: 'min-w-[7rem]',
@@ -515,8 +579,10 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
     {
       id: 'created_by_label',
       accessorKey: 'created_by_label',
-      header: 'Created by',
-      enableSorting: false,
+      header: ({ table }) => (
+        <CatalogSortableHeader columnId="created_by_label" label="Created by" table={table} />
+      ),
+      enableSorting: true,
       meta: {
         label: 'Created by',
         headerClassName: 'min-w-[7rem]',

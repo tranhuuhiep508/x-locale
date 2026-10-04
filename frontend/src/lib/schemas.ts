@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  CATALOG_SORT_FIELDS,
+  parseCatalogSortField,
+  parseCatalogSortOrder,
+} from '@/features/strings/catalog-sort'
 
 const booleanSearchParam = z
   .union([z.boolean(), z.literal('true'), z.literal('false')])
@@ -28,6 +33,8 @@ export const stringsSearchSchema = z.object({
   ),
   page: z.coerce.number().int().min(1).optional(),
   page_size: z.coerce.number().int().min(1).max(100).optional(),
+  sort: z.preprocess(parseCatalogSortField, z.enum(CATALOG_SORT_FIELDS).optional()),
+  order: z.preprocess(parseCatalogSortOrder, z.enum(['asc', 'desc']).optional()),
 })
 
 export type StringsSearch = z.infer<typeof stringsSearchSchema>

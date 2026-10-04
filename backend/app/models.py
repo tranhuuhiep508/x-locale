@@ -211,6 +211,13 @@ class StringEntry(Base):
             sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        Index(
+            "ix_strings_project_updated_at_alive",
+            "project_id",
+            "updated_at",
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         # NO ACTION (not SET NULL): a composite SET NULL would also clear project_id.
         # The single-column module FKs still SET NULL when a module row is deleted.
         ForeignKeyConstraint(
