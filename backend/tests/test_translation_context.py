@@ -106,6 +106,38 @@ def test_module_creation_normalizes_and_validates_context(client):
     assert listed[0]["description"] == "Module description"
 
 
+@pytest.mark.parametrize("value", [None, "", " \n\t ", "  Project notes  ", "x" * 500])
+def test_project_creation_saves_context_atomically(client, value):
+    response = client.post(
+        "/api/projects",
+        json={
+            "name": "New project",
+            "base_language": "vi",
+            "target_languages": ["en"],
+            "layout": "modular",
+            "translation_context": value,
+        },
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert "translation_context" not in created
+    detail = client.get(f"/api/projects/{created['id']}").json()
+    assert detail["translation_context"] == ((value or "").strip() or None)
+    assert detail["base_language"] == "vi"
+    assert detail["target_languages"] == ["en"]
+    assert detail["layout"] == "modular"
+    assert "translation_context" not in client.get("/api/projects").json()[0]
+
+
+@pytest.mark.parametrize("value", ["x" * 501, " " * 501])
+def test_project_creation_rejects_oversized_context_without_creating_project(client, value):
+    response = client.post(
+        "/api/projects", json={"name": "Invalid project", "translation_context": value}
+    )
+    assert response.status_code == 422
+    assert client.get("/api/projects").json() == []
+
+
 def test_project_context_is_detail_only_in_responses_and_openapi(client):
     project = make_project(client)
     pid = project["id"]
@@ -130,7 +162,7 @@ def test_project_context_is_detail_only_in_responses_and_openapi(client):
     schema = client.get("/openapi.json").json()
     schemas = schema["components"]["schemas"]
     assert "translation_context" not in schemas["ProjectSummaryOut"]["properties"]
-    assert "translation_context" not in schemas["ProjectCreate"]["properties"]
+    assert "translation_context" in schemas["ProjectCreate"]["properties"]
     assert "translation_context" in schemas["ProjectOut"]["properties"]
     assert (
         schemas["ProjectUpdate"]["properties"]["translation_context"]["anyOf"][0]["maxLength"]

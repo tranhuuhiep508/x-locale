@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activitySearchSchema, moduleCreateSchema, projectSettingsSchema, stringsSearchSchema } from '@/lib/schemas'
+import { activitySearchSchema, moduleCreateSchema, projectCreateSchema, projectSettingsSchema, stringsSearchSchema } from '@/lib/schemas'
 
 describe.each([
   { name: 'strings', schema: stringsSearchSchema, otherFilters: {
@@ -33,6 +33,7 @@ describe.each([
 
 describe.each([
   { schema: moduleCreateSchema, form: { slug: 'auth', name: 'Auth' }, name: 'module' },
+  { schema: projectCreateSchema, form: { name: 'Demo', target_languages: ['en'] }, name: 'project creation' },
   { schema: projectSettingsSchema, form: { name: 'Demo', base_language: 'vi', target_languages: [], layout: 'flat' }, name: 'project settings' },
 ])('$name translation context validation', ({ schema, form }) => {
   it('keeps context optional and normalizes explicit null and blank values', () => {

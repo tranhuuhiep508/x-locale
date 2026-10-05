@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
+import { TranslationContextField } from '@/features/catalog/TranslationContextField'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,7 @@ export function NewProjectPage() {
     base_language: 'en',
     target_languages: [],
     layout: 'flat',
+    translation_context: '',
   })
   const [slugTouched, setSlugTouched] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -233,6 +235,15 @@ export function NewProjectPage() {
                     })}
                   </div>
                 </Field>
+
+                <TranslationContextField
+                  id="project_translation_context"
+                  value={form.translation_context ?? ''}
+                  error={errors.translation_context}
+                  onChange={(translation_context) =>
+                    setForm((f) => ({ ...f, translation_context }))
+                  }
+                />
 
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" type="button" asChild>

@@ -104,6 +104,7 @@ def create_project(db: Session, payload: ProjectCreate, user: User) -> ProjectOu
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     project = Project(
         name=payload.name,
+        translation_context=payload.translation_context,
         slug=slug,
         base_language=base_lang,
         target_languages=target_langs,

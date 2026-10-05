@@ -30,14 +30,6 @@ class LanguageOut(BaseModel):
 # ── Projects ──────────────────────────────────────────────────────────
 
 
-class ProjectCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    slug: str | None = Field(default=None, max_length=128)
-    base_language: str | None = None
-    target_languages: list[str] = Field(default_factory=list)
-    layout: ProjectLayout = ProjectLayout.flat
-
-
 class TranslationContextInput(BaseModel):
     translation_context: str | None = Field(default=None, max_length=500)
 
@@ -47,6 +39,14 @@ class TranslationContextInput(BaseModel):
         if value is None:
             return None
         return value.strip() or None
+
+
+class ProjectCreate(TranslationContextInput):
+    name: str = Field(min_length=1, max_length=255)
+    slug: str | None = Field(default=None, max_length=128)
+    base_language: str | None = None
+    target_languages: list[str] = Field(default_factory=list)
+    layout: ProjectLayout = ProjectLayout.flat
 
 
 class ProjectUpdate(TranslationContextInput):

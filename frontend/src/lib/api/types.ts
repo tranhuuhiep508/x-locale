@@ -36,6 +36,7 @@ export interface Project extends ProjectSummary {
 
 export interface ProjectCreate {
   name: string
+  translation_context?: string | null
   slug?: string
   base_language?: string
   target_languages: string[]

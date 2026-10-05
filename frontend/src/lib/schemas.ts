@@ -61,21 +61,22 @@ export const activitySearchSchema = z.object({
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>
 
+const translationContextSchema = z.string()
+  .max(500, 'Translation context must be 500 characters or fewer')
+  .nullable()
+  .optional()
+  .transform((value) => value === undefined ? undefined : value?.trim() || null)
+
 export const projectCreateSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
   slug: z.string().max(128).optional(),
   base_language: z.string().default('en'),
   target_languages: z.array(z.string()).min(1, 'Select at least one target language'),
   layout: z.enum(['flat', 'modular']).default('flat'),
+  translation_context: translationContextSchema,
 })
 
 export type ProjectCreateForm = z.infer<typeof projectCreateSchema>
-
-const translationContextSchema = z.string()
-  .max(500, 'Translation context must be 500 characters or fewer')
-  .nullable()
-  .optional()
-  .transform((value) => value === undefined ? undefined : value?.trim() || null)
 
 export const projectSettingsSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),

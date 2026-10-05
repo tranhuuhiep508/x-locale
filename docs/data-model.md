@@ -27,8 +27,8 @@ users ──< api_keys >── projects ──< modules
 columns, separate from `modules.description`. Editor writes validate a maximum of
 500 characters per field before trimming. An omitted PATCH field preserves its
 value; explicit `null`, empty, or whitespace-only text clears it to SQL `NULL`.
-Module creation can set context atomically. Project detail GET/PATCH expose it;
-project list/create and CLI bootstrap do not.
+Project and module creation can set context atomically. Project detail GET/PATCH
+responses expose it; project list/create and CLI bootstrap responses do not.
 
 All AI model routes compose project context, the owned module's context (when
 assigned), and the string description, skipping blank components and joining with
