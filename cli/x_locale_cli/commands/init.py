@@ -20,6 +20,7 @@ from x_locale_cli.models import (
     Config,
     Layout,
     Stage,
+    normalize_web_base,
     parse_layout,
 )
 
@@ -51,6 +52,13 @@ def init(
         Stage | None,
         typer.Option("--stage", help="Default pull stage: draft or public"),
     ] = None,
+    web_url: Annotated[
+        str | None,
+        typer.Option(
+            "--web-url",
+            help="Web app URL for review links. Omit to use the API origin.",
+        ),
+    ] = None,
     yes: Annotated[
         bool,
         typer.Option("-y", "--yes", help="Skip prompts and overwrite existing config"),
@@ -62,6 +70,7 @@ def init(
     matching prompt; ``-y/--yes`` uses defaults and overwrites
     ``.x-locale/config.yaml`` without asking. Locales and base language come
     from the server; the base language flag must match. Layout can be overridden.
+    ``web_url`` is optional; leave it unset to use the API origin for review links.
     """
     wizard = _use_wizard(
         yes=yes,
@@ -71,6 +80,7 @@ def init(
         layout=layout,
         stage=stage,
         base_language=base_language,
+        web_url=web_url,
     )
     if wizard:
         console.print(
@@ -86,6 +96,7 @@ def init(
             prompt=wizard,
         )
     )
+    web_url = _resolve_web_url(web_url, prompt=wizard)
     api_key = _require_api_key(api_key, prompt=wizard)
 
     console.print("Discovering project…", highlight=False)
@@ -128,6 +139,7 @@ def init(
         base_language=project_base,
         locales=locales,
         manifest=True,
+        web_url=web_url,
     )
     _confirm_write(yes=yes)
 
@@ -158,13 +170,14 @@ def _use_wizard(
     layout: Layout | None,
     stage: Stage | None,
     base_language: str | None,
+    web_url: str | None,
 ) -> bool:
     """Prompt for omitted values only when `locale init` is run with no flags."""
     if yes or not _stdin_is_tty():
         return False
     return all(
         value is None
-        for value in (api_key, api_url, output_dir, layout, stage, base_language)
+        for value in (api_key, api_url, output_dir, layout, stage, base_language, web_url)
     )
 
 
@@ -175,6 +188,19 @@ def _normalize_api_url(url: str) -> str:
     if "://" not in cleaned:
         cleaned = f"http://{cleaned}"
     return cleaned.rstrip("/")
+
+
+def _resolve_web_url(value: str | None, *, prompt: bool) -> str:
+    if value is not None:
+        return normalize_web_base(value)
+    if not prompt:
+        return ""
+    console.print(
+        "Web URL is optional. Leave blank to use the API origin.",
+        highlight=False,
+    )
+    typed = str(typer.prompt("Web URL", default="", show_default=False))
+    return normalize_web_base(typed)
 
 
 def _value_or_prompt(

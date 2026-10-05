@@ -59,7 +59,8 @@ locale status
 `locale init` creates this file automatically.  You can edit it by hand.
 
 ```yaml
-api_url: http://localhost:8000   # x-locale server base URL
+api_url: http://localhost:8000   # x-locale API origin
+web_url: http://localhost:5173   # optional UI origin for review links
 project_slug: demo-app           # Auto-discovered from the API key; immutable
 api_key: xlocale_xxx                 # Project-scoped API key
 output_dir: ./src/locales        # Root directory for locale files
@@ -69,6 +70,12 @@ base_language: vi                # Source language pushed by `locale push`
 locales: [vi, en, ko, ja]        # Locales to pull (all if omitted)
 manifest: true                   # Write manifest.json on modular pull
 ```
+
+`web_url` is optional. Existing configs keep working without it. When it is
+omitted, `locale push` builds the review link from `api_url`. Set it when the
+UI is served separately from the API — local dev uses the API on port 8000 and
+Vite on port 5173, so set `web_url: http://localhost:5173`. `XLOCALE_WEB_URL`
+is used only when `web_url` is unset.
 
 Project slugs are permanent public references. Existing configurations with
 `project_id: <uuid>` continue to work; `locale init` writes `project_slug` for
@@ -115,14 +122,16 @@ discover the linked project, its locales, base language, and layout so those
 values are not retyped.
 
 Run `locale init` with no flags in a terminal for the interactive wizard (API URL,
-API key, output directory, pull stage). Passing any of those flags skips the
-wizard and uses defaults for the rest. Existing config is not overwritten
-unless you confirm or pass `--yes`.
+optional Web URL, API key, output directory, pull stage). Passing any of those
+flags skips the wizard and uses defaults for the rest. Existing config is not
+overwritten unless you confirm or pass `--yes`. Leave Web URL blank to use the
+API origin.
 
 ```
 Options:
   -k, --api-key TEXT       Project API key (prompted if omitted)
   -u, --api-url TEXT       x-locale server base URL  [default: http://localhost:8000]
+  --web-url TEXT           Web app URL for review links (optional; defaults to the API origin)
   -o, --output-dir TEXT    Directory for locale files  [default: ./locales]
   --base-language TEXT     Base/source language; must match the discovered project
   --layout TEXT            flat | modular (otherwise from project)
@@ -155,6 +164,16 @@ Push sends only keys changed since the last successful push or draft pull.
 checks current server metadata, including dry-run and an empty delta. The
 configured base language must match the project; refresh stale config with
 `locale init`.
+
+A push that creates or updates strings prints one absolute review link when a
+web origin can be resolved:
+
+```
+Review: http://localhost:5173/projects/demo-app/strings?batch_id=<batch_id>&batch_kind=import
+```
+
+The link opens the strings catalog filtered to that import batch. Dry runs and
+pushes that do not create or update strings omit the line.
 
 ```
 Options:

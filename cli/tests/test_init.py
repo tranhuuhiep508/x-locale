@@ -94,6 +94,7 @@ class InitCommandTests(unittest.TestCase):
         output = strip_ansi(result.output)
         self.assertIn("--yes", output)
         self.assertIn("--api-key", output)
+        self.assertIn("--web-url", output)
         self.assertIn("if omitted", output)
         self.assertNotIn("[required]", output)
 
@@ -124,6 +125,8 @@ class InitCommandTests(unittest.TestCase):
         self.assertEqual(config.layout, Layout.modular)
         self.assertEqual(config.stage, Stage.draft)
         self.assertTrue(config.manifest)
+        self.assertEqual(config.web_url, "")
+        self.assertNotIn("web_url:", (self.root / ".x-locale" / "config.yaml").read_text())
         self.assertIn("Layout: modular", result.output)
 
     def test_flag_mode_skips_wizard_on_tty(self) -> None:
@@ -165,11 +168,12 @@ class InitCommandTests(unittest.TestCase):
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
             result = self._invoke(
                 ["init"],
-                input="https://x-locale.example.com\nxl_wizard_key\n./src/locales\npublic\n",
+                input="https://x-locale.example.com\n\nxl_wizard_key\n./src/locales\npublic\n",
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("x-locale init", result.output)
         self.assertIn("API URL", result.output)
+        self.assertIn("Web URL", result.output)
         self.assertIn("API key", result.output)
         self.assertIn("Output directory", result.output)
         self.assertIn("Pull stage", result.output)
@@ -181,20 +185,22 @@ class InitCommandTests(unittest.TestCase):
         self.assertEqual(config.output_dir, "./src/locales")
         self.assertEqual(config.stage, Stage.public)
         self.assertEqual(config.layout, Layout.modular)
+        self.assertEqual(config.web_url, "")
+        self.assertNotIn("web_url:", (self.root / ".x-locale" / "config.yaml").read_text())
 
     def test_wizard_accepts_defaults_and_confirms_overwrite(self) -> None:
         with fake_bootstrap():
             seeded = self._invoke(["init", "-k", "xl_old"])
         self.assertEqual(seeded.exit_code, 0, seeded.output)
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            cancelled = self._invoke(["init"], input="\nxl_new\n\n\nn\n")
+            cancelled = self._invoke(["init"], input="\n\nxl_new\n\n\nn\n")
         self.assertEqual(cancelled.exit_code, 1, cancelled.output)
         self.assertIn("Cancelled", cancelled.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "xl_old")
 
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            overwritten = self._invoke(["init"], input="\nxl_new\n\n\ny\n")
+            overwritten = self._invoke(["init"], input="\n\nxl_new\n\n\ny\n")
         self.assertEqual(overwritten.exit_code, 0, overwritten.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "xl_new")
@@ -203,7 +209,7 @@ class InitCommandTests(unittest.TestCase):
 
     def test_wizard_rejects_empty_api_key_then_accepts_retry(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            result = self._invoke(["init"], input="\n\nxl_ok\n\n\n")
+            result = self._invoke(["init"], input="\n\n\nxl_ok\n\n\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertGreaterEqual(result.output.count("API key:"), 2)
         with chdir(self.root):
@@ -211,7 +217,7 @@ class InitCommandTests(unittest.TestCase):
 
     def test_wizard_stage_is_case_insensitive_and_rejects_unknown(self) -> None:
         with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
-            result = self._invoke(["init"], input="\nxl_ok\n\nnope\nPUBLIC\n")
+            result = self._invoke(["init"], input="\n\nxl_ok\n\nnope\nPUBLIC\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Stage must be", result.output)
         with chdir(self.root):
@@ -236,3 +242,38 @@ class InitCommandTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("Invalid API key", result.output)
         self.assertFalse((self.root / ".x-locale" / "config.yaml").exists())
+
+    def test_web_url_flag_is_normalized_and_optional(self) -> None:
+        with fake_bootstrap():
+            result = self._invoke(
+                ["init", "-k", "xl_secret", "--web-url", "localhost:5173/", "-y"]
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        with chdir(self.root):
+            config = load_config()
+        self.assertEqual(config.web_url, "http://localhost:5173")
+        self.assertIn("web_url:", (self.root / ".x-locale" / "config.yaml").read_text())
+
+    def test_wizard_saves_prompted_web_url(self) -> None:
+        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+            result = self._invoke(
+                ["init"],
+                input="https://x-locale.example.com\nhttp://localhost:5173/\nxl_wizard_key\n\n\n",
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Web URL is optional", result.output)
+        with chdir(self.root):
+            self.assertEqual(load_config().web_url, "http://localhost:5173")
+
+    def test_config_without_web_url_still_loads(self) -> None:
+        config_dir = self.root / ".x-locale"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_text(
+            "api_url: http://localhost:8000\napi_key: xl_secret\nproject_slug: demo-app\n",
+            encoding="utf-8",
+        )
+        with chdir(self.root):
+            config = load_config()
+        self.assertEqual(config.web_url, "")
+        self.assertEqual(config.api_url, "http://localhost:8000")
+        self.assertEqual(config.project_ref, "demo-app")

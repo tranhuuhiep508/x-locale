@@ -10,7 +10,7 @@ from rich.table import Table
 from x_locale_cli.console import console
 from x_locale_cli.io import file_module_locale, scoped_key
 from x_locale_cli.issues import StatusSnapshot, SyncIssues, removed_key_reason
-from x_locale_cli.models import ChangeItem, PulledFileReport
+from x_locale_cli.models import ChangeItem, PulledFileReport, is_absolute_http_url
 
 _KEY_LIST_LIMIT = 100
 _STATUS_KEY_LIMIT = 20
@@ -289,6 +289,28 @@ def print_pull_report(
     console.print(f"\n[dim]{footer}[/dim]")
 
 
+def push_review_line(
+    *,
+    batch_id: Any,
+    create_count: int,
+    update_count: int,
+    dry_run: bool,
+    project_ref: str,
+    web_base: str | None,
+) -> str | None:
+    """Absolute catalog link for a saved push, or ``None`` when there is nothing to open."""
+    if dry_run or create_count + update_count <= 0:
+        return None
+    if batch_id is None:
+        return None
+    batch = str(batch_id).strip()
+    ref = project_ref.strip()
+    base = (web_base or "").strip().rstrip("/")
+    if not batch or not ref or not is_absolute_http_url(base):
+        return None
+    return f"Review: {base}/projects/{ref}/strings?batch_id={batch}&batch_kind=import"
+
+
 def _format_duration(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
@@ -308,6 +330,8 @@ def print_push_report(
     skipped_api: bool = False,
     removed_locally: list[str] | None = None,
     delta_mode: bool = False,
+    project_ref: str = "",
+    web_base: str | None = None,
 ) -> None:
     diff = result.get("diff") or {}
     create_keys = diff.get("create") or []
@@ -404,6 +428,17 @@ def print_push_report(
                 "[dim]No creates/updates — server only compared existing strings "
                 "(much faster than a first import).[/dim]"
             )
+
+    review = push_review_line(
+        batch_id=result.get("batch_id"),
+        create_count=create_count,
+        update_count=update_count,
+        dry_run=dry_run,
+        project_ref=project_ref,
+        web_base=web_base,
+    )
+    if review:
+        console.print(review, markup=False, highlight=False, soft_wrap=True)
 
 
 def print_status(snapshot: StatusSnapshot) -> None:
