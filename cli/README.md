@@ -124,7 +124,7 @@ Options:
   -k, --api-key TEXT       Project API key (prompted if omitted)
   -u, --api-url TEXT       x-locale server base URL  [default: http://localhost:8000]
   -o, --output-dir TEXT    Directory for locale files  [default: ./locales]
-  --base-language TEXT     Base/source language override (otherwise from project)
+  --base-language TEXT     Base/source language; must match the discovered project
   --layout TEXT            flat | modular (otherwise from project)
   --stage TEXT             draft | public  [default: draft]
   -y, --yes                Skip prompts; overwrite existing config
@@ -143,9 +143,18 @@ Push base-language strings to x-locale.
   stored as-is and are **not** prefixed with the folder name.
 
 Orphaned remote keys (present on x-locale but absent locally) are **reported but
-never deleted**. Keys queued for removal (`pending_delete`) stay on x-locale;
-`locale status` lists them as **Pending remove on x-locale**. Push will not
-re-create them.
+never deleted**. Push rejects the entire operation if any local source key is
+queued for removal (`pending_delete`) or tombstoned on x-locale. Restore the
+string in x-locale or remove it locally, then retry. This check also runs when
+local files match the push index; `locale sync` stops before pull on rejection.
+A historical tombstone does not block a live string created later with the same
+key.
+
+Push sends only keys changed since the last successful push or draft pull.
+`--full` sends the entire source catalog and reports remote-only keys. Every push
+checks current server metadata, including dry-run and an empty delta. The
+configured base language must match the project; refresh stale config with
+`locale init`.
 
 ```
 Options:
@@ -154,9 +163,15 @@ Options:
   --stage TEXT         Override stage
   --locales TEXT       Comma-separated locale list
   --dry-run            Preview changes without applying
+  --full               Send the entire source catalog, ignoring the push index
 ```
 
 ### `locale pull`
+
+Pull validates the entire export and resolves all affected paths before writing
+or pruning. Invalid responses, incomplete locale maps, malformed manifests, or
+unsafe/aliasing paths fail without changing files, the manifest, or the push
+index. Empty locale maps and empty catalogs remain valid exports.
 
 Pull translations from x-locale to local files. Each run downloads the full
 stage export and **replaces** in-scope locale files with that payload (canonical
@@ -241,7 +256,11 @@ folder name:
 }
 ```
 
-Nested objects and non-string values are rejected.
+Nested objects and non-string values are rejected. All discovered source files
+must be valid before push can proceed. Trailing commas are supported outside
+quoted strings; punctuation and escapes inside strings are preserved exactly.
+Explicitly empty (`""`) and whitespace-only source values are stored as supplied.
+Comments and other nonstandard JSON syntax are rejected.
 
 ---
 
@@ -294,3 +313,19 @@ directories.
 | 11 | Single-locale pull + status still correct for base |
 
 CI workflow: `.github/workflows/cli-e2e.yml` (job name: `cli-e2e`).
+
+## Compatibility for the push/pull safety release
+
+Deploy the updated backend before installing the updated CLI. The CLI requires
+`sync-state.locales`; an older backend produces a clear error before writes.
+No database migration or new dependencies are needed. Existing CLI payloads
+without `base_language` remain accepted by the updated backend.
+
+The push index is now version 2. A version-1 index triggers one full push; a
+successful push or draft pull replaces it with the new index. Public pulls that
+change source files still remove the index. Full pushes obey deletion safeguards.
+
+This release does not repair text previously altered by the old JSON parser or
+empty-source fallback. Review affected source text against source control or
+backups before pushing. General UI JSON uploads continue to support restoring
+strings; CLI push requires restoring deleted strings in x-locale first.

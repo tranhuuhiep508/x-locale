@@ -12,14 +12,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import yaml
-
 import httpx
-
+import yaml
+from tests.sync_support import export_for_request, export_locales, sync_state, with_preflight
 from x_locale_cli.errors import XLocaleError
-from x_locale_cli.models import Config, PulledFileReport
-from x_locale_cli.ops import pull_translations, push_strings
 from x_locale_cli.io import scoped_key
+from x_locale_cli.models import Config
+from x_locale_cli.ops import pull_translations, push_strings
 from x_locale_cli.push_index import (
     catalog_hashes_flat,
     hash_base_value,
@@ -126,7 +125,7 @@ class PushIndexTests(unittest.TestCase):
             normalize_api_origin("http://127.0.0.1:8000"),
         )
 
-    def test_empty_delta_skips_api_and_writes_index_after_prior_push(self) -> None:
+    def test_empty_delta_skips_import_after_prior_push(self) -> None:
         locales = self.root / "locales"
         locales.mkdir()
         (locales / "vi.json").write_text(json.dumps({"a": "A", "b": "B"}), encoding="utf-8")
@@ -156,14 +155,14 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             self.assertEqual(len(calls), 1)
             self.assertNotIn("partial", calls[0]["params"])
             loaded = load_push_index(config)
             self.assertIsNotNone(loaded)
             calls.clear()
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             self.assertEqual(len(calls), 0)
             loaded = load_push_index(config)
@@ -201,15 +200,15 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             path.write_text(json.dumps({"k": "v2", "other": "x"}), encoding="utf-8")
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             self.assertEqual(len(calls), 2)
             delta = calls[1]
             self.assertTrue(delta["params"].get("partial"))
-            self.assertEqual(delta["payload"], {"strings": {"k": "v2", "other": "x"}})
+            self.assertEqual(delta["payload"], {"strings": {"k": "v2", "other": "x"}, "base_language": "vi"})
             loaded = load_push_index(config)
             self.assertIsNotNone(loaded)
             self.assertEqual(loaded.entries["k"], hash_base_value("v2"))
@@ -269,7 +268,7 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, full=True)
         self.assertEqual(len(calls), 1)
         self.assertNotIn("partial", calls[0]["params"])
@@ -309,8 +308,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             with (
@@ -372,11 +371,11 @@ class PushIndexTests(unittest.TestCase):
                 encoding="utf-8",
             )
             pending_file_path().write_text("", encoding="utf-8")
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             self.assertEqual(len(calls), 1)
             self.assertNotIn("partial", calls[0]["params"])
-            self.assertEqual(calls[0]["payload"], {"strings": {"a": "A"}})
+            self.assertEqual(calls[0]["payload"], {"strings": {"a": "A"}, "base_language": "vi"})
 
     def test_preexisting_marker_survives_allowlisted_4xx(self) -> None:
         locales = self.root / "locales"
@@ -404,7 +403,7 @@ class PushIndexTests(unittest.TestCase):
 
         with chdir(self.root):
             pending_file_path().write_text("", encoding="utf-8")
-            with patch("x_locale_cli.ops.request_json", side_effect=_conflict):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_conflict, config)):
                 with self.assertRaises(XLocaleError):
                     push_strings(config, dry_run=False)
             self.assertTrue(push_pending_is_active())
@@ -434,7 +433,7 @@ class PushIndexTests(unittest.TestCase):
             )
 
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_conflict):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_conflict, config)):
                 with self.assertRaises(XLocaleError):
                     push_strings(config, dry_run=False)
             self.assertFalse(push_pending_is_active())
@@ -462,7 +461,7 @@ class PushIndexTests(unittest.TestCase):
         )
         with chdir(self.root):
             pending_file_path().write_text("", encoding="utf-8")
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=True)
             self.assertTrue(push_pending_is_active())
             self.assertIsNone(load_push_index(config))
@@ -503,8 +502,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         def _boom(*_a: object, **_k: object) -> Any:
             raise OSError("disk full")
@@ -540,7 +539,7 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_http_status_error(500)):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_http_status_error(500), config)):
                 with self.assertRaises(XLocaleError):
                     push_strings(config, dry_run=False)
             self.assertTrue(push_pending_is_active())
@@ -561,7 +560,7 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_request_transport_error):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request_transport_error, config)):
                 with self.assertRaises(XLocaleError):
                     push_strings(config, dry_run=False)
             self.assertTrue(push_pending_is_active())
@@ -582,7 +581,7 @@ class PushIndexTests(unittest.TestCase):
             }
         )
         with chdir(self.root):
-            with patch("x_locale_cli.ops.request_json", side_effect=_json_decode_error):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_json_decode_error, config)):
                 with self.assertRaises(json.JSONDecodeError):
                     push_strings(config, dry_run=False)
             self.assertTrue(push_pending_is_active())
@@ -627,7 +626,7 @@ class PushIndexTests(unittest.TestCase):
             pending_file_path().write_text("", encoding="utf-8")
             before = index_file_path().read_bytes()
             with (
-                patch("x_locale_cli.ops.request_json", side_effect=_request),
+                patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)),
                 patch(
                     "x_locale_cli.push_index.atomic_write_push_index",
                     side_effect=OSError("disk full"),
@@ -675,7 +674,7 @@ class PushIndexTests(unittest.TestCase):
                 encoding="utf-8",
             )
             pending_file_path().write_text("", encoding="utf-8")
-            with patch("x_locale_cli.ops.request_json", side_effect=_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_request, config)):
                 push_strings(config, dry_run=False)
             self.assertEqual(len(calls), 1)
             self.assertNotIn("partial", calls[0]["params"])
@@ -707,8 +706,8 @@ class PushIndexTests(unittest.TestCase):
         scope = scope_from_config(config)
         export = {
             "modules": {"auth": {"vi": {"k1": "new"}}},
-            "unassigned": {},
-            "manifest": {},
+            "unassigned": {"vi": {}},
+            "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi"},
         }
 
         class _Client:
@@ -728,8 +727,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -802,8 +801,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -870,8 +869,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -923,8 +922,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -980,8 +979,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -1022,8 +1021,8 @@ class PushIndexTests(unittest.TestCase):
         scope = scope_from_config(config)
         export = {
             "modules": {"auth": {"vi": {"k": "v"}}},
-            "unassigned": {},
-            "manifest": {"version": 1},
+            "unassigned": {"vi": {}},
+            "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi", "version": 1},
         }
         index_payload = json.dumps(
             {**scope.__dict__, "entries": {"seed": "abcd"}},
@@ -1054,8 +1053,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"
@@ -1110,8 +1109,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             with (
@@ -1156,8 +1155,8 @@ class PushIndexTests(unittest.TestCase):
             payload: Any = None,
         ) -> Any:
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         with chdir(self.root):
             config_dir = self.root / ".x-locale"

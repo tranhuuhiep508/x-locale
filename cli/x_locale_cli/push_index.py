@@ -6,17 +6,17 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-
-import httpx
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from x_locale_cli.config import CONFIG_DIR
 from x_locale_cli.console import console
-from x_locale_cli.io import scoped_key, pull_will_touch_base_locale
+from x_locale_cli.io import pull_will_touch_base_locale, scoped_key
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport, Stage
 
-PUSH_INDEX_VERSION = 1
+PUSH_INDEX_VERSION = 2
 ALLOWLISTED_PUSH_REJECT_STATUSES = frozenset({400, 401, 403, 404, 409, 413, 415, 422})
 INDEX_NAME = "push-index.json"
 PENDING_NAME = "push-index.pending"

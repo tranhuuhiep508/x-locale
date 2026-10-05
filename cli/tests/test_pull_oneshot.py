@@ -8,15 +8,28 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from tests.sync_support import export_for_request, export_locales, sync_state, with_preflight
+from tests.test_push_index import _write_config, chdir
 from x_locale_cli.io import (
     UNASSIGNED_SLUG,
-    apply_pull_export,
+    prepare_pull_export,
     write_locale_file_reported,
+)
+from x_locale_cli.io import (
+    apply_pull_export as apply_plan,
 )
 from x_locale_cli.models import Config
 from x_locale_cli.ops import pull_translations
 from x_locale_cli.push_index import catalog_hashes_flat, load_push_index
-from tests.test_push_index import chdir, _write_config
+from x_locale_cli.validation import validate_export
+
+
+def apply_pull_export(config, export, *, output_root, write_manifest):
+    # Model the actual export request in these filesystem tests.
+    requested = config.locale_filter[0] if config.locale_filter and len(config.locale_filter) == 1 else None
+    state = sync_state(config, locales=export_locales(export, config))
+    validated = validate_export(config, export, state, requested_locale=requested)
+    return apply_plan(prepare_pull_export(config, validated, output_root=output_root, write_manifest=write_manifest))
 
 
 class ApplyPullExportTests(unittest.TestCase):
@@ -46,7 +59,7 @@ class ApplyPullExportTests(unittest.TestCase):
             "unassigned": {"vi": {}, "en": {}},
             "manifest": {"modules": ["auth"], "locales": ["vi", "en"], "base_language": "vi"},
         }
-        result = apply_pull_export(
+        apply_pull_export(
             config, export, output_root=self.root.resolve(), write_manifest=False
         )
         en_path = self.root / "auth" / "en.json"
@@ -101,7 +114,7 @@ class ApplyPullExportTests(unittest.TestCase):
         export = {
             "modules": {"auth": {"vi": {"k": "v"}}},
             "unassigned": {"vi": {"loose": "Hi"}},
-            "manifest": {},
+            "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi"},
         }
         apply_pull_export(config, export, output_root=self.root.resolve(), write_manifest=False)
         self.assertFalse(stale_ko.exists())
@@ -184,7 +197,7 @@ class ApplyPullExportTests(unittest.TestCase):
         export = {
             "modules": {"auth": {"vi": {"k": "v"}, "en": {}}},
             "unassigned": {"vi": {"loose": "Hi"}, "en": {}},
-            "manifest": {},
+            "manifest": {"modules": ["auth"], "locales": ["vi", "en"], "base_language": "vi"},
         }
         apply_pull_export(config, export, output_root=self.root.resolve(), write_manifest=False)
         self.assertEqual(
@@ -237,7 +250,7 @@ class ApplyPullExportTests(unittest.TestCase):
         export = {
             "modules": {"auth": {"vi": {"k": "v"}}},
             "unassigned": {"vi": {}},
-            "manifest": {"locales": ["vi"]},
+            "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi"},
         }
         apply_pull_export(config, export, output_root=self.root.resolve(), write_manifest=False)
         self.assertFalse((gone / "vi.json").exists())
@@ -262,7 +275,7 @@ class ApplyPullExportTests(unittest.TestCase):
         export = {
             "modules": {"auth": {"vi": {"k": "v"}}},
             "unassigned": {"vi": {}},
-            "manifest": {"modules": ["auth"]},
+            "manifest": {"modules": ["auth"], "locales": ["vi"], "base_language": "vi"},
         }
         result = apply_pull_export(
             config, export, output_root=self.root.resolve(), write_manifest=False
@@ -327,8 +340,8 @@ class PullOneshotIntegrationTests(unittest.TestCase):
         ) -> Any:
             paths.append(path)
             if "export" in path:
-                return export
-            return {"pending_remove": [], "tombstones": []}
+                return export_for_request(export, params)
+            return sync_state(config, locales=export_locales(export, config))
 
         def _push_request(
             client: object,
@@ -366,7 +379,7 @@ class PullOneshotIntegrationTests(unittest.TestCase):
             loaded = load_push_index(config)
             self.assertIsNotNone(loaded)
             self.assertEqual(loaded.entries, catalog_hashes_flat({"a": "A"}))
-            with patch("x_locale_cli.ops.request_json", side_effect=_push_request):
+            with patch("x_locale_cli.ops.request_json", side_effect=with_preflight(_push_request, config)):
                 from x_locale_cli.ops import push_strings
 
                 push_strings(config, dry_run=False)

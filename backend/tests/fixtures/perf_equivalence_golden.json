@@ -773,6 +773,11 @@
       "base_language": "vi",
       "exported": [],
       "layout": "flat",
+      "locales": [
+        "vi",
+        "en",
+        "ja"
+      ],
       "pending_remove": [
         "soon_gone"
       ],
@@ -785,6 +790,11 @@
       "base_language": "vi",
       "exported": [],
       "layout": "flat",
+      "locales": [
+        "vi",
+        "en",
+        "ja"
+      ],
       "pending_remove": [
         "soon_gone"
       ],
@@ -797,6 +807,11 @@
       "base_language": "vi",
       "exported": [],
       "layout": "modular",
+      "locales": [
+        "vi",
+        "en",
+        "ja"
+      ],
       "pending_remove": [
         "home/soon_gone"
       ],
@@ -809,6 +824,11 @@
       "base_language": "vi",
       "exported": [],
       "layout": "modular",
+      "locales": [
+        "vi",
+        "en",
+        "ja"
+      ],
       "pending_remove": [
         "home/soon_gone"
       ],

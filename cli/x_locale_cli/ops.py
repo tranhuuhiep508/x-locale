@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from x_locale_cli.client import api_client, request_json
 from x_locale_cli.config import require_project_ref
@@ -17,13 +17,13 @@ from x_locale_cli.io import (
     collect_modular_remote_keys,
     load_json_file,
     parse_locale_json,
-    pull_will_touch_base_locale,
+    prepare_pull_export,
     resolve_push_source,
     scan_modular_base,
     string_map,
 )
 from x_locale_cli.issues import StatusSnapshot, classify_sync_issues
-from x_locale_cli.models import Config, Layout, PullResult
+from x_locale_cli.models import Config, Layout, PullResult, Stage
 from x_locale_cli.push_index import (
     apply_index_after_success,
     build_flat_delta_payload,
@@ -45,6 +45,12 @@ from x_locale_cli.report import (
     print_status,
     print_sync_summary,
 )
+from x_locale_cli.validation import (
+    reject_deleted_local_keys,
+    require_matching_base,
+    validate_export,
+    validate_sync_state,
+)
 
 
 @contextmanager
@@ -56,14 +62,9 @@ def _client(config: Config, client: Any | None) -> Iterator[Any]:
             yield owned
 
 
-def _parse_sync_state(payload: Any) -> tuple[list[str], list[str]]:
-    if not isinstance(payload, dict):
-        return [], []
-    pending = payload.get("pending_remove") or []
-    tombs = payload.get("tombstones") or []
-    pending_remove = [str(k) for k in pending] if isinstance(pending, list) else []
-    tombstones = [str(k) for k in tombs] if isinstance(tombs, list) else []
-    return pending_remove, tombstones
+def _parse_sync_state(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
+    # All callers have already validated the remote contract.
+    return payload["pending_remove"], payload["tombstones"]
 
 
 def _export_query(config: Config, *, locale: str | None = None) -> dict[str, str]:
@@ -88,7 +89,7 @@ def _fetch_sync_state(client: Any, project_id: str, config: Config) -> dict[str,
         action="Sync-state fetch",
         params={"layout": config.layout.value, "stage": config.stage.value},
     )
-    return result if isinstance(result, dict) else {}
+    return validate_sync_state(result, config)
 
 
 def _local_and_remote_base(config: Config, export: Any) -> tuple[dict[str, str], dict[str, str]]:
@@ -105,8 +106,9 @@ def _local_and_remote_base(config: Config, export: Any) -> tuple[dict[str, str],
     src = out / f"{base_language}.json"
     if src.exists():
         raw = load_json_file(src)
-        if isinstance(raw, dict):
-            local_base = {k: v for k, v in raw.items() if isinstance(v, str)}
+        if not isinstance(raw, dict):
+            raise XLocaleError(f"Locale JSON in {src} must be a top-level object")
+        local_base = parse_locale_json(raw)
     return local_base, remote_base
 
 
@@ -118,6 +120,7 @@ def load_status_snapshot(
     state: dict[str, Any] | None = None,
 ) -> StatusSnapshot:
     project_id = require_project_ref(config)
+    export_fetched = export is None
     if export is None or state is None:
         with _client(config, client) as http:
             if export is None:
@@ -131,6 +134,12 @@ def load_status_snapshot(
             if state is None:
                 state = _fetch_sync_state(http, project_id, config)
 
+    export = validate_export(
+        config,
+        export,
+        state,
+        requested_locale=config.base_language if export_fetched else _pull_locale_param(config),
+    ).data
     local_base, remote_base = _local_and_remote_base(config, export)
     pending_remove, tombstones = _parse_sync_state(state)
     issues = classify_sync_issues(
@@ -155,6 +164,17 @@ def _exit_if_blocking(snapshot: StatusSnapshot) -> None:
 
 
 def push_strings(
+    config: Config,
+    *,
+    dry_run: bool = False,
+    full: bool = False,
+    client: Any | None = None,
+) -> None:
+    with _client(config, client) as http:
+        _push_strings(config, dry_run=dry_run, full=full, client=http)
+
+
+def _push_strings(
     config: Config,
     *,
     dry_run: bool = False,
@@ -188,6 +208,10 @@ def push_strings(
         local_key_count = len(local_hashes)
         details = [config.layout.value, str(source_path)]
 
+    state = _fetch_sync_state(client, project_id, config.with_overrides(stage=Stage.draft))
+    require_matching_base(config, state)
+    reject_deleted_local_keys(config, set(local_hashes), state)
+
     loaded = load_push_index(config)
     diff = compute_push_diff(config, local_hashes, full=full, loaded=loaded)
     old_entries = dict(loaded.entries) if loaded and diff.index_usable and not diff.use_full else {}
@@ -213,6 +237,8 @@ def push_strings(
         else:
             payload = build_flat_delta_payload(flat_strings, keys_to_send)
 
+    payload["base_language"] = base_language
+
     prepare_seconds = time.perf_counter() - started
     request_seconds = 0.0
     skipped_api = False
@@ -231,7 +257,8 @@ def push_strings(
         },
     }
 
-    skipped_api = not keys_to_send and not (diff.use_full and push_pending_is_active())
+    # A full import still reports orphans and refreshes the index for an empty catalog.
+    skipped_api = not keys_to_send and not diff.use_full
     if not skipped_api:
         params: dict[str, Any] = {"dry_run": dry_run}
         if use_partial:
@@ -313,20 +340,21 @@ def pull_translations(config: Config, *, client: Any | None = None) -> PullResul
     pending_remove, tombstones = _parse_sync_state(state)
 
     output_root = output_dir.resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    pending_existed_before = push_pending_is_active()
-    created_marker_this_run = False
-    if pull_will_touch_base_locale(config, data, output_root):
-        set_push_pending()
-        created_marker_this_run = not pending_existed_before
-
-    apply_result = apply_pull_export(
+    validated = validate_export(config, data, state, requested_locale=_pull_locale_param(config))
+    plan = prepare_pull_export(
         config,
-        data,
+        validated,
         output_root=output_root,
         write_manifest=write_manifest,
     )
+
+    pending_existed_before = push_pending_is_active()
+    created_marker_this_run = False
+    if plan.base_locale_touched:
+        set_push_pending()
+        created_marker_this_run = not pending_existed_before
+
+    apply_result = apply_pull_export(plan)
     reports = apply_result.reports
     manifest_written = apply_result.manifest_written
 

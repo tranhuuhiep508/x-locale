@@ -41,7 +41,7 @@ def init(
     ] = None,
     base_language: Annotated[
         str | None,
-        typer.Option("--base-language", help="Override project base/source language"),
+        typer.Option("--base-language", help="Base/source language; must match the project"),
     ] = None,
     layout: Annotated[
         Layout | None,
@@ -60,8 +60,8 @@ def init(
 
     Run with no flags in a terminal for an interactive wizard. Flags skip the
     matching prompt; ``-y/--yes`` uses defaults and overwrites
-    ``.x-locale/config.yaml`` without asking. Layout, locales, and base language
-    come from the server unless overridden.
+    ``.x-locale/config.yaml`` without asking. Locales and base language come
+    from the server; the base language flag must match. Layout can be overridden.
     """
     wizard = _use_wizard(
         yes=yes,
@@ -92,7 +92,12 @@ def init(
     project = _discover_project(api_url, api_key)
     project_slug = str(project["slug"])
     project_name = str(project.get("name") or project_slug)
-    project_base = base_language or project.get("base_language") or DEFAULT_BASE_LANGUAGE
+    project_base = project.get("base_language") or DEFAULT_BASE_LANGUAGE
+    if base_language is not None and base_language != project_base:
+        raise XLocaleError(
+            f"Configured base language '{base_language}' does not match project base language "
+            f"'{project_base}'. Run locale init with the project base language."
+        )
     target_languages: list[str] = project.get("target_languages") or []
     locales = [project_base, *[lc for lc in target_languages if lc != project_base]]
     effective_layout = layout if layout is not None else parse_layout(project.get("layout"))

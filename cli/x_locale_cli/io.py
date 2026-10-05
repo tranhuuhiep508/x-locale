@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from x_locale_cli.console import console
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.models import (
     DEFAULT_BASE_LANGUAGE,
@@ -18,16 +16,38 @@ from x_locale_cli.models import (
     PulledFileReport,
     Stage,
 )
+from x_locale_cli.validation import ValidatedExport
 
-# Prettier 3+ (trailingComma: "all") and some editors emit trailing commas in JSON.
-_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+
+def _without_trailing_commas(text: str) -> str:
+    """Accept trailing separators without touching quoted text or error positions."""
+    characters = list(text)
+    quoted = False
+    escaped = False
+    for index, char in enumerate(text):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char == ",":
+            following = index + 1
+            while following < len(text) and text[following] in " \t\r\n":
+                following += 1
+            if following < len(text) and text[following] in "}]":
+                characters[index] = " "
+    return "".join(characters)
 
 
 def load_json_file(path: Path) -> Any:
     """Load JSON from *path*, tolerating trailing commas from common formatters."""
     text = path.read_text(encoding="utf-8")
     try:
-        return json.loads(_TRAILING_COMMA_RE.sub(r"\1", text))
+        return json.loads(_without_trailing_commas(text))
     except json.JSONDecodeError as exc:
         raise XLocaleError(
             f"Invalid JSON in {path}: {exc.msg} (line {exc.lineno}, column {exc.colno})"
@@ -123,9 +143,11 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
             continue
         data = load_json_file(base_file)
         if not isinstance(data, dict):
-            console.print(f"[yellow]Warning:[/yellow] {base_file} is not a JSON object — skipping")
-            continue
-        modules[subdir.name] = parse_locale_json(data)
+            raise XLocaleError(f"Locale JSON in {base_file} must be a top-level object")
+        try:
+            modules[subdir.name] = parse_locale_json(data)
+        except XLocaleError as exc:
+            raise XLocaleError(f"Invalid locale file {base_file}: {exc}") from exc
     return modules
 
 
@@ -136,8 +158,7 @@ def load_unassigned_base(output_dir: Path, base_language: str) -> dict[str, str]
         return {}
     data = load_json_file(path)
     if not isinstance(data, dict):
-        console.print(f"[yellow]Warning:[/yellow] {path} is not a JSON object — skipping")
-        return {}
+        raise XLocaleError(f"Locale JSON in {path} must be a top-level object")
     return parse_locale_json(data)
 
 
@@ -252,7 +273,7 @@ def pull_scope_locales(config: Config, export: Any) -> list[str]:
     """
     allowed = config.locale_filter
     if allowed:
-        return list(allowed)
+        return list(dict.fromkeys(allowed))
     if config.layout is Layout.modular:
         if not isinstance(export, dict):
             return []
@@ -270,18 +291,18 @@ def _try_resolve_under_output(output_dir: Path, *parts: str) -> Path | None:
         return None
 
 
-def _owned_locale_paths(output_root: Path, layout: Layout, scope: list[str]) -> list[Path]:
+def _owned_locale_paths(
+    output_root: Path, layout: Layout, scope: list[str]
+) -> list[tuple[Path, str]]:
     """CLI-owned locale JSON paths currently subject to prune for scope ``S``."""
-    paths: list[Path] = []
+    paths: list[tuple[Path, str]] = []
     for locale in scope:
         if layout is Layout.flat:
-            target = _try_resolve_under_output(output_root, f"{locale}.json")
-            if target is not None:
-                paths.append(target)
+            target = resolve_under_output(output_root, f"{locale}.json")
+            paths.append((target, locale))
             continue
-        unassigned = _try_resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json")
-        if unassigned is not None:
-            paths.append(unassigned)
+        unassigned = resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json")
+        paths.append((unassigned, locale))
         if not output_root.is_dir():
             continue
         for child in sorted(output_root.iterdir()):
@@ -289,9 +310,8 @@ def _owned_locale_paths(output_root: Path, layout: Layout, scope: list[str]) -> 
                 continue
             if child.name.startswith(".") or child.name.startswith("_"):
                 continue
-            target = _try_resolve_under_output(output_root, child.name, f"{locale}.json")
-            if target is not None:
-                paths.append(target)
+            target = resolve_under_output(output_root, child.name, f"{locale}.json")
+            paths.append((target, locale))
     return paths
 
 
@@ -321,126 +341,134 @@ class PullApplyResult:
     base_locale_touched: bool
 
 
-def apply_pull_export(
+@dataclass(frozen=True)
+class PullPlan:
+    config: Config
+    output_root: Path
+    writes: list[tuple[Path, dict[str, str]]]
+    expected_paths: set[Path]
+    prune_paths: list[Path]
+    manifest_path: Path | None
+    manifest: dict[str, Any] | None
+    base_locale_touched: bool
+
+
+def prepare_pull_export(
     config: Config,
-    export: Any,
+    export: ValidatedExport,
     *,
     output_root: Path,
     write_manifest: bool,
-) -> PullApplyResult:
-    """Write export payload to disk and prune in-scope owned files not in the payload."""
-    scope = pull_scope_locales(config, export)
-    reports: list[PulledFileReport] = []
+) -> PullPlan:
+    """Resolve all writes and deletions before creating directories or changing files."""
+    data = export.data
+    if output_root.exists() and not output_root.is_dir():
+        raise XLocaleError(f"Expected an output directory, got file '{output_root}'")
+    scope = pull_scope_locales(config, data)
+    writes: list[tuple[Path, dict[str, str]]] = []
     expected: set[Path] = set()
-    base = config.base_language
+    manifest_path = None
+    manifest = None
     base_touched = False
-
     if config.layout is Layout.modular:
-        if not isinstance(export, dict):
-            export = {}
-        modules = export.get("modules") if isinstance(export.get("modules"), dict) else {}
-        unassigned = export.get("unassigned") if isinstance(export.get("unassigned"), dict) else {}
-        manifest = export.get("manifest") if isinstance(export.get("manifest"), dict) else {}
-
-        for module_slug, locale_map in modules.items():
-            slug = str(module_slug)
-            if not isinstance(locale_map, dict):
-                continue
+        for slug, maps in data["modules"].items():
             for locale in scope:
-                if locale not in locale_map:
-                    continue
-                strings = string_map(locale_map.get(locale))
-                target = resolve_under_output(output_root, slug, f"{locale}.json")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                reports.append(write_locale_file_reported(target, strings))
-                expected.add(target.resolve())
-                if locale == base:
-                    base_touched = True
-
-        in_scope_unassigned: dict[str, dict[str, str]] = {}
-        if isinstance(unassigned, dict):
-            for locale in scope:
-                if locale not in unassigned:
-                    continue
-                in_scope_unassigned[locale] = string_map(unassigned.get(locale))
-        has_unassigned_keys = any(strings for strings in in_scope_unassigned.values())
-        if has_unassigned_keys:
-            for locale, strings in in_scope_unassigned.items():
-                target = resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                reports.append(write_locale_file_reported(target, strings))
-                expected.add(target.resolve())
-                if locale == base:
-                    base_touched = True
-
-        manifest_written: Path | None = None
-        manifest_deleted = False
+                if locale in maps:
+                    base_touched |= locale == config.base_language
+                    writes.append(
+                        (resolve_under_output(output_root, slug, f"{locale}.json"), maps[locale])
+                    )
+        unassigned = {
+            locale: data["unassigned"][locale] for locale in scope if locale in data["unassigned"]
+        }
+        if any(unassigned.values()):
+            for locale, strings in unassigned.items():
+                base_touched |= locale == config.base_language
+                writes.append(
+                    (resolve_under_output(output_root, UNASSIGNED_SLUG, f"{locale}.json"), strings)
+                )
         manifest_path = resolve_under_output(output_root, "manifest.json")
-        if write_manifest and manifest:
-            manifest_path.write_text(
-                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            manifest_written = manifest_path
-            expected.add(manifest_path.resolve())
-        elif manifest_path.exists():
-            manifest_path.unlink()
-            manifest_deleted = True
+        if write_manifest:
+            manifest = data["manifest"]
     else:
-        if not isinstance(export, dict):
-            export = {}
-        manifest_written = None
-        manifest_deleted = False
         for locale in scope:
-            raw = export.get(locale)
-            if not isinstance(raw, dict):
-                continue
-            strings = string_map(raw)
-            target = resolve_under_output(output_root, f"{locale}.json")
-            reports.append(write_locale_file_reported(target, strings))
-            expected.add(target.resolve())
-            if locale == base:
-                base_touched = True
+            if locale in data:
+                base_touched |= locale == config.base_language
+                writes.append((resolve_under_output(output_root, f"{locale}.json"), data[locale]))
+    expected.update(path for path, _ in writes)
+    if len(expected) != len(writes) or manifest_path in expected:
+        raise XLocaleError("Locale files and manifest must resolve to distinct paths")
+    if manifest is not None:
+        expected.add(manifest_path)
+    owned = _owned_locale_paths(output_root, config.layout, scope)
+    prune = list(dict.fromkeys(path for path, _ in owned if path not in expected and path.exists()))
+    pruned_paths = set(prune)
+    base_touched |= any(
+        locale == config.base_language and path in pruned_paths for path, locale in owned
+    )
+    # Resolve every directory that cleanup may inspect, including _unassigned symlinks.
+    if config.layout is Layout.modular:
+        resolve_under_output(output_root, UNASSIGNED_SLUG)
+    for path in [
+        *(path for path, _ in writes),
+        *prune,
+        *([manifest_path] if manifest_path else []),
+    ]:
+        if path.exists() and not path.is_file():
+            raise XLocaleError(f"Expected a locale file, got directory '{path}'")
+        for parent in path.parents:
+            if parent.exists() and not parent.is_dir():
+                raise XLocaleError(f"Expected a directory, got file '{parent}'")
+            if parent == output_root:
+                break
+    return PullPlan(
+        config=config,
+        output_root=output_root,
+        writes=writes,
+        expected_paths=expected,
+        prune_paths=prune,
+        manifest_path=manifest_path,
+        manifest=manifest,
+        base_locale_touched=base_touched,
+    )
 
+
+def apply_pull_export(plan: PullPlan) -> PullApplyResult:
+    """Apply only a validated and fully prepared pull plan."""
+    plan.output_root.mkdir(parents=True, exist_ok=True)
+    reports = [write_locale_file_reported(path, strings) for path, strings in plan.writes]
+    manifest_written = None
+    manifest_deleted = False
+    if plan.manifest_path is not None:
+        if plan.manifest is not None:
+            plan.manifest_path.write_text(
+                json.dumps(plan.manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            manifest_written = plan.manifest_path
+        elif plan.manifest_path.exists():
+            plan.manifest_path.unlink()
+            manifest_deleted = True
     deleted: list[Path] = []
     pruned_reports: list[PulledFileReport] = []
-    for path in _owned_locale_paths(output_root, config.layout, scope):
-        resolved = path.resolve()
-        if resolved in expected:
-            continue
-        if not path.exists():
-            continue
+    for path in plan.prune_paths:
         old_strings = _read_old_string_map(path)
         pruned_reports.append(
             PulledFileReport(
-                path=path,
-                keys=sorted(old_strings),
-                removed_keys=sorted(old_strings),
-                written=False,
+                path=path, keys=sorted(old_strings), removed_keys=sorted(old_strings), written=False
             )
         )
         path.unlink()
         deleted.append(path)
-        if path.stem == base:
-            base_touched = True
-
-    if config.layout is Layout.modular:
-        _prune_empty_module_dirs(output_root)
-        unassigned_dir = output_root / UNASSIGNED_SLUG
-        if unassigned_dir.is_dir() and not any(unassigned_dir.iterdir()):
-            try:
-                unassigned_dir.rmdir()
-            except OSError:
-                pass
-
+    if plan.config.layout is Layout.modular:
+        _prune_empty_module_dirs(plan.output_root)
     return PullApplyResult(
         reports=reports,
         pruned_reports=pruned_reports,
-        expected_paths=expected,
+        expected_paths=plan.expected_paths,
         deleted_paths=deleted,
-        manifest_written=manifest_written if config.layout is Layout.modular else None,
-        manifest_deleted=manifest_deleted if config.layout is Layout.modular else False,
-        base_locale_touched=base_touched,
+        manifest_written=manifest_written,
+        manifest_deleted=manifest_deleted,
+        base_locale_touched=plan.base_locale_touched,
     )
 
 
@@ -480,9 +508,7 @@ def _expected_base_locale_paths(config: Config, export: Any, output_root: Path) 
     return expected
 
 
-def _owned_pushable_base_paths(
-    config: Config, output_root: Path, scope: list[str]
-) -> list[Path]:
+def _owned_pushable_base_paths(config: Config, output_root: Path, scope: list[str]) -> list[Path]:
     base = config.base_language
     if base not in scope:
         return []
