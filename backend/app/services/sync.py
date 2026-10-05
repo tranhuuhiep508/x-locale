@@ -183,7 +183,8 @@ def translation_value(
 
 
 def project_locales(project: Project) -> list[str]:
-    return [project.base_language, *project.target_languages]
+    # Existing projects may also include their base language in the target list.
+    return list(dict.fromkeys([project.base_language, *project.target_languages]))
 
 
 def resolve_export_locales(project: Project, locale: str | None) -> list[str]:

@@ -59,6 +59,20 @@ def test_sync_preserves_json_punctuation_and_empty_sources(
 
 
 @pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_cli_accepts_base_language_also_in_project_targets(
+    workspace, api_base_url, admin_client, layout
+):
+    project = create_test_project(admin_client, layout=layout, target_languages=["en", "vi"])
+    source = _workspace(workspace, api_base_url, project)
+    strings = {"hello": "Xin chào"}
+    write_json(source, strings)
+    for command in ("push", "pull", "sync", "status"):
+        result = run_locale(workspace, command)
+        assert result.returncode == 0, combined_output(result)
+        assert json.loads(source.read_text()) == strings
+
+
+@pytest.mark.parametrize("layout", ["flat", "modular"])
 @pytest.mark.parametrize("deletion", ["pending", "tombstone"])
 def test_sync_rejects_deleted_cached_keys_before_pull(
     workspace, api_base_url, admin_client, layout, deletion

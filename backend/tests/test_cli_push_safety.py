@@ -105,6 +105,41 @@ def test_recreated_live_key_shadows_old_tombstone(client):
 
 
 @pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_base_language_in_targets_has_unique_sync_and_export_locales(client, layout):
+    project = make_project(client, "Overlapping Locales", targets=["en", "vi", "ja"], layout=layout)
+    # This configuration is accepted, including on existing projects.
+    assert project["target_languages"] == ["en", "vi", "ja"]
+    root = f"/api/projects/{project['id']}"
+    values = {"hello": "Xin chào"}
+    payload = (
+        {"strings": values} if layout == "flat" else {"modules": {"auth": {"vi": values}}}
+    )
+    response = client.post(f"{root}/strings/import", json=payload)
+    assert response.status_code == 200, response.text
+    row = client.get(f"{root}/strings").json()["items"][0]
+    publish_strings(client, project["id"], [row["id"]])
+    for stage in ("draft", "public"):
+        state = client.get(f"{root}/sync-state", params={"layout": layout, "stage": stage})
+        assert state.status_code == 200, state.text
+        assert state.json()["locales"] == ["vi", "en", "ja"]
+        for locale in (None, "vi", "en"):
+            params = {"layout": layout, "stage": stage}
+            if locale:
+                params["locale"] = locale
+            exported = client.get(f"{root}/export", params=params)
+            assert exported.status_code == 200, exported.text
+            data = exported.json()
+            expected = [locale] if locale else ["vi", "en", "ja"]
+            maps = data if layout == "flat" else data["modules"]["auth"]
+            assert list(maps) == expected
+            if "vi" in expected:
+                assert maps["vi"] == values
+            if layout == "modular":
+                assert data["manifest"]["locales"] == expected
+                assert list(data["unassigned"]) == expected
+
+
+@pytest.mark.parametrize("layout", ["flat", "modular"])
 @pytest.mark.parametrize("value", ["", "  "])
 def test_empty_source_create_preview_update_and_public_snapshot(client, layout, value):
     project = make_project(client, "Empty Source", layout=layout)
