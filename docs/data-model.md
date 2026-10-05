@@ -21,6 +21,27 @@ users ──< api_keys >── projects ──< modules
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column.
 - `activities` is append-only. Only **string** content writes are logged (keys, source, translations, tags, publish, delete). Module, tag, project, and API key changes are not. Content rows are revertible.
 
+## Translation context
+
+`projects.translation_context` and `modules.translation_context` are nullable text
+columns, separate from `modules.description`. Editor writes validate a maximum of
+500 characters per field before trimming. An omitted PATCH field preserves its
+value; explicit `null`, empty, or whitespace-only text clears it to SQL `NULL`.
+Project and module creation can set context atomically. Project detail GET/PATCH
+responses expose it; project list/create and CLI bootstrap responses do not.
+
+All AI model routes compose project context, the owned module's context (when
+assigned), and the string description, skipping blank components and joining with
+newlines. Proposal/preview description overrides replace only the string component.
+The combined result is passed through `TranslateItem.context` as mandatory
+translator instructions; it is never written back into a string description.
+Background jobs read the current context when they start. Empty context preserves
+the existing prompt. Missing/apply routes do not invoke AI.
+
+These settings are independent of string publication and activity history. They
+are absent from exports, Excel `_meta`, sync-state, and published snapshots.
+Deploy the additive Alembic migration before running the updated application.
+
 ## Flat vs modular export
 
 | Layout | Shape |

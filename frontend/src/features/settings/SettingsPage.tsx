@@ -15,6 +15,8 @@ import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { CopyableSecretField } from '@/components/copyable-secret-field'
 import { apiKeyColumns } from '@/features/settings/api-keys-columns'
 import { projectsApi } from '@/lib/api/projects'
+import { projectSettingsSchema, type ProjectSettingsForm } from '@/lib/schemas'
+import { TranslationContextField } from '@/features/catalog/TranslationContextField'
 import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import {
@@ -25,7 +27,7 @@ import {
 } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -57,18 +59,15 @@ export function SettingsPage() {
     pageSize: 20,
   })
 
-  const [saveForm, setSaveForm] = useState<{
-    name: string
-    base_language: string
-    target_languages: string[]
-    layout: 'flat' | 'modular'
-  } | null>(null)
+  const [saveForm, setSaveForm] = useState<ProjectSettingsForm | null>(null)
+  const [errors, setErrors] = useState<Partial<Record<keyof ProjectSettingsForm, string>>>({})
 
   const form = saveForm ?? {
     name: project?.name ?? '',
     base_language: project?.base_language ?? 'en',
     target_languages: project?.target_languages ?? [],
     layout: project?.layout ?? 'flat',
+    translation_context: project?.translation_context ?? '',
   }
 
   const updateMut = useMutation({
@@ -80,9 +79,25 @@ export function SettingsPage() {
       qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
       toast.success('Settings saved')
       setSaveForm(null)
+      setErrors({})
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to save'),
   })
+
+  function saveSettings() {
+    const result = projectSettingsSchema.safeParse(form)
+    if (!result.success) {
+      const next: typeof errors = {}
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof ProjectSettingsForm
+        if (!next[key]) next[key] = issue.message
+      }
+      setErrors(next)
+      return
+    }
+    setErrors({})
+    updateMut.mutate(result.data)
+  }
 
   const [showNewKey, setShowNewKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
@@ -162,15 +177,17 @@ export function SettingsPage() {
         <Card>
           <CardContent>
             <FieldGroup>
-              <Field>
+              <Field data-invalid={errors.name ? 'true' : undefined}>
                 <FieldLabel htmlFor="project_name">Project name</FieldLabel>
                 <Input
                   id="project_name"
                   value={form.name}
+                  aria-invalid={errors.name ? true : undefined}
                   onChange={(e) =>
                     setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))
                   }
                 />
+                <FieldError>{errors.name}</FieldError>
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
@@ -251,9 +268,18 @@ export function SettingsPage() {
                 </div>
               </Field>
 
+              <TranslationContextField
+                id="project_translation_context"
+                value={form.translation_context ?? ''}
+                error={errors.translation_context}
+                onChange={(translation_context) =>
+                  setSaveForm((f) => ({ ...(f ?? form), translation_context }))
+                }
+              />
+
               <div className="flex justify-end">
                 <Button
-                  onClick={() => updateMut.mutate(form)}
+                  onClick={saveSettings}
                   disabled={!isDirty || updateMut.isPending}
                 >
                   {updateMut.isPending && <Spinner data-icon="inline-start" />}

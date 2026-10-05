@@ -37,6 +37,7 @@ const sampleModules: Module[] = [
     slug: 'auth',
     name: 'Authentication',
     description: 'Auth related strings',
+    translation_context: 'Use concise labels',
     position: 0,
     string_count: 5,
   },
@@ -93,6 +94,7 @@ describe('ModulesPage', () => {
       slug: 'checkout',
       name: 'Checkout Flow',
       description: null,
+      translation_context: null,
       position: 1,
       string_count: 0,
     })
@@ -116,7 +118,49 @@ describe('ModulesPage', () => {
         slug: 'checkout',
         name: 'Checkout Flow',
         description: '',
+        translation_context: null,
       })
     })
+  })
+
+  it('creates a module with context in the same request', async () => {
+    vi.mocked(modulesApi.create).mockResolvedValue(sampleModules[0])
+    renderWithClient(<ModulesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'New module' }))
+    fireEvent.change(await screen.findByLabelText('Slug'), { target: { value: 'checkout' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Checkout' } })
+    fireEvent.change(screen.getByLabelText('Translation context (optional)'), { target: { value: '  Keep payment terms  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(modulesApi.create).toHaveBeenCalledWith('p1', expect.objectContaining({ translation_context: 'Keep payment terms' })))
+  })
+
+  it('loads and clears module context without changing its description', async () => {
+    vi.mocked(modulesApi.update).mockResolvedValue({ ...sampleModules[0], translation_context: null })
+    renderWithClient(<ModulesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Authentication' }))
+    const input = await screen.findByLabelText('Translation context (optional)') as HTMLTextAreaElement
+    expect(input.value).toBe('Use concise labels')
+    expect(input.maxLength).toBe(500)
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(modulesApi.update).toHaveBeenCalledWith('p1', 'mod-1', expect.objectContaining({
+      description: 'Auth related strings', translation_context: null,
+    })))
+  })
+
+  it('retains module context on save failure and validates oversized input', async () => {
+    vi.mocked(modulesApi.update).mockRejectedValue(new Error('Failed'))
+    renderWithClient(<ModulesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Authentication' }))
+    const input = await screen.findByLabelText('Translation context (optional)') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'x'.repeat(501) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Translation context must be 500 characters or fewer')).toBeTruthy()
+    expect(modulesApi.update).not.toHaveBeenCalled()
+    fireEvent.change(input, { target: { value: 'Keep my edits' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(modulesApi.update).toHaveBeenCalled())
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(input.value).toBe('Keep my edits')
   })
 })

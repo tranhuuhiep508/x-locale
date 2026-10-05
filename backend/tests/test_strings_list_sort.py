@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, event
 
 from alembic import command
@@ -204,7 +205,7 @@ def test_shared_index_migration_upgrade_and_downgrade(tmp_path, monkeypatch, sta
     assert index_count() == 1
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
-            ("m2d49a0b1234",)
+            (ScriptDirectory.from_config(cfg).get_current_head(),)
         ]
 
     command.downgrade(cfg, "m2d49g0b1234")

@@ -241,6 +241,7 @@ export default function StringFormDialog({
       stringsApi.translatePreview(projectId, {
         source_text: sourceText.trim(),
         description: description.trim() || undefined,
+        module_id: moduleId || null,
         locales,
       }),
     onSuccess: (res, { overwrite }) => {

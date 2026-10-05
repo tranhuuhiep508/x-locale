@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.activity import attach_batch
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.models import Job, JobStatus
+from app.models import Job, JobStatus, Module
 from app.schemas import (
     TranslateApplyRequest,
     TranslateApplyResult,
@@ -107,6 +107,7 @@ def translate(
 def translate_preview(
     payload: TranslatePreviewRequest,
     project: ProjectAccess,
+    db: DbSession,
 ) -> TranslatePreviewResult:
     locales = payload.locales or list(project.target_languages)
     allowed = set(project.target_languages)
@@ -115,9 +116,20 @@ def translate_preview(
         if locale not in allowed:
             raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
+    module = None
+    if payload.module_id is not None:
+        module = (
+            db.query(Module)
+            .filter(Module.id == payload.module_id, Module.project_id == project.id)
+            .first()
+        )
+        if module is None:
+            raise HTTPException(status_code=400, detail="Unknown module")
+
     try:
         translations, scores = preview_translations(
-            project.base_language,
+            project,
+            module,
             payload.source_text,
             locales,
             payload.description,
@@ -154,7 +166,7 @@ def translate_proposals(
     locales = payload.locales or list(project.target_languages)
     entries = select_entries(db, project, payload, locales)
     descriptions = parse_descriptions(payload.descriptions)
-    work = count_work(entries, locales, payload.overwrite, descriptions)
+    work = count_work(entries, locales, payload.overwrite)
     entry_ids = [e.id for e in entries]
     desc_payload = serialize_descriptions(descriptions)
 

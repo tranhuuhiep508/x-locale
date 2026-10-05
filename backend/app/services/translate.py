@@ -20,8 +20,9 @@ from app.ai import (
     translate_batch,
 )
 from app.database import SessionLocal
-from app.models import Job, JobStatus, Project, StringEntry, Translation, TranslationStatus
+from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
+from app.services.catalog import owned_module
 from app.services.strings import _missing_locales_clause, filtered_string_query
 
 SYNC_THRESHOLD = 20
@@ -57,7 +58,7 @@ def _load_entries_by_ids(db: Session, ids: list[uuid.UUID]) -> list[StringEntry]
         return []
     entries = (
         db.query(StringEntry)
-        .options(joinedload(StringEntry.translations))
+        .options(joinedload(StringEntry.translations), joinedload(StringEntry.module))
         .filter(StringEntry.id.in_(ids))
         .all()
     )
@@ -145,7 +146,23 @@ def _description_for(
     return entry.description
 
 
+def compose_translation_context(
+    project: Project,
+    module: Module | None,
+    description: str | None,
+) -> str | None:
+    """Compose AI instructions without changing the string's own description."""
+    module = owned_module(project.id, module)
+    parts = (
+        project.translation_context,
+        module.translation_context if module is not None else None,
+        description,
+    )
+    return "\n".join(part.strip() for part in parts if part and part.strip()) or None
+
+
 def work_items(
+    project: Project,
     entries: list[StringEntry],
     locales: list[str],
     overwrite: bool,
@@ -161,7 +178,9 @@ def work_items(
                 id=str(entry.id),
                 source_text=entry.source_text,
                 locales=tuple(needed),
-                context=_description_for(entry, descriptions),
+                context=compose_translation_context(
+                    project, entry.module, _description_for(entry, descriptions)
+                ),
             )
         )
     return items
@@ -171,9 +190,8 @@ def count_work(
     entries: list[StringEntry],
     locales: list[str],
     overwrite: bool,
-    descriptions: dict[uuid.UUID, str] | None = None,
 ) -> int:
-    return len(work_items(entries, locales, overwrite, descriptions))
+    return sum(bool(needed_locales(entry, locales, overwrite)) for entry in entries)
 
 
 def _ensure_translation(db: Session, entry: StringEntry, locale: str) -> Translation:
@@ -213,7 +231,7 @@ def apply_translations(
     locales: list[str],
     overwrite: bool,
 ) -> int:
-    items = work_items(entries, locales, overwrite)
+    items = work_items(project, entries, locales, overwrite)
     if not items:
         return 0
 
@@ -239,19 +257,20 @@ def apply_translations(
 
 
 def preview_translations(
-    source_locale: str,
+    project: Project,
+    module: Module | None,
     source_text: str,
     locales: list[str],
-    context: str | None,
+    description: str | None,
 ) -> tuple[dict[str, str], dict[str, int]]:
     result = translate_batch(
-        source_locale,
+        project.base_language,
         [
             TranslateItem(
                 id="preview",
                 source_text=source_text,
                 locales=tuple(locales),
-                context=context,
+                context=compose_translation_context(project, module, description),
             )
         ],
     )
@@ -351,7 +370,7 @@ def propose_translations(
     descriptions: dict[uuid.UUID, str] | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> list[dict[str, Any]]:
-    items = work_items(entries, locales, overwrite, descriptions)
+    items = work_items(project, entries, locales, overwrite, descriptions)
     if not items:
         return []
 
@@ -458,12 +477,7 @@ def run_translate_job(
             "batch_kind": "translate",
         }
 
-        entries = (
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.translations))
-            .filter(StringEntry.id.in_(entry_ids))
-            .all()
-        )
+        entries = _load_entries_by_ids(db, entry_ids)
         translated = apply_translations(db, project, entries, locales, overwrite)
 
         if job_id:

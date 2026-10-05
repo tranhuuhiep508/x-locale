@@ -6,13 +6,13 @@ from fastapi import APIRouter
 
 from app.auth import ProjectFromApiKey
 from app.database import DbSession
-from app.schemas import ProjectOut
+from app.schemas import ProjectOut, ProjectSummaryOut
 from app.services.projects import to_project_out
 
 router = APIRouter(tags=["bootstrap"])
 
 
-@router.get("/bootstrap", response_model=ProjectOut)
+@router.get("/bootstrap", response_model=ProjectSummaryOut)
 def bootstrap(
     project: ProjectFromApiKey,
     db: DbSession,

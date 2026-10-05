@@ -11,6 +11,32 @@ test.beforeAll(() => {
   resetDemoDatabase()
 })
 
+test('string preview sends the selected module and null after unassigning', async ({ page }) => {
+  await openDemoStrings(page)
+  const projectId = projectIdFromUrl(page)
+  const response = await page.request.get(`/api/projects/${projectId}/modules`)
+  const modules = await response.json() as { id: string; name: string }[]
+  const module = modules[0]
+  await page.getByRole('button', { name: 'Add string', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Add string' })
+  await dialog.getByLabel('Key', { exact: true }).fill('preview_context')
+  await dialog.getByLabel('Source text').fill('Xin chào')
+  await dialog.getByRole('combobox', { name: 'Module' }).click()
+  await page.getByRole('option', { name: module.name, exact: true }).click()
+  const selected = page.waitForResponse((res) => res.url().endsWith('/translate/preview'))
+  await dialog.getByRole('button', { name: 'Auto-translate' }).click()
+  const preview = await selected
+  expect(preview.ok()).toBeTruthy()
+  expect(preview.request().postDataJSON().module_id).toBe(module.id)
+  await dialog.getByRole('combobox', { name: 'Module' }).click()
+  await page.getByRole('option', { name: '— None —', exact: true }).click()
+  const unassigned = page.waitForResponse((res) => res.url().endsWith('/translate/preview'))
+  await dialog.getByRole('button', { name: 'Auto-translate' }).click()
+  const noModule = await unassigned
+  expect(noModule.ok()).toBeTruthy()
+  expect(noModule.request().postDataJSON().module_id).toBeNull()
+})
+
 test('translate missing: paging stays mounted, progress while generating, apply to working copy', async ({
   page,
 }) => {

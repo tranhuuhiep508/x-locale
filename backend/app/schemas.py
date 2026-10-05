@@ -2,7 +2,7 @@ from enum import IntEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models import ProjectLayout, TranslationStatus
 from app.timefmt import UtcDateTime
@@ -30,7 +30,18 @@ class LanguageOut(BaseModel):
 # ── Projects ──────────────────────────────────────────────────────────
 
 
-class ProjectCreate(BaseModel):
+class TranslationContextInput(BaseModel):
+    translation_context: str | None = Field(default=None, max_length=500)
+
+    @field_validator("translation_context")
+    @classmethod
+    def normalize_translation_context(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class ProjectCreate(TranslationContextInput):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, max_length=128)
     base_language: str | None = None
@@ -38,7 +49,7 @@ class ProjectCreate(BaseModel):
     layout: ProjectLayout = ProjectLayout.flat
 
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdate(TranslationContextInput):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     base_language: str | None = None
     target_languages: list[str] | None = None
@@ -47,7 +58,7 @@ class ProjectUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class ProjectOut(BaseModel):
+class ProjectSummaryOut(BaseModel):
     id: UUID
     name: str
     slug: str
@@ -59,6 +70,10 @@ class ProjectOut(BaseModel):
     updated_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ProjectOut(ProjectSummaryOut):
+    translation_context: str | None = Field(default=None, max_length=500)
 
 
 class ApiKeyCreate(BaseModel):
@@ -83,14 +98,14 @@ class ApiKeyCreated(ApiKeyOut):
 # ── Modules ───────────────────────────────────────────────────────────
 
 
-class ModuleCreate(BaseModel):
+class ModuleCreate(TranslationContextInput):
     slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     position: int = 0
 
 
-class ModuleUpdate(BaseModel):
+class ModuleUpdate(TranslationContextInput):
     slug: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]*$")
     name: str | None = None
     description: str | None = None
@@ -102,6 +117,7 @@ class ModuleOut(BaseModel):
     slug: str
     name: str
     description: str | None
+    translation_context: str | None = Field(default=None, max_length=500)
     position: int
     string_count: int = 0
 
@@ -292,6 +308,7 @@ class TranslateResult(BaseModel):
 class TranslatePreviewRequest(BaseModel):
     source_text: str = Field(min_length=1)
     description: str | None = None
+    module_id: UUID | None = None
     locales: list[str] | None = None
 
 

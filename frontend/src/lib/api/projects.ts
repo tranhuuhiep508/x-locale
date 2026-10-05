@@ -3,14 +3,15 @@ import type {
   ApiKey,
   ApiKeyCreated,
   Project,
+  ProjectSummary,
   ProjectCreate,
   ProjectUpdate,
 } from '@/lib/api/types'
 
 export const projectsApi = {
-  list: () => api.get<Project[]>('/projects'),
+  list: () => api.get<ProjectSummary[]>('/projects'),
   get: (id: string) => api.get<Project>(`/projects/${id}`),
-  create: (body: ProjectCreate) => api.post<Project>('/projects', body),
+  create: (body: ProjectCreate) => api.post<ProjectSummary>('/projects', body),
   update: (id: string, body: ProjectUpdate) => api.patch<Project>(`/projects/${id}`, body),
   delete: (id: string) => api.delete(`/projects/${id}`),
   listApiKeys: (id: string) => api.get<ApiKey[]>(`/projects/${id}/api-keys`),

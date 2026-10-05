@@ -19,6 +19,7 @@ def module_out(module: Module, string_count: int) -> ModuleOut:
         slug=module.slug,
         name=module.name,
         description=module.description,
+        translation_context=module.translation_context,
         position=module.position,
         string_count=string_count,
     )
@@ -190,6 +191,7 @@ def create_module(db: Session, project: Project, payload: ModuleCreate) -> Modul
         slug=payload.slug,
         name=payload.name,
         description=payload.description,
+        translation_context=payload.translation_context,
         position=payload.position,
     )
     db.add(module)
@@ -220,6 +222,8 @@ def update_module(
         module.description = payload.description
     if payload.position is not None:
         module.position = payload.position
+    if "translation_context" in payload.model_fields_set:
+        module.translation_context = payload.translation_context
     db.commit()
     db.refresh(module)
     return to_module_out(db, module)

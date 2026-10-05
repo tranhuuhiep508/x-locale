@@ -61,15 +61,32 @@ export const activitySearchSchema = z.object({
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>
 
+const translationContextSchema = z.string()
+  .max(500, 'Translation context must be 500 characters or fewer')
+  .nullable()
+  .optional()
+  .transform((value) => value === undefined ? undefined : value?.trim() || null)
+
 export const projectCreateSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
   slug: z.string().max(128).optional(),
   base_language: z.string().default('en'),
   target_languages: z.array(z.string()).min(1, 'Select at least one target language'),
   layout: z.enum(['flat', 'modular']).default('flat'),
+  translation_context: translationContextSchema,
 })
 
 export type ProjectCreateForm = z.infer<typeof projectCreateSchema>
+
+export const projectSettingsSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255),
+  base_language: z.string(),
+  target_languages: z.array(z.string()),
+  layout: z.enum(['flat', 'modular']),
+  translation_context: translationContextSchema,
+})
+
+export type ProjectSettingsForm = z.infer<typeof projectSettingsSchema>
 
 export const moduleCreateSchema = z.object({
   slug: z
@@ -79,6 +96,7 @@ export const moduleCreateSchema = z.object({
     .regex(/^[a-z][a-z0-9_-]*$/, 'Slug must start with a letter and contain only lowercase letters, numbers, underscores, or hyphens'),
   name: z.string().min(1, 'Name is required').max(255),
   description: z.string().optional(),
+  translation_context: translationContextSchema,
 })
 
 export type ModuleCreateForm = z.infer<typeof moduleCreateSchema>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activitySearchSchema, stringsSearchSchema } from '@/lib/schemas'
+import { activitySearchSchema, moduleCreateSchema, projectCreateSchema, projectSettingsSchema, stringsSearchSchema } from '@/lib/schemas'
 
 describe.each([
   { name: 'strings', schema: stringsSearchSchema, otherFilters: {
@@ -28,5 +28,25 @@ describe.each([
   it('preserves custom date bookmarks when no period is present', () => {
     expect(schema.parse({ ...otherFilters, ...dates, updated_within_days: 30 }))
       .toMatchObject({ ...otherFilters, ...dates, updated_within_days: undefined })
+  })
+})
+
+describe.each([
+  { schema: moduleCreateSchema, form: { slug: 'auth', name: 'Auth' }, name: 'module' },
+  { schema: projectCreateSchema, form: { name: 'Demo', target_languages: ['en'] }, name: 'project creation' },
+  { schema: projectSettingsSchema, form: { name: 'Demo', base_language: 'vi', target_languages: [], layout: 'flat' }, name: 'project settings' },
+])('$name translation context validation', ({ schema, form }) => {
+  it('keeps context optional and normalizes explicit null and blank values', () => {
+    expect(schema.parse(form).translation_context).toBeUndefined()
+    for (const value of [null, '', ' \n\t ']) {
+      expect(schema.parse({ ...form, translation_context: value }).translation_context).toBeNull()
+    }
+    expect(schema.parse({ ...form, translation_context: '  Notes  ' }).translation_context).toBe('Notes')
+  })
+
+  it('accepts 500 characters and validates before trimming', () => {
+    expect(schema.safeParse({ ...form, translation_context: 'x'.repeat(500) }).success).toBe(true)
+    expect(schema.safeParse({ ...form, translation_context: 'x'.repeat(501) }).success).toBe(false)
+    expect(schema.safeParse({ ...form, translation_context: ' '.repeat(501) }).success).toBe(false)
   })
 })

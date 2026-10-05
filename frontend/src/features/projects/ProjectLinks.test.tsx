@@ -49,6 +49,7 @@ const project: Project = {
   string_count: 1,
   created_at: null,
   updated_at: null,
+  translation_context: null,
 }
 
 describe('project links', () => {

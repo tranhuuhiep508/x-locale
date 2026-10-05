@@ -11,6 +11,23 @@ test.beforeAll(() => {
   resetDemoDatabase()
 })
 
+test('settings: save and clear optional translation context across reloads', async ({ page }) => {
+  await openDemoStrings(page)
+  await page.getByRole('link', { name: 'Settings' }).click()
+  const context = page.getByLabel('Translation context (optional)')
+  await expect(context).toHaveAttribute('maxlength', '500')
+  await context.fill('Use a friendly tone and keep product names in English.')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  await page.reload()
+  await expect(context).toHaveValue('Use a friendly tone and keep product names in English.')
+  await context.fill('')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  await page.reload()
+  await expect(context).toHaveValue('')
+})
+
 test('settings: generate API key, show secret once, revoke blocks bootstrap', async ({ page }) => {
   await openDemoStrings(page)
   await page.getByRole('link', { name: 'Settings' }).click()

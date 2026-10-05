@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import MetaData, Table, create_engine, event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.pool import StaticPool
@@ -569,31 +569,31 @@ def test_migration_scrubs_foreign_modules_then_enforces(tmp_path, monkeypatch):
 
     engine = create_engine(url)
     event.listen(engine, "connect", enable_sqlite_foreign_keys)
-    with Session(engine) as db:
-        project_a, _, module_a, module_b = _project_pair(db)
-        db.add(
-            StringEntry(
-                project_id=project_a.id,
-                module_id=module_b.id,
-                published_module_id=module_b.id,
-                key="leak",
-                source_text="Leak",
-                status=TranslationStatus.public,
-            )
-        )
-        db.add(
-            StringEntry(
-                project_id=project_a.id,
-                module_id=module_a.id,
-                key="keep",
-                source_text="Keep",
-                status=TranslationStatus.draft,
-            )
-        )
-        db.commit()
-        project_a_id = project_a.id
-        module_a_id = module_a.id
-        module_b_id = module_b.id
+    # Seed the historical schema through reflected tables, independent of new ORM columns.
+    metadata = MetaData()
+    projects = Table("projects", metadata, autoload_with=engine)
+    modules = Table("modules", metadata, autoload_with=engine)
+    strings = Table("strings", metadata, autoload_with=engine)
+    project_a_id, project_b_id, module_a_id, module_b_id = [uuid.uuid4() for _ in range(4)]
+    with engine.begin() as connection:
+        for pid, name in [(project_a_id, "A"), (project_b_id, "B")]:
+            connection.execute(projects.insert().values(
+                id=pid.hex, name=name, slug=f"project-{name.lower()}",
+                base_language="vi", target_languages=["en"], layout="flat",
+            ))
+        for mid, pid, slug in [(module_a_id, project_a_id, "auth"), (module_b_id, project_b_id, FOREIGN_SLUG)]:
+            connection.execute(modules.insert().values(
+                id=mid.hex, project_id=pid.hex, slug=slug, name=slug, position=0,
+            ))
+        for key, mid, published_mid, status in [
+            ("leak", module_b_id, module_b_id.hex, "public"),
+            ("keep", module_a_id, None, "draft"),
+        ]:
+            connection.execute(strings.insert().values(
+                id=uuid.uuid4().hex, project_id=project_a_id.hex, module_id=mid.hex,
+                published_module_id=published_mid, key=key, source_text=key, status=status,
+                pending_delete=False,
+            ))
 
     command.upgrade(cfg, "head")
 
