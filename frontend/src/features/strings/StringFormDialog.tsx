@@ -372,7 +372,7 @@ export default function StringFormDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="grid gap-6 p-5 md:grid-cols-2 md:gap-8">
+            <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-8">
               <FieldGroup className="gap-4">
                 <Field data-invalid={errors.key ? 'true' : undefined}>
                   <div className="flex items-center gap-1">
@@ -639,7 +639,7 @@ export default function StringFormDialog({
             </div>
           </div>
 
-          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-between">
+          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-between">
             <div>
               {canDiscard ? (
                 <Button
@@ -657,7 +657,7 @@ export default function StringFormDialog({
                 </Button>
               ) : null}
             </div>
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 type="button"

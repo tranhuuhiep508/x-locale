@@ -37,12 +37,12 @@ export function DataTablePagination<TData>({
   const page = pageIndex + 1
 
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1 py-3">
-      <p className="text-sm text-muted-foreground">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1 py-3">
+      {center ? <div className="col-span-2 flex min-w-0 justify-center">{center}</div> : null}
+      <p className="text-sm tabular-nums text-muted-foreground">
         {start}–{end} of {total}
       </p>
-      <div className="flex min-w-0 items-center justify-center">{center}</div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <Select
           value={String(pageSize)}
           onValueChange={(value) => table.setPageSize(Number(value))}

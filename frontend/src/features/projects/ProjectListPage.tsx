@@ -1,11 +1,19 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Layers, Globe, Calendar, Trash2 } from 'lucide-react'
+import { Plus, Layers, Globe, Calendar, Trash2, ArrowUpRight } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { projectsApi } from '@/lib/api/projects'
@@ -36,18 +44,23 @@ export function ProjectListPage() {
 
   return (
     <AppShell>
-      <PageBody contained className="flex flex-col gap-6">
+      <PageBody contained className="flex flex-col gap-8">
         <PageHeader
           eyebrow="Workspace"
           title="Projects"
-          description={`${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+          description="A home for your source strings and translations."
           actions={
-            <Link to="/projects/new">
-              <Button>
-                <Plus data-icon="inline-start" />
-                New project
-              </Button>
-            </Link>
+            <>
+              <Badge variant="secondary">
+                {projects.length} project{projects.length !== 1 ? 's' : ''}
+              </Badge>
+              <Link to="/projects/new">
+                <Button>
+                  <Plus data-icon="inline-start" />
+                  New project
+                </Button>
+              </Link>
+            </>
           }
         />
 
@@ -66,47 +79,57 @@ export function ProjectListPage() {
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
               <Card
                 key={p.id}
-                className="sky-panel group transition-shadow hover:shadow-sm hover:ring-primary/25"
+                className="group transition-shadow hover:shadow-md focus-within:ring-primary/40"
               >
-                <CardContent className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <Link
-                      to="/projects/$projectRef/strings"
-                      params={{ projectRef: p.slug }}
-                      search={{}}
-                      className="min-w-0 flex-1"
-                    >
-                      <h2 className="truncate font-semibold tracking-tight text-foreground group-hover:text-primary">
-                        {p.name}
-                      </h2>
-                      <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                        {p.slug}
-                      </p>
-                    </Link>
+                <CardHeader>
+                  <Link
+                    to="/projects/$projectRef/strings"
+                    params={{ projectRef: p.slug }}
+                    search={{}}
+                    className="flex min-w-0 items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <MarkWell>
+                      <Layers className="size-4" />
+                    </MarkWell>
+                    <div className="min-w-0">
+                      <CardTitle>
+                        <h2 className="truncate">{p.name}</h2>
+                      </CardTitle>
+                      <CardDescription>
+                        <span className="font-mono text-xs">{p.slug}</span>
+                      </CardDescription>
+                    </div>
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="ml-auto size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
+                    />
+                  </Link>
+                  <CardAction>
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      aria-label={`Delete ${p.name}`}
                       onClick={(e) => {
                         e.preventDefault()
                         setDeleteTarget(p)
                       }}
-                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                     >
                       <Trash2 />
                     </Button>
-                  </div>
-
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge className="font-mono">
+                    <Badge variant="secondary">
                       <Globe data-icon="inline-start" />
                       {p.base_language}
                     </Badge>
                     {p.target_languages.slice(0, 3).map((lang) => (
-                      <Badge key={lang} variant="outline" className="font-mono">
+                      <Badge key={lang} variant="outline">
                         {lang}
                       </Badge>
                     ))}
@@ -114,15 +137,21 @@ export function ProjectListPage() {
                       <Badge variant="outline">+{p.target_languages.length - 3}</Badge>
                     )}
                   </div>
-
-                  <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
-                    <span>{p.string_count} strings</span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="size-3" />
+                </CardContent>
+                <CardFooter className="justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    <span className="font-medium tabular-nums text-foreground">
+                      {p.string_count}
+                    </span>{' '}
+                    strings
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Calendar aria-hidden="true" className="size-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
                       {formatDateShort(p.updated_at)}
                     </span>
-                  </div>
-                </CardContent>
+                  </span>
+                </CardFooter>
               </Card>
             ))}
           </div>

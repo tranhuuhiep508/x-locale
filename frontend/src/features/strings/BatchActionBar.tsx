@@ -139,51 +139,53 @@ export function BatchActionBar({
         open ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
-      <div className="flex items-center gap-1 overflow-x-auto">
-        <div className="flex shrink-0 items-center gap-2 px-1">
-          <Badge>{selectedCount}</Badge>
-          <span className="text-sm">selected</span>
-          {busy ? <Spinner aria-hidden="true" className="size-3.5 text-muted-foreground" /> : null}
-        </div>
-        <Separator orientation="vertical" className="mx-0.5 h-5" />
-        <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}
-          count={actions.publish.length} variant="default" onClick={onPublish} />
-        <SelectionActionButton {...common} action="unpublish" label="Unpublish" icon={XCircle}
-          count={actions.unpublish.length} onClick={onUnpublish} />
-
-        {modules.length > 0 || tags.length > 0 ? (
+      <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+          <div className="flex shrink-0 items-center gap-2 px-1">
+            <Badge>{selectedCount}</Badge>
+            <span className="text-sm">selected</span>
+            {busy ? <Spinner aria-hidden="true" className="size-3.5 text-muted-foreground" /> : null}
+          </div>
           <Separator orientation="vertical" className="mx-0.5 h-5" />
-        ) : null}
-        {modules.length > 0 ? (
-          <SelectionActionButton {...common} action="move_module" label="Move" icon={MoveRight}
-            count={actions.move_module.length} onClick={onMove} />
-        ) : null}
-        {tags.length > 0 ? (
-          <SelectionActionButton {...common} action="add_tags" label="Tags" icon={TagIcon}
-            count={actions.add_tags.length} onClick={onAddTags} />
-        ) : null}
+          <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}
+            count={actions.publish.length} variant="default" onClick={onPublish} />
+          <SelectionActionButton {...common} action="unpublish" label="Unpublish" icon={XCircle}
+            count={actions.unpublish.length} onClick={onUnpublish} />
 
-        {showRecovery ? <Separator orientation="vertical" className="mx-0.5 h-5" /> : null}
-        {actions.discard_changes.length > 0 ? (
-          <SelectionActionButton {...common} action="discard_changes" label="Discard changes" icon={Undo2}
-            count={actions.discard_changes.length} onClick={onDiscardChanges} />
-        ) : null}
-        {actions.discard_delete.length > 0 ? (
-          <SelectionActionButton {...common} action="discard_delete" label="Discard delete" icon={RotateCcw}
-            count={actions.discard_delete.length} onClick={onDiscardDelete} />
-        ) : null}
-        {actions.restore.length > 0 ? (
-          <SelectionActionButton {...common} action="restore" label="Restore" icon={RotateCcw}
-            count={actions.restore.length} onClick={onRestore} />
-        ) : null}
-        {actions.restore_last_history.length > 0 ? (
-          <SelectionActionButton {...common} action="restore_last_history" label="Restore last edit" icon={History}
-            count={actions.restore_last_history.length} onClick={onRestoreLastEdit} />
-        ) : null}
+          {modules.length > 0 || tags.length > 0 ? (
+            <Separator orientation="vertical" className="mx-0.5 h-5" />
+          ) : null}
+          {modules.length > 0 ? (
+            <SelectionActionButton {...common} action="move_module" label="Move" icon={MoveRight}
+              count={actions.move_module.length} onClick={onMove} />
+          ) : null}
+          {tags.length > 0 ? (
+            <SelectionActionButton {...common} action="add_tags" label="Tags" icon={TagIcon}
+              count={actions.add_tags.length} onClick={onAddTags} />
+          ) : null}
 
-        <Separator orientation="vertical" className="mx-0.5 h-5" />
-        <SelectionActionButton {...common} action="delete" label="Delete" icon={Trash2}
-          count={actions.delete.length} variant="destructive" onClick={onDelete} />
+          {showRecovery ? <Separator orientation="vertical" className="mx-0.5 h-5" /> : null}
+          {actions.discard_changes.length > 0 ? (
+            <SelectionActionButton {...common} action="discard_changes" label="Discard changes" icon={Undo2}
+              count={actions.discard_changes.length} onClick={onDiscardChanges} />
+          ) : null}
+          {actions.discard_delete.length > 0 ? (
+            <SelectionActionButton {...common} action="discard_delete" label="Discard delete" icon={RotateCcw}
+              count={actions.discard_delete.length} onClick={onDiscardDelete} />
+          ) : null}
+          {actions.restore.length > 0 ? (
+            <SelectionActionButton {...common} action="restore" label="Restore" icon={RotateCcw}
+              count={actions.restore.length} onClick={onRestore} />
+          ) : null}
+          {actions.restore_last_history.length > 0 ? (
+            <SelectionActionButton {...common} action="restore_last_history" label="Restore last edit" icon={History}
+              count={actions.restore_last_history.length} onClick={onRestoreLastEdit} />
+          ) : null}
+
+          <Separator orientation="vertical" className="mx-0.5 h-5" />
+          <SelectionActionButton {...common} action="delete" label="Delete" icon={Trash2}
+            count={actions.delete.length} variant="destructive" onClick={onDelete} />
+        </div>
         <Button variant="ghost" size="icon-sm" disabled={pending}
           aria-label="Clear selection" onClick={onClear}>
           <X />

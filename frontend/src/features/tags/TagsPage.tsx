@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-table'
 import { Plus, Tags as TagsIcon } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { tagsApi } from '@/lib/api/catalog'
@@ -20,15 +21,19 @@ import { tagCreateSchema } from '@/lib/schemas'
 import type { TagCreateForm } from '@/lib/schemas'
 import { TagFormFields } from '@/features/catalog/TagFormFields'
 import { Button } from '@/components/ui/button'
-import { FieldGroup } from '@/components/ui/field'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import {
+  ReviewDialogBody,
+  ReviewDialogContent,
+  ReviewDialogFooter,
+  ReviewDialogHeader,
+} from '@/components/layout/ReviewDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { tagColumns } from '@/features/tags/tags-columns'
 const routeApi = getRouteApi('/projects/$projectRef/tags')
-
 
 type FormErrors = Partial<Record<keyof TagCreateForm, string>>
 
@@ -54,8 +59,7 @@ export function TagsPage() {
   }
 
   const createMut = useMutation({
-    mutationFn: (data: TagCreateForm) =>
-      tagsApi.create(projectId, data),
+    mutationFn: (data: TagCreateForm) => tagsApi.create(projectId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.tags(projectId) })
       toast.success('Tag created')
@@ -130,22 +134,36 @@ export function TagsPage() {
   })
 
   return (
-    <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Tags</h1>
-        <Button size="sm" onClick={() => { resetForm(); setShowCreate(true) }}>
-          <Plus data-icon="inline-start" />
-          New tag
-        </Button>
-      </div>
+    <PageBody>
+      <PageHeader
+        title="Tags"
+        description="Label strings to keep your catalog easy to navigate."
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              resetForm()
+              setShowCreate(true)
+            }}
+          >
+            <Plus data-icon="inline-start" />
+            New tag
+          </Button>
+        }
+      />
 
       {isLoading ? null : tags.length === 0 ? (
         <EmptyState
-          icon={<TagsIcon className="h-10 w-10" />}
+          icon={<TagsIcon />}
           title="No tags yet"
           description="Tags help categorize and filter strings."
           action={
-            <Button onClick={() => { resetForm(); setShowCreate(true) }}>
+            <Button
+              onClick={() => {
+                resetForm()
+                setShowCreate(true)
+              }}
+            >
               <Plus data-icon="inline-start" />
               Create tag
             </Button>
@@ -173,31 +191,36 @@ export function TagsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <ReviewDialogContent className="sm:max-w-md">
+          <ReviewDialogHeader>
             <DialogTitle>{editTarget ? 'Edit tag' : 'New tag'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <FieldGroup>
+            <DialogDescription>Choose a label and color for your strings.</DialogDescription>
+          </ReviewDialogHeader>
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <ReviewDialogBody>
               <TagFormFields form={form} errors={errors} onChange={setForm} />
-              <DialogFooter className="mt-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
-                  {(createMut.isPending || updateMut.isPending) && (
-                    <Spinner data-icon="inline-start" />
-                  )}
-                  {editTarget ? 'Save' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </FieldGroup>
+            </ReviewDialogBody>
+            <ReviewDialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  setShowCreate(false)
+                  setEditTarget(null)
+                  resetForm()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+                {(createMut.isPending || updateMut.isPending) && (
+                  <Spinner data-icon="inline-start" />
+                )}
+                {editTarget ? 'Save' : 'Create'}
+              </Button>
+            </ReviewDialogFooter>
           </form>
-        </DialogContent>
+        </ReviewDialogContent>
       </Dialog>
 
       <ConfirmDialog
@@ -209,6 +232,6 @@ export function TagsPage() {
         confirmLabel="Delete tag"
         isLoading={deleteMut.isPending}
       />
-    </div>
+    </PageBody>
   )
 }

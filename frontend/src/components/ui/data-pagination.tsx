@@ -32,6 +32,7 @@ export function DataPagination({
         <Button
           variant="outline"
           size="icon-sm"
+          aria-label="Previous page"
           disabled={disabled || page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
@@ -43,6 +44,7 @@ export function DataPagination({
         <Button
           variant="outline"
           size="icon-sm"
+          aria-label="Next page"
           disabled={disabled || page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >

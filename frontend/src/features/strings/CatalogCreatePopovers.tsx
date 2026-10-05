@@ -23,7 +23,12 @@ import { nextTagColor } from './catalog-create'
 type ModuleErrors = Partial<Record<keyof ModuleCreateForm, string>>
 type TagErrors = Partial<Record<keyof TagCreateForm, string>>
 
-const EMPTY_MODULE_FORM: ModuleCreateForm = { slug: '', name: '', description: '', translation_context: '' }
+const EMPTY_MODULE_FORM: ModuleCreateForm = {
+  slug: '',
+  name: '',
+  description: '',
+  translation_context: '',
+}
 
 function CreateModuleForm({
   projectId,
@@ -43,7 +48,7 @@ function CreateModuleForm({
     mutationFn: (data: ModuleCreateForm) => modulesApi.create(projectId, data),
     onSuccess: (created) => {
       qc.setQueryData<Module[]>(queryKeys.projects.modules(projectId), (old) =>
-        old ? [...old, created] : [created],
+        old ? [...old, created] : [created]
       )
       void qc.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
       toast.success('Module created')
@@ -78,14 +83,16 @@ function CreateModuleForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <ModuleFormFields
-        form={form}
-        errors={errors}
-        onChange={setForm}
-        idPrefix="popover-module"
-      />
-      <div className="mt-4 flex justify-end gap-2">
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <ModuleFormFields
+          form={form}
+          errors={errors}
+          onChange={setForm}
+          idPrefix="popover-module"
+        />
+      </div>
+      <div className="flex shrink-0 justify-end gap-2 border-t pt-3">
         <Button variant="outline" type="button" onClick={onCancel} disabled={createMut.isPending}>
           Cancel
         </Button>
@@ -121,7 +128,7 @@ function CreateTagForm({
     mutationFn: (data: TagCreateForm) => tagsApi.create(projectId, data),
     onSuccess: (created) => {
       qc.setQueryData<Tag[]>(queryKeys.projects.tags(projectId), (old) =>
-        old ? [...old, created] : [created],
+        old ? [...old, created] : [created]
       )
       void qc.invalidateQueries({ queryKey: queryKeys.projects.tags(projectId) })
       toast.success('Tag created')
@@ -156,9 +163,11 @@ function CreateTagForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <TagFormFields form={form} errors={errors} onChange={setForm} idPrefix="popover-tag" />
-      <div className="mt-4 flex justify-end gap-2">
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <TagFormFields form={form} errors={errors} onChange={setForm} idPrefix="popover-tag" />
+      </div>
+      <div className="flex shrink-0 justify-end gap-2 border-t pt-3">
         <Button variant="outline" type="button" onClick={onCancel} disabled={createMut.isPending}>
           Cancel
         </Button>
@@ -195,8 +204,11 @@ export function CreateModulePopover({
           New
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(100vw-2rem,28rem)] p-4" align="end">
-        <PopoverHeader className="mb-3">
+      <PopoverContent
+        className="max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-2rem))] w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-4"
+        align="end"
+      >
+        <PopoverHeader className="shrink-0">
           <PopoverTitle>New module</PopoverTitle>
         </PopoverHeader>
         <CreateModuleForm
@@ -238,8 +250,11 @@ export function CreateTagPopover({
           New
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(100vw-2rem,28rem)] p-4" align="end">
-        <PopoverHeader className="mb-3">
+      <PopoverContent
+        className="max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-2rem))] w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-4"
+        align="end"
+      >
+        <PopoverHeader className="shrink-0">
           <PopoverTitle>New tag</PopoverTitle>
         </PopoverHeader>
         <CreateTagForm

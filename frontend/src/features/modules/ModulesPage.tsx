@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-table'
 import { Plus, Boxes } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
+import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { modulesApi } from '@/lib/api/catalog'
@@ -20,15 +21,19 @@ import { moduleCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm } from '@/lib/schemas'
 import { ModuleFormFields } from '@/features/catalog/ModuleFormFields'
 import { Button } from '@/components/ui/button'
-import { FieldGroup } from '@/components/ui/field'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import {
+  ReviewDialogBody,
+  ReviewDialogContent,
+  ReviewDialogFooter,
+  ReviewDialogHeader,
+} from '@/components/layout/ReviewDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { moduleColumns } from '@/features/modules/modules-columns'
 const routeApi = getRouteApi('/projects/$projectRef/modules')
-
 
 type FormErrors = Partial<Record<keyof ModuleCreateForm, string>>
 
@@ -45,7 +50,12 @@ export function ModulesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Module | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Module | null>(null)
-  const [form, setForm] = useState<ModuleCreateForm>({ slug: '', name: '', description: '', translation_context: '' })
+  const [form, setForm] = useState<ModuleCreateForm>({
+    slug: '',
+    name: '',
+    description: '',
+    translation_context: '',
+  })
   const [errors, setErrors] = useState<FormErrors>({})
 
   function resetForm() {
@@ -54,8 +64,7 @@ export function ModulesPage() {
   }
 
   const createMut = useMutation({
-    mutationFn: (data: ModuleCreateForm) =>
-      modulesApi.create(projectId, data),
+    mutationFn: (data: ModuleCreateForm) => modulesApi.create(projectId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
       toast.success('Module created')
@@ -135,22 +144,36 @@ export function ModulesPage() {
   })
 
   return (
-    <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Modules</h1>
-        <Button size="sm" onClick={() => { resetForm(); setShowCreate(true) }}>
-          <Plus data-icon="inline-start" />
-          New module
-        </Button>
-      </div>
+    <PageBody>
+      <PageHeader
+        title="Modules"
+        description="Group related strings and share translation context."
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              resetForm()
+              setShowCreate(true)
+            }}
+          >
+            <Plus data-icon="inline-start" />
+            New module
+          </Button>
+        }
+      />
 
       {isLoading ? null : modules.length === 0 ? (
         <EmptyState
-          icon={<Boxes className="h-10 w-10" />}
+          icon={<Boxes />}
           title="No modules yet"
           description="Modules group related strings together."
           action={
-            <Button onClick={() => { resetForm(); setShowCreate(true) }}>
+            <Button
+              onClick={() => {
+                resetForm()
+                setShowCreate(true)
+              }}
+            >
               <Plus data-icon="inline-start" />
               Create module
             </Button>
@@ -179,36 +202,41 @@ export function ModulesPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <ReviewDialogContent className="sm:max-w-md">
+          <ReviewDialogHeader>
             <DialogTitle>{editTarget ? 'Edit module' : 'New module'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <FieldGroup>
+            <DialogDescription>Group strings and guide their translations.</DialogDescription>
+          </ReviewDialogHeader>
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <ReviewDialogBody>
               <ModuleFormFields
                 form={form}
                 errors={errors}
                 onChange={setForm}
                 slugDisabled={!!editTarget}
               />
-              <DialogFooter className="mt-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => { setShowCreate(false); setEditTarget(null); resetForm() }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
-                  {(createMut.isPending || updateMut.isPending) && (
-                    <Spinner data-icon="inline-start" />
-                  )}
-                  {editTarget ? 'Save' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </FieldGroup>
+            </ReviewDialogBody>
+            <ReviewDialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  setShowCreate(false)
+                  setEditTarget(null)
+                  resetForm()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMut.isPending || updateMut.isPending}>
+                {(createMut.isPending || updateMut.isPending) && (
+                  <Spinner data-icon="inline-start" />
+                )}
+                {editTarget ? 'Save' : 'Create'}
+              </Button>
+            </ReviewDialogFooter>
           </form>
-        </DialogContent>
+        </ReviewDialogContent>
       </Dialog>
 
       <ConfirmDialog
@@ -220,6 +248,6 @@ export function ModulesPage() {
         confirmLabel="Delete module"
         isLoading={deleteMut.isPending}
       />
-    </div>
+    </PageBody>
   )
 }

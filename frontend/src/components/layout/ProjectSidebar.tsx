@@ -15,6 +15,7 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -39,7 +40,7 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="gap-4 px-3 py-4 group-data-[collapsible=icon]:px-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="All projects">
@@ -50,20 +51,21 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="px-2 py-1 group-data-[collapsible=icon]:hidden">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <div className="px-2 py-2 group-data-[collapsible=icon]:hidden">
+          <p className="eyebrow">
             Project
           </p>
-          <h2 className="mt-0.5 truncate text-sm font-semibold" title={project.name}>
+          <h2 className="mt-2 truncate text-base font-semibold tracking-tight" title={project.name}>
             {project.name}
           </h2>
-          <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
             {project.slug}
           </p>
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="px-3 group-data-[collapsible=icon]:px-2">
+          <SidebarGroupLabel>Catalog</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -114,6 +116,13 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup className="px-3 group-data-[collapsible=icon]:px-2">
+          <SidebarGroupLabel>Project</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

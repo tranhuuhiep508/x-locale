@@ -27,6 +27,7 @@ vi.mock('@/components/ui/sidebar', () => {
     SidebarContent: Wrapper,
     SidebarGroup: Wrapper,
     SidebarGroupContent: Wrapper,
+    SidebarGroupLabel: Wrapper,
     SidebarHeader: Wrapper,
     SidebarMenu: Wrapper,
     SidebarMenuButton: Wrapper,

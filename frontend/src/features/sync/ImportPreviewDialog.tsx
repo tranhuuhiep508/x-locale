@@ -1,19 +1,14 @@
+import {
+  ReviewDialogBody,
+  ReviewDialogContent,
+  ReviewDialogFooter,
+  ReviewDialogHeader,
+} from '@/components/layout/ReviewDialog'
 import type { ImportDiffItem, ImportResult } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
 
 function SampleList({
   label,
@@ -28,31 +23,29 @@ function SampleList({
 }) {
   if (total === 0) return null
   return (
-    <div>
-      <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="flex max-h-28 flex-col gap-0.5 overflow-y-auto">
+    <section className="min-w-0" aria-label={label}>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
+        <Badge variant="secondary">{total}</Badge>
+      </div>
+      <ul className="flex max-h-40 flex-col divide-y overflow-y-auto rounded-lg border">
         {items.map((item) => (
-          <Tooltip key={item.key}>
-            <TooltipTrigger asChild>
-              <code className="flex min-w-0 items-baseline gap-2 rounded bg-muted px-2 py-0.5 text-xs text-foreground">
-                <span className="shrink-0">
-                  {prefix} {item.key}
-                </span>
-                <span className="min-w-0 truncate text-muted-foreground">
-                  {item.source_text}
-                </span>
-              </code>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap break-words">
-              {item.source_text}
-            </TooltipContent>
-          </Tooltip>
+          <li key={item.key} className="flex min-w-0 flex-col gap-1 px-3 py-2.5">
+            <code className="text-xs break-all" translate="no">
+              {prefix} {item.key}
+            </code>
+            <p className="text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+              {item.source_text || 'empty'}
+            </p>
+          </li>
         ))}
         {total > items.length ? (
-          <p className="text-xs text-muted-foreground">and {total - items.length} more…</p>
+          <li className="px-3 py-2 text-xs text-muted-foreground">
+            and {total - items.length} more…
+          </li>
         ) : null}
-      </div>
-    </div>
+      </ul>
+    </section>
   )
 }
 
@@ -60,18 +53,18 @@ export function ImportPreviewSummary({ result }: { result: ImportResult | null }
   const diff = result?.diff
   if (!diff) return null
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-3 gap-2 text-center">
+    <div className="flex min-w-0 flex-col gap-5">
+      <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
         <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-bold text-foreground">{diff.create_count}</p>
+          <p className="text-2xl font-semibold text-foreground">{diff.create_count}</p>
           <p className="text-xs text-muted-foreground">New strings</p>
         </div>
         <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-bold text-foreground">{diff.update_count}</p>
+          <p className="text-2xl font-semibold text-foreground">{diff.update_count}</p>
           <p className="text-xs text-muted-foreground">Updated</p>
         </div>
         <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-bold text-foreground">{diff.orphan_count}</p>
+          <p className="text-2xl font-semibold text-foreground">{diff.orphan_count}</p>
           <p className="text-xs text-muted-foreground">Orphaned</p>
         </div>
       </div>
@@ -120,14 +113,21 @@ export function ImportPreviewDialog({
   const canApply = Boolean(diff) && !applyDisabled && !pending
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next && !pending) onCancel() }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !pending) onCancel()
+      }}
+    >
+      <ReviewDialogContent className="sm:max-w-lg">
+        <ReviewDialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <ImportPreviewSummary result={result} />
-        <DialogFooter>
+        </ReviewDialogHeader>
+        <ReviewDialogBody>
+          <ImportPreviewSummary result={result} />
+        </ReviewDialogBody>
+        <ReviewDialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={pending}>
             Cancel
           </Button>
@@ -135,8 +135,8 @@ export function ImportPreviewDialog({
             {pending ? <Spinner data-icon="inline-start" /> : null}
             {applyLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </ReviewDialogFooter>
+      </ReviewDialogContent>
     </Dialog>
   )
 }

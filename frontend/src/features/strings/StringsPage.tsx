@@ -21,6 +21,7 @@ import {
 } from '@tanstack/react-table'
 import { ListPlus, Plus, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options'
 import { catalogEmptyCopy } from '@/features/strings/batch-filter'
@@ -540,31 +541,12 @@ export function StringsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 px-5 py-3">
-        <StringsFilters
-          search={search}
-          searchInput={searchInput}
-          modules={modules}
-          tags={tags}
-          locales={locales}
-          onSearchInputChange={setSearchInput}
-          onFilter={setFilter}
-          onReviewPublish={
-            search.has_unpublished_changes ? openReviewPublishPreview : undefined
-          }
-          onClear={() => {
-            setSearchInput('')
-            navigate({
-              search: {
-                page: 1,
-                page_size: search.page_size,
-                sort: rawSearch.sort,
-                order: rawSearch.order,
-              },
-            })
-          }}
+      <div className="flex shrink-0 flex-col gap-5 border-b px-4 py-5 sm:px-6">
+        <PageHeader
+          title="Strings"
+          description={`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
           actions={
-            <>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               <DataTableViewOptions table={table} />
               <Button
                 size="sm"
@@ -596,12 +578,35 @@ export function StringsPage() {
                 <Plus data-icon="inline-start" />
                 Add string
               </Button>
-            </>
+            </div>
           }
+        />
+        <StringsFilters
+          search={search}
+          searchInput={searchInput}
+          modules={modules}
+          tags={tags}
+          locales={locales}
+          onSearchInputChange={setSearchInput}
+          onFilter={setFilter}
+          onReviewPublish={
+            search.has_unpublished_changes ? openReviewPublishPreview : undefined
+          }
+          onClear={() => {
+            setSearchInput('')
+            navigate({
+              search: {
+                page: 1,
+                page_size: search.page_size,
+                sort: rawSearch.sort,
+                order: rawSearch.order,
+              },
+            })
+          }}
         />
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 bg-card">
         {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner />
@@ -647,27 +652,29 @@ export function StringsPage() {
           <DataTablePagination
             table={table}
             center={
-              <BatchActionBar
-                selectedCount={selectedCount}
-                visible={selectedCount > 0}
-                pending={batchMut.isPending}
-                actions={actionIds}
-                checking={selection.checking}
-                selectionError={selection.error}
-                onRetry={() => { void selection.retry() }}
-                modules={modules}
-                tags={tags}
-                onPublish={() => openSelectedPublishPreview()}
-                onUnpublish={() => setUnpublishConfirm(true)}
-                onMove={() => setShowMoveModule(true)}
-                onAddTags={() => setShowAddTags(true)}
-                onDelete={() => setDeleteConfirm(true)}
-                onDiscardChanges={() => runSelectedAction('discard_changes')}
-                onDiscardDelete={() => runSelectedAction('discard_delete')}
-                onRestore={() => runSelectedAction('restore')}
-                onRestoreLastEdit={() => setRestoreLastConfirm(true)}
-                onClear={() => setRowSelection({})}
-              />
+              selectedCount > 0 ? (
+                <BatchActionBar
+                  selectedCount={selectedCount}
+                  visible={selectedCount > 0}
+                  pending={batchMut.isPending}
+                  actions={actionIds}
+                  checking={selection.checking}
+                  selectionError={selection.error}
+                  onRetry={() => { void selection.retry() }}
+                  modules={modules}
+                  tags={tags}
+                  onPublish={() => openSelectedPublishPreview()}
+                  onUnpublish={() => setUnpublishConfirm(true)}
+                  onMove={() => setShowMoveModule(true)}
+                  onAddTags={() => setShowAddTags(true)}
+                  onDelete={() => setDeleteConfirm(true)}
+                  onDiscardChanges={() => runSelectedAction('discard_changes')}
+                  onDiscardDelete={() => runSelectedAction('discard_delete')}
+                  onRestore={() => runSelectedAction('restore')}
+                  onRestoreLastEdit={() => setRestoreLastConfirm(true)}
+                  onClear={() => setRowSelection({})}
+                />
+              ) : undefined
             }
           />
         </div>
