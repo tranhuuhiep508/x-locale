@@ -71,6 +71,22 @@ export const projectCreateSchema = z.object({
 
 export type ProjectCreateForm = z.infer<typeof projectCreateSchema>
 
+const translationContextSchema = z.string()
+  .max(500, 'Translation context must be 500 characters or fewer')
+  .nullable()
+  .optional()
+  .transform((value) => value === undefined ? undefined : value?.trim() || null)
+
+export const projectSettingsSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255),
+  base_language: z.string(),
+  target_languages: z.array(z.string()),
+  layout: z.enum(['flat', 'modular']),
+  translation_context: translationContextSchema,
+})
+
+export type ProjectSettingsForm = z.infer<typeof projectSettingsSchema>
+
 export const moduleCreateSchema = z.object({
   slug: z
     .string()
@@ -79,6 +95,7 @@ export const moduleCreateSchema = z.object({
     .regex(/^[a-z][a-z0-9_-]*$/, 'Slug must start with a letter and contain only lowercase letters, numbers, underscores, or hyphens'),
   name: z.string().min(1, 'Name is required').max(255),
   description: z.string().optional(),
+  translation_context: translationContextSchema,
 })
 
 export type ModuleCreateForm = z.infer<typeof moduleCreateSchema>

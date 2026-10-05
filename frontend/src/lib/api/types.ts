@@ -18,7 +18,7 @@ export interface Language {
 }
 
 // ── Projects ───────────────────────────────────────────────────────────
-export interface Project {
+export interface ProjectSummary {
   id: string
   name: string
   slug: string
@@ -28,6 +28,10 @@ export interface Project {
   string_count: number
   created_at: string | null
   updated_at: string | null
+}
+
+export interface Project extends ProjectSummary {
+  translation_context: string | null
 }
 
 export interface ProjectCreate {
@@ -43,6 +47,7 @@ export interface ProjectUpdate {
   base_language?: string
   target_languages?: string[]
   layout?: ProjectLayout
+  translation_context?: string | null
 }
 
 // ── API Keys ───────────────────────────────────────────────────────────
@@ -65,6 +70,7 @@ export interface Module {
   slug: string
   name: string
   description: string | null
+  translation_context: string | null
   position: number
   string_count: number
 }
@@ -73,6 +79,7 @@ export interface ModuleCreate {
   slug: string
   name: string
   description?: string
+  translation_context?: string | null
   position?: number
 }
 
@@ -80,6 +87,7 @@ export interface ModuleUpdate {
   slug?: string
   name?: string
   description?: string
+  translation_context?: string | null
   position?: number
 }
 
@@ -247,6 +255,7 @@ export interface TranslateResult {
 export interface TranslatePreviewRequest {
   source_text: string
   description?: string
+  module_id?: string | null
   locales?: string[]
 }
 

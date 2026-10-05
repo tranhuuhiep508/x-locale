@@ -36,6 +36,7 @@ const createdModule: Module = {
   slug: 'auth',
   name: 'Auth',
   description: null,
+  translation_context: null,
   position: 0,
   string_count: 0,
 }
@@ -108,6 +109,7 @@ describe('StringFormDialog inline catalog create', () => {
     vi.mocked(modulesApi.create).mockReset().mockResolvedValue(createdModule)
     vi.mocked(tagsApi.create).mockReset().mockResolvedValue(createdTag)
     vi.mocked(stringsApi.create).mockReset().mockResolvedValue({} as never)
+    vi.mocked(stringsApi.translatePreview).mockReset().mockResolvedValue({ translations: { en: 'Hello' }, scores: {} })
   })
 
   it('keeps Add string open and selects a module created from New', async () => {
@@ -119,6 +121,7 @@ describe('StringFormDialog inline catalog create', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'New' })[0])
     fireEvent.change(await screen.findByLabelText('Slug'), { target: { value: 'auth' } })
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Auth' } })
+    fireEvent.change(screen.getByLabelText('Translation context (optional)'), { target: { value: 'Use product terms' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {
@@ -126,6 +129,7 @@ describe('StringFormDialog inline catalog create', () => {
         slug: 'auth',
         name: 'Auth',
         description: '',
+        translation_context: 'Use product terms',
       })
     })
     await waitFor(() => {
@@ -140,6 +144,10 @@ describe('StringFormDialog inline catalog create', () => {
     await waitFor(() => {
       expect(screen.getByRole('combobox').textContent).toContain('Auth')
     })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Create string' }) as HTMLButtonElement).disabled).toBe(false))
 
     fireEvent.click(screen.getByRole('button', { name: 'Create string' }))
     await waitFor(() => {
@@ -157,6 +165,22 @@ describe('StringFormDialog inline catalog create', () => {
     document.body.focus()
     fireEvent.focusIn(document.body)
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('previews with the current module selection and explicit null when unassigned', async () => {
+    renderDialog({ modules: [createdModule] })
+    fireEvent.change(screen.getByLabelText('Key'), { target: { value: 'greeting' } })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Hello' } })
+    fireEvent.click(screen.getByLabelText('Module'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Auth' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenLastCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Auto-translate' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByLabelText('Module'))
+    fireEvent.click(await screen.findByRole('option', { name: '— None —' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenLastCalledWith('proj-1', expect.objectContaining({ module_id: null })))
+    expect(stringsApi.create).not.toHaveBeenCalled()
   })
 
   it('keeps Add string open and selects a tag created from New', async () => {

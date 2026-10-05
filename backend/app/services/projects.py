@@ -26,6 +26,7 @@ def project_out(project: Project, string_count: int) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         name=project.name,
+        translation_context=project.translation_context,
         slug=project.slug,
         base_language=project.base_language,
         target_languages=project.target_languages or [],
@@ -135,6 +136,8 @@ def update_project(db: Session, project_id: uuid.UUID, payload: ProjectUpdate) -
         project.target_languages = target_langs
     if payload.layout is not None:
         project.layout = payload.layout
+    if "translation_context" in payload.model_fields_set:
+        project.translation_context = payload.translation_context
     db.commit()
     db.refresh(project)
     return to_project_out(db, project)

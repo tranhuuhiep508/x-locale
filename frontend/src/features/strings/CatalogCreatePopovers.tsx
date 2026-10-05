@@ -23,7 +23,7 @@ import { nextTagColor } from './catalog-create'
 type ModuleErrors = Partial<Record<keyof ModuleCreateForm, string>>
 type TagErrors = Partial<Record<keyof TagCreateForm, string>>
 
-const EMPTY_MODULE_FORM: ModuleCreateForm = { slug: '', name: '', description: '' }
+const EMPTY_MODULE_FORM: ModuleCreateForm = { slug: '', name: '', description: '', translation_context: '' }
 
 function CreateModuleForm({
   projectId,

@@ -23,12 +23,26 @@ test('manage modules: create module and view in table', async ({ page }) => {
 
   await dialog.getByLabel('Slug').fill(moduleSlug)
   await dialog.getByLabel('Name').fill(moduleName)
+  await dialog.getByLabel('Description (optional)', { exact: true }).fill('Catalog grouping description')
+  await dialog.getByLabel('Translation context (optional)').fill('Use concise navigation labels')
   await dialog.getByRole('button', { name: 'Create' }).click()
   await expect(dialog).toBeHidden()
 
   await page.getByPlaceholder('Search modules…').fill(moduleSlug)
   await expect(page.getByRole('row').filter({ hasText: moduleName })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: moduleSlug })).toBeVisible()
+
+  await page.getByRole('button', { name: `Edit ${moduleName}` }).click()
+  const edit = page.getByRole('dialog').filter({ hasText: 'Edit module' })
+  await expect(edit.getByLabel('Translation context (optional)')).toHaveValue('Use concise navigation labels')
+  await expect(edit.getByLabel('Description (optional)', { exact: true })).toHaveValue('Catalog grouping description')
+  await edit.getByLabel('Translation context (optional)').fill('')
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(edit).toBeHidden()
+  await page.reload()
+  await page.getByRole('button', { name: `Edit ${moduleName}` }).click()
+  await expect(edit.getByLabel('Translation context (optional)')).toHaveValue('')
+  await expect(edit.getByLabel('Description (optional)', { exact: true })).toHaveValue('Catalog grouping description')
 })
 
 test('manage tags: create tag and view in table', async ({ page }) => {

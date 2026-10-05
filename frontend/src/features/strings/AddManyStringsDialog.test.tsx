@@ -35,10 +35,11 @@ const project: Project = {
   string_count: 10,
   created_at: null,
   updated_at: null,
+  translation_context: null,
 }
 
 const modules: Module[] = [
-  { id: 'mod-common', slug: 'common', name: 'Common', description: null, position: 0, string_count: 4 },
+  { id: 'mod-common', slug: 'common', name: 'Common', description: null, translation_context: null, position: 0, string_count: 4 },
 ]
 
 const tags: Tag[] = [{ id: 'tag-ios', name: 'ios', color: '#2563eb', string_count: 0 }]

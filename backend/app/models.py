@@ -96,6 +96,7 @@ class Project(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     base_language: Mapped[str] = mapped_column(String(10), nullable=False, default="vi")
     target_languages: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -161,6 +162,7 @@ class Module(Base):
     slug: Mapped[str] = mapped_column(String(128), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -17,6 +17,7 @@ from app.schemas import (
     ApiKeyOut,
     ProjectCreate,
     ProjectOut,
+    ProjectSummaryOut,
     ProjectUpdate,
 )
 from app.services import projects as projects_service
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 ProjectRef = Annotated[str, Path(description="Project UUID or immutable slug")]
 
 
-@router.get("", response_model=list[ProjectOut])
+@router.get("", response_model=list[ProjectSummaryOut])
 def list_projects(
     user: CurrentUser,
     db: DbSession,
@@ -33,7 +34,7 @@ def list_projects(
     return projects_service.list_projects(db)
 
 
-@router.post("", response_model=ProjectOut, status_code=201)
+@router.post("", response_model=ProjectSummaryOut, status_code=201)
 def create_project(
     payload: ProjectCreate,
     user: CurrentUser,

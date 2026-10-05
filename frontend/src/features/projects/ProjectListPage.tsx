@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { projectsApi } from '@/lib/api/projects'
-import type { Project } from '@/lib/api/types'
+import type { ProjectSummary } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { projectsQuery } from '@/lib/queries'
 import { useToast } from '@/lib/toast'
@@ -19,7 +19,7 @@ import { useState } from 'react'
 export function ProjectListPage() {
   const { data: projects = [] } = useQuery(projectsQuery())
 
-  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null)
   const qc = useQueryClient()
   const toast = useToast()
 

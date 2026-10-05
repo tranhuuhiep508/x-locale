@@ -2,6 +2,7 @@ import type { ModuleCreateForm } from '@/lib/schemas'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { TranslationContextField } from '@/features/catalog/TranslationContextField'
 
 type FormErrors = Partial<Record<keyof ModuleCreateForm, string>>
 
@@ -55,6 +56,12 @@ export function ModuleFormFields({
           onChange={(e) => onChange({ ...form, description: e.target.value })}
         />
       </Field>
+      <TranslationContextField
+        id={`${idPrefix}_translation_context`}
+        value={form.translation_context ?? ''}
+        error={errors.translation_context}
+        onChange={(translation_context) => onChange({ ...form, translation_context })}
+      />
     </FieldGroup>
   )
 }

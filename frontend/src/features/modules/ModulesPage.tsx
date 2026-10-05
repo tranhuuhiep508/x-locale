@@ -45,11 +45,11 @@ export function ModulesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Module | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Module | null>(null)
-  const [form, setForm] = useState<ModuleCreateForm>({ slug: '', name: '', description: '' })
+  const [form, setForm] = useState<ModuleCreateForm>({ slug: '', name: '', description: '', translation_context: '' })
   const [errors, setErrors] = useState<FormErrors>({})
 
   function resetForm() {
-    setForm({ slug: '', name: '', description: '' })
+    setForm({ slug: '', name: '', description: '', translation_context: '' })
     setErrors({})
   }
 
@@ -126,6 +126,7 @@ export function ModulesPage() {
           slug: module.slug,
           name: module.name,
           description: module.description ?? '',
+          translation_context: module.translation_context ?? '',
         })
         setErrors({})
       },
