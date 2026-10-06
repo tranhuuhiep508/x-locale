@@ -1,17 +1,16 @@
+import {
+  ReviewDialogBody,
+  ReviewDialogContent,
+  ReviewDialogFooter,
+  ReviewDialogHeader,
+} from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
 import type { Job, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Progress } from '@/components/ui/progress'
@@ -31,7 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 
 export function proposalsFromJobResult(
-  result: Record<string, unknown> | null | undefined,
+  result: Record<string, unknown> | null | undefined
 ): TranslateProposalItem[] {
   if (!result || !Array.isArray(result.items)) return []
   return result.items as TranslateProposalItem[]
@@ -59,70 +58,76 @@ function ProposalTreeNode({
   const descriptionId = `proposal-description-${item.string_id}`
 
   return (
-    <li className="flex flex-col gap-3">
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-pretty font-medium">{item.source_text}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-mono text-xs text-muted-foreground" translate="no">
-            {item.key}
-          </span>
-          {item.status === 'public' ? (
-            <Badge variant="secondary">Public — apply stays off prod until publish</Badge>
-          ) : null}
+    <li
+      className={cn('grid min-w-0 gap-4 rounded-lg border bg-card p-4', review && 'sm:grid-cols-2')}
+    >
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium text-muted-foreground">Source text</p>
+          <p className="font-medium whitespace-pre-wrap wrap-anywhere">{item.source_text}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs break-all text-muted-foreground" translate="no">
+              {item.key}
+            </span>
+            {item.status === 'public' ? <Badge variant="secondary">Public</Badge> : null}
+          </div>
         </div>
+
+        <Field>
+          <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
+          <Textarea
+            id={descriptionId}
+            className="min-h-9 resize-none"
+            value={item.description ?? ''}
+            rows={2}
+            disabled={disabled}
+            autoComplete="off"
+            placeholder="Context for a better translation"
+            onChange={(e) => onDescriptionChange(item.string_id, e.target.value)}
+          />
+        </Field>
       </div>
 
-      <Field>
-        <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
-        <Textarea
-          id={descriptionId}
-          className="min-h-9 resize-none"
-          value={item.description ?? ''}
-          rows={2}
-          disabled={disabled}
-          autoComplete="off"
-          placeholder="Context for a better translation"
-          onChange={(e) => onDescriptionChange(item.string_id, e.target.value)}
-        />
-      </Field>
-
       <FieldGroup
-        className="ml-1 gap-3 border-l-2 border-border pl-4"
+        className={cn(
+          'min-w-0 gap-3',
+          review && 'border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4'
+        )}
         aria-label={`Translations for ${item.key}`}
       >
-        {review
-          ? locales.map(([locale, value]) => {
-              const inputId = `proposal-${item.string_id}-${locale}`
-              return (
-                <Field key={locale}>
-                  <div className="flex items-center gap-2">
-                    <FieldLabel htmlFor={inputId} className="uppercase">
-                      {locale}
-                    </FieldLabel>
-                    <ConfidenceBadge score={item.scores?.[locale]} />
-                  </div>
-                  <Textarea
-                    id={inputId}
-                    className="min-h-9 resize-none"
-                    value={value}
-                    rows={2}
-                    disabled={disabled}
-                    autoComplete="off"
-                    spellCheck
-                    onChange={(e) => onChange(item.string_id, locale, e.target.value)}
-                  />
-                </Field>
-              )
-            })
-          : (
-              <div className="flex flex-wrap gap-1.5">
-                {locales.map(([locale]) => (
-                  <Badge key={locale} variant="outline" className="uppercase">
+        {review ? (
+          locales.map(([locale, value]) => {
+            const inputId = `proposal-${item.string_id}-${locale}`
+            return (
+              <Field key={locale}>
+                <div className="flex items-center gap-2">
+                  <FieldLabel htmlFor={inputId} className="uppercase">
                     {locale}
-                  </Badge>
-                ))}
-              </div>
-            )}
+                  </FieldLabel>
+                  <ConfidenceBadge score={item.scores?.[locale]} />
+                </div>
+                <Textarea
+                  id={inputId}
+                  className="min-h-9 resize-none"
+                  value={value}
+                  rows={2}
+                  disabled={disabled}
+                  autoComplete="off"
+                  spellCheck
+                  onChange={(e) => onChange(item.string_id, locale, e.target.value)}
+                />
+              </Field>
+            )
+          })
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {locales.map(([locale]) => (
+              <Badge key={locale} variant="outline" className="uppercase">
+                {locale}
+              </Badge>
+            ))}
+          </div>
+        )}
       </FieldGroup>
     </li>
   )
@@ -162,7 +167,7 @@ export function TranslateReviewDialog({
   onApply: (items: TranslateProposalItem[]) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
-    draftsFromItems(items),
+    draftsFromItems(items)
   )
 
   useEffect(() => {
@@ -201,8 +206,8 @@ export function TranslateReviewDialog({
         if (!next && !applying && !generating) onClose()
       }}
     >
-      <DialogContent className="flex max-h-[min(90dvh,840px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
+      <ReviewDialogContent>
+        <ReviewDialogHeader>
           <DialogTitle>{generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
           {generating ? (
@@ -224,18 +229,9 @@ export function TranslateReviewDialog({
               Applied values stay in the working copy until you publish.
             </p>
           ) : null}
-          {canPage ? (
-            <DataPagination
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              disabled={busy}
-              onPageChange={onPageChange}
-            />
-          ) : null}
-        </DialogHeader>
+        </ReviewDialogHeader>
 
-        <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        <ReviewDialogBody>
           {showInitialSpinner ? (
             <div
               className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
@@ -260,8 +256,8 @@ export function TranslateReviewDialog({
               ) : null}
               <ul
                 className={cn(
-                  'flex flex-col gap-8',
-                  pagingInPlace && 'pointer-events-none opacity-60',
+                  'flex flex-col gap-3',
+                  pagingInPlace && 'pointer-events-none opacity-60'
                 )}
               >
                 {draftList.map((item) => (
@@ -281,9 +277,21 @@ export function TranslateReviewDialog({
               </ul>
             </div>
           )}
-        </div>
+        </ReviewDialogBody>
 
-        <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-end">
+        {canPage ? (
+          <div className="shrink-0 border-t px-5">
+            <DataPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              disabled={busy}
+              onPageChange={onPageChange}
+            />
+          </div>
+        ) : null}
+
+        <ReviewDialogFooter>
           <Button
             variant="outline"
             type="button"
@@ -292,7 +300,12 @@ export function TranslateReviewDialog({
           >
             Discard
           </Button>
-          <Button type="button" disabled={!canTranslate} onClick={() => onTranslate(draftList)}>
+          <Button
+            variant={review ? 'outline' : 'default'}
+            type="button"
+            disabled={!canTranslate}
+            onClick={() => onTranslate(draftList)}
+          >
             {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
             {review ? 'Translate again' : 'Translate'}
           </Button>
@@ -302,8 +315,8 @@ export function TranslateReviewDialog({
               Apply {applyCount === 1 ? '1 translation' : `${applyCount} translations`}
             </Button>
           ) : null}
-        </DialogFooter>
-      </DialogContent>
+        </ReviewDialogFooter>
+      </ReviewDialogContent>
     </Dialog>
   )
 }

@@ -28,6 +28,8 @@ from app.models import Activity, Module, Project, StringEntry, Tag, Translation,
 from app.schemas import (
     BatchRequest,
     BatchResult,
+    LocaleCoverageOut,
+    ProjectCoverageOut,
     StringCreate,
     StringListOut,
     StringOut,
@@ -735,6 +737,34 @@ def list_strings(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def project_coverage(db: Session, project: Project) -> ProjectCoverageOut:
+    """Count working-copy coverage with at most two reads, regardless of locale count."""
+    live = string_query(db, project.id, eager=False)
+    total = live.with_entities(func.count(StringEntry.id)).scalar() or 0
+    locales = list(dict.fromkeys(project.target_languages or []))
+    translated = {}
+    if total and locales:
+        rows = (
+            live.join(Translation, Translation.string_id == StringEntry.id)
+            .with_entities(Translation.locale, func.count(StringEntry.id))
+            .filter(Translation.locale.in_(locales), _translation_has_value())
+            .group_by(Translation.locale)
+            .all()
+        )
+        translated = dict(rows)
+    return ProjectCoverageOut(
+        total=total,
+        locales=[
+            LocaleCoverageOut(
+                locale=locale,
+                translated=translated.get(locale, 0),
+                missing=total - translated.get(locale, 0),
+            )
+            for locale in locales
+        ],
     )
 
 

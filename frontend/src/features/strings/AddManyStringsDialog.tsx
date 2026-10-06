@@ -1,18 +1,24 @@
+import {
+  ReviewDialogBody,
+  ReviewDialogContent,
+  ReviewDialogFooter,
+  ReviewDialogHeader,
+} from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, Module, Project, Tag } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -26,7 +32,6 @@ import {
 } from '@/features/strings/paste-json'
 import { hasImportWrites, ImportPreviewSummary } from '@/features/sync/ImportPreviewDialog'
 import { useToast } from '@/lib/toast'
-import { cn } from '@/lib/utils'
 
 const NONE_MODULE = '__none__'
 
@@ -77,10 +82,7 @@ export function AddManyStringsDialog({
     ...modules,
     ...createdModules.filter((item) => !modules.some((m) => m.id === item.id)),
   ]
-  const tagOptions = [
-    ...tags,
-    ...createdTags.filter((item) => !tags.some((t) => t.id === item.id)),
-  ]
+  const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
   useEffect(() => {
@@ -107,7 +109,7 @@ export function AddManyStringsDialog({
           dry,
           moduleId: isModular ? moduleId : undefined,
           tagIds,
-        }),
+        })
       )
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
@@ -136,7 +138,7 @@ export function AddManyStringsDialog({
           setPreview(result)
           setStep('preview')
         },
-      },
+      }
     )
   }
 
@@ -149,7 +151,7 @@ export function AddManyStringsDialog({
           toast.success(`Added ${result.created} · updated ${result.updated}`)
           onSuccess()
         },
-      },
+      }
     )
   }
 
@@ -157,12 +159,13 @@ export function AddManyStringsDialog({
   const applyDisabled = !hasImportWrites(preview)
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
-      <DialogContent
-        className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0',
-          'max-h-[min(90dvh,720px)] sm:max-w-xl',
-        )}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose()
+      }}
+    >
+      <ReviewDialogContent
         onFocusOutside={(event) => {
           event.preventDefault()
         }}
@@ -172,23 +175,23 @@ export function AddManyStringsDialog({
           }
         }}
       >
-        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
+        <ReviewDialogHeader>
           <DialogTitle>Add many</DialogTitle>
           <DialogDescription>
             {step === 'paste'
               ? 'Paste a flat JSON object of key → source text. Preview runs a dry run before anything is written.'
               : 'Review creates and updates, then apply as one draft batch.'}
           </DialogDescription>
-        </DialogHeader>
+        </ReviewDialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <ReviewDialogBody>
           {step === 'paste' ? (
-            <FieldGroup>
+            <FieldGroup className="grid gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
               <Field data-invalid={parseError ? true : undefined}>
                 <FieldLabel htmlFor="add-many-json">JSON</FieldLabel>
                 <Textarea
                   id="add-many-json"
-                  className="min-h-44 resize-y font-mono text-xs"
+                  className="min-h-44 resize-y font-mono text-xs sm:min-h-60"
                   value={text}
                   onChange={(e) => {
                     setText(e.target.value)
@@ -206,96 +209,105 @@ export function AddManyStringsDialog({
                 <FieldError>{parseError}</FieldError>
               </Field>
 
-              {isModular ? (
+              <FieldGroup className="min-w-0">
+                {isModular ? (
+                  <Field>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="add-many-module">Module</FieldLabel>
+                      <CreateModulePopover
+                        projectId={projectId}
+                        disabled={busy}
+                        onCreated={(created) => {
+                          setCreatedModules((prev) =>
+                            prev.some((item) => item.id === created.id) ? prev : [...prev, created]
+                          )
+                          setModuleId(created.id)
+                        }}
+                      />
+                    </div>
+                    <Select
+                      value={moduleId || NONE_MODULE}
+                      onValueChange={(v) => {
+                        if (v === NONE_MODULE) {
+                          setModuleId('')
+                          return
+                        }
+                        if (!v) return
+                        setModuleId(v)
+                      }}
+                    >
+                      <SelectTrigger id="add-many-module" className="w-full">
+                        <SelectValue placeholder="— None —">
+                          {selectedModuleName ?? '— None —'}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={NONE_MODULE}>— None —</SelectItem>
+                          {moduleOptions.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>Applied to every row in this paste.</FieldDescription>
+                  </Field>
+                ) : null}
+
                 <Field>
                   <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="add-many-module">Module</FieldLabel>
-                    <CreateModulePopover
+                    <FieldLabel>Tags</FieldLabel>
+                    <CreateTagPopover
                       projectId={projectId}
+                      tags={tagOptions}
                       disabled={busy}
                       onCreated={(created) => {
-                        setCreatedModules((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                        setCreatedTags((prev) =>
+                          prev.some((item) => item.id === created.id) ? prev : [...prev, created]
                         )
-                        setModuleId(created.id)
+                        setTagIds((prev) =>
+                          prev.includes(created.id) ? prev : [...prev, created.id]
+                        )
                       }}
                     />
                   </div>
-                  <Select
-                    value={moduleId || NONE_MODULE}
-                    onValueChange={(v) => {
-                      if (v === NONE_MODULE) {
-                        setModuleId('')
-                        return
-                      }
-                      if (!v) return
-                      setModuleId(v)
-                    }}
-                  >
-                    <SelectTrigger id="add-many-module" className="w-full">
-                      <SelectValue placeholder="— None —">
-                        {selectedModuleName ?? '— None —'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={NONE_MODULE}>— None —</SelectItem>
-                        {moduleOptions.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>Applied to every row in this paste.</FieldDescription>
+                  {tagOptions.length > 0 ? (
+                    <ToggleGroup
+                      type="multiple"
+                      variant="outline"
+                      className="flex flex-wrap justify-start"
+                      value={tagIds}
+                      onValueChange={setTagIds}
+                    >
+                      {tagOptions.map((t) => (
+                        <ToggleGroupItem key={t.id} value={t.id} size="sm">
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: t.color }}
+                          />
+                          {t.name}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  ) : (
+                    <FieldDescription>
+                      None yet. Create one without leaving this form.
+                    </FieldDescription>
+                  )}
+                  {tagOptions.length > 0 ? (
+                    <FieldDescription>Shared across the whole batch, not per key.</FieldDescription>
+                  ) : null}
                 </Field>
-              ) : null}
-
-              <Field>
-                <div className="flex items-center gap-1">
-                  <FieldLabel>Tags</FieldLabel>
-                  <CreateTagPopover
-                    projectId={projectId}
-                    tags={tagOptions}
-                    disabled={busy}
-                    onCreated={(created) => {
-                      setCreatedTags((prev) =>
-                        prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                      )
-                      setTagIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]))
-                    }}
-                  />
-                </div>
-                {tagOptions.length > 0 ? (
-                  <ToggleGroup
-                    type="multiple"
-                    variant="outline"
-                    className="flex flex-wrap justify-start"
-                    value={tagIds}
-                    onValueChange={setTagIds}
-                  >
-                    {tagOptions.map((t) => (
-                      <ToggleGroupItem key={t.id} value={t.id} size="sm">
-                        <span className="size-2 rounded-full" style={{ backgroundColor: t.color }} />
-                        {t.name}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                ) : (
-                  <FieldDescription>None yet. Create one without leaving this form.</FieldDescription>
-                )}
-                {tagOptions.length > 0 ? (
-                  <FieldDescription>Shared across the whole batch, not per key.</FieldDescription>
-                ) : null}
-              </Field>
+              </FieldGroup>
             </FieldGroup>
           ) : (
             <ImportPreviewSummary result={preview} />
           )}
-        </div>
+        </ReviewDialogBody>
 
-        <DialogFooter className="mx-0 mb-0 rounded-none">
+        <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
               <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -324,8 +336,8 @@ export function AddManyStringsDialog({
               </Button>
             </>
           )}
-        </DialogFooter>
-      </DialogContent>
+        </ReviewDialogFooter>
+      </ReviewDialogContent>
     </Dialog>
   )
 }

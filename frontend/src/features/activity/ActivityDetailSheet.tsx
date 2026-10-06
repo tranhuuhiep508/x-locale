@@ -13,29 +13,45 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Spinner } from '@/components/ui/spinner'
-import { changeDisplayValue, changeFieldLabel, changeScopeLabel, groupChangesByScope } from '@/features/activity/change-labels'
+import {
+  changeDisplayValue,
+  changeFieldLabel,
+  changeScopeLabel,
+  groupChangesByScope,
+} from '@/features/activity/change-labels'
 import { batchKindLabel, eventTypeLabel } from '@/features/activity/event-type-labels'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 
 function ChangeRow({ change }: { change: ActivityChange }) {
   const label = changeFieldLabel(change)
   return (
-    <div className="flex flex-col gap-1 px-3 py-2.5 text-xs">
+    <div className="flex min-w-0 flex-col gap-2 px-3 py-3 text-xs">
       <span className="font-medium text-foreground/80">{label}</span>
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-2">
-        <p className="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 whitespace-pre-wrap break-words text-muted-foreground">
-          {changeDisplayValue(change, change.before)}
-        </p>
-        <span className="shrink-0 self-center text-muted-foreground/60">→</span>
-        <p className="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 whitespace-pre-wrap break-words text-foreground">
-          {changeDisplayValue(change, change.after)}
-        </p>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-muted-foreground">Before</span>
+          <p className="rounded-md bg-muted/50 px-2 py-2 whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+            {changeDisplayValue(change, change.before)}
+          </p>
+        </div>
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-muted-foreground">After</span>
+          <p className="rounded-md bg-muted/50 px-2 py-2 whitespace-pre-wrap wrap-anywhere text-foreground">
+            {changeDisplayValue(change, change.after)}
+          </p>
+        </div>
       </div>
     </div>
   )
 }
 
-function ChangeGroupSection({ scope, changes }: { scope: ActivityChange['scope']; changes: ActivityChange[] }) {
+function ChangeGroupSection({
+  scope,
+  changes,
+}: {
+  scope: ActivityChange['scope']
+  changes: ActivityChange[]
+}) {
   const translations = changes.filter((change) => change.kind === 'translation')
   const other = changes.filter((change) => change.kind !== 'translation')
   return (
@@ -87,12 +103,16 @@ export function ActivityDetailSheet({
   return (
     <Sheet open={activityId !== null} onOpenChange={(next) => !next && onOpenChange(false)}>
       <SheetContent className="flex flex-col gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
-        <SheetHeader className="border-b">
-          <SheetTitle>{detail?.summary ?? 'Activity details'}</SheetTitle>
+        <SheetHeader className="shrink-0 border-b pr-12">
+          <SheetTitle className="leading-snug wrap-anywhere">
+            {detail?.summary ?? 'Activity details'}
+          </SheetTitle>
           <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {detail ? (
               <>
-                <span className="font-medium text-foreground/80">{detail.actor_label}</span>
+                <span className="font-medium wrap-anywhere text-foreground/80">
+                  {detail.actor_label}
+                </span>
                 <span>·</span>
                 <span title={formatDate(detail.created_at)}>
                   {formatRelativeTime(detail.created_at)}
@@ -108,7 +128,7 @@ export function ActivityDetailSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4">
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner />
@@ -118,25 +138,35 @@ export function ActivityDetailSheet({
           ) : (
             <div className="flex flex-col gap-4">
               {groups.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No field changes recorded for this event.</p>
+                <p className="text-sm text-muted-foreground">
+                  No field changes recorded for this event.
+                </p>
               ) : (
                 groups.map((group) => (
-                  <ChangeGroupSection key={group.scope} scope={group.scope} changes={group.changes} />
+                  <ChangeGroupSection
+                    key={group.scope}
+                    scope={group.scope}
+                    changes={group.changes}
+                  />
                 ))
               )}
 
               {detail.revert_of ? (
-                <p className="text-xs text-muted-foreground">
-                  Reverts: {detail.revert_of.summary} ({formatRelativeTime(detail.revert_of.created_at)})
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                  Reverts: {detail.revert_of.summary} (
+                  {formatRelativeTime(detail.revert_of.created_at)})
                 </p>
               ) : null}
               {detail.reverted_by ? (
-                <p className="text-xs text-muted-foreground">
-                  Reverted by: {detail.reverted_by.summary} ({formatRelativeTime(detail.reverted_by.created_at)})
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                  Reverted by: {detail.reverted_by.summary} (
+                  {formatRelativeTime(detail.reverted_by.created_at)})
                 </p>
               ) : null}
 
-              {!detail.is_history_restorable && detail.restore_blocked_reason && (onRestore || detail.string_id) ? (
+              {!detail.is_history_restorable &&
+              detail.restore_blocked_reason &&
+              (onRestore || detail.string_id) ? (
                 <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                   {detail.restore_blocked_reason}
                 </p>
@@ -145,7 +175,7 @@ export function ActivityDetailSheet({
           )}
         </div>
 
-        <SheetFooter className="flex-row justify-end gap-2 border-t">
+        <SheetFooter className="shrink-0 flex-row flex-wrap justify-end gap-2 border-t">
           {detail?.string_key ? (
             <Button variant="ghost" size="sm" asChild>
               <Link

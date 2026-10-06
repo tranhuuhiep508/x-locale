@@ -38,7 +38,7 @@ function columnPinningClassName<TData>(column: Column<TData>, variant: 'header' 
   if (!pinned) return undefined
   return cn(
     'sticky',
-    variant === 'header' ? 'z-20 bg-background' : 'z-[1] bg-inherit',
+    variant === 'header' ? 'z-20 bg-muted' : 'z-[1] bg-inherit',
     pinned === 'left' && column.getIsLastColumn('left') && 'shadow-[inset_-1px_0_0_0_var(--border)]',
     pinned === 'right' && column.getIsFirstColumn('right') && 'shadow-[inset_1px_0_0_0_var(--border)]',
   )
@@ -57,7 +57,7 @@ export function DataTable<TData>({
     (pinning.left?.length ?? 0) > 0 || (pinning.right?.length ?? 0) > 0
 
   return (
-    <Table className={className} containerClassName="h-full min-h-0 overflow-auto">
+    <Table className={className} containerClassName="h-full min-h-0 overflow-auto bg-card">
       <TableHeader>
         {table.getHeaderGroups().map((headerGroup) => (
           <TableRow key={headerGroup.id} className="hover:bg-transparent">
@@ -87,7 +87,7 @@ export function DataTable<TData>({
               data-state={row.getIsSelected() ? 'selected' : undefined}
               className={cn(
                 onRowClick && 'cursor-pointer group',
-                hasPinnedColumns && 'bg-background',
+                hasPinnedColumns && 'bg-card',
                 getRowClassName?.(row),
                 row.getIsSelected() && 'bg-accent hover:bg-accent',
               )}

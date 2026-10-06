@@ -11,7 +11,7 @@ import { ActivityCard } from '@/features/activity/ActivityCard'
 import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
 import { PreviewFailure } from '@/features/activity/PreviewFailure'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
-import { EVENT_TYPE_FILTER_OPTIONS } from '@/features/activity/event-type-labels'
+import { ActivityFilters, hasActivityFilters } from '@/features/activity/ActivityFilters'
 import {
   outcomeLabel,
   previewConflictsShowingCaption,
@@ -23,19 +23,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
-import { TimeRangePicker } from '@/components/ui/time-range-picker'
-import { hasActiveTimeFilter } from '@/lib/time-range'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import type { ActivitySearch } from '@/lib/schemas'
@@ -142,7 +132,7 @@ export function ActivityPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
-  const { data, isLoading } = useQuery(
+  const { data, isLoading, isError, refetch } = useQuery(
     activityFeedQuery(projectId, {
       page: search.page,
       page_size: search.page_size,
@@ -187,9 +177,10 @@ export function ActivityPage() {
     },
   })
 
-  const items = data?.items ?? []
+  const items = useMemo(() => data?.items ?? [], [data?.items])
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / search.page_size)
+  const filtered = hasActivityFilters(search)
   const locales = [project?.base_language, ...(project?.target_languages ?? [])].filter(
     (code, index, all): code is string => Boolean(code) && all.indexOf(code) === index
   )
@@ -214,114 +205,104 @@ export function ActivityPage() {
     })
   }
 
+  function clearFilters() {
+    navigate({ search: { page: 1, page_size: search.page_size } })
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b px-5 py-5">
-        <PageHeader
-          eyebrow="Project"
-          title="Activity"
-          description="What happened in this catalog, grouped by day."
-        />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Select
-            value={search.event_type || 'all'}
-            onValueChange={(value) =>
-              setSearch({ event_type: value === 'all' ? undefined : value })
-            }
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {EVENT_TYPE_FILTER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Input
-            className="w-40"
-            placeholder="Person"
-            defaultValue={search.actor ?? ''}
-            onBlur={(event) => setSearch({ actor: event.target.value.trim() || undefined })}
+      <div className="shrink-0 border-b px-4 py-5 sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+          <PageHeader
+            eyebrow="Project"
+            title="Activity"
+            description="Review catalog edits, imports, and publication changes."
           />
-          <Select
-            value={search.locale || 'all'}
-            onValueChange={(value) => setSearch({ locale: value === 'all' ? undefined : value })}
-          >
-            <SelectTrigger className="w-28">
-              <SelectValue placeholder="Locale" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All locales</SelectItem>
-                {locales.map((code) => (
-                  <SelectItem key={code} value={code}>
-                    {code}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <TimeRangePicker
-            value={{ period: search.period, since: search.since, until: search.until }}
-            onChange={(updates) => setSearch(updates)}
+          <ActivityFilters
+            search={search}
+            locales={locales}
+            onFilter={setSearch}
+            onClear={clearFilters}
           />
-          {search.event_type ||
-          search.actor ||
-          search.locale ||
-          hasActiveTimeFilter(search) ? (
-            <Button variant="ghost" size="sm" onClick={() => navigate({ search: { page: 1 } })}>
-              Clear
-            </Button>
-          ) : null}
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-2">
-        {isLoading ? (
-          <div className="flex h-48 items-center justify-center">
-            <Spinner />
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={<Clock />}
-            title="No activity yet"
-            description="Import Excel, edit a string, or publish a batch to see it here."
-          />
-        ) : (
-          <div className="flex flex-col gap-5 px-2 py-4">
-            {grouped.map((group) => (
-              <section key={group.key} className="flex flex-col gap-1">
-                <h2 className="px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  {group.heading}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 py-5">
+          {isLoading ? (
+            <div className="flex flex-col gap-3" aria-label="Loading activity">
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+          ) : isError ? (
+            <EmptyState
+              title="Couldn’t load activity"
+              description="Try loading the catalog changes again."
+              action={
+                <Button variant="outline" onClick={() => void refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={<Clock />}
+              title={filtered ? 'No matching activity' : 'No activity yet'}
+              description={
+                filtered
+                  ? 'Try another person, event type, language, or date range.'
+                  : 'Import Excel, edit a string, or publish a batch to see it here.'
+              }
+              action={
+                filtered ? (
+                  <Button variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            grouped.map((group) => (
+              <section key={group.key} className="flex min-w-0 flex-col gap-3">
+                <h2 className="text-xs font-medium text-muted-foreground">
+                  {group.heading || 'Unknown date'}
                 </h2>
-                {group.cards.map((card) => (
-                  <ActivityCard
-                    key={card.id}
-                    card={card}
-                    projectId={projectId}
-                    onUndo={setUndoTarget}
-                    onOpenDetail={setDetailId}
-                  />
-                ))}
+                <div className="min-w-0 divide-y rounded-xl border bg-card px-3 sm:px-4">
+                  {group.cards.map((card) => (
+                    <ActivityCard
+                      key={card.id}
+                      card={card}
+                      projectId={projectId}
+                      onUndo={setUndoTarget}
+                      onOpenDetail={setDetailId}
+                    />
+                  ))}
+                </div>
               </section>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
 
-      {totalPages > 1 ? (
-        <div className="shrink-0 border-t px-4">
-          <DataPagination
-            page={search.page}
-            pageSize={search.page_size}
-            total={total}
-            onPageChange={(p) => navigate({ search: (prev) => ({ ...prev, page: p }) })}
-          />
+      {data && total > 0 ? (
+        <div className="shrink-0 border-t bg-card px-4 sm:px-6">
+          <div className="mx-auto w-full max-w-5xl">
+            {totalPages > 1 ? (
+              <DataPagination
+                page={search.page}
+                pageSize={search.page_size}
+                total={total}
+                onPageChange={(page) => setSearch({ page })}
+              />
+            ) : (
+              <p className="py-3 text-xs tabular-nums text-muted-foreground">
+                {total} {total === 1 ? 'event' : 'events'}
+                {filtered ? ' matching your filters' : ''}
+              </p>
+            )}
+          </div>
         </div>
       ) : null}
 

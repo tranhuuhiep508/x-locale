@@ -17,7 +17,9 @@ test('dev bypass lands on projects without manual sign-in', async ({ page }) => 
 test('login page exposes Microsoft sign-in when visited directly', async ({ page }) => {
   await page.goto('/login')
   await expect(page.getByText('Sign in', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Continue with Microsoft' })).toBeVisible()
+  const signIn = page.getByRole('link', { name: 'Continue with Microsoft' })
+  await expect(signIn).toBeVisible()
+  await expect(signIn).toHaveAttribute('href', '/api/auth/login')
 })
 
 test('open Demo App strings catalog with seeded keys', async ({ page }) => {

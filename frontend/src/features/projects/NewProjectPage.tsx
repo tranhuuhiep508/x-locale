@@ -1,15 +1,23 @@
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { TranslationContextField } from '@/features/catalog/TranslationContextField'
+import { TargetLanguagePicker } from '@/features/catalog/TargetLanguagePicker'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldGroup, FieldLabel, FieldDescription, FieldError } from '@/components/ui/field'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { languagesQuery } from '@/lib/queries'
 import { projectsApi } from '@/lib/api/projects'
@@ -48,7 +56,11 @@ export function NewProjectPage() {
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
       toast.success(`Project "${project.name}" created`)
-      navigate({ to: '/projects/$projectRef/strings', params: { projectRef: project.slug }, search: {} })
+      navigate({
+        to: '/projects/$projectRef/strings',
+        params: { projectRef: project.slug },
+        search: {},
+      })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to create project'),
   })
@@ -58,15 +70,6 @@ export function NewProjectPage() {
       ...f,
       name,
       slug: slugTouched ? f.slug : slugify(name),
-    }))
-  }
-
-  function toggleTargetLang(code: string) {
-    setForm((f) => ({
-      ...f,
-      target_languages: f.target_languages.includes(code)
-        ? f.target_languages.filter((l) => l !== code)
-        : [...f.target_languages, code],
     }))
   }
 
@@ -90,7 +93,7 @@ export function NewProjectPage() {
 
   return (
     <AppShell>
-      <PageBody contained className="flex flex-col gap-6">
+      <PageBody contained className="flex max-w-3xl flex-col gap-6">
         <div>
           <Link
             to="/"
@@ -107,6 +110,10 @@ export function NewProjectPage() {
         </div>
 
         <Card>
+          <CardHeader>
+            <CardTitle>Project details</CardTitle>
+            <CardDescription>Set up your catalog and the languages you work with.</CardDescription>
+          </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit}>
               <FieldGroup>
@@ -141,7 +148,7 @@ export function NewProjectPage() {
                   <FieldError>{errors.slug}</FieldError>
                 </Field>
 
-                <div className="grid grid-cols-2 gap-4">
+                <FieldGroup className="grid gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel htmlFor="base_language">Base language</FieldLabel>
                     <Select
@@ -188,52 +195,17 @@ export function NewProjectPage() {
                       </SelectContent>
                     </Select>
                   </Field>
-                </div>
+                </FieldGroup>
 
                 <Field data-invalid={errors.target_languages ? 'true' : undefined}>
                   <FieldLabel>Target languages</FieldLabel>
                   <FieldError>{errors.target_languages}</FieldError>
 
-                  {form.target_languages.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {form.target_languages.map((code) => {
-                        const lang = languages.find((l) => l.code === code)
-                        return (
-                          <Button
-                            key={code}
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => toggleTargetLang(code)}
-                          >
-                            {lang?.name ?? code}
-                            <X data-icon="inline-end" />
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
-                    {targetLangs.map((l) => {
-                      const selected = form.target_languages.includes(l.code)
-                      return (
-                        <Button
-                          key={l.code}
-                          type="button"
-                          variant={selected ? 'secondary' : 'ghost'}
-                          size="sm"
-                          className="justify-start"
-                          onClick={() => toggleTargetLang(l.code)}
-                        >
-                          <span className="font-mono text-[10px] text-muted-foreground w-5">
-                            {l.code}
-                          </span>
-                          {l.name}
-                        </Button>
-                      )
-                    })}
-                  </div>
+                  <TargetLanguagePicker
+                    languages={targetLangs}
+                    value={form.target_languages}
+                    onChange={(target_languages) => setForm((f) => ({ ...f, target_languages }))}
+                  />
                 </Field>
 
                 <TranslationContextField

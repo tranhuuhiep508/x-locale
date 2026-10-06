@@ -7,14 +7,32 @@ import type { ImportResult, ProjectLayout } from '@/lib/api/types'
 import { modulesQuery, projectQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select'
 import { ImportPreviewDialog } from '@/features/sync/ImportPreviewDialog'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
-import { DEMO_JSON_TEMPLATE, demoJsonFilename, demoJsonText } from '@/features/sync/import-templates'
+import {
+  DEMO_JSON_TEMPLATE,
+  demoJsonFilename,
+  demoJsonText,
+} from '@/features/sync/import-templates'
 
 const routeApi = getRouteApi('/projects/$projectRef/import-export')
 const NONE_MODULE = '__none__'
@@ -75,13 +93,7 @@ export function ImportExportPage() {
   }
 
   const importMut = useMutation({
-    mutationFn: async ({
-      file,
-      dry,
-    }: {
-      file: File
-      dry: boolean
-    }) => {
+    mutationFn: async ({ file, dry }: { file: File; dry: boolean }) => {
       const fd = new FormData()
       fd.append('file', file)
       return syncApi.importFile(projectId, fd, importParams(file, dry))
@@ -153,101 +165,96 @@ export function ImportExportPage() {
     setShowPreview(false)
   }
 
-  const locales = project
-    ? [project.base_language, ...project.target_languages]
-    : []
+  const locales = project ? [project.base_language, ...project.target_languages] : []
 
   return (
-    <PageBody>
+    <PageBody className="mx-auto w-full max-w-6xl">
       <PageHeader
         eyebrow="Project"
         title="Import / Export"
         description="Download a snapshot of this catalog, or bring strings in from JSON or Excel."
       />
 
-      <Card className="sky-panel">
-        <CardHeader>
-          <p className="eyebrow">Outbound</p>
-          <CardTitle>Export</CardTitle>
-          <CardDescription>Download JSON or Excel using this project's layout.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="export_format">Format</FieldLabel>
-              <Select
-                value={exportFormat}
-                onValueChange={(v) => setExportFormat(v as 'json' | 'xlsx')}
-              >
-                <SelectTrigger id="export_format" className="w-full">
-                  <SelectValue placeholder="Format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="json">JSON</SelectItem>
-                    <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Export</CardTitle>
+            <CardDescription>Download JSON or Excel using this project's layout.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-5">
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="export_format">Format</FieldLabel>
+                <Select
+                  value={exportFormat}
+                  onValueChange={(v) => setExportFormat(v as 'json' | 'xlsx')}
+                >
+                  <SelectTrigger id="export_format" className="w-full">
+                    <SelectValue placeholder="Format" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="json">JSON</SelectItem>
+                      <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="export_layout">Layout</FieldLabel>
-              <Select
-                value={layout}
-                onValueChange={(v) => setExportLayout(v as ProjectLayout)}
-              >
-                <SelectTrigger id="export_layout" className="w-full">
-                  <SelectValue placeholder="Layout" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="flat">Flat</SelectItem>
-                    <SelectItem value="modular">Modular</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="export_layout">Layout</FieldLabel>
+                <Select value={layout} onValueChange={(v) => setExportLayout(v as ProjectLayout)}>
+                  <SelectTrigger id="export_layout" className="w-full">
+                    <SelectValue placeholder="Layout" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="flat">Flat</SelectItem>
+                      <SelectItem value="modular">Modular</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="export_stage">Stage</FieldLabel>
-              <Select
-                value={exportStage}
-                onValueChange={(v) => setExportStage(v as 'all' | 'public')}
-              >
-                <SelectTrigger id="export_stage" className="w-full">
-                  <SelectValue placeholder="Stage" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All strings</SelectItem>
-                    <SelectItem value="public">Public only</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="export_stage">Stage</FieldLabel>
+                <Select
+                  value={exportStage}
+                  onValueChange={(v) => setExportStage(v as 'all' | 'public')}
+                >
+                  <SelectTrigger id="export_stage" className="w-full">
+                    <SelectValue placeholder="Stage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All strings</SelectItem>
+                      <SelectItem value="public">Public only</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="export_locale">Locale</FieldLabel>
-              <Select value={exportLocale} onValueChange={setExportLocale}>
-                <SelectTrigger id="export_locale" className="w-full">
-                  <SelectValue placeholder="Locale" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All locales</SelectItem>
-                    {locales.map((l) => (
-                      <SelectItem key={l} value={l}>
-                        {l}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          <div>
+              <Field>
+                <FieldLabel htmlFor="export_locale">Locale</FieldLabel>
+                <Select value={exportLocale} onValueChange={setExportLocale}>
+                  <SelectTrigger id="export_locale" className="w-full">
+                    <SelectValue placeholder="Locale" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All locales</SelectItem>
+                      {locales.map((l) => (
+                        <SelectItem key={l} value={l}>
+                          {l}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter>
             <Button onClick={() => exportMut.mutate()} disabled={exportMut.isPending}>
               {exportMut.isPending ? (
                 <Spinner data-icon="inline-start" />
@@ -258,11 +265,115 @@ export function ImportExportPage() {
               )}
               {exportMut.isPending ? 'Preparing…' : `Download ${exportFormat.toUpperCase()}`}
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardFooter>
+        </Card>
 
-      <Card className="sky-panel">
+        <Card>
+          <CardHeader>
+            <CardTitle>Import</CardTitle>
+            <CardDescription>
+              Upload JSON or Excel. Preview changes before applying them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="import_locale">Target locale</FieldLabel>
+                <Select value={targetLocale} onValueChange={setImportLocale}>
+                  <SelectTrigger id="import_locale" className="w-full">
+                    <SelectValue placeholder="Target locale" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {locales.map((l) => (
+                        <SelectItem key={l} value={l}>
+                          {l}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="import_mode">Mode</FieldLabel>
+                <Select
+                  value={dryRun ? 'dry' : 'apply'}
+                  onValueChange={(v) => setDryRun(v === 'dry')}
+                >
+                  <SelectTrigger id="import_mode" className="w-full">
+                    <SelectValue placeholder="Mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="dry">Dry run (preview)</SelectItem>
+                      <SelectItem value="apply">Apply immediately</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {isModularProject ? (
+                <Field className="sm:col-span-2">
+                  <FieldLabel htmlFor="import_module">Module (JSON only)</FieldLabel>
+                  <Select
+                    value={importModuleId || NONE_MODULE}
+                    onValueChange={(v) => setImportModuleId(v === NONE_MODULE ? '' : v)}
+                  >
+                    <SelectTrigger id="import_module" className="w-full">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={NONE_MODULE}>Unassigned</SelectItem>
+                        {modules.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name} ({m.slug})
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Applied to JSON uploads. Excel ignores this and uses each sheet name as the
+                    module slug.
+                  </p>
+                </Field>
+              ) : null}
+            </FieldGroup>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,.xlsx"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Accepted formats: .json, .xlsx — max 10 MB. A single-locale JSON file is applied to
+              the target locale; exported multi-locale files import every locale they contain. Keys
+              are never split on dots.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+              disabled={importMut.isPending}
+            >
+              {importMut.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+
+      <Card>
         <CardHeader>
           <p className="eyebrow">Format</p>
           <CardTitle>Import template</CardTitle>
@@ -279,7 +390,9 @@ export function ImportExportPage() {
           {isModularProject ? (
             <p className="text-xs text-muted-foreground">
               CLI modular layout uses folders instead:{' '}
-              <code className="rounded bg-muted px-1 py-0.5">auth/{project?.base_language ?? 'vi'}.json</code>
+              <code className="rounded bg-muted px-1 py-0.5">
+                auth/{project?.base_language ?? 'vi'}.json
+              </code>
               . Keys inside that file stay as-is; the folder name is the module.
             </p>
           ) : (
@@ -318,113 +431,9 @@ export function ImportExportPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your app copy
-            before importing.
+            Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your app
+            copy before importing.
           </p>
-        </CardContent>
-      </Card>
-
-      <Card className="sky-panel">
-        <CardHeader>
-          <p className="eyebrow">Inbound</p>
-          <CardTitle>Import</CardTitle>
-          <CardDescription>Preview first, then apply. Secrets stay in the file you choose.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="import_locale">Target locale</FieldLabel>
-              <Select value={targetLocale} onValueChange={setImportLocale}>
-                <SelectTrigger id="import_locale" className="w-full">
-                  <SelectValue placeholder="Target locale" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {locales.map((l) => (
-                      <SelectItem key={l} value={l}>
-                        {l}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="import_mode">Mode</FieldLabel>
-              <Select
-                value={dryRun ? 'dry' : 'apply'}
-                onValueChange={(v) => setDryRun(v === 'dry')}
-              >
-                <SelectTrigger id="import_mode" className="w-full">
-                  <SelectValue placeholder="Mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="dry">Dry run (preview)</SelectItem>
-                    <SelectItem value="apply">Apply immediately</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-
-            {isModularProject ? (
-              <Field className="col-span-2">
-                <FieldLabel htmlFor="import_module">Module (JSON only)</FieldLabel>
-                <Select
-                  value={importModuleId || NONE_MODULE}
-                  onValueChange={(v) => setImportModuleId(v === NONE_MODULE ? '' : v)}
-                >
-                  <SelectTrigger id="import_module" className="w-full">
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={NONE_MODULE}>Unassigned</SelectItem>
-                      {modules.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.name} ({m.slug})
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Applied to JSON uploads. Excel ignores this and uses each sheet name as the module
-                  slug.
-                </p>
-              </Field>
-            ) : null}
-          </div>
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,.xlsx"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-
-          <div>
-            <Button
-              variant="outline"
-              onClick={() => fileRef.current?.click()}
-              disabled={importMut.isPending}
-            >
-              {importMut.isPending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Upload data-icon="inline-start" />
-              )}
-              {importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
-            </Button>
-
-            <p className="text-xs text-muted-foreground mt-2">
-              Accepted formats: .json, .xlsx — max 10 MB. A single-locale JSON file is applied to
-              the target locale; exported multi-locale files import every locale they contain. Keys
-              are never split on dots.
-            </p>
-          </div>
         </CardContent>
       </Card>
 

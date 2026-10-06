@@ -1,20 +1,30 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
-import type { ActivityChange, ActivityFeedCard, ActivityFeedChild, ActivityListItem } from '@/lib/api/types'
+import { ArrowRight, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
+import type {
+  ActivityChange,
+  ActivityFeedCard,
+  ActivityFeedChild,
+  ActivityListItem,
+} from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
 import { batchActivitiesQuery } from '@/lib/queries'
 import { Spinner } from '@/components/ui/spinner'
 import { reviewBatchTarget } from '@/features/activity/review-batch'
+import { batchKindLabel, eventTypeLabel } from '@/features/activity/event-type-labels'
 import { formatRelativeTime } from '@/lib/utils'
 
-const VISIBLE_CHANGES = 5
+const VISIBLE_CHANGES = 2
 const VISIBLE_CHILD_CHANGES = 2
 
 function ChangeLine({ change }: { change: ActivityChange }) {
-  const label = change.scope === 'published' ? `${changeFieldLabel(change)} (published)` : changeFieldLabel(change)
+  const label =
+    change.scope === 'published'
+      ? `${changeFieldLabel(change)} (published)`
+      : changeFieldLabel(change)
   const before = changeDisplayValue(change, change.before)
   const after = changeDisplayValue(change, change.after)
   if (!change.before) {
@@ -61,9 +71,11 @@ function ChildRow({
   const visible = child.changed.slice(0, VISIBLE_CHILD_CHANGES)
   const extra = Math.max(0, child.changed_count - visible.length)
   return (
-    <li className="text-xs text-muted-foreground">
+    <li className="min-w-0 text-xs wrap-anywhere text-muted-foreground">
       <div className="flex flex-wrap items-baseline gap-1">
-        <span className="font-mono text-foreground/80">{child.string_key ?? 'string'}</span>
+        <span className="font-mono break-all text-foreground/80">
+          {child.string_key ?? 'string'}
+        </span>
         <span>{child.summary}</span>
         {onOpenDetail ? (
           <button
@@ -167,66 +179,97 @@ export function ActivityCard({
   const visibleChanges = card.changed.slice(0, VISIBLE_CHANGES)
   const extraChanges = Math.max(0, card.changed_count - visibleChanges.length)
 
-  return (
-    <div className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent/60">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-foreground">
-          <span className="font-medium">{card.actor_label}</span>{' '}
-          <span>{card.summary}</span>
-        </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          <span>{formatRelativeTime(card.created_at)}</span>
-          {card.locale ? (
-            <>
-              <span>·</span>
-              <span className="font-mono uppercase">{card.locale}</span>
-            </>
-          ) : null}
-          {isBatch && parts.length > 0 ? (
-            <>
-              <span>·</span>
-              <span>{parts.join('  ·  ')}</span>
-            </>
-          ) : null}
+  if (compact) {
+    const stringKey = !isBatch ? card.string_key : null
+    const action = reviewBatch ? 'Review this batch' : stringKey ? 'Open string' : 'View activity'
+    return (
+      <div className="flex min-w-0 items-center gap-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm wrap-anywhere text-foreground" title={card.summary}>
+            {card.summary}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {card.actor_label} · {formatRelativeTime(card.created_at)}
+            {card.locale ? ` · ${card.locale.toUpperCase()}` : ''}
+            {isBatch && parts.length > 0 ? ` · ${parts.join(' · ')}` : ''}
+          </p>
         </div>
-        {!isBatch ? (
-          <>
-            {visibleChanges.map((change) => (
-              <ChangeLine key={changeKey(change)} change={change} />
-            ))}
-            {extraChanges > 0 && onOpenDetail ? (
-              <button
-                type="button"
-                className="mt-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => onOpenDetail(card.id)}
-              >
-                +{extraChanges} more change{extraChanges === 1 ? '' : 's'}
-              </button>
-            ) : null}
-          </>
-        ) : null}
-        {isBatch && !compact ? (
-          <div className="mt-1">
+        <Button variant="ghost" size="icon-sm" asChild>
+          <Link
+            to={
+              reviewBatch || stringKey
+                ? '/projects/$projectRef/strings'
+                : '/projects/$projectRef/activity'
+            }
+            params={{ projectRef: projectId }}
+            search={
+              reviewBatch
+                ? { batch_id: reviewBatch.batchId, batch_kind: reviewBatch.batchKind }
+                : stringKey
+                  ? { q: stringKey }
+                  : {}
+            }
+            aria-label={`${action}: ${card.summary}`}
+            title={action}
+          >
+            <ArrowRight />
+          </Link>
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-lg py-4">
+      <div className="flex min-w-0 flex-col gap-2">
+        <p className="text-sm font-medium wrap-anywhere text-foreground">{card.summary}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <Badge variant="outline">
+            {isBatch && card.batch_kind
+              ? batchKindLabel(card.batch_kind)
+              : eventTypeLabel(card.event_type)}
+          </Badge>
+          <span className="wrap-anywhere">{card.actor_label}</span>
+          <span aria-hidden="true">·</span>
+          <span>{formatRelativeTime(card.created_at)}</span>
+          {card.locale ? <span className="font-mono uppercase">{card.locale}</span> : null}
+          {isBatch && parts.length > 0 ? <span>{parts.join(' · ')}</span> : null}
+        </div>
+      </div>
+
+      {!isBatch && visibleChanges.length > 0 ? (
+        <div className="flex min-w-0 flex-col gap-1 rounded-md bg-muted/50 p-2.5">
+          {visibleChanges.map((change) => (
+            <ChangeLine key={changeKey(change)} change={change} />
+          ))}
+          {extraChanges > 0 && onOpenDetail ? (
             <button
               type="button"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setOpen((value) => !value)}
+              className="self-start text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              onClick={() => onOpenDetail(card.id)}
             >
-              {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-              {open ? 'Hide strings' : `Show ${card.children_count} strings`}
+              +{extraChanges} more change{extraChanges === 1 ? '' : 's'}
             </button>
-            {open && card.batch_id ? (
-              <BatchChildrenList
-                projectId={projectId}
-                batchId={card.batch_id}
-                childrenCount={card.children_count}
-                onOpenDetail={onOpenDetail}
-              />
-            ) : null}
-          </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-1">
+        {isBatch ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? (
+              <ChevronDown data-icon="inline-start" />
+            ) : (
+              <ChevronRight data-icon="inline-start" />
+            )}
+            {open ? 'Hide strings' : `Show ${card.children_count} strings`}
+          </Button>
         ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
         {reviewBatch ? (
           <Button variant="ghost" size="sm" asChild>
             <Link
@@ -255,17 +298,20 @@ export function ActivityCard({
           </Button>
         ) : null}
         {card.is_undoable && onUndo ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-primary"
-            onClick={() => onUndo(card)}
-          >
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => onUndo(card)}>
             <RotateCcw data-icon="inline-start" />
             Undo
           </Button>
         ) : null}
       </div>
+      {isBatch && open && card.batch_id ? (
+        <BatchChildrenList
+          projectId={projectId}
+          batchId={card.batch_id}
+          childrenCount={card.children_count}
+          onOpenDetail={onOpenDetail}
+        />
+      ) : null}
     </div>
   )
 }

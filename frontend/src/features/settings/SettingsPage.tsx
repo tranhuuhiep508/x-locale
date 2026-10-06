@@ -17,28 +17,37 @@ import { apiKeyColumns } from '@/features/settings/api-keys-columns'
 import { projectsApi } from '@/lib/api/projects'
 import { projectSettingsSchema, type ProjectSettingsForm } from '@/lib/schemas'
 import { TranslationContextField } from '@/features/catalog/TranslationContextField'
+import { TargetLanguagePicker } from '@/features/catalog/TargetLanguagePicker'
 import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
-import {
-  languagesQuery,
-  meQuery,
-  projectApiKeysQuery,
-  projectQuery,
-} from '@/lib/queries'
+import { languagesQuery, meQuery, projectApiKeysQuery, projectQuery } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { PageBody, PageHeader, PageSection } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 const routeApi = getRouteApi('/projects/$projectRef/settings')
-
 
 export function SettingsPage() {
   const { projectRef: projectId } = routeApi.useParams()
@@ -71,8 +80,7 @@ export function SettingsPage() {
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: typeof form) =>
-      projectsApi.update(projectId, data),
+    mutationFn: (data: typeof form) => projectsApi.update(projectId, data),
     onSuccess: (updated) => {
       qc.setQueryData(queryKeys.projects.detail(projectId), updated)
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
@@ -110,8 +118,7 @@ export function SettingsPage() {
   }
 
   const createKeyMut = useMutation({
-    mutationFn: (name: string) =>
-      projectsApi.createApiKey(projectId, name),
+    mutationFn: (name: string) => projectsApi.createApiKey(projectId, name),
     onSuccess: (key) => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.apiKeys(projectId) })
       setCreatedKey(key)
@@ -130,18 +137,6 @@ export function SettingsPage() {
     },
     onError: () => toast.error('Failed to revoke key'),
   })
-
-  function toggleTargetLang(code: string) {
-    setSaveForm((f) => {
-      const base = f ?? form
-      return {
-        ...base,
-        target_languages: base.target_languages.includes(code)
-          ? base.target_languages.filter((l) => l !== code)
-          : [...base.target_languages, code],
-      }
-    })
-  }
 
   const apiKeyTable = useReactTable({
     data: apiKeyData,
@@ -166,14 +161,17 @@ export function SettingsPage() {
   const isDirty = saveForm !== null
 
   return (
-    <PageBody className="gap-10">
-      <section className="flex flex-col gap-5">
-        <PageHeader
-          eyebrow="Project"
-          title="Settings"
-          description="Name, languages, and layout for this catalog."
-        />
+    <PageBody className="mx-auto w-full max-w-5xl gap-8">
+      <PageHeader
+        eyebrow="Project"
+        title="Settings"
+        description="Name, languages, and layout for this catalog."
+      />
 
+      <PageSection
+        title="Project details"
+        description="Choose the name, source language, and file layout for your catalog."
+      >
         <Card>
           <CardContent>
             <FieldGroup>
@@ -183,14 +181,12 @@ export function SettingsPage() {
                   id="project_name"
                   value={form.name}
                   aria-invalid={errors.name ? true : undefined}
-                  onChange={(e) =>
-                    setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))
-                  }
+                  onChange={(e) => setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))}
                 />
                 <FieldError>{errors.name}</FieldError>
               </Field>
 
-              <div className="grid grid-cols-2 gap-4">
+              <FieldGroup className="grid gap-4 sm:grid-cols-2">
                 <Field>
                   <FieldLabel htmlFor="base_language">Base language</FieldLabel>
                   <Select
@@ -199,9 +195,7 @@ export function SettingsPage() {
                       setSaveForm((f) => ({
                         ...(f ?? form),
                         base_language: v,
-                        target_languages: (f ?? form).target_languages.filter(
-                          (l) => l !== v,
-                        ),
+                        target_languages: (f ?? form).target_languages.filter((l) => l !== v),
                       }))
                     }
                   >
@@ -242,32 +236,36 @@ export function SettingsPage() {
                     </SelectContent>
                   </Select>
                 </Field>
-              </div>
+              </FieldGroup>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+      </PageSection>
 
-              <Field>
-                <FieldLabel>Target languages</FieldLabel>
-                <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto border border-border rounded-md p-2">
-                  {targetLangs.map((l) => {
-                    const selected = form.target_languages.includes(l.code)
-                    return (
-                      <Button
-                        key={l.code}
-                        type="button"
-                        variant={selected ? 'secondary' : 'ghost'}
-                        size="sm"
-                        className="justify-start"
-                        onClick={() => toggleTargetLang(l.code)}
-                      >
-                        <span className="font-mono text-[10px] text-muted-foreground w-5">
-                          {l.code}
-                        </span>
-                        {l.name}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </Field>
+      <PageSection
+        title="Target languages"
+        description="Select the languages you translate into. The source language is excluded."
+      >
+        <Card>
+          <CardContent>
+            <TargetLanguagePicker
+              languages={targetLangs}
+              value={form.target_languages}
+              onChange={(target_languages) =>
+                setSaveForm((f) => ({ ...(f ?? form), target_languages }))
+              }
+            />
+          </CardContent>
+        </Card>
+      </PageSection>
 
+      <PageSection
+        title="Translation context"
+        description="Give translators and AI shared guidance on tone and terminology."
+      >
+        <Card>
+          <CardContent>
+            <FieldGroup>
               <TranslationContextField
                 id="project_translation_context"
                 value={form.translation_context ?? ''}
@@ -276,59 +274,60 @@ export function SettingsPage() {
                   setSaveForm((f) => ({ ...(f ?? form), translation_context }))
                 }
               />
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={saveSettings}
-                  disabled={!isDirty || updateMut.isPending}
-                >
-                  {updateMut.isPending && <Spinner data-icon="inline-start" />}
-                  Save changes
-                </Button>
-              </div>
             </FieldGroup>
           </CardContent>
         </Card>
-      </section>
+      </PageSection>
+
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {isDirty ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Unsaved changes
+          </p>
+        ) : null}
+        <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending}>
+          {updateMut.isPending && <Spinner data-icon="inline-start" />}
+          Save changes
+        </Button>
+      </div>
 
       {/* API Keys */}
-      <section className="flex flex-col gap-5">
-        <PageHeader
-          eyebrow="CLI"
-          title="API keys"
-          titleAs="h2"
-          description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
-          actions={
+      <PageSection
+        title="API keys"
+        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-end">
             <Button size="sm" onClick={openGenerateKey}>
               <Plus data-icon="inline-start" />
               Generate key
             </Button>
-          }
-        />
-
-        {apiKeys.length > 0 ? (
-          <div className="flex flex-col gap-4">
-            <DataTableToolbar
-              search={apiKeyFilter}
-              onSearchChange={setApiKeyFilter}
-              placeholder="Search keys…"
-            />
-            <DataTable table={apiKeyTable} />
-            <DataTablePagination table={apiKeyTable} />
           </div>
-        ) : (
-          <EmptyState
-            title="No API keys yet"
-            description="Generate a personal key for the CLI. The secret is created automatically and shown once."
-            action={
-              <Button size="sm" onClick={openGenerateKey}>
-                <Plus data-icon="inline-start" />
-                Generate key
-              </Button>
-            }
-          />
-        )}
-      </section>
+
+          {apiKeys.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              <DataTableToolbar
+                search={apiKeyFilter}
+                onSearchChange={setApiKeyFilter}
+                placeholder="Search keys…"
+              />
+              <DataTable table={apiKeyTable} />
+              <DataTablePagination table={apiKeyTable} />
+            </div>
+          ) : (
+            <EmptyState
+              title="No API keys yet"
+              description="Generate a personal key for the CLI. The secret is created automatically and shown once."
+              action={
+                <Button size="sm" onClick={openGenerateKey}>
+                  <Plus data-icon="inline-start" />
+                  Generate key
+                </Button>
+              }
+            />
+          )}
+        </div>
+      </PageSection>
 
       <Dialog
         open={showNewKey}
@@ -343,8 +342,8 @@ export function SettingsPage() {
           <DialogHeader>
             <DialogTitle>Generate API key</DialogTitle>
             <DialogDescription>
-              A secret is generated automatically and shown once. This key identifies you on the CLI — do not share it.
-              Your previous personal key for this project will be revoked.
+              A secret is generated automatically and shown once. This key identifies you on the CLI
+              — do not share it. Your previous personal key for this project will be revoked.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -382,10 +381,7 @@ export function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={createdKey !== null}
-        onOpenChange={(o) => !o && setCreatedKey(null)}
-      >
+      <Dialog open={createdKey !== null} onOpenChange={(o) => !o && setCreatedKey(null)}>
         <DialogContent className="sm:max-w-lg" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>API key generated</DialogTitle>
@@ -397,7 +393,8 @@ export function SettingsPage() {
             <TriangleAlert />
             <AlertTitle>Store this key securely</AlertTitle>
             <AlertDescription>
-              Use it with <code>locale init -k</code>. Anyone with this key can push to this project as you.
+              Use it with <code>locale init -k</code>. Anyone with this key can push to this project
+              as you.
             </AlertDescription>
           </Alert>
           {createdKey ? (

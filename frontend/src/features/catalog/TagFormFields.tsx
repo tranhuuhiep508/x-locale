@@ -28,13 +28,14 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
         <FieldError>{errors.name}</FieldError>
       </Field>
       <Field>
-        <FieldLabel>Color</FieldLabel>
+        <FieldLabel htmlFor={`${idPrefix}_color`}>Color</FieldLabel>
         <div className="flex items-center gap-2">
           <input
+            id={`${idPrefix}_color`}
             type="color"
             value={form.color}
             onChange={(e) => onChange({ ...form, color: e.target.value })}
-            className="h-9 w-9 cursor-pointer rounded border border-input p-0.5"
+            className="size-9 shrink-0 cursor-pointer rounded border border-input p-0.5"
           />
           <div className="flex flex-wrap gap-1">
             {TAG_PRESET_COLORS.map((c) => (
@@ -55,10 +56,13 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
           </div>
         </div>
         <div
-          className="mt-1 flex w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-medium"
+          className="mt-1 flex max-w-full w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-medium wrap-anywhere"
           style={{ backgroundColor: form.color + '22', color: form.color }}
         >
-          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: form.color }} />
+          <span
+            className="size-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: form.color }}
+          />
           {form.name || 'Preview'}
         </div>
       </Field>

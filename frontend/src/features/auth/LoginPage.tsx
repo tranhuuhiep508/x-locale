@@ -5,32 +5,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export function LoginPage() {
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-muted">
+    <div className="flex h-svh flex-col overflow-hidden bg-background">
       <AppHeader />
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-4">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-4">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col items-center">
             <div className="mb-3 flex items-center gap-2">
               <Layers className="size-8 text-primary" />
-              <span className="text-2xl font-bold text-foreground">x-locale</span>
+              <span className="text-2xl font-semibold tracking-tight text-foreground">
+                x-locale
+              </span>
             </div>
             <p className="text-sm text-muted-foreground">Translation management</p>
           </div>
 
-          <Card className="p-4">
+          <Card>
             <CardHeader>
               <CardTitle className="text-lg">Sign in</CardTitle>
-              <CardDescription>
-                Sign in to manage your translation projects.
-              </CardDescription>
+              <CardDescription>Sign in to manage your translation projects.</CardDescription>
             </CardHeader>
             <CardContent>
-              <a href="/api/auth/login" className="block w-full">
-                <Button className="w-full" size="lg">
+              <Button className="w-full" size="lg" asChild>
+                <a href="/api/auth/login">
                   <LogIn data-icon="inline-start" />
                   Continue with Microsoft
-                </Button>
-              </a>
+                </a>
+              </Button>
             </CardContent>
           </Card>
 
