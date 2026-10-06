@@ -29,18 +29,12 @@ describe('LoginPage', () => {
     expect(screen.getByText(/迅速に翻訳し/i)).toBeDefined()
   })
 
-  it('toggles local development details when clicked', () => {
+  it('renders the full core main features suite including AI and draft isolation', () => {
     render(<LoginPage />)
 
-    const toggleButton = screen.getByRole('button', {
-      name: /local development or dev bypass mode/i,
-    })
-    expect(screen.queryByText(/AUTH_DEV_BYPASS=true/i)).toBeNull()
-
-    fireEvent.click(toggleButton)
-    expect(screen.getByText(/AUTH_DEV_BYPASS=true/i)).toBeDefined()
-
-    fireEvent.click(toggleButton)
-    expect(screen.queryByText(/AUTH_DEV_BYPASS=true/i)).toBeNull()
+    expect(screen.getByText('Context-Aware AI')).toBeDefined()
+    expect(screen.getByText('Draft & Public')).toBeDefined()
+    expect(screen.getByText('CLI & Git Sync')).toBeDefined()
+    expect(screen.getByText('Audit & Revert')).toBeDefined()
   })
 })

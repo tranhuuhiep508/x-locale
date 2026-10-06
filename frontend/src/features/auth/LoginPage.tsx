@@ -5,12 +5,9 @@ import {
   ArrowRight,
   Terminal,
   Sparkles,
-  History,
   Globe,
   FileCode2,
-  Lock,
-  ChevronDown,
-  ChevronUp,
+  History,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { Button } from '@/components/ui/button'
@@ -100,7 +97,6 @@ const DEMO_LOCALES: DemoLocale[] = [
 
 export function LoginPage() {
   const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(1) // Default to Tiếng Việt (Vietnamese base in demo)
-  const [showDevDetails, setShowDevDetails] = useState(false)
 
   const activeLocale = DEMO_LOCALES[selectedLocaleIndex]
 
@@ -126,10 +122,10 @@ export function LoginPage() {
 
       {/* Top Application Header */}
       <header className="sky-chrome sticky top-0 z-40 border-b border-border/40">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20 shadow-xs">
-              <Layers className="size-4.5 text-primary" />
+        <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20 shadow-xs">
+              <Layers className="size-4 text-primary" />
             </span>
             <span className="text-base font-semibold tracking-tight text-foreground">
               x-locale
@@ -141,13 +137,13 @@ export function LoginPage() {
       </header>
 
       {/* Main Content Area */}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 items-center px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-        <div className="grid w-full gap-8 lg:grid-cols-12 lg:gap-12 xl:gap-16">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 items-center px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+        <div className="grid w-full gap-6 lg:grid-cols-12 lg:gap-8 xl:gap-12">
           {/* Left Column: Focused Authentication Card */}
           <div className="flex flex-col justify-center lg:col-span-5">
             <div className="mx-auto w-full max-w-md lg:mx-0">
               {/* Eyebrow badge */}
-              <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                 <ShieldCheck className="size-3.5 text-primary" />
                 <span>Translation management</span>
               </div>
@@ -156,12 +152,12 @@ export function LoginPage() {
               <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                 Welcome to your localization workspace
               </h1>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
                 Sign in to manage and sync your localization catalogs.
               </p>
 
               {/* Main Auth Card */}
-              <div className="sky-panel relative mt-6 overflow-hidden rounded-2xl border border-border/80 p-6 shadow-md transition-all duration-200 sm:p-7">
+              <div className="sky-panel relative mt-4 overflow-hidden rounded-2xl border border-border/80 p-5 shadow-md transition-all duration-200 sm:p-6">
                 {/* Horizon highlight hairline on top border */}
                 <div
                   className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent"
@@ -171,7 +167,7 @@ export function LoginPage() {
                 <div className="space-y-4">
                   {/* Primary SSO Button */}
                   <Button
-                    className="group relative h-12 w-full justify-between rounded-xl px-4 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md"
+                    className="group relative h-11 w-full justify-between rounded-xl px-4 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md"
                     size="lg"
                     asChild
                   >
@@ -186,34 +182,6 @@ export function LoginPage() {
                     </a>
                   </Button>
                 </div>
-
-                {/* Collapsible Local Development / Dev Bypass helper */}
-                <div className="mt-6 border-t border-border/50 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowDevDetails(!showDevDetails)}
-                    className="flex w-full items-center justify-between text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Lock className="size-3.5 text-primary/70" />
-                      Local development or dev bypass mode?
-                    </span>
-                    {showDevDetails ? (
-                      <ChevronUp className="size-3.5 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="size-3.5 text-muted-foreground" />
-                    )}
-                  </button>
-
-                  {showDevDetails && (
-                    <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground animate-in fade-in-50 duration-150">
-                      <p>
-                        When <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">AUTH_DEV_BYPASS=true</code> is
-                        enabled without OIDC, signing in automatically mints a local <span className="font-semibold text-foreground">Dev User</span> session.
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -224,7 +192,7 @@ export function LoginPage() {
               {/* Product Showcase Card */}
               <div className="sky-panel overflow-hidden rounded-2xl border border-border/80 shadow-xl ring-1 ring-border/40 backdrop-blur-sm">
                 {/* Showcase Header Bar */}
-                <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-4 py-3">
+                <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1.5">
                       <div className="size-2.5 rounded-full bg-red-400/80 dark:bg-red-500/80" />
@@ -248,7 +216,7 @@ export function LoginPage() {
                 </div>
 
                 {/* Interactive Locale Switcher Tabs */}
-                <div className="border-b border-border/60 bg-muted/20 px-4 py-2.5">
+                <div className="border-b border-border/60 bg-muted/20 px-4 py-2">
                   <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 sm:pb-0">
                     <div className="flex items-center gap-1.5">
                       <Globe className="size-3.5 text-muted-foreground shrink-0" />
@@ -284,7 +252,7 @@ export function LoginPage() {
                 </div>
 
                 {/* Active String Inspection Canvas */}
-                <div className="p-5 sm:p-6 space-y-4">
+                <div className="p-4 sm:p-5 space-y-3">
                   {/* String Key & Metadata row */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 font-mono text-xs">
@@ -314,9 +282,9 @@ export function LoginPage() {
                   </div>
 
                   {/* Source vs Target Comparison Cards */}
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2.5 sm:grid-cols-2">
                     {/* Source Text Box */}
-                    <div className="rounded-xl border border-border/70 bg-card p-4 space-y-1.5">
+                    <div className="rounded-xl border border-border/70 bg-card p-3 space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-mono font-medium text-muted-foreground uppercase">
                           Source (en-US)
@@ -329,7 +297,7 @@ export function LoginPage() {
                     </div>
 
                     {/* Target Translation Box */}
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-1.5">
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-mono font-semibold text-primary uppercase flex items-center gap-1">
                           <span>{activeLocale.flag}</span>
@@ -350,14 +318,14 @@ export function LoginPage() {
 
                   {/* Terminal CLI Snippet */}
                   <div className="overflow-hidden rounded-xl border border-border/60 bg-haze-950 text-haze-100 dark:bg-black/80 font-mono text-xs shadow-inner">
-                    <div className="flex items-center justify-between border-b border-haze-800/60 bg-haze-900/60 px-3.5 py-1.5 text-[11px] text-haze-400">
+                    <div className="flex items-center justify-between border-b border-haze-800/60 bg-haze-900/60 px-3 py-1 text-[11px] text-haze-400">
                       <div className="flex items-center gap-1.5">
                         <Terminal className="size-3 text-primary" />
                         <span>terminal // loc cli</span>
                       </div>
                       <span className="text-haze-500">v0.2.0</span>
                     </div>
-                    <div className="p-3.5 space-y-1.5 text-haze-200">
+                    <div className="p-2.5 space-y-1 text-haze-200 text-[11px]">
                       <p className="text-haze-400">
                         <span className="text-emerald-400">$</span> loc push --stage draft
                       </p>
@@ -374,22 +342,47 @@ export function LoginPage() {
                   </div>
                 </div>
 
-                {/* Showcase Footer Features Strip */}
-                <div className="flex items-center justify-around border-t border-border/60 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <ShieldCheck className="size-3.5 text-primary" />
-                    Draft & Public
-                  </span>
-                  <span className="text-border">•</span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Sparkles className="size-3.5 text-primary" />
-                    Context-aware AI
-                  </span>
-                  <span className="text-border">•</span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <History className="size-3.5 text-primary" />
-                    Audit & Revert
-                  </span>
+                {/* Core Main Features Suite */}
+                <div className="grid grid-cols-2 divide-y divide-border/60 border-t border-border/60 bg-muted/20 sm:grid-cols-4 sm:divide-y-0 sm:divide-x">
+                  <div className="p-2.5 flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Sparkles className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">Context-Aware AI</p>
+                      <p className="text-[10px] text-muted-foreground truncate">Tone & confidence</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <ShieldCheck className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">Draft & Public</p>
+                      <p className="text-[10px] text-muted-foreground truncate">Zero prod drift</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-azure-500/10 text-azure-600 dark:text-azure-400">
+                      <Terminal className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">CLI & Git Sync</p>
+                      <p className="text-[10px] text-muted-foreground truncate">CI/CD automation</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <History className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">Audit & Revert</p>
+                      <p className="text-[10px] text-muted-foreground truncate">1-click batch undo</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -398,15 +391,8 @@ export function LoginPage() {
       </main>
 
       {/* Subtle Footer */}
-      <footer className="border-t border-border/40 py-3 text-center text-xs text-muted-foreground">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <p>© {new Date().getFullYear()} x-locale</p>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-[11px]">OpenID Connect</span>
-            <span>•</span>
-            <span className="font-mono text-[11px]">MIT</span>
-          </div>
-        </div>
+      <footer className="border-t border-border/40 py-2.5 text-center text-xs text-muted-foreground">
+        <p>© {new Date().getFullYear()} x-locale</p>
       </footer>
     </div>
   )

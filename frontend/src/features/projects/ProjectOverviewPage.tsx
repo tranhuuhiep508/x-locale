@@ -1,7 +1,6 @@
 import { getRouteApi, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import type { ElementType } from 'react'
-import { useState } from 'react'
 import {
   AlignLeft,
   ArrowRight,
@@ -9,14 +8,7 @@ import {
   GitCompareArrows,
   Globe2,
   Settings2,
-  Terminal,
-  Copy,
-  Check,
-  Sparkles,
   Layers,
-  Clock,
-  ArrowUpDown,
-  BookOpen,
 } from 'lucide-react'
 import { ActivityCard } from '@/features/activity/ActivityCard'
 import {
@@ -207,51 +199,6 @@ function LanguageCoverage({
   )
 }
 
-function CliQuickCard({ projectSlug }: { projectSlug: string }) {
-  const [copied, setCopied] = useState(false)
-  const command = `loc pull --stage public`
-
-  function handleCopy() {
-    navigator.clipboard.writeText(command)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="sky-panel overflow-hidden rounded-xl border border-border/70 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="eyebrow flex items-center gap-1.5 text-primary">
-          <Terminal className="size-3.5" />
-          CLI Quick Command
-        </span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
-      </div>
-      <div className="rounded-lg bg-haze-950 text-haze-200 dark:bg-black/60 p-2.5 font-mono text-xs flex items-center justify-between">
-        <span className="truncate">
-          <span className="text-emerald-400">$</span> {command}
-        </span>
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Fetch production snapshots locally</span>
-        <Link
-          to="/projects/$projectRef/import-export"
-          params={{ projectRef: projectSlug }}
-          className="hover:text-primary transition-colors flex items-center gap-1"
-        >
-          <ArrowUpDown className="size-3" />
-          Import / Export
-        </Link>
-      </div>
-    </div>
-  )
-}
 
 export function ProjectOverviewPage() {
   const { projectRef } = routeApi.useParams()
@@ -413,10 +360,8 @@ export function ProjectOverviewPage() {
           </CardFooter>
         </Card>
 
-        {/* Right Column: CLI Quick Card + Recent Activity */}
+        {/* Right Column: Recent Activity */}
         <div className="space-y-6">
-          <CliQuickCard projectSlug={project.slug} />
-
           {/* Recent Activity Card */}
           <Card size="sm" className="min-w-0 shadow-xs">
             <CardHeader className="items-center">
