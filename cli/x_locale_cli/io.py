@@ -104,7 +104,7 @@ def resolve_push_source(config: Config, source_file: Path | None) -> Path:
     if path.is_dir():
         raise XLocaleError(
             f"Expected a JSON file, got directory '{path}'. "
-            f"Run `locale push` without arguments to push {default_path}"
+            f"Run `loc push` without arguments to push {default_path}"
         )
 
     if path.suffix.lower() != ".json":
@@ -114,7 +114,7 @@ def resolve_push_source(config: Config, source_file: Path | None) -> Path:
         raise XLocaleError(
             f"Cannot push translation file '{path.name}'. "
             f"Push only accepts the base language file ({base_language}.json). "
-            f"Run `locale push` without arguments to use {default_path}"
+            f"Run `loc push` without arguments to use {default_path}"
         )
 
     if not path.exists():

@@ -336,7 +336,7 @@ def run_locale(
     env: dict[str, str] | None = None,
     timeout: float = 120.0,
 ) -> CliResult:
-    command = ["uv", "run", "--project", str(CLI_ROOT), "locale", *args]
+    command = ["uv", "run", "--project", str(CLI_ROOT), "loc", *args]
     merged = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
     if env:
         merged.update(env)

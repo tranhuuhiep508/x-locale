@@ -22,7 +22,7 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
         "Missing locally",
         "Missing locally",
         "On x-locale export, absent from local files.",
-        "→ Run `locale pull` to add them.",
+        "→ Run `loc pull` to add them.",
         "red",
     ),
     (
@@ -30,7 +30,7 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
         "Local only (not on x-locale)",
         "Local only (not on x-locale)",
         "In local files, not on x-locale. Push can create them.",
-        "→ Run `locale push` to add them to x-locale.",
+        "→ Run `loc push` to add them to x-locale.",
         "yellow",
     ),
     (
@@ -56,14 +56,14 @@ _ISSUE_SPECS: list[tuple[str, str, str, str, str, str]] = [
         "Source text differs",
         "Source text differs",
         "Same key on both sides, base-language text is different.",
-        "→ Run `locale push` to send local text, or `locale pull` to take x-locale.",
+        "→ Run `loc push` to send local text, or `loc pull` to take x-locale.",
         "yellow",
     ),
     (
         "unassigned_local",
         "_unassigned (CLI will not push)",
         "_unassigned (CLI will not push)",
-        "Keys under _unassigned/ are counted locally but skipped by `locale push`.",
+        "Keys under _unassigned/ are counted locally but skipped by `loc push`.",
         "→ Assign a module in x-locale, or import with `unassigned`.",
         "yellow",
     ),
@@ -385,7 +385,7 @@ def print_push_report(
         remote_only,
         style="yellow",
         hint="Present in x-locale export for the modules you pushed — not deleted.",
-        action="→ Run `locale pull` to add them locally. Push never deletes remote keys.",
+        action="→ Run `loc pull` to add them locally. Push never deletes remote keys.",
         total=orphan_count,
     )
 
@@ -477,4 +477,4 @@ def print_sync_summary(snapshot: StatusSnapshot) -> None:
     noun = "issue" if count == 1 else "issues"
     console.print(f"\n[yellow]{count} {noun} remain after push + pull[/yellow]")
     print_issue_sections(issues, limit=_STATUS_KEY_LIMIT)
-    console.print("\n[dim]Full breakdown: locale status[/dim]")
+    console.print("\n[dim]Full breakdown: loc status[/dim]")

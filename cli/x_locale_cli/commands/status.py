@@ -1,4 +1,4 @@
-"""``locale status`` — diff local files against x-locale without writing."""
+"""``loc status`` — diff local files against x-locale without writing."""
 
 from __future__ import annotations
 

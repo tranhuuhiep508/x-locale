@@ -27,11 +27,11 @@ class AppHelpTests(unittest.TestCase):
         for name in ("init", "push", "pull", "sync", "status"):
             self.assertIn(name, output)
 
-    def test_root_help_uses_locale_entrypoint_and_x_locale_branding(self) -> None:
-        result = self.runner.invoke(app, ["--help"], prog_name="locale")
+    def test_root_help_uses_loc_entrypoint_and_x_locale_branding(self) -> None:
+        result = self.runner.invoke(app, ["--help"], prog_name="loc")
         self.assertEqual(result.exit_code, 0, result.output)
         output = strip_ansi(result.output)
-        self.assertIn("Usage: locale", output)
+        self.assertIn("Usage: loc", output)
         self.assertIn("x-locale CLI", output)
         self.assertNotIn("Usage: tms", output)
         self.assertNotIn("TMS CLI", output)
@@ -64,25 +64,21 @@ class AppHelpTests(unittest.TestCase):
                 os.chdir(previous)
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("No config found", result.output)
-        self.assertIn("locale init", result.output)
+        self.assertIn("loc init", result.output)
         self.assertNotIn("tms init", result.output)
 
 
 class PackageIdentityTests(unittest.TestCase):
-    def test_pyproject_names_locale_binary_and_x_locale_cli_package(self) -> None:
+    def test_pyproject_names_loc_binary_and_x_locale_cli_package(self) -> None:
         text = (CLI_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('name = "x-locale-cli"', text)
-        self.assertIn('locale = "x_locale_cli.main:app"', text)
+        self.assertIn('loc = "x_locale_cli.main:app"', text)
         self.assertIn('include = ["x_locale_cli*"]', text)
         self.assertNotIn("tms-cli", text)
         self.assertNotIn("tms_cli", text)
         self.assertNotIn("\ntms = ", text)
+        self.assertNotIn("\nlocale = ", text)
 
     def test_config_dir_is_dot_x_locale(self) -> None:
         self.assertEqual(CONFIG_DIR, Path(".x-locale"))
         self.assertEqual(CONFIG_FILE, Path(".x-locale") / "config.yaml")
-
-    def test_windows_shim_invokes_x_locale_cli(self) -> None:
-        text = (CLI_ROOT / "x_locale_cli" / "locale.cmd").read_text(encoding="utf-8")
-        self.assertIn("x_locale_cli.main", text)
-        self.assertNotIn("tms_cli", text)

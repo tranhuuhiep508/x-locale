@@ -1,4 +1,4 @@
-"""``locale push`` — upload base-language source strings."""
+"""``loc push`` — upload base-language source strings."""
 
 from __future__ import annotations
 

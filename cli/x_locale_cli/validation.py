@@ -60,7 +60,7 @@ def require_matching_base(config: Config, state: dict[str, Any]) -> None:
     if config.base_language != state["base_language"]:
         raise XLocaleError(
             f"Configured base language '{config.base_language}' does not match project base language "
-            f"'{state['base_language']}'. Refresh config with locale init."
+            f"'{state['base_language']}'. Refresh config with loc init."
         )
 
 

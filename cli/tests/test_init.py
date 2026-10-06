@@ -1,4 +1,4 @@
-"""Interactive and flag-mode ``locale init``."""
+"""Interactive and flag-mode ``loc init``."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ class InitCommandTests(unittest.TestCase):
             result = self._invoke(["init", "-k", "xl_secret"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("API URL", result.output)
-        self.assertNotIn("x-locale init", result.output)
+        self.assertNotIn("loc init", result.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "xl_secret")
 
@@ -171,7 +171,7 @@ class InitCommandTests(unittest.TestCase):
                 input="https://x-locale.example.com\n\nxl_wizard_key\n./src/locales\npublic\n",
             )
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("x-locale init", result.output)
+        self.assertIn("loc init", result.output)
         self.assertIn("API URL", result.output)
         self.assertIn("Web URL", result.output)
         self.assertIn("API key", result.output)

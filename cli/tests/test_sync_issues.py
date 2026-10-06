@@ -102,7 +102,7 @@ class ReportHintTests(unittest.TestCase):
         self.assertIn("re-add", text)
         self.assertNotIn("Orphaned locally", text)
         self.assertNotIn("Untranslated", text)
-        self.assertNotIn("run `locale push` to add to x-locale", text)
+        self.assertNotIn("run `loc push` to add to x-locale", text)
 
     def test_sync_summary_counts_remaining_issues(self) -> None:
         snapshot = StatusSnapshot(

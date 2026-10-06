@@ -393,7 +393,7 @@ export function SettingsPage() {
             <TriangleAlert />
             <AlertTitle>Store this key securely</AlertTitle>
             <AlertDescription>
-              Use it with <code>locale init -k</code>. Anyone with this key can push to this project
+              Use it with <code>loc init -k</code>. Anyone with this key can push to this project
               as you.
             </AlertDescription>
           </Alert>

@@ -1,4 +1,4 @@
-"""``locale pull`` — download translations to local JSON files."""
+"""``loc pull`` — download translations to local JSON files."""
 
 from __future__ import annotations
 
