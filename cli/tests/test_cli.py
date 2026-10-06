@@ -82,8 +82,3 @@ class PackageIdentityTests(unittest.TestCase):
     def test_config_dir_is_dot_x_locale(self) -> None:
         self.assertEqual(CONFIG_DIR, Path(".x-locale"))
         self.assertEqual(CONFIG_FILE, Path(".x-locale") / "config.yaml")
-
-    def test_windows_shim_invokes_x_locale_cli(self) -> None:
-        text = (CLI_ROOT / "x_locale_cli" / "loc.cmd").read_text(encoding="utf-8")
-        self.assertIn("x_locale_cli.main", text)
-        self.assertNotIn("tms_cli", text)

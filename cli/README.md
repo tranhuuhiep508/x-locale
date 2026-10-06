@@ -22,10 +22,6 @@ uv tool install x-locale-cli
 uv tool install -e ./cli
 ```
 
-**Windows:** After install, run `python -m x_locale_cli.windows` once to replace the
-unsigned `loc.exe` shim with `loc.cmd` so Smart App Control does not block the
-command.
-
 The command is `loc`, avoiding a collision with the system `locale` command on
 macOS and Linux. From this repo, use `uv run --project cli loc`, or invoke
 `python -m x_locale_cli`.

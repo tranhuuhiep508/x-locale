@@ -40,6 +40,3 @@ pythonpath = ["."]
 markers = [
   "e2e: CLI end-to-end tests against a live x-locale API",
 ]
-
-[tool.setuptools.package-data]
-x_locale_cli = ["loc.cmd"]
