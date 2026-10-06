@@ -15,7 +15,7 @@ CONFIG_FILE = CONFIG_DIR / "config.yaml"
 
 def load_config(path: Path = CONFIG_FILE) -> Config:
     if not path.exists():
-        raise XLocaleError("No config found. Run `locale init` first.")
+        raise XLocaleError("No config found. Run `loc init` first.")
     with path.open("r", encoding="utf-8") as fh:
         return Config.from_dict(yaml.safe_load(fh) or {})
 
@@ -32,7 +32,7 @@ def save_config(config: Config, path: Path = CONFIG_FILE) -> None:
 
 def require_project_ref(config: Config) -> str:
     if not config.project_ref:
-        raise XLocaleError("project_slug missing from config. Run `locale init` first.")
+        raise XLocaleError("project_slug missing from config. Run `loc init` first.")
     return config.project_ref
 
 

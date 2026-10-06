@@ -212,7 +212,7 @@ class PulledFileReport:
 
 @dataclass
 class PullResult:
-    """Export payload and sync-state from a pull, reusable by ``locale sync``."""
+    """Export payload and sync-state from a pull, reusable by ``loc sync``."""
 
     export: Any
     state: dict[str, Any]

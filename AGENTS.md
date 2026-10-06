@@ -17,7 +17,7 @@ missing.
 |----------|------------|-------------------------------------------------------------------------|------|-------|
 | Backend | `backend/` | `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + SQLite/Postgres. Schema via Alembic (not `create_all`). |
 | Frontend | `frontend/`| `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
-| CLI | `cli/` | `uv run --project cli locale <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
+| CLI | `cli/` | `uv run --project cli loc <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
 
 Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 

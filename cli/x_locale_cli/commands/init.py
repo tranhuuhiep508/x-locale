@@ -1,4 +1,4 @@
-"""``locale init`` — discover the project and write ``.x-locale/config.yaml``."""
+"""``loc init`` — discover the project and write ``.x-locale/config.yaml``."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def init(
     )
     if wizard:
         console.print(
-            "[bold]x-locale init[/bold] — connect this directory to a project",
+            "[bold]loc init[/bold] — connect this directory to a project",
             highlight=False,
         )
 
@@ -107,7 +107,7 @@ def init(
     if base_language is not None and base_language != project_base:
         raise XLocaleError(
             f"Configured base language '{base_language}' does not match project base language "
-            f"'{project_base}'. Run locale init with the project base language."
+            f"'{project_base}'. Run loc init with the project base language."
         )
     target_languages: list[str] = project.get("target_languages") or []
     locales = [project_base, *[lc for lc in target_languages if lc != project_base]]
@@ -172,7 +172,7 @@ def _use_wizard(
     base_language: str | None,
     web_url: str | None,
 ) -> bool:
-    """Prompt for omitted values only when `locale init` is run with no flags."""
+    """Prompt for omitted values only when `loc init` is run with no flags."""
     if yes or not _stdin_is_tty():
         return False
     return all(
@@ -221,7 +221,7 @@ def _require_api_key(value: str | None, *, prompt: bool) -> str:
     if value is not None and value.strip():
         return value.strip()
     if not prompt:
-        raise XLocaleError("API key is required. Pass -k/--api-key or run `locale init` in a terminal.")
+        raise XLocaleError("API key is required. Pass -k/--api-key or run `loc init` in a terminal.")
     hide_input = sys.stdin.isatty()
     while True:
         typed = str(typer.prompt("API key", hide_input=hide_input)).strip()

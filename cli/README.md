@@ -23,12 +23,22 @@ uv tool install -e ./cli
 ```
 
 **Windows:** After install, run `python -m x_locale_cli.windows` once to replace the
-unsigned `locale.exe` shim with `locale.cmd` so Smart App Control does not block the
+unsigned `loc.exe` shim with `loc.cmd` so Smart App Control does not block the
 command.
 
-The `locale` command can shadow the system `/usr/bin/locale` tool if the uv/pip
-scripts directory is first on `PATH`. Use `uv run --project cli locale` from this
-repo, or invoke `python -m x_locale_cli`, if you still need the OS command.
+The command is `loc`, avoiding a collision with the system `locale` command on
+macOS and Linux. From this repo, use `uv run --project cli loc`, or invoke
+`python -m x_locale_cli`.
+
+If you installed an earlier version with the `locale` command, reinstall from
+the updated repo to refresh the executable:
+
+```bash
+uv tool install --reinstall -e ./cli
+```
+
+Update scripts and CI commands from `locale` to `loc`. Existing
+`.x-locale/config.yaml` files continue to work.
 
 ---
 
@@ -36,27 +46,27 @@ repo, or invoke `python -m x_locale_cli`, if you still need the OS command.
 
 ```bash
 # 1. Initialise — interactive wizard, or pass flags for CI
-locale init
-# locale init -k xlocale_your_api_key -u https://x-locale.example.com -o ./src/locales
+loc init
+# loc init -k xlocale_your_api_key -u https://x-locale.example.com -o ./src/locales
 
 # 2. Push base-language source strings to x-locale
-locale push
+loc push
 
 # 3. Pull all translations back to disk
-locale pull
+loc pull
 
 # 4. Or do both in one step
-locale sync
+loc sync
 
 # 5. Check what is out of sync without changing anything
-locale status
+loc status
 ```
 
 ---
 
 ## Config — `.x-locale/config.yaml`
 
-`locale init` creates this file automatically.  You can edit it by hand.
+`loc init` creates this file automatically.  You can edit it by hand.
 
 ```yaml
 api_url: http://localhost:8000   # x-locale API origin
@@ -66,19 +76,19 @@ api_key: xlocale_xxx                 # Project-scoped API key
 output_dir: ./src/locales        # Root directory for locale files
 layout: modular                  # flat | modular
 stage: draft                     # draft | public  (used by pull/sync)
-base_language: vi                # Source language pushed by `locale push`
+base_language: vi                # Source language pushed by `loc push`
 locales: [vi, en, ko, ja]        # Locales to pull (all if omitted)
 manifest: true                   # Write manifest.json on modular pull
 ```
 
 `web_url` is optional. Existing configs keep working without it. When it is
-omitted, `locale push` builds the review link from `api_url`. Set it when the
+omitted, `loc push` builds the review link from `api_url`. Set it when the
 UI is served separately from the API — local dev uses the API on port 8000 and
 Vite on port 5173, so set `web_url: http://localhost:5173`. `XLOCALE_WEB_URL`
 is used only when `web_url` is unset.
 
 Project slugs are permanent public references. Existing configurations with
-`project_id: <uuid>` continue to work; `locale init` writes `project_slug` for
+`project_id: <uuid>` continue to work; `loc init` writes `project_slug` for
 new configurations. Keep the generated slug or choose a different one when
 creating the project, because it cannot be changed later.
 
@@ -115,13 +125,13 @@ locales/
 Every command accepts override flags that take precedence over the config file.
 The shared flags are: `--output-dir`, `--layout`, `--stage`, `--locales`.
 
-### `locale init`
+### `loc init`
 
 Initialise `.x-locale/config.yaml`. Calls `GET /api/bootstrap` with the API key to
 discover the linked project, its locales, base language, and layout so those
 values are not retyped.
 
-Run `locale init` with no flags in a terminal for the interactive wizard (API URL,
+Run `loc init` with no flags in a terminal for the interactive wizard (API URL,
 optional Web URL, API key, output directory, pull stage). Passing any of those
 flags skips the wizard and uses defaults for the rest. Existing config is not
 overwritten unless you confirm or pass `--yes`. Leave Web URL blank to use the
@@ -139,7 +149,7 @@ Options:
   -y, --yes                Skip prompts; overwrite existing config
 ```
 
-### `locale push`
+### `loc push`
 
 Push base-language strings to x-locale.
 
@@ -155,7 +165,7 @@ Orphaned remote keys (present on x-locale but absent locally) are **reported but
 never deleted**. Push rejects the entire operation if any local source key is
 queued for removal (`pending_delete`) or tombstoned on x-locale. Restore the
 string in x-locale or remove it locally, then retry. This check also runs when
-local files match the push index; `locale sync` stops before pull on rejection.
+local files match the push index; `loc sync` stops before pull on rejection.
 A historical tombstone does not block a live string created later with the same
 key.
 
@@ -163,7 +173,7 @@ Push sends only keys changed since the last successful push or draft pull.
 `--full` sends the entire source catalog and reports remote-only keys. Every push
 checks current server metadata, including dry-run and an empty delta. The
 configured base language must match the project; refresh stale config with
-`locale init`.
+`loc init`.
 
 A push that creates or updates strings prints one absolute review link when a
 web origin can be resolved:
@@ -185,7 +195,7 @@ Options:
   --full               Send the entire source catalog, ignoring the push index
 ```
 
-### `locale pull`
+### `loc pull`
 
 Pull validates the entire export and resolves all affected paths before writing
 or pruning. Invalid responses, incomplete locale maps, malformed manifests, or
@@ -210,9 +220,9 @@ stay a delta push when values match.
 - Key diffs (Created / Updated / Removed) compare the previous file to the
   export. Files are always rewritten even when values are unchanged.
 - Keys that exist only in rewritten files are removed from those files. Run
-  `locale push` first when new base-language keys in real modules should be
+  `loc push` first when new base-language keys in real modules should be
   kept on x-locale. `_unassigned` is never pushed; pull deletes those files and
-  lists the keys (including after `locale sync`).
+  lists the keys (including after `loc sync`).
 
 ```
 Options:
@@ -224,13 +234,13 @@ Options:
   --locales TEXT       Comma-separated locale list
 ```
 
-### `locale sync`
+### `loc sync`
 
 Runs `push` then `pull` in one step.  Accepts the same override flags as
 `push`/`pull`. After both phases, a **Sync summary** lists leftover mismatches
 with reasons and next steps. Exit code `1` if any blocking issue remains.
 
-### `locale status`
+### `loc status`
 
 Show a diff between local files and x-locale without making any changes.
 
@@ -241,8 +251,8 @@ Displays:
 
 - **Keys in export** — base-language keys in the stage export
 - **Local keys** — total base-language keys found locally
-- **Missing locally** — in export, absent locally → `locale pull`
-- **Local only** — in local files, not on x-locale → `locale push`
+- **Missing locally** — in export, absent locally → `loc pull`
+- **Local only** — in local files, not on x-locale → `loc push`
 - **Pending remove on x-locale** — local key is queued for deletion; omitted from
   draft export. Push will not re-add it. Restore or publish the delete in x-locale,
   or remove the key locally.
@@ -287,14 +297,14 @@ Comments and other nonstandard JSON syntax are rejected.
 
 ```bash
 # Pull only public-stage translations for a subset of locales
-locale pull --stage public --locales en,ja
+loc pull --stage public --locales en,ja
 ```
 
 ---
 
 ## E2E tests (ship gate)
 
-Process tests invoke the real `locale` CLI against a live FastAPI backend with a
+Process tests invoke the real `loc` CLI against a live FastAPI backend with a
 project-scoped API key. They assert exit codes, stdout, and catalog side effects.
 This suite is separate from Playwright UI tests under `e2e/`.
 
@@ -312,20 +322,20 @@ cd cli && uv run pytest tests/e2e -m e2e -v
 ```
 
 The harness migrates a temp database, boots `uvicorn` on a free port, creates projects
-via the dev-bypass session API, and runs `uv run --project cli locale …` in temp
+via the dev-bypass session API, and runs `uv run --project cli loc …` in temp
 directories.
 
 ### Coverage (XLOCALE-11)
 
 | # | Scenario |
 |---|----------|
-| 1 | `locale init` writes `.x-locale/config.yaml` from bootstrap |
-| 2 | `locale push` (flat + modular); orphans reported, never deleted |
-| 3 | `locale push --dry-run` reports without writing |
-| 4 | `locale pull --stage draft` writes files; pending-delete omitted |
-| 5 | `locale pull --stage public` uses published snapshot |
-| 6 | `locale status` exit 0 in sync; exit 1 on mismatch |
-| 7 | `locale sync` push+pull; local-only files in scope are replaced |
+| 1 | `loc init` writes `.x-locale/config.yaml` from bootstrap |
+| 2 | `loc push` (flat + modular); orphans reported, never deleted |
+| 3 | `loc push --dry-run` reports without writing |
+| 4 | `loc pull --stage draft` writes files; pending-delete omitted |
+| 5 | `loc pull --stage public` uses published snapshot |
+| 6 | `loc status` exit 0 in sync; exit 1 on mismatch |
+| 7 | `loc sync` push+pull; local-only files in scope are replaced |
 | 8 | Bad/missing API key → non-zero exit, no hang |
 | 9 | Modular `_unassigned` not pushed |
 | 10 | Pull rewrites from export even when key values unchanged |

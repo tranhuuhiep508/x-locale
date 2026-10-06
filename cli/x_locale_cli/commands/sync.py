@@ -1,4 +1,4 @@
-"""``locale sync`` — push then pull in one step."""
+"""``loc sync`` — push then pull in one step."""
 
 from __future__ import annotations
 

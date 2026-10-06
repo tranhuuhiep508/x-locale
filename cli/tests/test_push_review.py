@@ -1,4 +1,4 @@
-"""Review deep link printed after a successful ``locale push``."""
+"""Review deep link printed after a successful ``loc push``."""
 
 from __future__ import annotations
 

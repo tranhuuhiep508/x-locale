@@ -179,7 +179,7 @@ def test_docs_smoke_readme_and_agents():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for text in (readme, agents):
-        assert "locale init" in text or "`locale`" in text or "locale <" in text
+        assert "loc init" in text or "`loc`" in text or "loc <" in text
         assert "X_LOCALE_SECRET" in text
         assert "X_LOCALE_DEMO_API_KEY" in text
         assert "x_locale_session" in text or "x-locale" in text

@@ -1,4 +1,4 @@
-"""Unit tests for ``locale push --dry-run`` (mocked HTTP, no live API)."""
+"""Unit tests for ``loc push --dry-run`` (mocked HTTP, no live API)."""
 
 from __future__ import annotations
 

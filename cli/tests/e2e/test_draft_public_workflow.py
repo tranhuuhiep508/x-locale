@@ -32,7 +32,7 @@ def _unique_key(prefix: str) -> str:
 
 
 class TestPushWritesWorkingCopyNotPublish:
-    """XLOCALE-26: locale push updates draft/working copy; public snapshot unchanged until publish."""
+    """XLOCALE-26: loc push updates draft/working copy; public snapshot unchanged until publish."""
 
     def test_flat_push_stays_draft_and_absent_from_public_export(
         self,

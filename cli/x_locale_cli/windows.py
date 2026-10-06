@@ -10,14 +10,14 @@ from pathlib import Path
 
 
 def install_shim() -> bool:
-    """Replace unsigned locale.exe with locale.cmd. Returns True if a change was made."""
+    """Replace unsigned loc.exe with loc.cmd. Returns True if a change was made."""
     if sys.platform != "win32":
         return False
 
     scripts_dir = Path(sysconfig.get_path("scripts"))
-    exe_path = scripts_dir / "locale.exe"
-    cmd_path = scripts_dir / "locale.cmd"
-    cmd_src = files("x_locale_cli").joinpath("locale.cmd")
+    exe_path = scripts_dir / "loc.exe"
+    cmd_path = scripts_dir / "loc.cmd"
+    cmd_src = files("x_locale_cli").joinpath("loc.cmd")
 
     with cmd_src.open("rb") as src, cmd_path.open("wb") as dst:
         shutil.copyfileobj(src, dst)
@@ -35,7 +35,7 @@ def main() -> None:
         return
 
     install_shim()
-    print("locale command ready. Try: locale --help")
+    print("loc command ready. Try: loc --help")
 
 
 if __name__ == "__main__":

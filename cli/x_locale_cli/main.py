@@ -1,4 +1,4 @@
-"""CLI entrypoint. ``locale`` and ``python -m x_locale_cli`` resolve here."""
+"""CLI entrypoint. ``loc`` and ``python -m x_locale_cli`` resolve here."""
 
 from x_locale_cli.app import app
 

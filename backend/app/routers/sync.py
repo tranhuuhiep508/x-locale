@@ -211,7 +211,7 @@ def import_strings_compat(
                 "code": "base_language_mismatch",
                 "message": (
                     f"Configured base language '{payload.base_language}' does not match "
-                    f"project base language '{project.base_language}'. Refresh config with locale init."
+                    f"project base language '{project.base_language}'. Refresh config with loc init."
                 ),
                 "configured": payload.base_language,
                 "expected": project.base_language,

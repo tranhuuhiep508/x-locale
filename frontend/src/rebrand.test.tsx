@@ -47,12 +47,12 @@ describe('x-locale branding', () => {
     expect(THEME_STORAGE_KEY).toBe('x-locale-theme:v1')
   })
 
-  it('tells users to run locale init -k, not tms init', () => {
+  it('tells users to run loc init -k, not tms init', () => {
     const settings = readFileSync(
       path.join(frontendRoot, 'features/settings/SettingsPage.tsx'),
       'utf8',
     )
-    expect(settings).toContain('locale init -k')
+    expect(settings).toContain('loc init -k')
     expect(settings).not.toContain('tms init')
   })
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "x-locale-cli"
 version = "0.1.0"
-description = "CLI for x-locale translation sync (locale init | push | pull)"
+description = "CLI for x-locale translation sync (loc init | push | pull)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-locale = "x_locale_cli.main:app"
+loc = "x_locale_cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -42,4 +42,4 @@ markers = [
 ]
 
 [tool.setuptools.package-data]
-x_locale_cli = ["locale.cmd"]
+x_locale_cli = ["loc.cmd"]
