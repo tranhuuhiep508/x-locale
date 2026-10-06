@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, ProjectAccess
 from app.database import DbSession
 from app.helpers import resolve_project_ref
 from app.models import ApiKey
@@ -15,12 +15,14 @@ from app.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
     ApiKeyOut,
+    ProjectCoverageOut,
     ProjectCreate,
     ProjectOut,
     ProjectSummaryOut,
     ProjectUpdate,
 )
 from app.services import projects as projects_service
+from app.services import strings as strings_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 ProjectRef = Annotated[str, Path(description="Project UUID or immutable slug")]
@@ -60,6 +62,11 @@ def update_project(
     db: DbSession,
 ) -> ProjectOut:
     return projects_service.update_project(db, resolve_project_ref(db, project_id).id, payload)
+
+
+@router.get("/{project_id}/coverage")
+def get_project_coverage(project: ProjectAccess, db: DbSession) -> ProjectCoverageOut:
+    return strings_service.project_coverage(db, project)
 
 
 @router.delete("/{project_id}", status_code=204)

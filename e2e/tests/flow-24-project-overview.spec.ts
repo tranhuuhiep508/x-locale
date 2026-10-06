@@ -42,6 +42,12 @@ test("overview coverage and pending edits open the matching catalog results", as
     );
     expect(edited.ok()).toBe(true);
 
+    const overviewRequests: URL[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith(`/api/projects/${slug}/`))
+        overviewRequests.push(url);
+    });
     await page.goto(`/projects/${slug}`);
     await expect(
       page.getByRole("progressbar", { name: "English translation coverage" }),
@@ -52,6 +58,13 @@ test("overview coverage and pending edits open the matching catalog results", as
     await expect(
       page.getByRole("link", { name: /Pending edits 1/ }),
     ).toBeVisible();
+
+    expect(
+      overviewRequests.filter((url) => url.pathname.endsWith("/coverage")),
+    ).toHaveLength(1);
+    expect(
+      overviewRequests.some((url) => url.searchParams.has("missing_locale")),
+    ).toBe(false);
 
     await page.getByRole("link", { name: "1 missing" }).click();
     await expect(page).toHaveURL(/missing_locale=en/);

@@ -15,6 +15,7 @@ import {
   languagesQuery,
   modulesQuery,
   projectQuery,
+  projectCoverageQuery,
   stringsQuery,
   tagsQuery,
 } from '@/lib/queries'
@@ -97,21 +98,21 @@ function LanguageCoverage({
   locale,
   name,
   total,
+  missing,
+  unavailable,
+  onRetry,
 }: {
   projectRef: string
   locale: string
   name: string
   total: number
+  missing: number | undefined
+  unavailable: boolean
+  onRetry: () => void
 }) {
-  const missingQuery = useQuery({
-    ...stringsQuery(projectRef, { missing_locale: locale, page: 1, page_size: 1 }),
-    enabled: total > 0,
-  })
-  const missing = total === 0 ? 0 : missingQuery.data?.total
   const translated = missing == null ? null : Math.max(0, total - missing)
   const percent =
     translated == null ? null : total === 0 ? 0 : Math.round((translated / total) * 100)
-  const unavailable = missingQuery.isError && missing == null
 
   return (
     <li className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
@@ -152,12 +153,7 @@ function LanguageCoverage({
               : `${translated} of ${total} strings translated`}
         </p>
         {unavailable ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Retry ${name} coverage`}
-            onClick={() => void missingQuery.refetch()}
-          >
+          <Button variant="ghost" size="sm" aria-label={`Retry ${name} coverage`} onClick={onRetry}>
             Retry
           </Button>
         ) : (
@@ -196,8 +192,8 @@ export function ProjectOverviewPage() {
   const modulesResult = useQuery(modulesQuery(projectRef))
   const tagsResult = useQuery(tagsQuery(projectRef))
   const { data: languages = [] } = useQuery(languagesQuery())
-  const catalog = useQuery({
-    ...stringsQuery(projectRef, { page: 1, page_size: 1 }),
+  const coverage = useQuery({
+    ...projectCoverageQuery(projectRef),
     enabled: Boolean(project),
   })
   const publish = useQuery({
@@ -229,7 +225,8 @@ export function ProjectOverviewPage() {
       </PageBody>
     )
 
-  const total = catalog.data?.total ?? project.string_count
+  const total = coverage.data?.total ?? project.string_count
+  const coverageByLocale = new Map(coverage.data?.locales.map((row) => [row.locale, row]))
   const languageName = (locale: string) =>
     languages.find((language) => language.code === locale)?.name ?? locale
 
@@ -311,6 +308,9 @@ export function ProjectOverviewPage() {
                     locale={locale}
                     name={languageName(locale)}
                     total={total}
+                    missing={coverageByLocale.get(locale)?.missing}
+                    unavailable={coverage.isError && !coverage.data}
+                    onRetry={() => void coverage.refetch()}
                   />
                 ))}
               </ul>

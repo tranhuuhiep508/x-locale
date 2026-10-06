@@ -42,7 +42,7 @@ vi.mock('@/lib/api/catalog', () => ({
   modulesApi: { list: vi.fn() },
   tagsApi: { list: vi.fn() },
 }))
-vi.mock('@/lib/api/projects', () => ({ projectsApi: { get: vi.fn() } }))
+vi.mock('@/lib/api/projects', () => ({ projectsApi: { get: vi.fn(), coverage: vi.fn() } }))
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/strings')>()),
   stringsApi: { list: vi.fn() },
@@ -74,6 +74,13 @@ function renderOverview() {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(projectsApi.get).mockResolvedValue(project)
+  vi.mocked(projectsApi.coverage).mockResolvedValue({
+    total: 10,
+    locales: [
+      { locale: 'en', translated: 7, missing: 3 },
+      { locale: 'ja', translated: 10, missing: 0 },
+    ],
+  })
   vi.mocked(languagesApi.list).mockResolvedValue([
     { code: 'vi', name: 'Vietnamese' },
     { code: 'en', name: 'English' },
@@ -86,14 +93,7 @@ beforeEach(() => {
     items: [],
     page: 1,
     page_size: 1,
-    total:
-      params.missing_locale === 'en'
-        ? 3
-        : params.missing_locale === 'ja'
-          ? 0
-          : params.has_unpublished_changes
-            ? 4
-            : 10,
+    total: params.has_unpublished_changes ? 4 : 10,
   }))
 })
 afterEach(() => {
@@ -130,6 +130,10 @@ describe('project overview', () => {
 
   it('shows an empty catalog without claiming completed translations or querying missing counts', async () => {
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, string_count: 0 })
+    vi.mocked(projectsApi.coverage).mockResolvedValue({
+      total: 0,
+      locales: project.target_languages.map((locale) => ({ locale, translated: 0, missing: 0 })),
+    })
     vi.mocked(stringsApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 1 })
     renderOverview()
     await screen.findByRole('progressbar', { name: 'English translation coverage' })
@@ -146,14 +150,12 @@ describe('project overview', () => {
   })
 
   it('offers a retry for unavailable coverage instead of showing a misleading zero', async () => {
-    const list = vi.mocked(stringsApi.list).getMockImplementation()!
-    vi.mocked(stringsApi.list).mockImplementation((ref, params) =>
-      params.missing_locale === 'en' ? Promise.reject(new Error('Offline')) : list(ref, params)
-    )
+    const coverage = vi.mocked(projectsApi.coverage).getMockImplementation()!
+    vi.mocked(projectsApi.coverage).mockRejectedValue(new Error('Offline'))
     renderOverview()
-    await screen.findByText('Unavailable')
+    expect(await screen.findAllByText('Unavailable')).toHaveLength(2)
     expect(screen.queryByRole('progressbar', { name: 'English translation coverage' })).toBeNull()
-    vi.mocked(stringsApi.list).mockImplementation(list)
+    vi.mocked(projectsApi.coverage).mockImplementation(coverage)
     fireEvent.click(screen.getByRole('button', { name: 'Retry English coverage' }))
     await waitFor(() =>
       expect(
@@ -162,6 +164,24 @@ describe('project overview', () => {
           .getAttribute('aria-valuenow')
       ).toBe('70')
     )
+  })
+
+  it('requests coverage once for thirty target languages without per-language catalog requests', async () => {
+    const locales = Array.from({ length: 30 }, (_, index) => `locale-${index}`)
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: locales })
+    vi.mocked(projectsApi.coverage).mockResolvedValue({
+      total: 10,
+      locales: locales.map((locale) => ({ locale, translated: 0, missing: 10 })),
+    })
+    renderOverview()
+    await waitFor(() => expect(screen.getAllByRole('progressbar')).toHaveLength(30))
+    expect(projectsApi.coverage).toHaveBeenCalledTimes(1)
+    expect(projectsApi.coverage).toHaveBeenCalledWith('demo-app')
+    expect(stringsApi.list).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(stringsApi.list).mock.calls[0][1]).toMatchObject({
+      has_unpublished_changes: true,
+    })
+    expect(vi.mocked(stringsApi.list).mock.calls[0][1].missing_locale).toBeUndefined()
   })
 
   it('guides projects without target languages to settings', async () => {

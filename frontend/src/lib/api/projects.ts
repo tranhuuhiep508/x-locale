@@ -3,6 +3,7 @@ import type {
   ApiKey,
   ApiKeyCreated,
   Project,
+  ProjectCoverage,
   ProjectSummary,
   ProjectCreate,
   ProjectUpdate,
@@ -11,6 +12,7 @@ import type {
 export const projectsApi = {
   list: () => api.get<ProjectSummary[]>('/projects'),
   get: (id: string) => api.get<Project>(`/projects/${id}`),
+  coverage: (id: string) => api.get<ProjectCoverage>(`/projects/${id}/coverage`),
   create: (body: ProjectCreate) => api.post<ProjectSummary>('/projects', body),
   update: (id: string, body: ProjectUpdate) => api.patch<Project>(`/projects/${id}`, body),
   delete: (id: string) => api.delete(`/projects/${id}`),

@@ -76,6 +76,17 @@ class ProjectOut(ProjectSummaryOut):
     translation_context: str | None = Field(default=None, max_length=500)
 
 
+class LocaleCoverageOut(BaseModel):
+    locale: str
+    translated: int
+    missing: int
+
+
+class ProjectCoverageOut(BaseModel):
+    total: int
+    locales: list[LocaleCoverageOut]
+
+
 class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 

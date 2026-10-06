@@ -17,6 +17,17 @@ export interface Language {
   name: string
 }
 
+export interface LocaleCoverage {
+  locale: string
+  translated: number
+  missing: number
+}
+
+export interface ProjectCoverage {
+  total: number
+  locales: LocaleCoverage[]
+}
+
 // ── Projects ───────────────────────────────────────────────────────────
 export interface ProjectSummary {
   id: string
