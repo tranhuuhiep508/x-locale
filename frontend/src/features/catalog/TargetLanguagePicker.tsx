@@ -31,6 +31,9 @@ export function TargetLanguagePicker({
             placeholder="Find a language…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.preventDefault()
+            }}
           />
         </InputGroup>
         <span className="text-xs tabular-nums text-muted-foreground">{value.length} selected</span>
