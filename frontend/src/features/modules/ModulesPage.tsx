@@ -21,6 +21,7 @@ import { moduleCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm } from '@/lib/schemas'
 import { ModuleFormFields } from '@/features/catalog/ModuleFormFields'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   ReviewDialogBody,
@@ -146,19 +147,25 @@ export function ModulesPage() {
   return (
     <PageBody>
       <PageHeader
+        eyebrow="Catalog"
         title="Modules"
         description="Group related strings and share translation context."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm()
-              setShowCreate(true)
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            New module
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="font-mono text-xs">
+              {modules.length} module{modules.length !== 1 ? 's' : ''}
+            </Badge>
+            <Button
+              size="sm"
+              onClick={() => {
+                resetForm()
+                setShowCreate(true)
+              }}
+            >
+              <Plus data-icon="inline-start" />
+              New module
+            </Button>
+          </div>
         }
       />
 
@@ -180,7 +187,7 @@ export function ModulesPage() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
           <DataTableToolbar
             search={globalFilter}
             onSearchChange={setGlobalFilter}

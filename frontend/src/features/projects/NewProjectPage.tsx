@@ -1,12 +1,22 @@
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import {
+  ArrowLeft,
+  Layers,
+  Globe,
+  Sparkles,
+  Terminal,
+  FileCode2,
+  Calendar,
+  CheckCircle2,
+} from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { TranslationContextField } from '@/features/catalog/TranslationContextField'
 import { TargetLanguagePicker } from '@/features/catalog/TargetLanguagePicker'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Field, FieldGroup, FieldLabel, FieldDescription, FieldError } from '@/components/ui/field'
 import {
@@ -90,146 +100,257 @@ export function NewProjectPage() {
   }
 
   const targetLangs = languages.filter((l) => l.code !== form.base_language)
+  const previewName = form.name.trim() || 'My Application'
+  const previewSlug = form.slug.trim() || (form.name ? slugify(form.name) : 'my-application')
 
   return (
     <AppShell>
-      <PageBody contained className="flex max-w-3xl flex-col gap-6">
+      <PageBody contained className="flex flex-col gap-6 pb-16">
         <div>
           <Link
             to="/"
-            className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" />
-            All projects
+            <ArrowLeft className="size-3.5" />
+            Back to all projects
           </Link>
           <PageHeader
             eyebrow="Workspace"
-            title="New project"
-            description="Name the catalog, pick a base language, then add the locales you translate into."
+            title="Create new project"
+            description="Configure your translation catalog, choose base and target languages, and set context guidelines for AI translations."
           />
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Project details</CardTitle>
-            <CardDescription>Set up your catalog and the languages you work with.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit}>
-              <FieldGroup>
-                <Field data-invalid={errors.name ? 'true' : undefined}>
-                  <FieldLabel htmlFor="name">Project name</FieldLabel>
-                  <Input
-                    id="name"
-                    value={form.name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="My App"
-                    aria-invalid={errors.name ? true : undefined}
-                  />
-                  <FieldError>{errors.name}</FieldError>
-                </Field>
+        <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
+          {/* Main Form (8 cols on lg) */}
+          <div className="lg:col-span-7 xl:col-span-8">
+            <Card className="shadow-xs">
+              <CardHeader className="border-b border-border/50 pb-4">
+                <CardTitle>Catalog Configuration</CardTitle>
+                <CardDescription>
+                  Enter project details and select the languages you plan to localize into.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <form onSubmit={handleSubmit}>
+                  <FieldGroup className="space-y-6">
+                    {/* Project Name & Slug Fields */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field data-invalid={errors.name ? 'true' : undefined}>
+                        <FieldLabel htmlFor="name">Project name</FieldLabel>
+                        <Input
+                          id="name"
+                          value={form.name}
+                          onChange={(e) => handleNameChange(e.target.value)}
+                          placeholder="Demo App"
+                          aria-invalid={errors.name ? true : undefined}
+                          className="h-9"
+                        />
+                        <FieldError>{errors.name}</FieldError>
+                      </Field>
 
-                <Field data-invalid={errors.slug ? 'true' : undefined}>
-                  <FieldLabel htmlFor="slug">Project URL (permanent)</FieldLabel>
-                  <Input
-                    id="slug"
-                    value={form.slug}
-                    onChange={(e) => {
-                      setSlugTouched(true)
-                      setForm((f) => ({ ...f, slug: e.target.value }))
-                    }}
-                    placeholder="my-app"
-                    className="font-mono"
-                    aria-invalid={errors.slug ? true : undefined}
-                  />
-                  <FieldDescription>
-                    Generated from the name unless you change it. The URL cannot be changed later.
-                  </FieldDescription>
-                  <FieldError>{errors.slug}</FieldError>
-                </Field>
+                      <Field data-invalid={errors.slug ? 'true' : undefined}>
+                        <FieldLabel htmlFor="slug">Project URL (permanent)</FieldLabel>
+                        <Input
+                          id="slug"
+                          value={form.slug}
+                          onChange={(e) => {
+                            setSlugTouched(true)
+                            setForm((f) => ({ ...f, slug: e.target.value }))
+                          }}
+                          placeholder="demo-app"
+                          className="font-mono h-9"
+                          aria-invalid={errors.slug ? true : undefined}
+                        />
+                        <FieldDescription>
+                          Permanent unique slug for routing and CLI references.
+                        </FieldDescription>
+                        <FieldError>{errors.slug}</FieldError>
+                      </Field>
+                    </div>
 
-                <FieldGroup className="grid gap-4 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="base_language">Base language</FieldLabel>
-                    <Select
-                      value={form.base_language}
-                      onValueChange={(v) =>
-                        setForm((f) => ({
-                          ...f,
-                          base_language: v,
-                          target_languages: f.target_languages.filter((l) => l !== v),
-                        }))
+                    {/* Base Language & Layout Fields */}
+                    <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="base_language">Base language</FieldLabel>
+                        <Select
+                          value={form.base_language}
+                          onValueChange={(v) =>
+                            setForm((f) => ({
+                              ...f,
+                              base_language: v,
+                              target_languages: f.target_languages.filter((l) => l !== v),
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="base_language" className="w-full h-9">
+                            <SelectValue placeholder="Base language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {languages.map((l) => (
+                                <SelectItem key={l.code} value={l.code}>
+                                  {l.name} ({l.code})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldDescription>
+                          Source language for your original codebase strings.
+                        </FieldDescription>
+                      </Field>
+
+                      <Field>
+                        <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                        <Select
+                          value={form.layout}
+                          onValueChange={(v) =>
+                            setForm((f) => ({ ...f, layout: v as 'flat' | 'modular' }))
+                          }
+                        >
+                          <SelectTrigger id="layout" className="w-full h-9">
+                            <SelectValue placeholder="Layout" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="flat">Flat (single file per locale)</SelectItem>
+                              <SelectItem value="modular">Modular (grouped by module)</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldDescription>
+                          Determines export directory structure and CLI sync shape.
+                        </FieldDescription>
+                      </Field>
+                    </FieldGroup>
+
+                    {/* Target Languages */}
+                    <Field data-invalid={errors.target_languages ? 'true' : undefined}>
+                      <FieldLabel>Target languages</FieldLabel>
+                      <FieldDescription className="mb-2">
+                        Select one or more target locales that translators or AI will translate strings into.
+                      </FieldDescription>
+                      <FieldError>{errors.target_languages}</FieldError>
+
+                      <TargetLanguagePicker
+                        languages={targetLangs}
+                        value={form.target_languages}
+                        onChange={(target_languages) => setForm((f) => ({ ...f, target_languages }))}
+                      />
+                    </Field>
+
+                    {/* AI Context Field */}
+                    <TranslationContextField
+                      id="project_translation_context"
+                      value={form.translation_context ?? ''}
+                      error={errors.translation_context}
+                      onChange={(translation_context) =>
+                        setForm((f) => ({ ...f, translation_context }))
                       }
-                    >
-                      <SelectTrigger id="base_language" className="w-full">
-                        <SelectValue placeholder="Base language" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {languages.map((l) => (
-                            <SelectItem key={l.code} value={l.code}>
-                              {l.name} ({l.code})
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                    />
 
-                  <Field>
-                    <FieldLabel htmlFor="layout">Layout</FieldLabel>
-                    <Select
-                      value={form.layout}
-                      onValueChange={(v) =>
-                        setForm((f) => ({ ...f, layout: v as 'flat' | 'modular' }))
-                      }
-                    >
-                      <SelectTrigger id="layout" className="w-full">
-                        <SelectValue placeholder="Layout" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="flat">Flat</SelectItem>
-                          <SelectItem value="modular">Modular</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </FieldGroup>
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-3 border-t border-border/50 pt-5">
+                      <Button variant="outline" type="button" asChild>
+                        <Link to="/">Cancel</Link>
+                      </Button>
+                      <Button type="submit" disabled={createMut.isPending} className="shadow-xs min-w-32">
+                        {createMut.isPending && <Spinner data-icon="inline-start" />}
+                        Create project
+                      </Button>
+                    </div>
+                  </FieldGroup>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
 
-                <Field data-invalid={errors.target_languages ? 'true' : undefined}>
-                  <FieldLabel>Target languages</FieldLabel>
-                  <FieldError>{errors.target_languages}</FieldError>
+          {/* Right Column: Live Project Preview & Architecture Notes */}
+          <div className="space-y-6 lg:col-span-5 xl:col-span-4">
+            <div className="sky-panel overflow-hidden rounded-xl border border-border/80 shadow-md">
+              <div className="border-b border-border/60 bg-muted/40 px-4 py-3 flex items-center justify-between">
+                <span className="eyebrow flex items-center gap-1.5 text-primary">
+                  <Sparkles className="size-3.5" />
+                  Live Preview
+                </span>
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  {form.layout}
+                </Badge>
+              </div>
 
-                  <TargetLanguagePicker
-                    languages={targetLangs}
-                    value={form.target_languages}
-                    onChange={(target_languages) => setForm((f) => ({ ...f, target_languages }))}
-                  />
-                </Field>
-
-                <TranslationContextField
-                  id="project_translation_context"
-                  value={form.translation_context ?? ''}
-                  error={errors.translation_context}
-                  onChange={(translation_context) =>
-                    setForm((f) => ({ ...f, translation_context }))
-                  }
-                />
-
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" type="button" asChild>
-                    <Link to="/">Cancel</Link>
-                  </Button>
-                  <Button type="submit" disabled={createMut.isPending}>
-                    {createMut.isPending && <Spinner data-icon="inline-start" />}
-                    Create project
-                  </Button>
+              <div className="p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <MarkWell className="mt-0.5">
+                    <Layers className="size-4" />
+                  </MarkWell>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-semibold text-base text-foreground">
+                      {previewName}
+                    </h3>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      /projects/{previewSlug}
+                    </p>
+                  </div>
                 </div>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
+
+                <div className="space-y-1.5 border-t border-border/50 pt-3">
+                  <span className="eyebrow text-[10px]">Language Matrix</span>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <Badge variant="secondary" className="gap-1 font-mono text-[11px] font-semibold">
+                      <Globe className="size-3 text-primary" />
+                      {form.base_language.toUpperCase()}
+                      <span className="text-[9px] text-muted-foreground font-normal">(base)</span>
+                    </Badge>
+                    {form.target_languages.length > 0 ? (
+                      form.target_languages.map((lang) => (
+                        <Badge key={lang} variant="outline" className="font-mono text-[11px]">
+                          {lang.toUpperCase()}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">
+                        No target languages selected yet
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {form.translation_context && (
+                  <div className="space-y-1 rounded-lg bg-muted/30 p-2.5 border border-border/60 text-xs">
+                    <span className="eyebrow text-[10px] text-primary flex items-center gap-1">
+                      <Sparkles className="size-3" />
+                      AI Context Attached
+                    </span>
+                    <p className="text-muted-foreground line-clamp-3 italic">
+                      "{form.translation_context}"
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-border/60 bg-muted/20 px-4 py-2.5 text-[11px] text-muted-foreground flex items-center justify-between">
+                <span>0 strings (initial)</span>
+                <span>Ready to initialize</span>
+              </div>
+            </div>
+
+            {/* CLI Quick Hint Card */}
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-2 text-xs">
+              <div className="flex items-center gap-1.5 text-foreground font-semibold">
+                <Terminal className="size-3.5 text-primary" />
+                <span>Next step: CLI synchronization</span>
+              </div>
+              <p className="text-muted-foreground leading-relaxed text-[11px]">
+                After creating this project, you can generate an API key in Settings and run{' '}
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                  loc init -k &lt;key&gt;
+                </code>{' '}
+                in your repository to pull and push translation files automatically.
+              </p>
+            </div>
+          </div>
+        </div>
       </PageBody>
     </AppShell>
   )

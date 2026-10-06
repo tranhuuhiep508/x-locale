@@ -21,6 +21,7 @@ import { tagCreateSchema } from '@/lib/schemas'
 import type { TagCreateForm } from '@/lib/schemas'
 import { TagFormFields } from '@/features/catalog/TagFormFields'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   ReviewDialogBody,
@@ -136,19 +137,25 @@ export function TagsPage() {
   return (
     <PageBody>
       <PageHeader
+        eyebrow="Catalog"
         title="Tags"
         description="Label strings to keep your catalog easy to navigate."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm()
-              setShowCreate(true)
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            New tag
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="font-mono text-xs">
+              {tags.length} tag{tags.length !== 1 ? 's' : ''}
+            </Badge>
+            <Button
+              size="sm"
+              onClick={() => {
+                resetForm()
+                setShowCreate(true)
+              }}
+            >
+              <Plus data-icon="inline-start" />
+              New tag
+            </Button>
+          </div>
         }
       />
 
@@ -170,7 +177,7 @@ export function TagsPage() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
           <DataTableToolbar
             search={globalFilter}
             onSearchChange={setGlobalFilter}

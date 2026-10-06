@@ -543,6 +543,7 @@ export function StringsPage() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 flex-col gap-5 border-b px-4 py-5 sm:px-6">
         <PageHeader
+          eyebrow="Catalog"
           title="Strings"
           description={`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
           actions={

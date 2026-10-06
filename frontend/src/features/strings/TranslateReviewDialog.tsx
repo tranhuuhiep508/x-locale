@@ -59,25 +59,32 @@ function ProposalTreeNode({
 
   return (
     <li
-      className={cn('grid min-w-0 gap-4 rounded-lg border bg-card p-4', review && 'sm:grid-cols-2')}
+      className={cn(
+        'grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all',
+        review && 'sm:grid-cols-2'
+      )}
     >
-      <div className="flex min-w-0 flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-xs font-medium text-muted-foreground">Source text</p>
-          <p className="font-medium whitespace-pre-wrap wrap-anywhere">{item.source_text}</p>
+      <div className="flex min-w-0 flex-col gap-3.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
+            {item.status === 'public' ? (
+              <Badge variant="outline" className="font-mono text-[10px] uppercase">Public</Badge>
+            ) : null}
+          </div>
+          <p className="font-medium whitespace-pre-wrap wrap-anywhere text-foreground text-sm leading-relaxed">{item.source_text}</p>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs break-all text-muted-foreground" translate="no">
+            <code className="font-mono text-xs break-all text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5" translate="no">
               {item.key}
-            </span>
-            {item.status === 'public' ? <Badge variant="secondary">Public</Badge> : null}
+            </code>
           </div>
         </div>
 
         <Field>
-          <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
+          <FieldLabel htmlFor={descriptionId} className="text-xs">Description</FieldLabel>
           <Textarea
             id={descriptionId}
-            className="min-h-9 resize-none"
+            className="min-h-12 resize-none text-xs"
             value={item.description ?? ''}
             rows={2}
             disabled={disabled}
@@ -91,7 +98,7 @@ function ProposalTreeNode({
       <FieldGroup
         className={cn(
           'min-w-0 gap-3',
-          review && 'border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4'
+          review && 'border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4.5 sm:border-border/60'
         )}
         aria-label={`Translations for ${item.key}`}
       >
@@ -99,16 +106,16 @@ function ProposalTreeNode({
           locales.map(([locale, value]) => {
             const inputId = `proposal-${item.string_id}-${locale}`
             return (
-              <Field key={locale}>
+              <Field key={locale} className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
                 <div className="flex items-center gap-2">
-                  <FieldLabel htmlFor={inputId} className="uppercase">
+                  <FieldLabel htmlFor={inputId} className="uppercase font-mono text-xs font-semibold">
                     {locale}
                   </FieldLabel>
                   <ConfidenceBadge score={item.scores?.[locale]} />
                 </div>
                 <Textarea
                   id={inputId}
-                  className="min-h-9 resize-none"
+                  className="min-h-12 resize-none mt-1 text-xs"
                   value={value}
                   rows={2}
                   disabled={disabled}
@@ -122,7 +129,7 @@ function ProposalTreeNode({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {locales.map(([locale]) => (
-              <Badge key={locale} variant="outline" className="uppercase">
+              <Badge key={locale} variant="outline" className="uppercase font-mono">
                 {locale}
               </Badge>
             ))}
