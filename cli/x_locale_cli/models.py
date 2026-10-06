@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
-
+from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_OUTPUT_DIR = "./locales"
@@ -77,6 +79,7 @@ class Config:
     base_language: str = DEFAULT_BASE_LANGUAGE
     locales: list[str] = field(default_factory=list)
     manifest: bool = False
+    web_url: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Config:
@@ -93,19 +96,24 @@ class Config:
             base_language=str(raw.get("base_language") or DEFAULT_BASE_LANGUAGE),
             locales=locales,
             manifest=bool(raw.get("manifest", False)),
+            web_url=str(raw.get("web_url") or "").strip(),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        data = {
-            "api_url": self.api_url,
-            "api_key": self.api_key,
-            "output_dir": self.output_dir,
-            "layout": self.layout.value,
-            "stage": self.stage.value,
-            "base_language": self.base_language,
-            "locales": list(self.locales),
-            "manifest": self.manifest,
-        }
+        data: dict[str, Any] = {"api_url": self.api_url}
+        if self.web_url:
+            data["web_url"] = self.web_url
+        data.update(
+            {
+                "api_key": self.api_key,
+                "output_dir": self.output_dir,
+                "layout": self.layout.value,
+                "stage": self.stage.value,
+                "base_language": self.base_language,
+                "locales": list(self.locales),
+                "manifest": self.manifest,
+            }
+        )
         if self.project_slug:
             data["project_slug"] = self.project_slug
         elif self.project_id:
@@ -141,6 +149,55 @@ class Config:
     def locale_filter(self) -> list[str] | None:
         """Locales to pull/status against, or ``None`` for every locale."""
         return self.locales or None
+
+
+def is_absolute_http_url(url: str) -> bool:
+    """True when ``url`` has an http(s) scheme and a host."""
+    parsed = urlsplit(url.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def normalize_web_base(url: str) -> str:
+    """Trim a configured web origin and add ``http://`` when the scheme is omitted."""
+    cleaned = url.strip()
+    if not cleaned:
+        return ""
+    if "://" not in cleaned:
+        cleaned = f"http://{cleaned}"
+    return cleaned.rstrip("/")
+
+
+def web_base_from_api_url(api_url: str) -> str:
+    """API origin used when ``web_url`` is unset.
+
+    Trailing slashes are removed. A single trailing ``/api`` path segment is
+    removed when present; ``api_url`` is already the API origin in normal configs.
+    """
+    cleaned = api_url.strip().rstrip("/")
+    parsed = urlsplit(cleaned)
+    if parsed.path == "/api" or parsed.path.endswith("/api"):
+        trimmed = urlunsplit((parsed.scheme, parsed.netloc, parsed.path[: -len("/api")], "", ""))
+        return trimmed.rstrip("/")
+    return cleaned
+
+
+def resolve_web_base(
+    config: Config,
+    environ: Mapping[str, str] | None = None,
+) -> str | None:
+    """Absolute web origin for a push review link, or ``None`` when it cannot be resolved.
+
+    ``config.web_url`` wins. ``XLOCALE_WEB_URL`` applies only when that field is
+    unset. Otherwise the normalized API origin is used.
+    """
+    explicit = config.web_url.strip()
+    if not explicit:
+        env = os.environ if environ is None else environ
+        explicit = env.get("XLOCALE_WEB_URL", "").strip()
+    candidate = normalize_web_base(explicit) if explicit else web_base_from_api_url(config.api_url)
+    if not is_absolute_http_url(candidate):
+        return None
+    return candidate.rstrip("/")
 
 
 @dataclass

@@ -23,7 +23,7 @@ from x_locale_cli.io import (
     string_map,
 )
 from x_locale_cli.issues import StatusSnapshot, classify_sync_issues
-from x_locale_cli.models import Config, Layout, PullResult, Stage
+from x_locale_cli.models import Config, Layout, PullResult, Stage, resolve_web_base
 from x_locale_cli.push_index import (
     apply_index_after_success,
     build_flat_delta_payload,
@@ -319,6 +319,8 @@ def _push_strings(
         skipped_api=skipped_api,
         removed_locally=diff.removed_locally,
         delta_mode=not diff.use_full,
+        project_ref=config.project_ref,
+        web_base=resolve_web_base(config),
     )
 
 
