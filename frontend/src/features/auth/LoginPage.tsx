@@ -96,7 +96,7 @@ const DEMO_LOCALES: DemoLocale[] = [
 ]
 
 export function LoginPage() {
-  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(0)
+  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(2)
 
   const activeLocale = DEMO_LOCALES[selectedLocaleIndex]
 
