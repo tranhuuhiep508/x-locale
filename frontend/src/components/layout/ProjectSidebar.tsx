@@ -51,14 +51,17 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="px-2 py-2 group-data-[collapsible=icon]:hidden">
-          <p className="eyebrow">
-            Project
-          </p>
-          <h2 className="mt-2 truncate text-base font-semibold tracking-tight" title={project.name}>
+        <div className="rounded-xl border border-border/70 bg-card/80 p-3 shadow-2xs group-data-[collapsible=icon]:hidden">
+          <div className="flex items-center justify-between mb-1">
+            <span className="eyebrow text-[10px]">Project</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground uppercase font-medium">
+              {project.layout}
+            </span>
+          </div>
+          <h2 className="truncate text-sm font-semibold tracking-tight text-foreground" title={project.name}>
             {project.name}
           </h2>
-          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
             {project.slug}
           </p>
         </div>

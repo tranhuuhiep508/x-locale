@@ -322,7 +322,14 @@ export default function StringFormDialog({
         }}
       >
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
-          <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
+          <div className="flex items-center gap-2">
+            <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
+            {isEdit ? (
+              <span className="rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground uppercase">
+                {status}
+              </span>
+            ) : null}
+          </div>
           <DialogDescription>
             {isEdit
               ? 'Update metadata and translations, or restore a previous version.'
@@ -428,7 +435,7 @@ export default function StringFormDialog({
                   />
                 </Field>
 
-                <Field orientation="horizontal" className="items-center justify-between gap-4">
+                <Field orientation="horizontal" className="items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/30 p-3.5">
                   <div className="flex flex-col gap-0.5">
                     <FieldLabel htmlFor="string-status">Published</FieldLabel>
                     <FieldDescription>
@@ -598,9 +605,9 @@ export default function StringFormDialog({
                 ) : (
                   <FieldGroup className="gap-3">
                     {targetLocales.map((locale) => (
-                      <Field key={locale}>
+                      <Field key={locale} className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs transition-colors focus-within:border-primary/40">
                         <div className="flex items-center gap-2">
-                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase">
+                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-semibold tracking-wider">
                             {locale}
                           </FieldLabel>
                           <ConfidenceBadge score={scores[locale]} />
@@ -617,7 +624,7 @@ export default function StringFormDialog({
                         </div>
                         <Textarea
                           id={`translation-${locale}`}
-                          className="min-h-16 resize-none"
+                          className="min-h-16 resize-none mt-1"
                           value={translations[locale] ?? ''}
                           onChange={(e) => {
                             const value = e.target.value

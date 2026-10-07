@@ -33,41 +33,45 @@ function FieldDiff({ change }: { change: PublishFieldChange }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs font-medium">{change.label}</p>
-        {change.firstPublish ? <Badge variant="outline">First publish</Badge> : null}
+        <p className="text-xs font-medium text-foreground/80">{change.label}</p>
+        {change.firstPublish ? <Badge variant="outline" className="text-[10px]">First publish</Badge> : null}
       </div>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             Published
           </span>
-          <p
-            className={cn(
-              'min-w-0 text-sm whitespace-pre-wrap wrap-anywhere',
-              publishedEmpty && 'italic text-muted-foreground',
-              change.field === 'key' || change.field === 'module'
-                ? 'font-mono text-xs break-all'
-                : null
-            )}
-          >
-            {displayText(change.published)}
-          </p>
+          <div className="rounded-lg border border-border/70 bg-muted/40 p-2.5">
+            <p
+              className={cn(
+                'min-w-0 text-xs whitespace-pre-wrap wrap-anywhere',
+                publishedEmpty && 'italic text-muted-foreground',
+                change.field === 'key' || change.field === 'module'
+                  ? 'font-mono text-xs break-all'
+                  : null
+              )}
+            >
+              {displayText(change.published)}
+            </p>
+          </div>
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">
             Working
           </span>
-          <p
-            className={cn(
-              'min-w-0 text-sm whitespace-pre-wrap wrap-anywhere',
-              !(change.working ?? '').trim() && 'italic text-muted-foreground',
-              change.field === 'key' || change.field === 'module'
-                ? 'font-mono text-xs break-all'
-                : null
-            )}
-          >
-            {displayText(change.working)}
-          </p>
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-2.5">
+            <p
+              className={cn(
+                'min-w-0 text-xs whitespace-pre-wrap wrap-anywhere font-medium text-foreground',
+                !(change.working ?? '').trim() && 'italic text-muted-foreground',
+                change.field === 'key' || change.field === 'module'
+                  ? 'font-mono text-xs break-all'
+                  : null
+              )}
+            >
+              {displayText(change.working)}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -76,15 +80,15 @@ function FieldDiff({ change }: { change: PublishFieldChange }) {
 
 function WorkingOnlyFields({ fields }: { fields: PublishFieldChange[] }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
       {fields.map((change) => (
         <div key={change.field} className="grid gap-1 sm:grid-cols-[5.5rem_minmax(0,1fr)]">
-          <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+          <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             {change.label}
           </p>
           <p
             className={cn(
-              'min-w-0 text-sm whitespace-pre-wrap wrap-anywhere',
+              'min-w-0 text-xs whitespace-pre-wrap wrap-anywhere text-foreground',
               change.field === 'key' || change.field === 'module'
                 ? 'font-mono text-xs break-all'
                 : null
@@ -100,22 +104,22 @@ function WorkingOnlyFields({ fields }: { fields: PublishFieldChange[] }) {
 
 function PreviewRow({ row }: { row: PublishPreviewRow }) {
   return (
-    <li className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-3">
+    <li className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="font-mono text-xs break-all" translate="no">
+        <code className="font-mono text-xs break-all rounded bg-muted/60 px-1.5 py-0.5 text-foreground/80" translate="no">
           {row.key}
-        </span>
+        </code>
         {row.moduleSlug ? (
-          <span className="font-mono text-[11px] break-all text-muted-foreground">
+          <span className="font-mono text-[11px] break-all rounded border border-border/70 px-1.5 py-0.5 text-muted-foreground">
             {row.moduleSlug}
           </span>
         ) : null}
         {row.kind !== 'update' ? (
-          <span className="text-sm text-muted-foreground">{row.summary}</span>
+          <span className="text-xs text-muted-foreground">{row.summary}</span>
         ) : null}
       </div>
       {row.kind === 'update' ? (
-        <div className="flex min-w-0 flex-col gap-4 border-t pt-3">
+        <div className="flex min-w-0 flex-col gap-3.5 border-t border-border/60 pt-3">
           {row.fields.map((change) => (
             <FieldDiff key={change.field} change={change} />
           ))}
@@ -129,11 +133,11 @@ function PreviewRow({ row }: { row: PublishPreviewRow }) {
 function Section({ kind, rows }: { kind: PublishKind; rows: PublishPreviewRow[] }) {
   if (rows.length === 0) return null
   return (
-    <section className="flex flex-col gap-2" aria-label={PUBLISH_SECTION_LABEL[kind]}>
-      <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <section className="flex flex-col gap-2.5" aria-label={PUBLISH_SECTION_LABEL[kind]}>
+      <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
         {PUBLISH_SECTION_LABEL[kind]}
       </h3>
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2.5">
         {rows.map((row) => (
           <PreviewRow key={row.id} row={row} />
         ))}

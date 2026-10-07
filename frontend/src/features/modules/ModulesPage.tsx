@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-table'
 import { Plus, Boxes } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { modulesApi } from '@/lib/api/catalog'
@@ -21,6 +21,7 @@ import { moduleCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm } from '@/lib/schemas'
 import { ModuleFormFields } from '@/features/catalog/ModuleFormFields'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   ReviewDialogBody,
@@ -144,50 +145,71 @@ export function ModulesPage() {
   })
 
   return (
-    <PageBody>
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 sm:py-6 gap-4">
       <PageHeader
+        eyebrow="Catalog"
         title="Modules"
         description="Group related strings and share translation context."
+        className="shrink-0"
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm()
-              setShowCreate(true)
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            New module
-          </Button>
-        }
-      />
-
-      {isLoading ? null : modules.length === 0 ? (
-        <EmptyState
-          icon={<Boxes />}
-          title="No modules yet"
-          description="Modules group related strings together."
-          action={
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="font-mono text-xs">
+              {modules.length} module{modules.length !== 1 ? 's' : ''}
+            </Badge>
             <Button
+              size="sm"
               onClick={() => {
                 resetForm()
                 setShowCreate(true)
               }}
             >
               <Plus data-icon="inline-start" />
-              Create module
+              New module
             </Button>
-          }
-        />
-      ) : (
-        <div className="flex flex-col gap-4">
-          <DataTableToolbar
-            search={globalFilter}
-            onSearchChange={setGlobalFilter}
-            placeholder="Search modules…"
+          </div>
+        }
+      />
+
+      {isLoading ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <Spinner />
+        </div>
+      ) : modules.length === 0 ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyState
+            icon={<Boxes />}
+            title="No modules yet"
+            description="Modules group related strings together."
+            action={
+              <Button
+                onClick={() => {
+                  resetForm()
+                  setShowCreate(true)
+                }}
+              >
+                <Plus data-icon="inline-start" />
+                Create module
+              </Button>
+            }
           />
-          <DataTable table={table} />
-          <DataTablePagination table={table} />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
+          <div className="shrink-0 border-b border-border/60 p-4">
+            <DataTableToolbar
+              search={globalFilter}
+              onSearchChange={setGlobalFilter}
+              placeholder="Search modules…"
+            />
+          </div>
+          <div className="min-h-0 flex-1 bg-card">
+            <DataTable table={table} />
+          </div>
+          {table.getFilteredRowModel().rows.length > 0 ? (
+            <div className="shrink-0 border-t border-border/60 px-4">
+              <DataTablePagination table={table} />
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -248,6 +270,6 @@ export function ModulesPage() {
         confirmLabel="Delete module"
         isLoading={deleteMut.isPending}
       />
-    </PageBody>
+    </div>
   )
 }

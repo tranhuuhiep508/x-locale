@@ -25,13 +25,13 @@ function SampleList({
   return (
     <section className="min-w-0" aria-label={label}>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
-        <Badge variant="secondary">{total}</Badge>
+        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">{label}</h3>
+        <Badge variant="secondary" className="font-mono text-[11px]">{total}</Badge>
       </div>
-      <ul className="flex max-h-40 flex-col divide-y overflow-y-auto rounded-lg border">
+      <ul className="flex max-h-44 flex-col divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/80 bg-card shadow-2xs">
         {items.map((item) => (
-          <li key={item.key} className="flex min-w-0 flex-col gap-1 px-3 py-2.5">
-            <code className="text-xs break-all" translate="no">
+          <li key={item.key} className="flex min-w-0 flex-col gap-1 px-3.5 py-2.5">
+            <code className="font-mono text-xs break-all font-medium text-foreground/90" translate="no">
               {prefix} {item.key}
             </code>
             <p className="text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
@@ -40,7 +40,7 @@ function SampleList({
           </li>
         ))}
         {total > items.length ? (
-          <li className="px-3 py-2 text-xs text-muted-foreground">
+          <li className="px-3.5 py-2 text-xs text-muted-foreground bg-muted/20">
             and {total - items.length} more…
           </li>
         ) : null}
@@ -54,18 +54,18 @@ export function ImportPreviewSummary({ result }: { result: ImportResult | null }
   if (!diff) return null
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-semibold text-foreground">{diff.create_count}</p>
-          <p className="text-xs text-muted-foreground">New strings</p>
+      <div className="grid grid-cols-3 gap-2.5 text-center tabular-nums">
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5">
+          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{diff.create_count}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">New strings</p>
         </div>
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-semibold text-foreground">{diff.update_count}</p>
-          <p className="text-xs text-muted-foreground">Updated</p>
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5">
+          <p className="text-2xl font-bold text-primary">{diff.update_count}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">Updated</p>
         </div>
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-2xl font-semibold text-foreground">{diff.orphan_count}</p>
-          <p className="text-xs text-muted-foreground">Orphaned</p>
+        <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5">
+          <p className="text-2xl font-bold text-foreground/80">{diff.orphan_count}</p>
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">Orphaned</p>
         </div>
       </div>
       <SampleList label="New keys:" prefix="+" items={diff.create} total={diff.create_count} />

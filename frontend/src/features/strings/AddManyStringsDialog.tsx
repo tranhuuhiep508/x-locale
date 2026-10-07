@@ -176,7 +176,12 @@ export function AddManyStringsDialog({
         }}
       >
         <ReviewDialogHeader>
-          <DialogTitle>Add many</DialogTitle>
+          <div className="flex items-center gap-2.5">
+            <DialogTitle>Add many</DialogTitle>
+            <span className="rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground uppercase">
+              {step === 'paste' ? 'Step 1: Paste' : 'Step 2: Preview'}
+            </span>
+          </div>
           <DialogDescription>
             {step === 'paste'
               ? 'Paste a flat JSON object of key → source text. Preview runs a dry run before anything is written.'
@@ -191,7 +196,7 @@ export function AddManyStringsDialog({
                 <FieldLabel htmlFor="add-many-json">JSON</FieldLabel>
                 <Textarea
                   id="add-many-json"
-                  className="min-h-44 resize-y font-mono text-xs sm:min-h-60"
+                  className="min-h-44 resize-y font-mono text-xs sm:min-h-60 rounded-xl border-border/80 bg-muted/20 p-3.5 focus:bg-background transition-colors"
                   value={text}
                   onChange={(e) => {
                     setText(e.target.value)
@@ -209,7 +214,7 @@ export function AddManyStringsDialog({
                 <FieldError>{parseError}</FieldError>
               </Field>
 
-              <FieldGroup className="min-w-0">
+              <FieldGroup className="min-w-0 flex flex-col gap-4 rounded-xl border border-border/70 bg-muted/20 p-4">
                 {isModular ? (
                   <Field>
                     <div className="flex items-center gap-1">

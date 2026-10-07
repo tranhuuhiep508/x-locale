@@ -21,6 +21,7 @@ import {
   undoOverwriteDescription,
 } from '@/features/activity/undo-batch'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -217,6 +218,13 @@ export function ActivityPage() {
             eyebrow="Project"
             title="Activity"
             description="Review catalog edits, imports, and publication changes."
+            actions={
+              total > 0 ? (
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {total} {total === 1 ? 'event' : 'events'}
+                </Badge>
+              ) : null
+            }
           />
           <ActivityFilters
             search={search}
@@ -266,10 +274,11 @@ export function ActivityPage() {
           ) : (
             grouped.map((group) => (
               <section key={group.key} className="flex min-w-0 flex-col gap-3">
-                <h2 className="text-xs font-medium text-muted-foreground">
-                  {group.heading || 'Unknown date'}
-                </h2>
-                <div className="min-w-0 divide-y rounded-xl border bg-card px-3 sm:px-4">
+                <div className="flex items-center gap-2">
+                  <span className="eyebrow text-xs">{group.heading || 'Unknown date'}</span>
+                  <div className="h-px flex-1 bg-border/60" />
+                </div>
+                <div className="min-w-0 divide-y divide-border/60 rounded-xl border border-border/80 bg-card shadow-2xs px-3 sm:px-4">
                   {group.cards.map((card) => (
                     <ActivityCard
                       key={card.id}

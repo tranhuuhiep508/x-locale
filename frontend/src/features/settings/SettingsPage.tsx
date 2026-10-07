@@ -8,7 +8,7 @@ import {
   useReactTable,
   type PaginationState,
 } from '@tanstack/react-table'
-import { Plus, TriangleAlert } from 'lucide-react'
+import { Plus, TriangleAlert, Terminal, KeyRound, ShieldAlert, Sparkles, FolderTree } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
@@ -42,11 +42,13 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageBody, PageHeader, PageSection } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
+import { cliInitCommand } from '@/lib/cli-connect'
 const routeApi = getRouteApi('/projects/$projectRef/settings')
 
 export function SettingsPage() {
@@ -166,14 +168,24 @@ export function SettingsPage() {
         eyebrow="Project"
         title="Settings"
         description="Name, languages, and layout for this catalog."
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-xs">
+              {project.slug}
+            </Badge>
+            <Badge variant="secondary" className="capitalize">
+              {form.layout} layout
+            </Badge>
+          </div>
+        }
       />
 
       <PageSection
         title="Project details"
         description="Choose the name, source language, and file layout for your catalog."
       >
-        <Card>
-          <CardContent>
+        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
+          <CardContent className="pt-6">
             <FieldGroup>
               <Field data-invalid={errors.name ? 'true' : undefined}>
                 <FieldLabel htmlFor="project_name">Project name</FieldLabel>
@@ -215,7 +227,13 @@ export function SettingsPage() {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                  <div className="flex items-center justify-between">
+                    <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <FolderTree className="size-3" />
+                      {form.layout === 'modular' ? 'Folder per module' : 'Single file per locale'}
+                    </span>
+                  </div>
                   <Select
                     value={form.layout}
                     onValueChange={(v) =>
@@ -246,8 +264,8 @@ export function SettingsPage() {
         title="Target languages"
         description="Select the languages you translate into. The source language is excluded."
       >
-        <Card>
-          <CardContent>
+        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
+          <CardContent className="pt-6">
             <TargetLanguagePicker
               languages={targetLangs}
               value={form.target_languages}
@@ -263,8 +281,8 @@ export function SettingsPage() {
         title="Translation context"
         description="Give translators and AI shared guidance on tone and terminology."
       >
-        <Card>
-          <CardContent>
+        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
+          <CardContent className="pt-6">
             <FieldGroup>
               <TranslationContextField
                 id="project_translation_context"
@@ -281,12 +299,12 @@ export function SettingsPage() {
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         {isDirty ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className="text-sm font-medium text-amber-600 dark:text-amber-400">
             Unsaved changes
           </p>
         ) : null}
-        <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending}>
-          {updateMut.isPending && <Spinner data-icon="inline-start" />}
+        <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending} size="default">
+          {updateMut.isPending ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
           Save changes
         </Button>
       </div>
@@ -297,15 +315,25 @@ export function SettingsPage() {
         description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
       >
         <div className="flex flex-col gap-4">
-          <div className="flex justify-end">
-            <Button size="sm" onClick={openGenerateKey}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/40 p-4 shadow-2xs">
+            <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-card text-foreground">
+                <Terminal className="size-3.5" />
+              </div>
+              <span className="leading-relaxed">
+                Connect your repository: Run{' '}
+                <code className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere">{cliInitCommand()}</code>,
+                then <code>loc pull</code> to download translations.
+              </span>
+            </div>
+            <Button size="sm" onClick={openGenerateKey} className="shrink-0 self-start sm:self-auto">
               <Plus data-icon="inline-start" />
               Generate key
             </Button>
           </div>
 
           {apiKeys.length > 0 ? (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
               <DataTableToolbar
                 search={apiKeyFilter}
                 onSearchChange={setApiKeyFilter}
@@ -316,6 +344,7 @@ export function SettingsPage() {
             </div>
           ) : (
             <EmptyState
+              icon={<KeyRound className="size-6 text-muted-foreground" />}
               title="No API keys yet"
               description="Generate a personal key for the CLI. The secret is created automatically and shown once."
               action={
@@ -340,7 +369,10 @@ export function SettingsPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Generate API key</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="size-5 text-primary" />
+              Generate API key
+            </DialogTitle>
             <DialogDescription>
               A secret is generated automatically and shown once. This key identifies you on the CLI
               — do not share it. Your previous personal key for this project will be revoked.
@@ -384,13 +416,16 @@ export function SettingsPage() {
       <Dialog open={createdKey !== null} onOpenChange={(o) => !o && setCreatedKey(null)}>
         <DialogContent className="sm:max-w-lg" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>API key generated</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <ShieldAlert className="size-5 text-amber-500" />
+              API key generated
+            </DialogTitle>
             <DialogDescription>
               Copy this key now. You will not be able to see it again.
             </DialogDescription>
           </DialogHeader>
-          <Alert>
-            <TriangleAlert />
+          <Alert className="border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200">
+            <TriangleAlert className="text-amber-600 dark:text-amber-400" />
             <AlertTitle>Store this key securely</AlertTitle>
             <AlertDescription>
               Use it with <code>loc init -k</code>. Anyone with this key can push to this project
@@ -398,11 +433,13 @@ export function SettingsPage() {
             </AlertDescription>
           </Alert>
           {createdKey ? (
-            <CopyableSecretField
-              value={createdKey.key}
-              label="API key"
-              onCopied={() => toast.success('Copied to clipboard')}
-            />
+            <div className="rounded-lg border border-border/80 bg-muted/30 p-3">
+              <CopyableSecretField
+                value={createdKey.key}
+                label="API key"
+                onCopied={() => toast.success('Copied to clipboard')}
+              />
+            </div>
           ) : null}
           <DialogFooter>
             <Button onClick={() => setCreatedKey(null)}>Done</Button>

@@ -22,7 +22,7 @@ test('excel export and import round-trip', async ({ page }) => {
 
   // 1. Export Excel (.xlsx)
   await page.getByRole('combobox', { name: 'Format' }).click()
-  await page.getByRole('option', { name: 'Excel (.xlsx)' }).click()
+  await page.getByRole('option', { name: 'Excel workbook (.xlsx)' }).click()
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-locale-excel-e2e-'))
   const downloadPromise = page.waitForEvent('download')
@@ -36,7 +36,7 @@ test('excel export and import round-trip', async ({ page }) => {
 
   // 2. Upload the exported file in Dry Run mode
   await page.getByRole('combobox', { name: 'Mode' }).click()
-  await page.getByRole('option', { name: 'Dry run (preview)' }).click()
+  await page.getByRole('option', { name: 'Dry run (preview changes)' }).click()
 
   const fileInput = page.locator('input[type="file"]')
   await fileInput.setInputFiles(exportPath)

@@ -135,7 +135,7 @@ export function BatchActionBar({
       aria-busy={busy}
       inert={!open}
       className={cn(
-        'flex max-w-full flex-col gap-1 rounded-lg border border-input bg-popover p-1 text-popover-foreground shadow-sm ring-1 ring-foreground/10 transition-opacity duration-200 ease-drift',
+        'flex max-w-full flex-col gap-1 rounded-xl border border-border bg-popover/95 p-1.5 text-popover-foreground shadow-lg ring-1 ring-border/50 backdrop-blur-md transition-opacity duration-200 ease-drift',
         open ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >

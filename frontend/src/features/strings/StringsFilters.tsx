@@ -430,7 +430,7 @@ export function StringsFilters({
   return (
     <section
       aria-label="String filters"
-      className="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-3"
+      className="flex min-w-0 flex-col gap-3.5 rounded-xl border border-border/80 bg-card p-3.5 shadow-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
         <InputGroup className="min-w-0 flex-1 md:basis-56">

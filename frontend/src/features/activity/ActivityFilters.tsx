@@ -44,7 +44,7 @@ export function ActivityFilters({
   return (
     <section
       aria-label="Activity filters"
-      className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl border bg-card p-3"
+      className="flex min-w-0 flex-wrap items-center gap-2.5 rounded-xl border border-border/80 bg-card p-3 shadow-xs"
     >
       <InputGroup className="min-w-0 basis-full sm:flex-1 sm:basis-48">
         <InputGroupInput

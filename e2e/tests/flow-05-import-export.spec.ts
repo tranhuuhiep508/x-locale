@@ -35,6 +35,64 @@ async function selectImportModule(page: import('@playwright/test').Page, moduleN
   await page.getByRole('option', { name: new RegExp(moduleName) }).click()
 }
 
+test('dropping JSON previews it and applies the retained file after confirmation', async ({ page }) => {
+  await goToImportExport(page)
+  await selectImportModule(page, 'Common')
+  const key = `e2e_dropped_${Date.now()}`
+  const transfer = await page.evaluateHandle((key) => {
+    const data = new DataTransfer()
+    data.items.add(new File([JSON.stringify({ [key]: 'Dropped source' })], 'vi.json', { type: 'application/json' }))
+    return data
+  }, key)
+  const dropZone = page.getByRole('button', { name: /Click to browse or drop/ })
+  await dropZone.dispatchEvent('dragover', { dataTransfer: transfer })
+  await dropZone.dispatchEvent('drop', { dataTransfer: transfer })
+  await transfer.dispose()
+
+  const preview = page.getByRole('dialog', { name: 'Import preview (dry run)' })
+  await expect(preview.getByText(key, { exact: false })).toBeVisible()
+  await preview.getByRole('button', { name: 'Apply import' }).click()
+  await expect(page.getByText(/Import complete:/)).toBeVisible()
+  await page.getByRole('link', { name: 'Strings', exact: true }).click()
+  await searchStrings(page, key)
+  await expect(page.getByText(key, { exact: true })).toBeVisible()
+})
+
+test('the upload zone opens the file picker from the keyboard', async ({ page }) => {
+  await goToImportExport(page)
+  const zone = page.getByRole('button', { name: /Click to browse or drop/ })
+  await zone.focus()
+  const chooserPromise = page.waitForEvent('filechooser')
+  await page.keyboard.press('Enter')
+  const chooser = await chooserPromise
+  await chooser.setFiles({ name: 'vi.json', mimeType: 'application/json', buffer: Buffer.from('{"e2e_keyboard_import":"Keyboard source"}') })
+  await expect(page.getByRole('dialog', { name: 'Import preview (dry run)' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+})
+
+test('invalid and oversized drops are rejected before upload', async ({ page }) => {
+  await goToImportExport(page)
+  const uploads: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/import')) uploads.push(request.url())
+  })
+  for (const invalid of [
+    { name: 'notes.txt', size: 1, error: 'Choose a JSON (.json) or Excel (.xlsx) file' },
+    { name: 'large.json', size: 10 * 1024 * 1024 + 1, error: 'File must be 10 MB or smaller' },
+  ]) {
+    const transfer = await page.evaluateHandle(({ name, size }) => {
+      const data = new DataTransfer()
+      data.items.add(new File([new Uint8Array(size)], name))
+      return data
+    }, invalid)
+    await page.getByRole('button', { name: /Click to browse or drop/ }).dispatchEvent('drop', { dataTransfer: transfer })
+    await transfer.dispose()
+    await expect(page.getByText(invalid.error, { exact: true })).toBeVisible()
+  }
+  expect(uploads).toEqual([])
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
 test('import dry-run preview, cancel leaves catalog unchanged, apply then export public', async ({
   page,
 }) => {
@@ -47,7 +105,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   fs.writeFileSync(importPath, importJson)
 
   await page.getByRole('combobox', { name: 'Mode' }).click()
-  await page.getByRole('option', { name: 'Dry run (preview)' }).click()
+  await page.getByRole('option', { name: 'Dry run (preview changes)' }).click()
 
   const fileInput = page.locator('input[type="file"]')
   await fileInput.setInputFiles(importPath)
@@ -88,7 +146,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
 
   await page.getByRole('link', { name: 'Import / Export' }).click()
   await page.getByRole('combobox', { name: 'Stage' }).click()
-  await page.getByRole('option', { name: 'Public only' }).click()
+  await page.getByRole('option', { name: 'Published snapshot only' }).click()
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download JSON' }).click()

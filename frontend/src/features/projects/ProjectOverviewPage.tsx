@@ -8,6 +8,7 @@ import {
   GitCompareArrows,
   Globe2,
   Settings2,
+  Layers,
 } from 'lucide-react'
 import { ActivityCard } from '@/features/activity/ActivityCard'
 import {
@@ -47,6 +48,7 @@ function StatCard({
   projectRef,
   to,
   search,
+  accent,
 }: {
   icon: ElementType
   label: string
@@ -55,19 +57,25 @@ function StatCard({
   projectRef: string
   to: '/projects/$projectRef/strings' | '/projects/$projectRef/settings'
   search?: StringsSearch
+  accent?: boolean
 }) {
   return (
     <Link
       to={to}
       params={{ projectRef }}
       search={search}
-      className="group min-w-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group relative min-w-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Card size="sm" className="h-full transition-shadow hover:shadow-sm">
+      <Card
+        size="sm"
+        className={`h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+          accent ? 'border-primary/40 bg-primary/5' : ''
+        }`}
+      >
         <CardHeader>
-          <CardDescription className="min-h-10 sm:min-h-5">{label}</CardDescription>
+          <CardDescription className="min-h-10 sm:min-h-5 font-medium">{label}</CardDescription>
           <CardAction className="hidden sm:block">
-            <MarkWell>
+            <MarkWell className={accent ? 'bg-primary/20 text-primary ring-primary/30' : ''}>
               <Icon className="size-4" />
             </MarkWell>
           </CardAction>
@@ -77,13 +85,13 @@ function StatCard({
             {value === undefined ? (
               <Skeleton className="h-8 w-12" aria-label={`Loading ${label.toLowerCase()}`} />
             ) : (
-              <p className="text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+              <p className="text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
                 {value}
               </p>
             )}
             <ArrowUpRight
               aria-hidden="true"
-              className="hidden size-4 text-muted-foreground group-hover:text-primary sm:block"
+              className="hidden size-4 text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5 group-hover:translate-y-[-1px] group-hover:text-primary sm:block"
             />
           </div>
           <p className="hidden text-xs text-muted-foreground sm:block">{description}</p>
@@ -117,9 +125,11 @@ function LanguageCoverage({
   return (
     <li className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="outline">{locale.toUpperCase()}</Badge>
-          <h3 className="min-w-0 font-medium wrap-anywhere">{name}</h3>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Badge variant="outline" className="font-mono text-xs font-semibold">
+            {locale.toUpperCase()}
+          </Badge>
+          <h3 className="min-w-0 font-medium text-foreground wrap-anywhere">{name}</h3>
         </div>
         {percent == null ? (
           unavailable ? (
@@ -128,16 +138,19 @@ function LanguageCoverage({
             <Skeleton className="h-5 w-10" />
           )
         ) : (
-          <span className="text-sm font-medium tabular-nums">{percent}%</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold tabular-nums text-foreground">{percent}%</span>
+          </div>
         )}
       </div>
       {percent == null ? (
         unavailable ? null : (
-          <Skeleton className="h-1 w-full" />
+          <Skeleton className="h-1.5 w-full" />
         )
       ) : (
         <Progress
           value={percent}
+          className="h-1.5"
           aria-label={`${name} translation coverage`}
           aria-valuetext={`${translated} of ${total} strings translated`}
         />
@@ -168,6 +181,7 @@ function LanguageCoverage({
                     ? { complete_locale: locale }
                     : { missing_locale: locale }
               }
+              className="text-xs font-medium hover:text-primary transition-colors"
             >
               {total === 0
                 ? 'View strings'
@@ -184,6 +198,7 @@ function LanguageCoverage({
     </li>
   )
 }
+
 
 export function ProjectOverviewPage() {
   const { projectRef } = routeApi.useParams()
@@ -231,30 +246,32 @@ export function ProjectOverviewPage() {
     languages.find((language) => language.code === locale)?.name ?? locale
 
   return (
-    <PageBody className="mx-auto w-full max-w-7xl">
+    <PageBody className="mx-auto w-full max-w-7xl pb-16">
+      {/* Overview Page Header */}
       <PageHeader
         eyebrow="Project"
         title="Overview"
         description={project.name}
         actions={
-          <>
+          <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
               <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
                 <Settings2 data-icon="inline-start" />
                 Settings
               </Link>
             </Button>
-            <Button asChild>
+            <Button asChild className="shadow-xs">
               <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
                 Open catalog
                 <ArrowRight data-icon="inline-end" />
               </Link>
             </Button>
-          </>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      {/* Primary Key Stats Grid */}
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <StatCard
           icon={AlignLeft}
           label="Strings"
@@ -280,11 +297,14 @@ export function ProjectOverviewPage() {
           projectRef={projectRef}
           to="/projects/$projectRef/strings"
           search={{ has_unpublished_changes: true }}
+          accent={Boolean(publish.data?.total && publish.data.total > 0)}
         />
       </div>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <Card className="min-w-0">
+      {/* Main Content Layout: Coverage Matrix + Activity Stream & CLI */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+        {/* Translation Coverage Card */}
+        <Card className="min-w-0 overflow-hidden shadow-xs">
           <CardHeader>
             <CardTitle>
               <h2>Translation coverage</h2>
@@ -292,15 +312,21 @@ export function ProjectOverviewPage() {
             <CardDescription>Filled working-copy text in each target language.</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-3">
-              <div className="flex min-w-0 flex-col gap-1">
-                <p className="text-xs text-muted-foreground">Base language</p>
-                <p className="font-medium wrap-anywhere">{languageName(project.base_language)}</p>
+            {/* Base language highlight pill */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/30 px-3.5 py-3">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="eyebrow text-[10px]">Base language</p>
+                <p className="font-semibold text-foreground wrap-anywhere">
+                  {languageName(project.base_language)}
+                </p>
               </div>
-              <Badge variant="secondary">{project.base_language.toUpperCase()}</Badge>
+              <Badge variant="secondary" className="font-mono text-xs font-semibold">
+                {project.base_language.toUpperCase()}
+              </Badge>
             </div>
+
             {project.target_languages.length > 0 ? (
-              <ul className="min-w-0 divide-y">
+              <ul className="min-w-0 divide-y divide-border/60">
                 {project.target_languages.map((locale) => (
                   <LanguageCoverage
                     key={locale}
@@ -323,7 +349,7 @@ export function ProjectOverviewPage() {
               />
             )}
           </CardContent>
-          <CardFooter className="flex-wrap justify-between gap-2">
+          <CardFooter className="flex-wrap justify-between gap-2 border-t border-border/50 bg-muted/20">
             <p className="text-xs text-muted-foreground">Draft and public strings.</p>
             <Button variant="ghost" size="sm" asChild>
               <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
@@ -334,76 +360,84 @@ export function ProjectOverviewPage() {
           </CardFooter>
         </Card>
 
-        <Card size="sm" className="min-w-0">
-          <CardHeader className="items-center">
-            <CardTitle>
-              <h2>Recent activity</h2>
-            </CardTitle>
-            <CardAction>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/projects/$projectRef/activity" params={{ projectRef }} search={{}}>
-                  View all
-                  <ArrowRight data-icon="inline-end" />
-                </Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {activity.data?.items.length ? (
-              <div className="flex min-w-0 flex-col divide-y">
-                {activity.data.items.map((card) => (
-                  <ActivityCard key={card.id} card={card} projectId={projectRef} compact />
-                ))}
-              </div>
-            ) : activity.isPending ? (
-              <div className="flex flex-col gap-3">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
-              </div>
-            ) : activity.isError ? (
-              <EmptyState
-                title="Couldn’t load activity"
-                description="Try loading the latest changes again."
-                action={
-                  <Button variant="outline" size="sm" onClick={() => void activity.refetch()}>
-                    Retry
-                  </Button>
-                }
-                className="py-3"
-              />
-            ) : (
-              <EmptyState
-                title="No activity yet"
-                description="Your catalog changes will appear here as you work."
-                className="py-3"
-              />
-            )}
-          </CardContent>
-        </Card>
+        {/* Right Column: Recent Activity */}
+        <div className="space-y-6">
+          {/* Recent Activity Card */}
+          <Card size="sm" className="min-w-0 shadow-xs">
+            <CardHeader className="items-center">
+              <CardTitle>
+                <h2>Recent activity</h2>
+              </CardTitle>
+              <CardAction>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/projects/$projectRef/activity" params={{ projectRef }} search={{}}>
+                    View all
+                    <ArrowRight data-icon="inline-end" />
+                  </Link>
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {activity.data?.items.length ? (
+                <div className="flex min-w-0 flex-col divide-y divide-border/60">
+                  {activity.data.items.map((card) => (
+                    <ActivityCard key={card.id} card={card} projectId={projectRef} compact />
+                  ))}
+                </div>
+              ) : activity.isPending ? (
+                <div className="flex flex-col gap-3">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
+              ) : activity.isError ? (
+                <EmptyState
+                  title="Couldn’t load activity"
+                  description="Try loading the latest changes again."
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => void activity.refetch()}>
+                      Retry
+                    </Button>
+                  }
+                  className="py-3"
+                />
+              ) : (
+                <EmptyState
+                  title="No activity yet"
+                  description="Your catalog changes will appear here as you work."
+                  className="py-3"
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Overview Footer Metadata Navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <Link
             to="/projects/$projectRef/modules"
             params={{ projectRef }}
-            className="hover:text-foreground hover:underline"
+            className="hover:text-foreground hover:underline transition-colors flex items-center gap-1.5"
           >
+            <Layers className="size-3 text-primary" />
             {modulesResult.data ? `${modulesResult.data.length} modules` : 'Modules'}
           </Link>
           <Separator orientation="vertical" className="h-3" />
           <Link
             to="/projects/$projectRef/tags"
             params={{ projectRef }}
-            className="hover:text-foreground hover:underline"
+            className="hover:text-foreground hover:underline transition-colors"
           >
             {tagsResult.data ? `${tagsResult.data.length} tags` : 'Tags'}
           </Link>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {project.layout === 'modular' ? 'Modular' : 'Flat'} export layout
-        </span>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono text-[11px]">
+            {project.layout === 'modular' ? 'Modular' : 'Flat'} export layout
+          </Badge>
+        </div>
       </div>
     </PageBody>
   )

@@ -20,23 +20,29 @@ import {
   groupChangesByScope,
 } from '@/features/activity/change-labels'
 import { batchKindLabel, eventTypeLabel } from '@/features/activity/event-type-labels'
-import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 
 function ChangeRow({ change }: { change: ActivityChange }) {
   const label = changeFieldLabel(change)
+  const isChanged = change.before !== change.after
   return (
-    <div className="flex min-w-0 flex-col gap-2 px-3 py-3 text-xs">
-      <span className="font-medium text-foreground/80">{label}</span>
+    <div className="flex min-w-0 flex-col gap-2.5 px-3.5 py-3 text-xs">
+      <span className="font-medium text-foreground/90">{label}</span>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-muted-foreground">Before</span>
-          <p className="rounded-md bg-muted/50 px-2 py-2 whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Before</span>
+          <p className="rounded-lg border border-border/70 bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
             {changeDisplayValue(change, change.before)}
           </p>
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-muted-foreground">After</span>
-          <p className="rounded-md bg-muted/50 px-2 py-2 whitespace-pre-wrap wrap-anywhere text-foreground">
+          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">After</span>
+          <p className={cn(
+            "rounded-lg border p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere",
+            isChanged
+              ? "border-primary/25 bg-primary/5 text-foreground font-medium"
+              : "border-border/70 bg-muted/40 text-foreground"
+          )}>
             {changeDisplayValue(change, change.after)}
           </p>
         </div>
@@ -56,15 +62,17 @@ function ChangeGroupSection({
   const other = changes.filter((change) => change.kind !== 'translation')
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="px-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
         {changeScopeLabel(scope)}
       </h3>
-      <div className="flex flex-col divide-y rounded-md border">
+      <div className="flex flex-col divide-y divide-border/60 rounded-xl border border-border/80 bg-card shadow-2xs overflow-hidden">
         {other.map((change) => (
           <ChangeRow key={change.field} change={change} />
         ))}
         {translations.length > 0 && other.length > 0 ? (
-          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Translations</div>
+          <div className="bg-muted/30 px-3.5 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Translations
+          </div>
         ) : null}
         {translations.map((change) => (
           <ChangeRow key={`translation:${change.locale}`} change={change} />
