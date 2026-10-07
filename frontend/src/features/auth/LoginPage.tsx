@@ -139,55 +139,8 @@ export function LoginPage() {
       {/* Main Content Area */}
       <main className="mx-auto flex w-full max-w-7xl flex-1 items-center px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
         <div className="grid w-full gap-6 lg:grid-cols-12 lg:gap-8 xl:gap-12">
-          {/* Left Column: Focused Authentication Card */}
-          <div className="flex flex-col justify-center lg:col-span-5">
-            <div className="mx-auto w-full max-w-md lg:mx-0">
-              {/* Eyebrow badge */}
-              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                <ShieldCheck className="size-3.5 text-primary" />
-                <span>Translation management</span>
-              </div>
-
-              {/* Title & subtitle */}
-              <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                Welcome to your localization workspace
-              </h1>
-              <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
-                Sign in to manage and sync your localization catalogs.
-              </p>
-
-              {/* Main Auth Card */}
-              <div className="sky-panel relative mt-4 overflow-hidden rounded-2xl border border-border/80 p-5 shadow-md transition-all duration-200 sm:p-6">
-                {/* Horizon highlight hairline on top border */}
-                <div
-                  className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent"
-                  aria-hidden="true"
-                />
-
-                <div className="space-y-4">
-                  {/* Primary SSO Button */}
-                  <Button
-                    className="group relative h-11 w-full justify-between rounded-xl px-4 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md"
-                    size="lg"
-                    asChild
-                  >
-                    <a href="/api/auth/login">
-                      <span className="flex items-center gap-3">
-                        <span className="flex size-6 items-center justify-center rounded-md bg-white p-1 shadow-2xs">
-                          <MicrosoftLogo className="size-4" />
-                        </span>
-                        <span>Continue with Microsoft</span>
-                      </span>
-                      <ArrowRight className="size-4 text-primary-foreground/70 transition-transform duration-200 group-hover:translate-x-1" />
-                    </a>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: The Product Showcase & Interactive Localization Lens */}
-          <div className="flex flex-col justify-center lg:col-span-7">
+          {/* Left Column (Desktop) / Second (Mobile): The Product Showcase & Interactive Localization Lens */}
+          <div className="order-2 lg:order-1 flex flex-col justify-center lg:col-span-7">
             <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
               {/* Product Showcase Card */}
               <div className="sky-panel overflow-hidden rounded-2xl border border-border/80 shadow-xl ring-1 ring-border/40 backdrop-blur-sm">
@@ -382,6 +335,91 @@ export function LoginPage() {
                       <p className="text-xs font-semibold text-foreground truncate">Audit & Revert</p>
                       <p className="text-[10px] text-muted-foreground truncate">1-click batch undo</p>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (Desktop) / First (Mobile): Focused Authentication Card */}
+          <div className="order-1 lg:order-2 flex flex-col justify-center lg:col-span-5">
+            <div className="mx-auto w-full max-w-md lg:mx-0">
+              {/* Eyebrow badge */}
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                <ShieldCheck className="size-3.5 text-primary" />
+                <span>Translation management</span>
+              </div>
+
+              {/* Title & subtitle */}
+              <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Welcome to your localization workspace
+              </h1>
+              <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
+                Sign in to manage and sync your localization catalogs.
+              </p>
+
+              {/* Main Auth Card */}
+              <div className="sky-panel relative mt-4 overflow-hidden rounded-2xl border border-border/80 p-5 shadow-md transition-all duration-200 sm:p-6">
+                {/* Horizon highlight hairline on top border */}
+                <div
+                  className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent"
+                  aria-hidden="true"
+                />
+
+                <div className="space-y-4">
+                  {/* Primary SSO Button */}
+                  <Button
+                    className="group relative h-11 w-full justify-between rounded-xl px-4 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md"
+                    size="lg"
+                    asChild
+                  >
+                    <a href="/api/auth/login">
+                      <span className="flex items-center gap-3">
+                        <span className="flex size-6 items-center justify-center rounded-md bg-white p-1 shadow-2xs">
+                          <MicrosoftLogo className="size-4" />
+                        </span>
+                        <span>Continue with Microsoft</span>
+                      </span>
+                      <ArrowRight className="size-4 text-primary-foreground/70 transition-transform duration-200 group-hover:translate-x-1" />
+                    </a>
+                  </Button>
+
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    Safe one-click sign in. No password to remember.
+                  </p>
+
+                  {/* Simple human workflow steps */}
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="eyebrow text-[10px]">How it works</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">Simple & fast</span>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center gap-2.5 text-muted-foreground">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-[10px] font-semibold">
+                          1
+                        </span>
+                        <span className="text-foreground/90">Connect your projects & team members</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-muted-foreground">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-[10px] font-semibold">
+                          2
+                        </span>
+                        <span className="text-foreground/90">Review and polish translations together</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-muted-foreground">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-mono text-[10px] font-semibold">
+                          3
+                        </span>
+                        <span className="text-foreground/90">Publish approved copy directly to your apps</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Privacy assurance */}
+                  <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+                    <ShieldCheck className="size-3.5 text-emerald-500 shrink-0" />
+                    <span>Your workspace data stays private and protected</span>
                   </div>
                 </div>
               </div>

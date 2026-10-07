@@ -37,4 +37,14 @@ describe('LoginPage', () => {
     expect(screen.getByText('CLI & Git Sync')).toBeDefined()
     expect(screen.getByText('Audit & Revert')).toBeDefined()
   })
+
+  it('renders how it works steps and privacy assurance note', () => {
+    render(<LoginPage />)
+
+    expect(screen.getByText('How it works')).toBeDefined()
+    expect(screen.getByText('Connect your projects & team members')).toBeDefined()
+    expect(screen.getByText('Review and polish translations together')).toBeDefined()
+    expect(screen.getByText('Publish approved copy directly to your apps')).toBeDefined()
+    expect(screen.getByText('Your workspace data stays private and protected')).toBeDefined()
+  })
 })
