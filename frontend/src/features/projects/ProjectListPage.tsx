@@ -10,7 +10,6 @@ import {
   ArrowUpRight,
   Search,
   LayoutDashboard,
-  Boxes,
   FileText,
   Terminal,
   Languages,

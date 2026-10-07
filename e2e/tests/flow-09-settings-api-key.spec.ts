@@ -52,6 +52,13 @@ test('settings: generate API key, show secret once, revoke blocks bootstrap', as
   const activeBootstrap = await bootstrapWithApiKey(page, secret)
   expect(activeBootstrap.ok()).toBeTruthy()
 
+  // The CLI hint uses the UI origin, whose /api proxy must also accept the generated key.
+  const cliBootstrap = await page.request.get(new URL('/api/bootstrap', page.url()).toString(), {
+    headers: { 'X-API-Key': secret },
+  })
+  expect(cliBootstrap.ok()).toBeTruthy()
+  expect((await cliBootstrap.json()).slug).toBe('demo-app')
+
   await row.getByRole('button', { name: `Revoke ${keyName}` }).click()
   const revokeDialog = page.getByRole('alertdialog', { name: `Revoke "${keyName}"?` })
   await revokeDialog.getByRole('button', { name: 'Revoke key' }).click()

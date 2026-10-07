@@ -6,11 +6,6 @@ import {
   FileSpreadsheet,
   FileText,
   Upload,
-  ArrowUpDown,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle,
-  FileCode,
 } from 'lucide-react'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
@@ -18,7 +13,7 @@ import { modulesQuery, projectQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Select,
   SelectTrigger,
@@ -47,6 +42,7 @@ import {
 
 const routeApi = getRouteApi('/projects/$projectRef/import-export')
 const NONE_MODULE = '__none__'
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
 function triggerDownload(blob: Blob, filename: string) {
   const href = URL.createObjectURL(blob)
@@ -157,12 +153,28 @@ export function ImportExportPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not download template'),
   })
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  function importFile(file: File | undefined) {
+    if (!file || importMut.isPending) return
+    if (!/\.(json|xlsx)$/i.test(file.name)) {
+      toast.error('Choose a JSON (.json) or Excel (.xlsx) file')
+      return
+    }
+    if (file.size > MAX_IMPORT_BYTES) {
+      toast.error('File must be 10 MB or smaller')
+      return
+    }
     pendingFileRef.current = file
     importMut.mutate({ file, dry: dryRun })
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    importFile(e.target.files?.[0])
     e.target.value = ''
+  }
+
+  function handleFileDrop(e: React.DragEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    importFile(e.dataTransfer.files[0])
   }
 
   function confirmImport() {
@@ -381,22 +393,27 @@ export function ImportExportPage() {
               type="file"
               accept=".json,.xlsx"
               className="hidden"
+              disabled={importMut.isPending}
               onChange={handleFileChange}
             />
 
             {/* Visual File Picker Zone */}
-            <div
+            <button
+              type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/40"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleFileDrop}
+              disabled={importMut.isPending}
+              className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-50"
             >
-              <Upload className="size-6 text-muted-foreground mb-2" />
-              <p className="text-xs font-medium text-foreground">
+              <Upload aria-hidden="true" className="size-6 text-muted-foreground mb-2" />
+              <span className="text-xs font-medium text-foreground">
                 Click to browse or drop .json / .xlsx file here
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              </span>
+              <span className="text-[11px] text-muted-foreground mt-0.5">
                 Maximum file size: 10 MB. Dotted keys are preserved.
-              </p>
-            </div>
+              </span>
+            </button>
           </CardContent>
           <CardFooter className="border-t border-border/50 bg-muted/20 pt-4">
             <Button

@@ -138,21 +138,21 @@ export function LoginPage() {
 
       {/* Main Content Area */}
       <main className="mx-auto flex w-full max-w-7xl flex-1 items-center px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
-        <div className="grid w-full gap-6 lg:grid-cols-12 lg:gap-8 xl:gap-12">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8 xl:gap-12">
           {/* Left Column (Desktop) / Second (Mobile): The Product Showcase & Interactive Localization Lens */}
-          <div className="order-2 lg:order-1 flex flex-col justify-center lg:col-span-7">
+          <div className="order-2 lg:order-1 flex min-w-0 flex-col justify-center lg:col-span-7">
             <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
               {/* Product Showcase Card */}
               <div className="sky-panel overflow-hidden rounded-2xl border border-border/80 shadow-xl ring-1 ring-border/40 backdrop-blur-sm">
                 {/* Showcase Header Bar */}
-                <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-4 py-2.5">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-4 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="flex items-center gap-1.5">
                       <div className="size-2.5 rounded-full bg-red-400/80 dark:bg-red-500/80" />
                       <div className="size-2.5 rounded-full bg-amber-400/80 dark:bg-amber-500/80" />
                       <div className="size-2.5 rounded-full bg-emerald-400/80 dark:bg-emerald-500/80" />
                     </div>
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
+                    <span className="ml-2 truncate font-mono text-xs text-muted-foreground">
                       demo-app <span className="text-border">/</span> <span className="text-foreground">catalog-studio</span>
                     </span>
                   </div>
@@ -182,9 +182,10 @@ export function LoginPage() {
                           <button
                             key={locale.code}
                             type="button"
+                            aria-pressed={isSelected}
                             onClick={() => setSelectedLocaleIndex(index)}
                             className={cn(
-                              'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150',
+                              'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                               isSelected
                                 ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
                                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -208,7 +209,7 @@ export function LoginPage() {
                 <div className="p-4 sm:p-5 space-y-3">
                   {/* String Key & Metadata row */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 font-mono text-xs">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 font-mono text-xs">
                       <FileCode2 className="size-4 text-primary" />
                       <span className="font-semibold text-foreground">auth.welcome_message</span>
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
@@ -342,7 +343,7 @@ export function LoginPage() {
           </div>
 
           {/* Right Column (Desktop) / First (Mobile): Focused Authentication Card */}
-          <div className="order-1 lg:order-2 flex flex-col justify-center lg:col-span-5">
+          <div className="order-1 lg:order-2 flex min-w-0 flex-col justify-center lg:col-span-5">
             <div className="mx-auto w-full max-w-md lg:mx-0">
               {/* Eyebrow badge */}
               <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
@@ -369,12 +370,12 @@ export function LoginPage() {
                 <div className="space-y-4">
                   {/* Primary SSO Button */}
                   <Button
-                    className="group relative h-11 w-full justify-between rounded-xl px-4 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md"
+                    className="group relative h-11 w-full justify-between rounded-xl px-3 text-sm font-semibold shadow-xs transition-all duration-200 hover:translate-y-[-1px] hover:shadow-md sm:px-4"
                     size="lg"
                     asChild
                   >
                     <a href="/api/auth/login">
-                      <span className="flex items-center gap-3">
+                      <span className="flex items-center gap-2 sm:gap-3">
                         <span className="flex size-6 items-center justify-center rounded-md bg-white p-1 shadow-2xs">
                           <MicrosoftLogo className="size-4" />
                         </span>

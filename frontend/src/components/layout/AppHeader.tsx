@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Layers, ExternalLink } from 'lucide-react'
+import { Layers } from 'lucide-react'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { cn } from '@/lib/utils'
@@ -43,16 +43,6 @@ export function AppHeader({
         ) : null}
         <div className="flex-1" />
         <div className="flex items-center gap-3">
-          <a
-            href="http://localhost:8000/docs"
-            target="_blank"
-            rel="noreferrer"
-            className="hidden items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground md:flex"
-          >
-            API Docs
-            <ExternalLink className="size-3 opacity-70" />
-          </a>
-          <div className="h-4 w-px bg-border/60 hidden md:block" />
           <ThemeToggle />
           <UserMenu />
         </div>

@@ -7,9 +7,6 @@ import {
   Globe,
   Sparkles,
   Terminal,
-  FileCode2,
-  Calendar,
-  CheckCircle2,
 } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { TranslationContextField } from '@/features/catalog/TranslationContextField'
@@ -36,6 +33,7 @@ import { useToast } from '@/lib/toast'
 import { projectCreateSchema } from '@/lib/schemas'
 import type { ProjectCreateForm } from '@/lib/schemas'
 import { slugify } from '@/lib/utils'
+import { cliInitCommand } from '@/lib/cli-connect'
 
 type FormErrors = Partial<Record<keyof ProjectCreateForm, string>>
 
@@ -121,9 +119,9 @@ export function NewProjectPage() {
           />
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
+        <div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
           {/* Main Form (8 cols on lg) */}
-          <div className="lg:col-span-7 xl:col-span-8">
+          <div className="min-w-0 lg:col-span-7 xl:col-span-8">
             <Card className="shadow-xs">
               <CardHeader className="border-b border-border/50 pb-4">
                 <CardTitle>Catalog Configuration</CardTitle>
@@ -267,7 +265,7 @@ export function NewProjectPage() {
           </div>
 
           {/* Right Column: Live Project Preview & Architecture Notes */}
-          <div className="space-y-6 lg:col-span-5 xl:col-span-4">
+          <div className="min-w-0 space-y-6 lg:col-span-5 xl:col-span-4">
             <div className="sky-panel overflow-hidden rounded-xl border border-border/80 shadow-md">
               <div className="border-b border-border/60 bg-muted/40 px-4 py-3 flex items-center justify-between">
                 <span className="eyebrow flex items-center gap-1.5 text-primary">
@@ -288,7 +286,7 @@ export function NewProjectPage() {
                     <h3 className="truncate font-semibold text-base text-foreground">
                       {previewName}
                     </h3>
-                    <p className="font-mono text-xs text-muted-foreground">
+                    <p className="font-mono text-xs text-muted-foreground wrap-anywhere">
                       /projects/{previewSlug}
                     </p>
                   </div>
@@ -343,10 +341,11 @@ export function NewProjectPage() {
               </div>
               <p className="text-muted-foreground leading-relaxed text-[11px]">
                 After creating this project, you can generate an API key in Settings and run{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                  loc init -k &lt;key&gt;
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground wrap-anywhere">
+                  {cliInitCommand()}
                 </code>{' '}
-                in your repository to pull and push translation files automatically.
+                in your repository to connect it. Then use <code>loc pull</code> and{' '}
+                <code>loc push</code> to sync translation files.
               </p>
             </div>
           </div>

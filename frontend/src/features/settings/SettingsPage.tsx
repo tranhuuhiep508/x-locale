@@ -48,6 +48,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageBody, PageHeader, PageSection } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
+import { cliInitCommand } from '@/lib/cli-connect'
 const routeApi = getRouteApi('/projects/$projectRef/settings')
 
 export function SettingsPage() {
@@ -320,7 +321,9 @@ export function SettingsPage() {
                 <Terminal className="size-3.5" />
               </div>
               <span className="leading-relaxed">
-                Connect the CLI locally: Run <code className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground">loc init -k &lt;API_KEY&gt;</code> to authenticate and pull translations.
+                Connect your repository: Run{' '}
+                <code className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere">{cliInitCommand()}</code>,
+                then <code>loc pull</code> to download translations.
               </span>
             </div>
             <Button size="sm" onClick={openGenerateKey} className="shrink-0 self-start sm:self-auto">
