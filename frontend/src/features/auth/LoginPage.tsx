@@ -96,7 +96,7 @@ const DEMO_LOCALES: DemoLocale[] = [
 ]
 
 export function LoginPage() {
-  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(1) // Default to Tiếng Việt (Vietnamese base in demo)
+  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(0)
 
   const activeLocale = DEMO_LOCALES[selectedLocaleIndex]
 
