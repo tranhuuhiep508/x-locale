@@ -57,7 +57,7 @@ const DEMO_LOCALES: DemoLocale[] = [
     code: 'vi-VN',
     label: 'Tiếng Việt',
     flag: '🇻🇳',
-    translation: 'Dịch nhanh, phát hành toàn cầu không lo lỗi khóa dịch.',
+    translation: 'Dịch dễ dàng, đưa ứng dụng đến với nhiều người hơn.',
     context: 'Ngữ cảnh chuẩn hóa',
     confidence: 99,
     status: 'public',
