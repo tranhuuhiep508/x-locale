@@ -16,7 +16,8 @@ test('dev bypass lands on projects without manual sign-in', async ({ page }) => 
 
 test('login page exposes Microsoft sign-in when visited directly', async ({ page }) => {
   await page.goto('/login')
-  await expect(page.getByText('Sign in', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Welcome to your localization workspace' })).toBeVisible()
+  await expect(page.getByText('Sign in to manage and sync your localization catalogs.')).toBeVisible()
   const signIn = page.getByRole('link', { name: 'Continue with Microsoft' })
   await expect(signIn).toBeVisible()
   await expect(signIn).toHaveAttribute('href', '/api/auth/login')

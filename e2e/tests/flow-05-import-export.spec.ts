@@ -47,7 +47,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   fs.writeFileSync(importPath, importJson)
 
   await page.getByRole('combobox', { name: 'Mode' }).click()
-  await page.getByRole('option', { name: 'Dry run (preview)' }).click()
+  await page.getByRole('option', { name: 'Dry run (preview changes)' }).click()
 
   const fileInput = page.locator('input[type="file"]')
   await fileInput.setInputFiles(importPath)
@@ -88,7 +88,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
 
   await page.getByRole('link', { name: 'Import / Export' }).click()
   await page.getByRole('combobox', { name: 'Stage' }).click()
-  await page.getByRole('option', { name: 'Public only' }).click()
+  await page.getByRole('option', { name: 'Published snapshot only' }).click()
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download JSON' }).click()
