@@ -101,7 +101,7 @@ export function NewProjectPage() {
 
   const targetLangs = languages.filter((l) => l.code !== form.base_language)
   const previewName = form.name.trim() || 'My Application'
-  const previewSlug = form.slug.trim() || (form.name ? slugify(form.name) : 'my-application')
+  const previewSlug = (form.slug ?? '').trim() || (form.name ? slugify(form.name) : 'my-application')
 
   return (
     <AppShell>
@@ -153,7 +153,7 @@ export function NewProjectPage() {
                         <FieldLabel htmlFor="slug">Project URL (permanent)</FieldLabel>
                         <Input
                           id="slug"
-                          value={form.slug}
+                          value={form.slug ?? ''}
                           onChange={(e) => {
                             setSlugTouched(true)
                             setForm((f) => ({ ...f, slug: e.target.value }))
