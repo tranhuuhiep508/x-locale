@@ -26,7 +26,7 @@ describe('LoginPage', () => {
     fireEvent.click(jaButton)
 
     // Japanese text should appear
-    expect(screen.getByText(/迅速に翻訳し/i)).toBeDefined()
+    expect(screen.getByText(/すばやく翻訳/i)).toBeDefined()
   })
 
   it('renders the full core main features suite including AI and draft isolation', () => {
