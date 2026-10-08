@@ -12,6 +12,8 @@ from app.auth import SESSION_COOKIE, create_session_token
 from app.models import (
     Activity,
     ApiKey,
+    Job,
+    JobStatus,
     MemberRole,
     Module,
     Project,
@@ -406,6 +408,38 @@ def test_multiple_admins_are_allowed(client):
     )
     assert renamed.status_code == 200
     assert renamed.json()["role"] == "admin"
+
+
+def test_job_lookup_requires_project_membership(client):
+    project = make_project(client, "Job scope")
+    outsider = _add_user("outsider-jobs@example.com")
+    generator, db = _session()
+    try:
+        job = Job(
+            project_id=uuid.UUID(project["id"]),
+            kind="translate",
+            status=JobStatus.pending,
+            payload={"progress": {"phase": "queued", "chunks_done": 0, "chunks_total": 2}},
+        )
+        db.add(job)
+        db.commit()
+        job_id = str(job.id)
+    finally:
+        generator.close()
+
+    visible = client.get(f"/api/jobs/{job_id}")
+    assert visible.status_code == 200, visible.text
+    body = visible.json()
+    assert body["id"] == job_id
+    assert body["kind"] == "translate"
+    assert body["status"] == "pending"
+
+    hidden = client.get(f"/api/jobs/{job_id}", cookies=_as(outsider))
+    missing = client.get(f"/api/jobs/{uuid.uuid4()}")
+    assert hidden.status_code == 404
+    assert missing.status_code == 404
+    assert hidden.json()["detail"] == "Job not found"
+    assert missing.json()["detail"] == hidden.json()["detail"]
 
 
 def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):

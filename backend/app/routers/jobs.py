@@ -1,4 +1,4 @@
-"""Job polling (no project_id in path)."""
+"""Job polling. The path has no project id; membership is checked on the job."""
 
 from __future__ import annotations
 
@@ -21,4 +21,4 @@ def get_job_endpoint(
     user: CurrentUser,
     db: DbSession,
 ) -> Job:
-    return get_job(db, job_id)
+    return get_job(db, job_id, user)
