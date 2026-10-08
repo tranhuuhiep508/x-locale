@@ -4,7 +4,8 @@
 
 ```
 users ──< api_keys >── projects ──< modules
-                          │
+  │                       │
+  └──< project_members >──┤
                           ├──< tags
                           │       │
                           ├──< strings >── string_tags
@@ -18,7 +19,8 @@ users ──< api_keys >── projects ──< modules
 - String uniqueness is one live row per `(project_id, key)`. A tombstone (`deleted_at` set) does not hold the key, so the same key can be created again. A `pending_delete` row is still live and keeps the key. The same key cannot exist in two modules.
 - `module_id` is nullable (`ON DELETE SET NULL`). Unassigned strings export under `_unassigned` (Excel) or at the top level (JSON modular).
 - Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `translations.confidence` is an optional 0–100 AI self-score written by translate; manual edits, import, and CLI push clear it. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
-- API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column.
+- API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column. A key is a project-scoped catalog credential, not a membership role: it cannot delete a project or call member APIs.
+- `project_members` stores `admin` | `editor` per `(project_id, user_id)`. Authorization reads membership. `projects.created_by` is audit/bootstrap only (set on create, not a permission). The migration backfills an Admin row when `created_by` is set, and skips projects where it is NULL until ops adds an Admin. Deleting a project is a hard cascade and requires the caller to send `confirm_slug` equal to the project slug.
 - `activities` is append-only. Only **string** content writes are logged (keys, source, translations, tags, publish, delete). Module, tag, project, and API key changes are not. Content rows are revertible.
 
 ## Translation context

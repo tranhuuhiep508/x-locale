@@ -68,12 +68,51 @@ class ProjectSummaryOut(BaseModel):
     string_count: int = 0
     created_at: UtcDateTime | None = None
     updated_at: UtcDateTime | None = None
+    # Session caller's membership. Null for API-key bootstrap (keys are not roles).
+    role: Literal["admin", "editor"] | None = None
 
     model_config = {"from_attributes": True}
 
 
 class ProjectOut(ProjectSummaryOut):
     translation_context: str | None = Field(default=None, max_length=500)
+
+
+class ProjectDelete(BaseModel):
+    """Exact slug the UI shows. Missing or mismatched values are rejected with 400."""
+
+    confirm_slug: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class MemberCreate(BaseModel):
+    email: str = Field(min_length=1, max_length=320)
+    role: Literal["admin", "editor"]
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Email is required")
+        return cleaned
+
+
+class MemberUpdate(BaseModel):
+    role: Literal["admin", "editor"]
+
+    model_config = {"extra": "forbid"}
+
+
+class MemberOut(BaseModel):
+    user_id: UUID
+    email: str
+    name: str
+    role: Literal["admin", "editor"]
+    created_at: UtcDateTime | None = None
 
 
 class LocaleCoverageOut(BaseModel):

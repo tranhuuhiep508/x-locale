@@ -74,6 +74,11 @@ class JobStatus(str, enum.Enum):
     failed = "failed"
 
 
+class MemberRole(str, enum.Enum):
+    admin = "admin"
+    editor = "editor"
+
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (UniqueConstraint("oidc_issuer", "oidc_sub", name="uq_user_oidc"),)
@@ -89,6 +94,9 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="creator")
+    memberships: Mapped[list["ProjectMember"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Project(Base):
@@ -124,6 +132,31 @@ class Project(Base):
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    members: Mapped[list["ProjectMember"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class ProjectMember(Base):
+    """Project role. Authorization reads this row, never projects.created_by."""
+
+    __tablename__ = "project_members"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_member"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[MemberRole] = mapped_column(
+        Enum(MemberRole, native_enum=False, length=16), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    project: Mapped["Project"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship(back_populates="memberships")
 
 
 class ApiKey(Base):
