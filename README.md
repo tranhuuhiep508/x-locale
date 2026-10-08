@@ -64,9 +64,9 @@ requests and send `Cache-Control: no-store`:
 | Probe | URL | Healthy | Unhealthy |
 |-------|-----|---------|-----------|
 | Liveness | `https://<host>/healthcheck/liveness` | `200`, `{"status":"ok"}` | A failed HTTP check means the app cannot respond |
-| Readiness | `https://<host>/healthcheck/readliness` | `200`, `{"status":"ok"}` after a database `SELECT 1` | `503`, `{"status":"not_ready"}` if the database query fails |
+| Readiness | `https://<host>/healthcheck/readiness` | `200`, `{"status":"ok"}` after a database `SELECT 1` | `503`, `{"status":"not_ready"}` if the database query fails |
 
-The readiness URL intentionally uses the spelling `readliness`. Configure infra
+Configure infra
 to restart an instance when liveness repeatedly fails and remove it from traffic
 when readiness fails. Readiness checks database connectivity; migrations run
 before the production server starts. It does not check Microsoft sign-in or AI
