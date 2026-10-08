@@ -56,6 +56,26 @@ Production (single origin, SPA served by FastAPI):
 docker compose -f docker-compose.prod.yml up --build
 ```
 
+## Health checks (SIT and production)
+
+Use the same paths on each environment's host. Both accept unauthenticated `GET`
+requests and send `Cache-Control: no-store`:
+
+| Probe | URL | Healthy | Unhealthy |
+|-------|-----|---------|-----------|
+| Liveness | `https://<host>/healthcheck/liveness` | `200`, `{"status":"ok"}` | A failed HTTP check means the app cannot respond |
+| Readiness | `https://<host>/healthcheck/readliness` | `200`, `{"status":"ok"}` after a database `SELECT 1` | `503`, `{"status":"not_ready"}` if the database query fails |
+
+The readiness URL intentionally uses the spelling `readliness`. Configure infra
+to restart an instance when liveness repeatedly fails and remove it from traffic
+when readiness fails. Readiness checks database connectivity; migrations run
+before the production server starts. It does not check Microsoft sign-in or AI
+services. Allow time for migrations during startup and set HTTP probe timeouts.
+
+Locally, use `http://localhost:8000` as the host. The Vite dev server also proxies
+`/healthcheck` to the backend, so these paths work on `http://localhost:5173`.
+Existing `/health` and `/api/health` endpoints remain basic process checks.
+
 ## CLI
 
 ```bash

@@ -72,20 +72,23 @@ echo "==> Starting backend ($BACKEND_URL)..."
 ) &
 BACKEND_PID=$!
 
-echo "==> Waiting for backend..."
-for _ in $(seq 1 60); do
-  if curl -sf "$BACKEND_URL/health" >/dev/null 2>&1; then
-  break
-  fi
+echo "==> Waiting for backend readiness..."
+BACKEND_READY=false
+STARTUP_DEADLINE=$((SECONDS + 60))
+while (( SECONDS < STARTUP_DEADLINE )); do
   if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-    echo "Backend exited before becoming healthy."
+    echo "Backend exited before becoming ready."
     exit 1
+  fi
+  if curl -sf --connect-timeout 1 --max-time 2 "$BACKEND_URL/healthcheck/readliness" >/dev/null 2>&1; then
+    BACKEND_READY=true
+    break
   fi
   sleep 1
 done
 
-if ! curl -sf "$BACKEND_URL/health" >/dev/null 2>&1; then
-  echo "Backend did not become healthy within 60s."
+if [[ "$BACKEND_READY" != true ]]; then
+  echo "Backend did not become ready within 60s."
   exit 1
 fi
 
@@ -100,6 +103,8 @@ echo ""
 echo "x-locale dev stack is running:"
 echo "  Dashboard: $FRONTEND_URL"
 echo "  API docs:  $BACKEND_URL/docs"
+echo "  Liveness: $BACKEND_URL/healthcheck/liveness"
+echo "  Readiness: $BACKEND_URL/healthcheck/readliness"
 echo "Press Ctrl+C to stop both services."
 echo ""
 
