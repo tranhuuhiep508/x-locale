@@ -133,7 +133,7 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    # Key-authorised paths must not UPDATE projects: a projects UPDATE before this key write would deadlock.
+    # Lock order: api_keys rows, then the projects row. Any transaction that locks or UPDATEs projects and then writes api_keys (key-authorised or session) can deadlock with this revoke.
     db.query(ApiKey).filter(
         ApiKey.project_id == project_id,
         ApiKey.created_by == user_id,
