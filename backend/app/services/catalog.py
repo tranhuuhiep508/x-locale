@@ -229,8 +229,47 @@ def update_module(
     return to_module_out(db, module)
 
 
+MODULE_PROJECT_FK_NAMES = frozenset(
+    {
+        "fk_strings_project_module",
+        "fk_strings_project_published_module",
+    }
+)
+
+
+def is_module_project_fk_error(error: BaseException) -> bool:
+    """True when a deferred composite module FK rejected a cross-project ref."""
+    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
+    name = getattr(diagnostic, "constraint_name", None)
+    if name in MODULE_PROJECT_FK_NAMES:
+        return True
+    text = str(getattr(error, "orig", error))
+    return any(constraint in text for constraint in MODULE_PROJECT_FK_NAMES)
+
+
+def _clear_module_refs(db: Session, project_id: uuid.UUID, module_id: uuid.UUID) -> None:
+    """Null string module refs in this project before the module row is deleted.
+
+    The composite foreign keys are ON DELETE NO ACTION, because a composite
+    SET NULL would also clear project_id. The single-column foreign keys are
+    ON DELETE SET NULL, but Postgres does not promise that those triggers run
+    before the NO ACTION checks after a pg_dump restore or a create_all schema.
+    Clearing the refs here makes the delete correct on every schema.
+    """
+    db.query(StringEntry).filter(
+        StringEntry.project_id == project_id,
+        StringEntry.module_id == module_id,
+    ).update({StringEntry.module_id: None}, synchronize_session="fetch")
+    db.query(StringEntry).filter(
+        StringEntry.project_id == project_id,
+        StringEntry.published_module_id == module_id,
+    ).update({StringEntry.published_module_id: None}, synchronize_session="fetch")
+    db.flush()
+
+
 def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
     module = get_module(db, project.id, module_id)
+    _clear_module_refs(db, project.id, module.id)
     db.delete(module)
     db.commit()
 

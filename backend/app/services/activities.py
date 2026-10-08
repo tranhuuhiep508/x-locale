@@ -68,6 +68,7 @@ from app.services.activity_state import (
     translation_map,
     validate_undo_timestamps,
 )
+from app.services.catalog import require_module_in_project
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -866,6 +867,22 @@ def _parse_datetime(raw: Any) -> datetime | None:
     return None
 
 
+def _owned_module_id(db: Session, project_id: uuid.UUID, raw: Any) -> uuid.UUID | None:
+    """Keep a module ref only when it belongs to this project.
+
+    History restore already clears foreign modules while building the target.
+    Checking again at the write keeps a deferred cross-project FK from waiting
+    until commit and returning 500.
+    """
+    if not raw:
+        return None
+    try:
+        module_id = uuid.UUID(str(raw))
+    except ValueError, TypeError:
+        return None
+    return require_module_in_project(db, project_id, module_id, on_missing="clear")
+
+
 def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
     if "published_key" in snap:
         entry.published_key = require_max_length(
@@ -880,9 +897,7 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
     if "published_at" in snap:
         entry.published_at = _parse_datetime(snap.get("published_at"))
     if "published_module_id" in snap:
-        entry.published_module_id = (
-            uuid.UUID(snap["published_module_id"]) if snap.get("published_module_id") else None
-        )
+        entry.published_module_id = _owned_module_id(db, entry.project_id, snap.get("published_module_id"))
     if "published_translations" in snap:
         _set_entry_published_translations(
             db, entry, translation_map(snap.get("published_translations"), published=True)
@@ -1014,7 +1029,7 @@ def _apply_working_copy_only(
     entry.description = target["description"]
     if include_status:
         entry.status = TranslationStatus(target["status"])
-    entry.module_id = uuid.UUID(target["module_id"]) if target.get("module_id") else None
+    entry.module_id = _owned_module_id(db, entry.project_id, target.get("module_id"))
     _set_entry_tags(db, entry, target.get("tag_ids") or [], references=references)
     _set_entry_translations(db, entry, target.get("translations") or {})
 

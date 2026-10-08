@@ -254,8 +254,14 @@ class Tag(Base):
 
 
 class StringTag(Base):
+    """Association rows. The composite primary key already enforces uniqueness.
+
+    A second UniqueConstraint on the same columns is dropped by Postgres, so
+    the model does not declare one. That keeps `alembic check` aligned with
+    an upgraded database.
+    """
+
     __tablename__ = "string_tags"
-    __table_args__ = (UniqueConstraint("string_id", "tag_id", name="uq_string_tag"),)
 
     string_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("strings.id", ondelete="CASCADE"), primary_key=True
@@ -284,18 +290,25 @@ class StringEntry(Base):
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # NO ACTION (not SET NULL): a composite SET NULL would also clear project_id.
-        # The single-column module FKs still SET NULL when a module row is deleted.
+        # DEFERRABLE so the check runs at commit, after the single-column
+        # ON DELETE SET NULL triggers. Trigger order is not stable after
+        # pg_dump restore or create_all; module delete also nulls the refs
+        # in the application before the module row is removed.
         ForeignKeyConstraint(
             ["project_id", "module_id"],
             ["modules.project_id", "modules.id"],
             name="fk_strings_project_module",
             ondelete="NO ACTION",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         ForeignKeyConstraint(
             ["project_id", "published_module_id"],
             ["modules.project_id", "modules.id"],
             name="fk_strings_project_published_module",
             ondelete="NO ACTION",
+            deferrable=True,
+            initially="DEFERRED",
         ),
     )
 

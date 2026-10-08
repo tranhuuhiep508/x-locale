@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Module, StringEntry, Tag
-from app.services.catalog import require_module_in_project
+from app.services.catalog import is_module_project_fk_error, require_module_in_project
 
 
 def translation_map(raw: Any, *, published: bool = False) -> dict:
@@ -287,6 +287,8 @@ def restore_transaction(db: Session):
         db.rollback()
         if is_key_integrity_error(error):
             raise key_conflict(key) from error
+        if is_module_project_fk_error(error):
+            raise HTTPException(status_code=400, detail="Unknown module") from error
         raise
     except Exception:
         db.rollback()
