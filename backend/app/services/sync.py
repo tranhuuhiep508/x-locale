@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.helpers import content_hash, export_key, validate_module_slug
+from app.helpers import content_hash, export_key, require_string_key, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
 from app.services.catalog import owned_module, require_module_in_project
@@ -663,6 +663,8 @@ def _import_locale_maps(
     seen: set[str] = set()
     total = 0
     maps = _known_locale_maps(project, locale_maps)
+    for key in _union_keys(maps):
+        require_string_key(key)
     _prepare_import_collections(db, project, index, maps, module_id, tags)
     for key in _union_keys(maps):
         values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}

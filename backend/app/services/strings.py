@@ -24,6 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.helpers import require_locale_code
 from app.models import Activity, Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.schemas import (
     BatchRequest,
@@ -329,6 +330,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
 def ensure_translation_rows(db: Session, entry: StringEntry, project: Project) -> None:
     existing = {t.locale for t in entry.translations}
     for locale in project.target_languages:
+        locale = require_locale_code(locale)
         if locale not in existing:
             translation = Translation(
                 string_id=entry.id,
@@ -352,6 +354,7 @@ def apply_translation_values(
     scored = scores or {}
     by_locale = {t.locale: t for t in entry.translations}
     for locale, value in translations.items():
+        locale = require_locale_code(locale)
         existing = by_locale.get(locale)
         has_score = locale in scored
         score = scored[locale] if has_score else None
@@ -875,6 +878,7 @@ def upsert_translation(
     payload: TranslationUpdate,
 ) -> StringOut:
     entry = get_string(db, project.id, string_id)
+    locale = require_locale_code(locale)
     if locale not in project.target_languages and locale != project.base_language:
         raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 

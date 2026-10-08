@@ -21,6 +21,23 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.limits import (
+    ACTOR_LABEL_MAX_LENGTH,
+    API_KEY_NAME_MAX_LENGTH,
+    AVATAR_URL_MAX_LENGTH,
+    EMAIL_MAX_LENGTH,
+    KEY_MAX_LENGTH,
+    LOCALE_MAX_LENGTH,
+    MODULE_NAME_MAX_LENGTH,
+    MODULE_SLUG_MAX_LENGTH,
+    OIDC_ISSUER_MAX_LENGTH,
+    OIDC_SUB_MAX_LENGTH,
+    PROJECT_NAME_MAX_LENGTH,
+    PROJECT_SLUG_MAX_LENGTH,
+    TAG_COLOR_MAX_LENGTH,
+    TAG_NAME_MAX_LENGTH,
+    USER_NAME_MAX_LENGTH,
+)
 
 
 def _utcnow() -> datetime:
@@ -84,11 +101,11 @@ class User(Base):
     __table_args__ = (UniqueConstraint("oidc_issuer", "oidc_sub", name="uq_user_oidc"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    oidc_issuer: Mapped[str] = mapped_column(String(512), nullable=False)
-    oidc_sub: Mapped[str] = mapped_column(String(512), nullable=False)
+    email: Mapped[str] = mapped_column(String(EMAIL_MAX_LENGTH), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(USER_NAME_MAX_LENGTH), nullable=False, default="")
+    avatar_url: Mapped[str | None] = mapped_column(String(AVATAR_URL_MAX_LENGTH), nullable=True)
+    oidc_issuer: Mapped[str] = mapped_column(String(OIDC_ISSUER_MAX_LENGTH), nullable=False)
+    oidc_sub: Mapped[str] = mapped_column(String(OIDC_SUB_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -103,10 +120,14 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(PROJECT_NAME_MAX_LENGTH), nullable=False)
     translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
-    slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    base_language: Mapped[str] = mapped_column(String(10), nullable=False, default="vi")
+    slug: Mapped[str] = mapped_column(
+        String(PROJECT_SLUG_MAX_LENGTH), nullable=False, unique=True, index=True
+    )
+    base_language: Mapped[str] = mapped_column(
+        String(LOCALE_MAX_LENGTH), nullable=False, default="vi"
+    )
     target_languages: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     layout: Mapped[ProjectLayout] = mapped_column(
         Enum(ProjectLayout, native_enum=False), nullable=False, default=ProjectLayout.flat
@@ -173,7 +194,7 @@ class ApiKey(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(API_KEY_NAME_MAX_LENGTH), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -199,8 +220,8 @@ class Module(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    slug: Mapped[str] = mapped_column(String(128), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(MODULE_SLUG_MAX_LENGTH), nullable=False)
+    name: Mapped[str] = mapped_column(String(MODULE_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -220,8 +241,10 @@ class Tag(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    color: Mapped[str] = mapped_column(String(32), nullable=False, default="#64748b")
+    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH), nullable=False)
+    color: Mapped[str] = mapped_column(
+        String(TAG_COLOR_MAX_LENGTH), nullable=False, default="#64748b"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="tags")
@@ -283,7 +306,7 @@ class StringEntry(Base):
     module_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("modules.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(KEY_MAX_LENGTH), nullable=False, index=True)
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[TranslationStatus] = mapped_column(
@@ -291,7 +314,7 @@ class StringEntry(Base):
         nullable=False,
         default=TranslationStatus.draft,
     )
-    published_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    published_key: Mapped[str | None] = mapped_column(String(KEY_MAX_LENGTH), nullable=True)
     published_module_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("modules.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -304,7 +327,9 @@ class StringEntry(Base):
         Enum(ActorType, native_enum=False), nullable=True
     )
     created_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by_label: Mapped[str | None] = mapped_column(
+        String(ACTOR_LABEL_MAX_LENGTH), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -312,7 +337,9 @@ class StringEntry(Base):
         Enum(ActorType, native_enum=False), nullable=True
     )
     updated_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    updated_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by_label: Mapped[str | None] = mapped_column(
+        String(ACTOR_LABEL_MAX_LENGTH), nullable=True
+    )
 
     project: Mapped["Project"] = relationship(back_populates="strings")
     module: Mapped["Module | None"] = relationship(
@@ -337,7 +364,7 @@ class Translation(Base):
     string_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("strings.id", ondelete="CASCADE"), index=True
     )
-    locale: Mapped[str] = mapped_column(String(10), nullable=False)
+    locale: Mapped[str] = mapped_column(String(LOCALE_MAX_LENGTH), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
     published_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -364,7 +391,9 @@ class Activity(Base):
     )
     actor_type: Mapped[ActorType] = mapped_column(Enum(ActorType, native_enum=False), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    actor_label: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+    actor_label: Mapped[str] = mapped_column(
+        String(ACTOR_LABEL_MAX_LENGTH), nullable=False, default="system"
+    )
     action: Mapped[ActivityAction] = mapped_column(
         Enum(ActivityAction, native_enum=False), nullable=False
     )
@@ -375,11 +404,11 @@ class Activity(Base):
     string_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), nullable=True, index=True
     )
-    locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(LOCALE_MAX_LENGTH), nullable=True)
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, default="string.updated", index=True)
-    summary: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, index=True)
     batch_kind: Mapped[BatchKind | None] = mapped_column(
         Enum(

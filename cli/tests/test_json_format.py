@@ -45,6 +45,23 @@ class LocaleJsonTests(unittest.TestCase):
         data = {"auth.sign_in": "Sign in", "common.save": "Save"}
         self.assertEqual(parse_locale_json(data), data)
 
+    def test_parse_locale_json_rejects_key_over_512(self) -> None:
+        with self.assertRaises(XLocaleError) as caught:
+            parse_locale_json({"k" * 513: "Xin chào"})
+        self.assertIn("key", str(caught.exception))
+        self.assertIn("512", str(caught.exception))
+
+    def test_scan_modular_base_rejects_slug_over_128(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            slug = "a" * 129
+            module_dir = Path(tmp) / slug
+            module_dir.mkdir()
+            (module_dir / "vi.json").write_text('{"hello": "Xin chào"}\n', encoding="utf-8")
+            with self.assertRaises(XLocaleError) as caught:
+                scan_modular_base(Path(tmp), "vi")
+            self.assertIn("module slug", str(caught.exception))
+            self.assertIn("128", str(caught.exception))
+
     def test_parse_locale_json_rejects_nested_values(self) -> None:
         with self.assertRaises(XLocaleError):
             parse_locale_json({"auth": {"sign_in": "Sign in"}})

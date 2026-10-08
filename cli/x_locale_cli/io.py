@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from x_locale_cli.errors import XLocaleError
+
+# Match backend strings.key and modules.slug. The CLI package cannot import the API.
+KEY_MAX_LENGTH = 512
+MODULE_SLUG_MAX_LENGTH = 128
 from x_locale_cli.models import (
     DEFAULT_BASE_LANGUAGE,
     UNASSIGNED_SLUG,
@@ -62,6 +66,8 @@ def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
             raise XLocaleError(
                 f"Locale JSON requires string values; got {type(value).__name__} for key {key!r}"
             )
+        if len(key) > KEY_MAX_LENGTH:
+            raise XLocaleError(f"key must be at most {KEY_MAX_LENGTH} characters")
         strings[key] = value
     return strings
 
@@ -138,6 +144,10 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
             continue
         if subdir.name.startswith("_") or subdir.name.startswith("."):
             continue
+        if len(subdir.name) > MODULE_SLUG_MAX_LENGTH:
+            raise XLocaleError(
+                f"module slug must be at most {MODULE_SLUG_MAX_LENGTH} characters"
+            )
         base_file = subdir / f"{base_language}.json"
         if not base_file.exists():
             continue

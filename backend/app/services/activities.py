@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session, defer, selectinload
 
+from app.helpers import require_locale_code, require_max_length, require_string_key
+from app.limits import KEY_MAX_LENGTH
 from app.models import (
     Activity,
     ActivityAction,
@@ -825,6 +827,7 @@ def _set_entry_tags(
 def _set_entry_translations(db: Session, entry: StringEntry, translations: dict[str, str]) -> None:
     by_locale = {t.locale: t for t in list(entry.translations or [])}
     for locale, value in translations.items():
+        locale = require_locale_code(locale)
         existing = by_locale.get(locale)
         if existing is None:
             translation = Translation(string_id=entry.id, locale=locale, value=value)
@@ -841,6 +844,7 @@ def _set_entry_published_translations(
 ) -> None:
     by_locale = {t.locale: t for t in entry.translations}
     for locale, value in translations.items():
+        locale = require_locale_code(locale)
         existing = by_locale.get(locale)
         if existing is None:
             translation = Translation(
@@ -864,7 +868,9 @@ def _parse_datetime(raw: Any) -> datetime | None:
 
 def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
     if "published_key" in snap:
-        entry.published_key = snap.get("published_key")
+        entry.published_key = require_max_length(
+            snap.get("published_key"), field="published_key", limit=KEY_MAX_LENGTH
+        )
     if "published_source_text" in snap:
         entry.published_source_text = snap.get("published_source_text")
     if "pending_delete" in snap:
@@ -1003,7 +1009,7 @@ def _apply_working_copy_only(
 ) -> None:
     """Apply an already resolved target; validation belongs to the caller."""
     db.info["restore_key"] = target["key"]
-    entry.key = target["key"]
+    entry.key = require_string_key(target["key"])
     entry.source_text = target["source_text"]
     entry.description = target["description"]
     if include_status:

@@ -10,7 +10,8 @@ from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session, joinedload
 
-from app.helpers import validate_locale_code, validate_module_slug
+from app.helpers import ensure_max_length, validate_locale_code, validate_module_slug
+from app.limits import KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH
 from app.models import (
     Module,
     Project,
@@ -350,6 +351,7 @@ def import_workbook(
             key = _desanitize_cell_value(row[key_idx]).strip()
             if not key:
                 continue
+            key = ensure_max_length(key, field="key", limit=KEY_MAX_LENGTH)
             if modular:
                 sheet_label = "unassigned" if sheet_name == UNASSIGNED_SHEET else sheet_name
                 prior = workbook_keys.get(key)
@@ -377,7 +379,11 @@ def import_workbook(
             tag_names = []
             if tags_idx is not None and row[tags_idx]:
                 tag_names = [
-                    _desanitize_cell_value(t.strip())
+                    ensure_max_length(
+                        _desanitize_cell_value(t.strip()),
+                        field="tag name",
+                        limit=TAG_NAME_MAX_LENGTH,
+                    )
                     for t in str(row[tags_idx]).split(",")
                     if t.strip()
                 ]

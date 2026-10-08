@@ -1,0 +1,241 @@
+"""Reject user input that would overflow a varchar, before Postgres returns 500."""
+
+from __future__ import annotations
+
+import io
+
+import pytest
+from fastapi import HTTPException
+from openpyxl import Workbook
+
+from app.excel import FLAT_SHEET
+from app.helpers import validate_locale_code
+from app.services.activities import _apply_published_snapshot, _apply_working_copy_only
+from tests.helpers import json_upload, make_project
+
+LONG_KEY = "k" * 513
+MAX_KEY = "k" * 512
+LONG_SLUG = "a" * 129
+LONG_LOCALE = "a" * 17
+REGEX_MAX_LOCALE = "abc-12345678"
+
+
+def test_validate_locale_code_accepts_regex_maximum():
+    assert validate_locale_code(REGEX_MAX_LOCALE) == REGEX_MAX_LOCALE
+    assert len(REGEX_MAX_LOCALE) == 12
+
+
+def test_project_locale_over_column_limit_is_400(client):
+    response = client.post(
+        "/api/projects",
+        json={
+            "name": "Too long locale",
+            "base_language": LONG_LOCALE,
+            "target_languages": ["en"],
+            "layout": "flat",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert "locale" in response.text
+    assert "16" in response.text
+
+
+def test_project_accepts_locale_longer_than_the_old_varchar_10(client):
+    response = client.post(
+        "/api/projects",
+        json={
+            "name": "Wide locale",
+            "base_language": REGEX_MAX_LOCALE,
+            "target_languages": ["en-abcdefgh"],
+            "layout": "flat",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["base_language"] == REGEX_MAX_LOCALE
+    assert "en-abcdefgh" in body["target_languages"]
+
+
+def test_string_update_rejects_key_over_512(client):
+    project = make_project(client, layout="flat")
+    created = client.post(
+        f"/api/projects/{project['id']}/strings",
+        json={"key": "hello", "source_text": "Xin chào"},
+    )
+    assert created.status_code == 201, created.text
+    updated = client.patch(
+        f"/api/projects/{project['id']}/strings/{created.json()['id']}",
+        json={"key": LONG_KEY},
+    )
+    assert updated.status_code == 422, updated.text
+    assert "key" in updated.text
+    assert "512" in updated.text
+
+
+def test_import_and_push_reject_key_over_512(client):
+    project = make_project(client, layout="flat")
+    pid = project["id"]
+    uploaded = client.post(
+        f"/api/projects/{pid}/import",
+        files=json_upload({LONG_KEY: "Xin chào"}),
+    )
+    assert uploaded.status_code == 400, uploaded.text
+    assert "key" in uploaded.text
+    assert "512" in uploaded.text
+
+    pushed = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {LONG_KEY: "Xin chào"}, "base_language": "vi"},
+    )
+    assert pushed.status_code == 400, pushed.text
+    assert "key" in pushed.text
+    assert "512" in pushed.text
+    assert client.get(f"/api/projects/{pid}/strings").json()["total"] == 0
+
+
+def test_import_stores_512_character_key_and_activity_summary(client):
+    project = make_project(client, layout="flat")
+    pid = project["id"]
+    uploaded = client.post(
+        f"/api/projects/{pid}/import",
+        files=json_upload({MAX_KEY: "Xin chào"}),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    stored = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    assert stored[0]["key"] == MAX_KEY
+    activities = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    summaries = [item["summary"] for item in activities]
+    assert any(MAX_KEY in summary for summary in summaries)
+
+
+def test_module_slug_update_rejects_over_128(client):
+    project = make_project(client)
+    created = client.post(
+        f"/api/projects/{project['id']}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    )
+    assert created.status_code == 201, created.text
+    updated = client.patch(
+        f"/api/projects/{project['id']}/modules/{created.json()['id']}",
+        json={"slug": LONG_SLUG},
+    )
+    assert updated.status_code == 422, updated.text
+    assert "slug" in updated.text
+    assert "128" in updated.text
+
+
+def test_module_name_update_rejects_over_255(client):
+    project = make_project(client)
+    created = client.post(
+        f"/api/projects/{project['id']}/modules",
+        json={"slug": "auth", "name": "Auth"},
+    )
+    updated = client.patch(
+        f"/api/projects/{project['id']}/modules/{created.json()['id']}",
+        json={"name": "n" * 256},
+    )
+    assert updated.status_code == 422, updated.text
+    assert "name" in updated.text
+    assert "255" in updated.text
+
+
+def test_push_rejects_module_slug_over_128(client):
+    project = make_project(client)
+    pushed = client.post(
+        f"/api/projects/{project['id']}/strings/import",
+        json={
+            "base_language": "vi",
+            "modules": {LONG_SLUG: {"vi": {"hello": "Xin chào"}}},
+        },
+    )
+    assert pushed.status_code == 400, pushed.text
+    assert "module slug" in pushed.text
+    assert "128" in pushed.text
+
+
+def test_tag_update_rejects_name_and_color_over_limit(client):
+    project = make_project(client, layout="flat")
+    created = client.post(
+        f"/api/projects/{project['id']}/tags",
+        json={"name": "ui", "color": "#112233"},
+    )
+    assert created.status_code == 201, created.text
+    tag_id = created.json()["id"]
+    root = f"/api/projects/{project['id']}/tags/{tag_id}"
+
+    renamed = client.patch(root, json={"name": "t" * 129})
+    assert renamed.status_code == 422, renamed.text
+    assert "name" in renamed.text
+    assert "128" in renamed.text
+
+    recolored = client.patch(root, json={"color": "c" * 33})
+    assert recolored.status_code == 422, recolored.text
+    assert "color" in recolored.text
+    assert "32" in recolored.text
+
+
+def _xlsx(rows: list[list[str]]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = FLAT_SHEET
+    for row in rows:
+        sheet.append(row)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def test_excel_import_rejects_long_key_and_tag_name(client):
+    project = make_project(client, layout="flat")
+    pid = project["id"]
+    content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    long_key = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("keys.xlsx", _xlsx([["key", "vi"], [LONG_KEY, "Xin chào"]]), content_type)},
+    )
+    assert long_key.status_code == 400, long_key.text
+    assert "key" in long_key.text
+    assert "512" in long_key.text
+
+    long_tag = client.post(
+        f"/api/projects/{pid}/import",
+        files={
+            "file": (
+                "tags.xlsx",
+                _xlsx([["key", "tags", "vi"], ["hello", "t" * 129, "Xin chào"]]),
+                content_type,
+            )
+        },
+    )
+    assert long_tag.status_code == 400, long_tag.text
+    assert "tag name" in long_tag.text
+    assert "128" in long_tag.text
+
+
+def test_snapshot_apply_rejects_keys_over_512():
+    entry = type("Entry", (), {"key": "ok", "published_key": None})()
+    with pytest.raises(HTTPException) as published:
+        _apply_published_snapshot(None, entry, {"published_key": LONG_KEY})
+    assert published.value.status_code == 400
+    assert "published_key" in published.value.detail
+    assert "512" in published.value.detail
+
+    working = type("Entry", (), {})()
+    db = type("DB", (), {"info": {}})()
+    with pytest.raises(HTTPException) as current:
+        _apply_working_copy_only(
+            db,
+            working,
+            {
+                "key": LONG_KEY,
+                "source_text": "x",
+                "description": None,
+                "module_id": None,
+                "tag_ids": [],
+                "translations": {},
+            },
+        )
+    assert current.value.status_code == 400
+    assert "key" in current.value.detail
+    assert "512" in current.value.detail
