@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import MemberRole, ProjectMember, User
+from app.models import ApiKey, MemberRole, Project, ProjectMember, User
 from app.schemas import MemberOut
 
 LAST_ADMIN = "This project must keep at least one admin"
@@ -30,6 +31,11 @@ def member_out(member: ProjectMember, user: User) -> MemberOut:
         role=role_name(member.role),  # type: ignore[arg-type]
         created_at=member.created_at,
     )
+
+
+def _lock_project(db: Session, project_id: uuid.UUID) -> None:
+    """Serialize membership changes for one project until commit or rollback."""
+    db.query(Project.id).filter(Project.id == project_id).with_for_update().one()
 
 
 def _admin_count(db: Session, project_id: uuid.UUID) -> int:
@@ -99,6 +105,7 @@ def add_member(db: Session, project_id: uuid.UUID, email: str, role: MemberRole)
 def set_member_role(
     db: Session, project_id: uuid.UUID, user_id: uuid.UUID, role: MemberRole
 ) -> MemberOut:
+    _lock_project(db, project_id)
     member = _get_member(db, project_id, user_id)
     demoting_last_admin = (
         member.role == MemberRole.admin
@@ -115,8 +122,14 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    _lock_project(db, project_id)
     member = _get_member(db, project_id, user_id)
     if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
         raise HTTPException(status_code=400, detail=LAST_ADMIN)
+    db.query(ApiKey).filter(
+        ApiKey.project_id == project_id,
+        ApiKey.created_by == user_id,
+        ApiKey.revoked_at.is_(None),
+    ).update({ApiKey.revoked_at: datetime.now(UTC)}, synchronize_session=False)
     db.delete(member)
     db.commit()

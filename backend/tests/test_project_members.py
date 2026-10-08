@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.auth import SESSION_COOKIE, create_session_token
+from app.main import app as fastapi_app
 from app.models import (
     Activity,
     ApiKey,
@@ -26,6 +29,42 @@ from app.services.members import LAST_ADMIN
 from tests.helpers import make_project
 
 CONFIRM = "confirm_slug must exactly match the project slug"
+
+
+def _project_route_cases() -> list[tuple[str, str]]:
+    """Every method on every route whose path contains ``{project_id}``.
+
+    FastAPI keeps included routers unflattened, so walk those routers and
+    prefix each path with the include prefix (``/api``).
+    """
+    cases: list[tuple[str, str]] = []
+    for route in fastapi_app.routes:
+        if type(route).__name__ != "_IncludedRouter":
+            path = getattr(route, "path", "")
+            methods = getattr(route, "methods", None)
+            if path and "{project_id}" in path and methods:
+                cases.extend((method, path) for method in sorted(methods))
+            continue
+        prefix = route.include_context.prefix.rstrip("/")
+        for child in route.original_router.routes:
+            path = getattr(child, "path", "")
+            methods = getattr(child, "methods", None)
+            if not path or "{project_id}" not in path or not methods:
+                continue
+            full = f"{prefix}{path}"
+            cases.extend((method, full) for method in sorted(methods))
+    if not cases:
+        raise RuntimeError("expected project routes on the app")
+    return cases
+
+
+def _fill_project_path(path: str, project_id: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        if match.group(1) == "project_id":
+            return project_id
+        return str(uuid.uuid4())
+
+    return re.sub(r"\{([^{}]+)\}", replace, path)
 
 
 def _session():
@@ -109,19 +148,6 @@ def test_non_member_is_hidden_with_404(client):
     assert listed.json() == []
     assert any(row["id"] == pid for row in client.get("/api/projects").json())
 
-    for path in (
-        f"/api/projects/{slug}",
-        f"/api/projects/{pid}/strings",
-        f"/api/projects/{pid}/modules",
-        f"/api/projects/{pid}/tags",
-        f"/api/projects/{pid}/activities",
-        f"/api/projects/{pid}/members",
-        f"/api/projects/{pid}/api-keys",
-    ):
-        response = client.get(path, cookies=cookies)
-        assert response.status_code == 404, path
-        assert response.json()["detail"] == "Project not found"
-
     denied = client.patch(f"/api/projects/{pid}", json={"name": "Hijack"}, cookies=cookies)
     assert denied.status_code == 404
     deleted = _delete(
@@ -137,6 +163,24 @@ def test_non_member_is_hidden_with_404(client):
         cookies=cookies,
     )
     assert added.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "route_path"),
+    _project_route_cases(),
+    ids=[f"{method} {path}" for method, path in _project_route_cases()],
+)
+def test_non_member_every_project_route_is_404(client, method, route_path):
+    project = make_project(client, "Hidden routes")
+    outsider = _add_user("route-outsider@example.com")
+    path = _fill_project_path(route_path, project["id"])
+    kwargs: dict = {"cookies": _as(outsider)}
+    if method not in {"GET", "HEAD"}:
+        kwargs["json"] = {}
+    response = client.request(method, path, **kwargs)
+    assert response.status_code == 404, f"{method} {path} -> {response.status_code} {response.text}"
+    if method != "HEAD":
+        assert response.json()["detail"] == "Project not found"
 
 
 def test_editor_can_edit_catalog_but_not_settings_delete_or_members(client):
@@ -442,6 +486,114 @@ def test_job_lookup_requires_project_membership(client):
     assert missing.json()["detail"] == hidden.json()["detail"]
 
 
+def test_editor_can_poll_a_project_job(client):
+    project = make_project(client, "Editor job")
+    editor = _add_user("job-editor@example.com", "Job Editor")
+    added = client.post(
+        f"/api/projects/{project['id']}/members",
+        json={"email": "job-editor@example.com", "role": "editor"},
+    )
+    assert added.status_code == 201, added.text
+    generator, db = _session()
+    try:
+        job = Job(project_id=uuid.UUID(project["id"]), kind="translate", status=JobStatus.pending)
+        db.add(job)
+        db.commit()
+        job_id = str(job.id)
+    finally:
+        generator.close()
+
+    visible = client.get(f"/api/jobs/{job_id}", cookies=_as(editor))
+    assert visible.status_code == 200, visible.text
+    assert visible.json()["kind"] == "translate"
+
+
+def test_removed_member_gets_404_and_old_key_gets_401(client):
+    project = make_project(client, "Revoked")
+    pid = project["id"]
+    editor = _add_user("removed-editor@example.com", "Removed")
+    added = client.post(
+        f"/api/projects/{pid}/members",
+        json={"email": "removed-editor@example.com", "role": "editor"},
+    )
+    assert added.status_code == 201, added.text
+    created = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "editor-key"},
+        cookies=_as(editor),
+    )
+    assert created.status_code == 201, created.text
+    removed = client.delete(f"/api/projects/{pid}/members/{editor['id']}")
+    assert removed.status_code == 204, removed.text
+
+    hidden = client.get(f"/api/projects/{pid}/strings", cookies=_as(editor))
+    assert hidden.status_code == 404
+    assert hidden.json()["detail"] == "Project not found"
+    stale = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": created.json()["key"]},
+    )
+    assert stale.status_code == 401
+    assert stale.json()["detail"] == "Invalid API key"
+
+
+def test_editor_can_translate_publish_and_import(client, monkeypatch):
+    project = make_project(client, "Editor catalog")
+    pid = project["id"]
+    editor = _add_user("catalog-editor@example.com", "Catalog Editor")
+    added = client.post(
+        f"/api/projects/{pid}/members",
+        json={"email": "catalog-editor@example.com", "role": "editor"},
+    )
+    assert added.status_code == 201, added.text
+    cookies = _as(editor)
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "save", "source_text": "Lưu"},
+        cookies=cookies,
+    )
+    assert created.status_code == 201, created.text
+    string_id = created.json()["id"]
+
+    def fake_batch(source_locale, items, on_progress=None):
+        del source_locale, on_progress
+        return {item.id: {locale: f"{locale}-text" for locale in item.locales} for item in items}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+    translated = client.post(
+        f"/api/projects/{pid}/translate",
+        json={"scope": "strings", "string_ids": [string_id], "locales": ["en"]},
+        cookies=cookies,
+    )
+    assert translated.status_code == 200, translated.text
+    assert translated.json()["translated_count"] == 1
+
+    preview = client.post(
+        f"/api/projects/{pid}/strings/publish-preview",
+        json={"string_ids": [string_id]},
+        cookies=cookies,
+    )
+    assert preview.status_code == 200, preview.text
+    published = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={
+            "action": "publish",
+            "string_ids": [string_id],
+            "fingerprint": preview.json()["fingerprint"],
+        },
+        cookies=cookies,
+    )
+    assert published.status_code == 200, published.text
+
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"hello": "Xin chào"}},
+        cookies=cookies,
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["created"] >= 1
+
+
 def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):
     import importlib.util
 
@@ -498,6 +650,15 @@ def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):
     assert rows[0][2] == "admin"
     assert str(rows[0][0]).replace("-", "").lower() == owned_id.hex
     assert str(rows[0][1]).replace("-", "").lower() == owner_id.hex
+    import sqlalchemy as sa
+
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        index_names = {index["name"] for index in inspector.get_indexes("project_members")}
+        check_names = {item["name"] for item in inspector.get_check_constraints("project_members")}
+    assert "ix_project_members_project_id" not in index_names
+    assert "ix_project_members_user_id" in index_names
+    assert "ck_project_members_role" in check_names
 
     with engine.begin() as connection:
         connection.execute(text("UPDATE project_members SET role = 'editor'"))
@@ -513,16 +674,16 @@ def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):
     assert inserted == 0
     assert member_rows()[0][2] == "editor"
 
-    with engine.begin() as connection:
-        connection.execute(
-            text("UPDATE alembic_version SET version_num = 'n3e50b1c2345'")
-        )
-    command.upgrade(config, "head")
-    again = member_rows()
-    assert len(again) == 1
-    assert again[0][2] == "editor"
-
     with Session(engine) as db:
         assert db.query(ProjectMember).count() == 1
         stored = db.query(ProjectMember).one()
         assert stored.role == MemberRole.editor
+
+    command.downgrade(config, "n3e50b1c2345")
+    with engine.connect() as connection:
+        assert "project_members" not in sa.inspect(connection).get_table_names()
+    command.upgrade(config, "head")
+    restored = member_rows()
+    assert len(restored) == 1
+    assert restored[0][2] == "admin"
+    assert str(restored[0][0]).replace("-", "").lower() == owned_id.hex

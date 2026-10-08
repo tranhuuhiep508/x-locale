@@ -145,13 +145,20 @@ class ProjectMember(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[MemberRole] = mapped_column(
-        Enum(MemberRole, native_enum=False, length=16), nullable=False
+        Enum(
+            MemberRole,
+            native_enum=False,
+            length=16,
+            create_constraint=True,
+            name="ck_project_members_role",
+        ),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

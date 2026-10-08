@@ -7,6 +7,7 @@ import { SettingsPage } from './SettingsPage'
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({ useParams: () => ({ projectRef: 'demo' }) }),
+  useNavigate: () => vi.fn(),
 }))
 vi.mock('@/lib/toast', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn() }),
@@ -134,5 +135,23 @@ describe('project settings and members by role', () => {
     expect(screen.getByLabelText('Email')).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'Remove ed@example.com' })).toBeTruthy()
     expect(screen.queryByText('Only admins can add or change members.')).toBeNull()
+  })
+
+  it('disables role changes and leave for the only admin', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue(project)
+    vi.mocked(projectsApi.listMembers).mockResolvedValue([
+      {
+        user_id: 'me',
+        email: 'dev@example.com',
+        name: 'Dev',
+        role: 'admin',
+        created_at: null,
+      },
+    ])
+    renderSettings()
+    const leave = await screen.findByRole('button', { name: 'Leave dev@example.com' }) as HTMLButtonElement
+    expect(leave.disabled).toBe(true)
+    const role = screen.getByRole('combobox', { name: 'Role for dev@example.com' }) as HTMLButtonElement
+    expect(role.disabled).toBe(true)
   })
 })

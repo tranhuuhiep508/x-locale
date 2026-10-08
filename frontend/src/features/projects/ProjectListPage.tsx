@@ -31,6 +31,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { ApiError } from '@/lib/api/client'
 import { projectsApi } from '@/lib/api/projects'
 import type { ProjectSummary } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -55,7 +56,9 @@ export function ProjectListPage() {
       toast.success('Project deleted')
       setDeleteOpen(false)
     },
-    onError: () => toast.error('Failed to delete project'),
+    onError: (error) => {
+      toast.error(error instanceof ApiError ? error.message : 'Failed to delete project')
+    },
   })
 
   const filteredProjects = useMemo(() => {

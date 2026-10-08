@@ -48,10 +48,17 @@ def count_strings(db: Session, project_id: uuid.UUID) -> int:
     )
 
 
-def count_strings_by_project(db: Session) -> dict[uuid.UUID, int]:
+def count_strings_by_project(
+    db: Session, project_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    if not project_ids:
+        return {}
     rows = (
         db.query(StringEntry.project_id, func.count(StringEntry.id))
-        .filter(StringEntry.deleted_at.is_(None))
+        .filter(
+            StringEntry.deleted_at.is_(None),
+            StringEntry.project_id.in_(project_ids),
+        )
         .group_by(StringEntry.project_id)
         .all()
     )
@@ -86,7 +93,7 @@ def list_projects(db: Session, user: User) -> list[ProjectOut]:
         .order_by(Project.name)
         .all()
     )
-    counts = count_strings_by_project(db)
+    counts = count_strings_by_project(db, [project.id for project, _role in rows])
     return [to_project_out(db, project, counts, role_name(role)) for project, role in rows]
 
 

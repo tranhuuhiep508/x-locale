@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { UserPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -18,7 +20,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ApiError } from '@/lib/api/client'
 import { projectsApi } from '@/lib/api/projects'
-import type { ProjectRole } from '@/lib/api/types'
+import type { ProjectMember, ProjectRole } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { meQuery, projectMembersQuery } from '@/lib/queries'
 import { useToast } from '@/lib/toast'
@@ -31,11 +33,13 @@ export function ProjectMembersSection({
   isAdmin: boolean
 }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const toast = useToast()
   const { data: members = [] } = useQuery(projectMembersQuery(projectId))
   const { data: me } = useQuery(meQuery())
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<ProjectRole>('editor')
+  const [pendingRemoval, setPendingRemoval] = useState<ProjectMember | null>(null)
 
   const adminCount = members.filter((member) => member.role === 'admin').length
 
@@ -61,8 +65,12 @@ export function ProjectMembersSection({
   const roleMut = useMutation({
     mutationFn: ({ userId, next }: { userId: string; next: ProjectRole }) =>
       projectsApi.updateMember(projectId, userId, next),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       invalidate()
+      if (variables.userId === me?.id) {
+        qc.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
+        qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
+      }
       toast.success('Role updated')
     },
     onError: (error) => onError(error, 'Failed to change role'),
@@ -70,12 +78,22 @@ export function ProjectMembersSection({
 
   const removeMut = useMutation({
     mutationFn: (userId: string) => projectsApi.removeMember(projectId, userId),
-    onSuccess: () => {
+    onSuccess: (_result, userId) => {
+      setPendingRemoval(null)
+      if (userId === me?.id) {
+        qc.removeQueries({ queryKey: queryKeys.projects.detail(projectId) })
+        qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
+        toast.success('You left the project')
+        navigate({ to: '/' })
+        return
+      }
       invalidate()
       toast.success('Member removed')
     },
     onError: (error) => onError(error, 'Failed to remove member'),
   })
+
+  const leaving = pendingRemoval !== null && pendingRemoval.user_id === me?.id
 
   return (
     <Card className="border-border/80 shadow-xs">
@@ -173,7 +191,7 @@ export function ProjectMembersSection({
                         size="sm"
                         disabled={soleAdmin || removeMut.isPending}
                         aria-label={isSelf ? `Leave ${member.email}` : `Remove ${member.email}`}
-                        onClick={() => removeMut.mutate(member.user_id)}
+                        onClick={() => setPendingRemoval(member)}
                       >
                         {isSelf ? 'Leave' : 'Remove'}
                       </Button>
@@ -189,6 +207,23 @@ export function ProjectMembersSection({
           </ul>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        onClose={() => {
+          if (!removeMut.isPending) setPendingRemoval(null)
+        }}
+        onConfirm={() => {
+          if (pendingRemoval) removeMut.mutate(pendingRemoval.user_id)
+        }}
+        title={leaving ? 'Leave this project?' : `Remove ${pendingRemoval?.name || pendingRemoval?.email}?`}
+        description={
+          leaving
+            ? 'You will lose access to this project. An admin has to add you again. There is no undo.'
+            : 'They lose access to this project, and API keys they created here stop working. There is no undo.'
+        }
+        confirmLabel={leaving ? 'Leave project' : 'Remove member'}
+        isLoading={removeMut.isPending}
+      />
     </Card>
   )
 }

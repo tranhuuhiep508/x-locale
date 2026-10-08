@@ -63,36 +63,38 @@ def backfill_project_admins(connection: sa.Connection) -> int:
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if "project_members" not in inspector.get_table_names():
-        op.create_table(
-            "project_members",
-            sa.Column("id", sa.Uuid(), nullable=False),
-            sa.Column("project_id", sa.Uuid(), nullable=False),
-            sa.Column("user_id", sa.Uuid(), nullable=False),
-            sa.Column(
-                "role",
-                sa.Enum("admin", "editor", name="memberrole", native_enum=False, length=16),
-                nullable=False,
+    op.create_table(
+        "project_members",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "role",
+            sa.Enum(
+                "admin",
+                "editor",
+                name="ck_project_members_role",
+                native_enum=False,
+                length=16,
+                create_constraint=True,
             ),
-            sa.Column(
-                "created_at",
-                sa.DateTime(timezone=True),
-                server_default=sa.func.now(),
-                nullable=False,
-            ),
-            sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
-            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-            sa.PrimaryKeyConstraint("id"),
-            sa.UniqueConstraint("project_id", "user_id", name="uq_project_member"),
-        )
-        op.create_index("ix_project_members_project_id", "project_members", ["project_id"])
-        op.create_index("ix_project_members_user_id", "project_members", ["user_id"])
-    backfill_project_admins(bind)
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("project_id", "user_id", name="uq_project_member"),
+    )
+    op.create_index("ix_project_members_user_id", "project_members", ["user_id"])
+    backfill_project_admins(op.get_bind())
 
 
 def downgrade() -> None:
     op.drop_index("ix_project_members_user_id", table_name="project_members")
-    op.drop_index("ix_project_members_project_id", table_name="project_members")
     op.drop_table("project_members")
