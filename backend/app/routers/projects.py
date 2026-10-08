@@ -11,7 +11,6 @@ from app.auth import (
     MemberApi,
     ProjectAccess,
     SessionAdmin,
-    SessionMember,
     SessionMemberNoKey,
 )
 from app.database import DbSession
@@ -57,7 +56,7 @@ def create_project(
 
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(
-    access: SessionMember,
+    access: SessionMemberNoKey,
     db: DbSession,
 ) -> ProjectOut:
     return projects_service.to_project_out(db, access.project, role=role_name(access.member.role))

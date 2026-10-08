@@ -133,14 +133,14 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    _lock_project(db, project_id)
-    member = _get_member(db, project_id, user_id)
-    if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
-        raise HTTPException(status_code=400, detail=LAST_ADMIN)
     db.query(ApiKey).filter(
         ApiKey.project_id == project_id,
         ApiKey.created_by == user_id,
         ApiKey.revoked_at.is_(None),
     ).update({ApiKey.revoked_at: datetime.now(UTC)}, synchronize_session=False)
+    _lock_project(db, project_id)
+    member = _get_member(db, project_id, user_id)
+    if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
+        raise HTTPException(status_code=400, detail=LAST_ADMIN)
     db.delete(member)
     db.commit()

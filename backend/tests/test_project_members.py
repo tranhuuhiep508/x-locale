@@ -543,9 +543,15 @@ def test_last_admin_cannot_be_removed_demoted_or_leave(client):
     demote = client.patch(f"/api/projects/{pid}/members/{me['id']}", json={"role": "editor"})
     assert demote.status_code == 400
     assert demote.json()["detail"] == LAST_ADMIN
+    sole_key = client.post(f"/api/projects/{pid}/api-keys", json={"name": "sole"}).json()
     leave = client.delete(f"/api/projects/{pid}/members/{me['id']}")
     assert leave.status_code == 400
     assert leave.json()["detail"] == LAST_ADMIN
+    still_active = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": sole_key["key"]},
+    )
+    assert still_active.status_code == 200, still_active.text
 
     assert (
         client.patch(f"/api/projects/{pid}/members/{editor['id']}", json={"role": "admin"}).status_code
@@ -647,6 +653,9 @@ def test_api_key_cannot_delete_or_manage_members_but_catalog_still_works(client)
         headers=headers,
     )
     assert settings.status_code == 403
+    detail = client.get(f"/api/projects/{pid}", headers=headers)
+    assert detail.status_code == 403
+    assert detail.json()["detail"] == "API keys cannot perform this action"
 
     mismatch = _delete(
         client,
