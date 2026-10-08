@@ -58,6 +58,18 @@ def _project_route_cases() -> list[tuple[str, str]]:
     return cases
 
 
+def _cross_project_member_cases() -> list[tuple[str, str]]:
+    """Member PATCH/DELETE routes, taken from the same ``{project_id}`` walk."""
+    cases = [
+        (method, path)
+        for method, path in _project_route_cases()
+        if method in {"PATCH", "DELETE"} and "/members" in path
+    ]
+    if not cases:
+        raise RuntimeError("expected member PATCH/DELETE routes")
+    return cases
+
+
 def _fill_project_path(path: str, project_id: str) -> str:
     def replace(match: re.Match[str]) -> str:
         if match.group(1) == "project_id":
@@ -171,6 +183,7 @@ def test_non_member_is_hidden_with_404(client):
     ids=[f"{method} {path}" for method, path in _project_route_cases()],
 )
 def test_non_member_every_project_route_is_404(client, method, route_path):
+    """Reads and writes. A body is sent for every method that accepts one."""
     project = make_project(client, "Hidden routes")
     outsider = _add_user("route-outsider@example.com")
     path = _fill_project_path(route_path, project["id"])
@@ -181,6 +194,49 @@ def test_non_member_every_project_route_is_404(client, method, route_path):
     assert response.status_code == 404, f"{method} {path} -> {response.status_code} {response.text}"
     if method != "HEAD":
         assert response.json()["detail"] == "Project not found"
+
+
+def test_route_walk_includes_catalog_writes():
+    cases = set(_project_route_cases())
+    required = [
+        ("GET", "/api/projects/{project_id}/strings"),
+        ("POST", "/api/projects/{project_id}/strings"),
+        ("POST", "/api/projects/{project_id}/import"),
+        ("POST", "/api/projects/{project_id}/strings/import"),
+        ("POST", "/api/projects/{project_id}/translate"),
+        ("GET", "/api/projects/{project_id}/export"),
+        ("PATCH", "/api/projects/{project_id}/members/{user_id}"),
+        ("DELETE", "/api/projects/{project_id}/members/{user_id}"),
+    ]
+    missing = [item for item in required if item not in cases]
+    assert missing == []
+    assert {"GET", "POST", "PATCH", "DELETE"} <= {method for method, _ in cases}
+
+
+@pytest.mark.parametrize(
+    ("method", "route_path"),
+    _cross_project_member_cases(),
+    ids=[f"{method} {path}" for method, path in _cross_project_member_cases()],
+)
+def test_cross_project_member_write_is_404(client, method, route_path):
+    """A member of project A gets 404 on project B's member PATCH and DELETE."""
+    foreign = make_project(client, "Project B")
+    member = _add_user("member-of-a@example.com", "Member A")
+    own = client.post(
+        "/api/projects",
+        json={
+            "name": "Project A",
+            "base_language": "vi",
+            "target_languages": ["en"],
+            "layout": "modular",
+        },
+        cookies=_as(member),
+    )
+    assert own.status_code == 201, own.text
+    path = _fill_project_path(route_path, foreign["id"])
+    response = client.request(method, path, json={}, cookies=_as(member))
+    assert response.status_code == 404, f"{method} {path} -> {response.status_code} {response.text}"
+    assert response.json()["detail"] == "Project not found"
 
 
 def test_editor_can_edit_catalog_but_not_settings_delete_or_members(client):
