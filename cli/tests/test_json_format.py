@@ -48,8 +48,10 @@ class LocaleJsonTests(unittest.TestCase):
     def test_parse_locale_json_rejects_key_over_512(self) -> None:
         with self.assertRaises(XLocaleError) as caught:
             parse_locale_json({"k" * 513: "Xin chào"})
-        self.assertIn("key", str(caught.exception))
-        self.assertIn("512", str(caught.exception))
+        message = str(caught.exception)
+        self.assertIn("k" * 40, message)
+        self.assertIn("513 chars", message)
+        self.assertIn("512", message)
 
     def test_scan_modular_base_rejects_slug_over_128(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,8 +61,11 @@ class LocaleJsonTests(unittest.TestCase):
             (module_dir / "vi.json").write_text('{"hello": "Xin chào"}\n', encoding="utf-8")
             with self.assertRaises(XLocaleError) as caught:
                 scan_modular_base(Path(tmp), "vi")
-            self.assertIn("module slug", str(caught.exception))
-            self.assertIn("128", str(caught.exception))
+            message = str(caught.exception)
+            self.assertIn("module slug", message)
+            self.assertIn("128", message)
+            self.assertIn(str(module_dir), message)
+            self.assertIn("129 chars", message)
 
     def test_parse_locale_json_rejects_nested_values(self) -> None:
         with self.assertRaises(XLocaleError):
@@ -324,6 +329,17 @@ class ModularStatusHelpersTests(unittest.TestCase):
     def test_load_unassigned_base(self) -> None:
         self._write(UNASSIGNED_SLUG, "vi.json", data={"orphan": "X"})
         self.assertEqual(load_unassigned_base(self.root, "vi"), {"orphan": "X"})
+
+    def test_load_unassigned_base_names_file_and_long_key(self) -> None:
+        key = "k" * 513
+        self._write(UNASSIGNED_SLUG, "vi.json", data={key: "Xin chào"})
+        path = self.root / UNASSIGNED_SLUG / "vi.json"
+        with self.assertRaises(XLocaleError) as caught:
+            load_unassigned_base(self.root, "vi")
+        message = str(caught.exception)
+        self.assertIn(str(path), message)
+        self.assertIn("k" * 40, message)
+        self.assertIn("513 chars", message)
 
     def test_collect_local_keys_includes_modules_and_unassigned(self) -> None:
         self._write("auth", "vi.json", data={"auth.email": "Email"})

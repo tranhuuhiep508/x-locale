@@ -1,7 +1,8 @@
 from logging.config import fileConfig
 
+from sqlalchemy import engine_from_config, pool
+
 from alembic import context
-from sqlalchemy import String, engine_from_config, pool
 
 from app import models  # noqa: F401 — register all models on Base.metadata
 from app.config import settings
@@ -12,18 +13,6 @@ config = context.config
 
 def _configure_url() -> None:
     config.set_main_option("sqlalchemy.url", settings.database_url)
-
-
-def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
-    """Flag varchar/text length drift. Other types stay quiet so enums do not.
-
-    activities.summary is Text (length None). A leftover varchar(512) must
-    show up in `alembic check`. Enum check constraints are not string lengths.
-    """
-    del context, inspected_column, metadata_column
-    if isinstance(metadata_type, String):
-        return getattr(inspected_type, "length", None) != getattr(metadata_type, "length", None)
-    return False
 
 
 if config.config_file_name is not None:
@@ -41,7 +30,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=url.startswith("sqlite") if url else False,
-        compare_type=_compare_type,
+        compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -59,7 +48,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=settings.database_url.startswith("sqlite"),
-            compare_type=_compare_type,
+            compare_type=True,
         )
         with context.begin_transaction():
             context.run_migrations()

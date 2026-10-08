@@ -16,7 +16,7 @@ from x_locale_cli.commands.sync import sync
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.io import load_json_file
 from x_locale_cli.models import Config, Layout, Stage
-from x_locale_cli.ops import pull_translations, push_strings, show_status
+from x_locale_cli.ops import load_status_snapshot, pull_translations, push_strings, show_status
 from x_locale_cli.push_index import (
     atomic_write_push_index,
     catalog_hashes_flat,
@@ -46,6 +46,29 @@ def config_for(root, layout="flat"):
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"k": "Local"}))
     return config
+
+
+def test_flat_status_and_push_name_file_and_long_key(workspace):
+    config = config_for(workspace, "flat")
+    path = config.output_path / "vi.json"
+    key = "k" * 513
+    path.write_text(json.dumps({key: "Xin chào"}), encoding="utf-8")
+    api = Api(config)
+
+    with pytest.raises(XLocaleError) as status_error:
+        load_status_snapshot(config, export={"vi": {}, "en": {}}, state=sync_state(config))
+    status_message = str(status_error.value)
+    assert str(path) in status_message
+    assert "k" * 40 in status_message
+    assert "513 chars" in status_message
+
+    with pytest.raises(XLocaleError) as push_error:
+        push_strings(config, client=api.client)
+    push_message = str(push_error.value)
+    assert str(path) in push_message
+    assert "k" * 40 in push_message
+    assert "513 chars" in push_message
+    assert api.calls == []
 
 
 def modular_export():

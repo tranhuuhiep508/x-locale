@@ -256,9 +256,10 @@ class Tag(Base):
 class StringTag(Base):
     """Association rows. The composite primary key already enforces uniqueness.
 
-    A second UniqueConstraint on the same columns is dropped by Postgres, so
-    the model does not declare one. That keeps `alembic check` aligned with
-    an upgraded database.
+    Postgres folds a same-column unique constraint into that primary key and
+    names the key uq_string_tag. SQLite keeps a real extra UNIQUE. Revision
+    r7d05b6c8901 drops the SQLite constraint and renames the Postgres key to
+    string_tags_pkey, so the model does not declare a second constraint.
     """
 
     __tablename__ = "string_tags"

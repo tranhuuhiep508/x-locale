@@ -51,6 +51,14 @@ def test_delete_module_clears_refs_on_every_schema(pg_schema):
     )
     assert cleared.status_code == 200, cleared.text
 
+    with session_factory() as db:
+        published_updated_at = (
+            db.query(StringEntry)
+            .filter(StringEntry.id == uuid.UUID(published_only["id"]))
+            .one()
+            .updated_at
+        )
+
     if mode == "restored_order":
         with session_factory() as db:
             engine = db.get_bind()
@@ -74,6 +82,7 @@ def test_delete_module_clears_refs_on_every_schema(pg_schema):
             assert rows[key].published_module_id is None
         assert rows["kept"].module_id == uuid.UUID(kept["id"])
         assert rows["kept"].published_module_id == uuid.UUID(kept["id"])
+        assert rows["published-only"].updated_at == published_updated_at
         assert working_only["key"] == "working-only"
 
 

@@ -68,7 +68,33 @@ def upgrade() -> None:
         )
 
 
+_NARROW = [
+    ("activities", "summary", 512),
+    ("activities", "locale", 10),
+    ("activities", "actor_label", 255),
+    ("projects", "base_language", 10),
+    ("translations", "locale", 10),
+    ("strings", "created_by_label", 255),
+    ("strings", "updated_by_label", 255),
+]
+
+
+def _assert_fits() -> None:
+    bind = op.get_bind()
+    for table, column, limit in _NARROW:
+        n = bind.execute(
+            sa.text(f"SELECT count(*) FROM {table} WHERE length({column}) > :n"),
+            {"n": limit},
+        ).scalar()
+        if n:
+            raise RuntimeError(
+                f"Cannot downgrade p5b83e4f5678: {n} row(s) in {table}.{column} "
+                f"exceed {limit} characters"
+            )
+
+
 def downgrade() -> None:
+    _assert_fits()
     with op.batch_alter_table("strings", schema=None) as batch_op:
         batch_op.alter_column(
             "updated_by_label",

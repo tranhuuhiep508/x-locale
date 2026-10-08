@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import MetaData, Table, create_engine, event, select
+from sqlalchemy import MetaData, Table, create_engine, event, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.pool import StaticPool
@@ -26,7 +26,12 @@ from app.models import (
     TranslationStatus,
 )
 from app.services.activities import apply_revert, revert_activity
-from app.services.catalog import scrub_foreign_module_refs, to_module_out
+from app.services.catalog import (
+    _clear_module_refs,
+    is_module_project_fk_error,
+    scrub_foreign_module_refs,
+    to_module_out,
+)
 from app.services.strings import serialize_string
 from app.services.sync import build_modular_export
 from tests.helpers import make_project, publish_strings
@@ -260,6 +265,66 @@ def test_module_crud_still_404s_for_another_project(client):
 
     still_there = client.get(f"/api/projects/{project_b['id']}/modules").json()
     assert any(row["id"] == foreign_id and row["slug"] == FOREIGN_SLUG for row in still_there)
+
+
+def test_module_fk_matcher_requires_foreign_key_sqlstate():
+    class Orig(Exception):
+        def __init__(self, sqlstate: str, constraint_name: str, message: str) -> None:
+            super().__init__(message)
+            self.sqlstate = sqlstate
+            self.diag = type("Diag", (), {"constraint_name": constraint_name})()
+
+    unique = Orig(
+        "23505",
+        "uq_project_key_alive",
+        "duplicate key value violates unique constraint fk_strings_project_module",
+    )
+    assert "fk_strings_project_module" in str(unique)
+    assert is_module_project_fk_error(type("Err", (), {"orig": unique})()) is False
+
+    foreign = Orig("23503", "fk_strings_project_published_module", "insert or update")
+    assert is_module_project_fk_error(type("Err", (), {"orig": foreign})()) is True
+
+    other = Orig("23503", "strings_project_id_fkey", "insert or update")
+    assert is_module_project_fk_error(type("Err", (), {"orig": other})()) is False
+
+
+def test_published_module_clear_keeps_updated_at():
+    engine = _fk_engine()
+    past = datetime(2020, 1, 1, tzinfo=UTC)
+    with Session(engine) as db:
+        project, _, module, _ = _project_pair(db)
+        published = StringEntry(
+            project_id=project.id,
+            published_module_id=module.id,
+            key="published-only",
+            source_text="x",
+            status=TranslationStatus.public,
+            updated_at=past,
+        )
+        working = StringEntry(
+            project_id=project.id,
+            module_id=module.id,
+            key="working-only",
+            source_text="x",
+            status=TranslationStatus.draft,
+            updated_at=past,
+        )
+        db.add_all([published, working])
+        db.commit()
+        db.execute(update(StringEntry).values(updated_at=past))
+        db.commit()
+        _clear_module_refs(db, project.id, module.id)
+        db.refresh(published)
+        db.refresh(working)
+
+        def year(value: datetime) -> int:
+            return value.year
+
+        assert year(published.updated_at) == 2020
+        assert published.published_module_id is None
+        assert working.module_id is None
+        assert year(working.updated_at) != 2020
 
 
 def test_delete_module_clears_working_and_published_module(client):

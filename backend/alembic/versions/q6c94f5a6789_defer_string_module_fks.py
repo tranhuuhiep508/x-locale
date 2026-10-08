@@ -18,7 +18,18 @@ branch_labels = None
 depends_on = None
 
 
+def _defer_postgres(*, deferrable: bool) -> None:
+    """Change deferrability in place. Dropping the keys would revalidate them."""
+    state = "DEFERRABLE INITIALLY DEFERRED" if deferrable else "NOT DEFERRABLE"
+    for name in ("fk_strings_project_module", "fk_strings_project_published_module"):
+        op.execute(f"ALTER TABLE strings ALTER CONSTRAINT {name} {state}")
+
+
 def _replace_module_fks(*, deferrable: bool) -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        _defer_postgres(deferrable=deferrable)
+        return
     with op.batch_alter_table("strings", schema=None) as batch_op:
         batch_op.drop_constraint("fk_strings_project_published_module", type_="foreignkey")
         batch_op.drop_constraint("fk_strings_project_module", type_="foreignkey")

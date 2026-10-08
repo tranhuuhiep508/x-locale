@@ -21,6 +21,10 @@ def field_too_long(field: str, limit: int) -> str:
     return f"{field} must be at most {limit} characters"
 
 
+def key_preview(key: str, width: int = 40) -> str:
+    return key if len(key) <= width else f"{key[:width]}… ({len(key)} chars)"
+
+
 def validate_locale_code(code: str) -> str:
     """BCP-47-style locale tag safe for paths and DB (single segment)."""
     normalized = (code or "").strip()
@@ -41,11 +45,15 @@ def validate_module_slug(slug: str) -> str:
 
 
 def require_locale_code(code: str) -> str:
-    """Validate a locale that is about to be stored. Raises HTTP 400."""
-    try:
-        return validate_locale_code(code)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    """Reject a locale that cannot fit in the column. Raises HTTP 400.
+
+    Length only. Project create/update and Excel headers still run
+    validate_locale_code. String, translation, and activity writes must
+    keep accepting legacy target languages such as en_US.
+    """
+    if len(code) > LOCALE_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail=field_too_long("locale", LOCALE_MAX_LENGTH))
+    return code
 
 
 def require_max_length(value: str | None, *, field: str, limit: int) -> str | None:

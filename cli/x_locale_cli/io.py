@@ -8,10 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from x_locale_cli.errors import XLocaleError
-
-# Match backend strings.key and modules.slug. The CLI package cannot import the API.
-KEY_MAX_LENGTH = 512
-MODULE_SLUG_MAX_LENGTH = 128
+from x_locale_cli.limits import KEY_MAX_LENGTH, MODULE_SLUG_MAX_LENGTH
 from x_locale_cli.models import (
     DEFAULT_BASE_LANGUAGE,
     UNASSIGNED_SLUG,
@@ -67,7 +64,9 @@ def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
                 f"Locale JSON requires string values; got {type(value).__name__} for key {key!r}"
             )
         if len(key) > KEY_MAX_LENGTH:
-            raise XLocaleError(f"key must be at most {KEY_MAX_LENGTH} characters")
+            raise XLocaleError(
+                f"key {key[:40]!r}… ({len(key)} chars) must be at most {KEY_MAX_LENGTH} characters"
+            )
         strings[key] = value
     return strings
 
@@ -146,7 +145,8 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
             continue
         if len(subdir.name) > MODULE_SLUG_MAX_LENGTH:
             raise XLocaleError(
-                f"module slug must be at most {MODULE_SLUG_MAX_LENGTH} characters"
+                f"module slug {subdir.name[:40]!r}… ({len(subdir.name)} chars) "
+                f"in {subdir} must be at most {MODULE_SLUG_MAX_LENGTH} characters"
             )
         base_file = subdir / f"{base_language}.json"
         if not base_file.exists():
@@ -169,7 +169,10 @@ def load_unassigned_base(output_dir: Path, base_language: str) -> dict[str, str]
     data = load_json_file(path)
     if not isinstance(data, dict):
         raise XLocaleError(f"Locale JSON in {path} must be a top-level object")
-    return parse_locale_json(data)
+    try:
+        return parse_locale_json(data)
+    except XLocaleError as exc:
+        raise XLocaleError(f"Invalid locale file {path}: {exc}") from exc
 
 
 def collect_modular_local_keys(output_dir: Path, base_language: str) -> dict[str, str]:

@@ -237,14 +237,16 @@ MODULE_PROJECT_FK_NAMES = frozenset(
 )
 
 
+FOREIGN_KEY_VIOLATION = "23503"
+
+
 def is_module_project_fk_error(error: BaseException) -> bool:
     """True when a deferred composite module FK rejected a cross-project ref."""
-    diagnostic = getattr(getattr(error, "orig", None), "diag", None)
-    name = getattr(diagnostic, "constraint_name", None)
-    if name in MODULE_PROJECT_FK_NAMES:
-        return True
-    text = str(getattr(error, "orig", error))
-    return any(constraint in text for constraint in MODULE_PROJECT_FK_NAMES)
+    orig = getattr(error, "orig", None)
+    if getattr(orig, "sqlstate", None) != FOREIGN_KEY_VIOLATION:
+        return False
+    diagnostic = getattr(orig, "diag", None)
+    return getattr(diagnostic, "constraint_name", None) in MODULE_PROJECT_FK_NAMES
 
 
 def _clear_module_refs(db: Session, project_id: uuid.UUID, module_id: uuid.UUID) -> None:
@@ -263,7 +265,10 @@ def _clear_module_refs(db: Session, project_id: uuid.UUID, module_id: uuid.UUID)
     db.query(StringEntry).filter(
         StringEntry.project_id == project_id,
         StringEntry.published_module_id == module_id,
-    ).update({StringEntry.published_module_id: None}, synchronize_session="fetch")
+    ).update(
+        {StringEntry.published_module_id: None, StringEntry.updated_at: StringEntry.updated_at},
+        synchronize_session="fetch",
+    )
     db.flush()
 
 
