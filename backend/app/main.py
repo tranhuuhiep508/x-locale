@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.database import register_activity_listener
+from app.database import DbSession, register_activity_listener
 from app.routers import (
     activities,
     auth,
@@ -83,6 +85,29 @@ def health() -> dict[str, str]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/healthcheck/liveness", tags=["healthcheck"])
+def liveness(response: Response) -> dict[str, str]:
+    """Check that the app can respond, independently of its database."""
+    response.headers["Cache-Control"] = "no-store"
+    return {"status": "ok"}
+
+
+@app.get(
+    "/healthcheck/readliness",
+    tags=["healthcheck"],
+    responses={503: {"description": "Database unavailable"}},
+)
+def readiness(db: DbSession, response: Response) -> dict[str, str]:
+    """Check database connectivity before accepting traffic."""
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        response.status_code = 503
+        return {"status": "not_ready"}
     return {"status": "ok"}
 
 
