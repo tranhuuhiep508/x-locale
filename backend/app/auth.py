@@ -17,6 +17,7 @@ from app.config import settings
 from app.database import get_db
 from app.helpers import resolve_project_ref
 from app.models import ApiKey, MemberRole, Project, ProjectMember, User
+from app.services.members import lock_project
 
 SESSION_COOKIE = "x_locale_session"
 SESSION_TTL_HOURS = 72
@@ -202,6 +203,7 @@ def membership_for(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> Pr
     return (
         db.query(ProjectMember)
         .filter(ProjectMember.project_id == project_id, ProjectMember.user_id == user_id)
+        .populate_existing()
         .first()
     )
 
@@ -238,9 +240,15 @@ class MemberAccess:
     member: ProjectMember
 
 
-def _member_access(db: Session, project_ref: str, user: User) -> MemberAccess:
+def _member_access(
+    db: Session, project_ref: str, user: User, *, for_write: bool = False
+) -> MemberAccess:
     _bind_user_activity(db, user)
     project = resolve_project_ref(db, project_ref)
+    if for_write:
+        # Hold the lifecycle lock from fresh authorization through commit or
+        # rollback, so removal/demotion cannot precede an authorized write.
+        lock_project(db, project.id)
     member = membership_for(db, project.id, user.id)
     if member is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -278,7 +286,9 @@ def session_admin(
     """Session Admin. Editors get 403, non-members 404, API keys 403."""
     if x_api_key:
         _reject_api_key(db, project_id, x_api_key)
-    access = _member_access(db, project_id, _require_session_user(db, x_locale_session))
+    access = _member_access(
+        db, project_id, _require_session_user(db, x_locale_session), for_write=True
+    )
     if access.member.role != MemberRole.admin:
         raise HTTPException(status_code=403, detail="Admin role required")
     return access

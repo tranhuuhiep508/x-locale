@@ -241,8 +241,11 @@ def revoke_api_key(
     project_id: uuid.UUID,
     key_id: uuid.UUID,
     user: User,
-    role: MemberRole | str,
 ) -> None:
+    lock_project(db, project_id)
+    member = membership_for(db, project_id, user.id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     api_key = (
         db.query(ApiKey)
         .filter(ApiKey.id == key_id, ApiKey.project_id == project_id)
@@ -250,7 +253,7 @@ def revoke_api_key(
     )
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
-    if role_name(role) != MemberRole.admin.value and api_key.created_by != user.id:
+    if member.role != MemberRole.admin and api_key.created_by != user.id:
         raise HTTPException(status_code=403, detail=OWN_KEY_ONLY)
     api_key.revoked_at = datetime.now(UTC)
     db.commit()

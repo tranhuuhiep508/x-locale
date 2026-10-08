@@ -149,5 +149,5 @@ def revoke_api_key(
     db: DbSession,
 ) -> None:
     projects_service.revoke_api_key(
-        db, access.project.id, key_id, access.user, access.member.role
+        db, access.project.id, key_id, access.user
     )

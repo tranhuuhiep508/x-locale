@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
+from app import auth
 from app.auth import SESSION_COOKIE, create_session_token
 from app.database import enable_sqlite_foreign_keys, get_db
 from app.main import app
@@ -107,7 +108,7 @@ def test_key_insert_before_removal_is_revoked(concurrent_client, monkeypatch):
     pid = project["id"]
     creating, resume, removing, removed = Event(), Event(), Event(), Event()
     original_generate = projects_service.generate_api_key
-    original_lock = members_service.lock_project
+    original_lock = auth.lock_project
 
     def paused_generate():
         creating.set()
@@ -124,7 +125,7 @@ def test_key_insert_before_removal_is_revoked(concurrent_client, monkeypatch):
         return response
 
     monkeypatch.setattr(projects_service, "generate_api_key", paused_generate)
-    monkeypatch.setattr(members_service, "lock_project", removal_lock)
+    monkeypatch.setattr(auth, "lock_project", removal_lock)
     with ThreadPoolExecutor(max_workers=2) as pool:
         issuing = pool.submit(
             client.post,
@@ -168,7 +169,7 @@ def test_concurrent_self_demotions_preserve_last_admin(concurrent_client, monkey
     assert client.delete(f"/api/projects/{pid}/members/{creator['id']}").status_code == 204
     starting, second_counted, count_lock = Barrier(2), Event(), Lock()
     counts = []
-    original_lock = members_service.lock_project
+    original_lock = auth.lock_project
     original_count = members_service._admin_count
 
     def simultaneous_lock(db, project_id):
@@ -187,7 +188,7 @@ def test_concurrent_self_demotions_preserve_last_admin(concurrent_client, monkey
             second_counted.set()
         return count
 
-    monkeypatch.setattr(members_service, "lock_project", simultaneous_lock)
+    monkeypatch.setattr(auth, "lock_project", simultaneous_lock)
     monkeypatch.setattr(members_service, "_admin_count", overlapping_count)
 
     def demote(admin):
@@ -231,3 +232,197 @@ def test_lock_preserves_timestamp_and_refreshes_cached_role(concurrent_client):
         assert stored.updated_at == timestamp
     finally:
         generator.close()
+
+
+def _coadmin(client):
+    project, admin = _editor(client)
+    assert (
+        client.patch(
+            f"/api/projects/{project['id']}/members/{admin['id']}", json={"role": "admin"}
+        ).status_code
+        == 200
+    )
+    return project, admin
+
+
+def _revoke_admin(client, project, admin, revocation):
+    path = f"/api/projects/{project['id']}/members/{admin['id']}"
+    if revocation == "remove":
+        response = client.delete(path)
+        assert response.status_code == 204, response.text
+    else:
+        response = client.patch(path, json={"role": "editor"})
+        assert response.status_code == 200, response.text
+    return response
+
+
+@pytest.mark.parametrize("revocation", ["remove", "demote"])
+def test_admin_write_before_revocation_cannot_restore_access(
+    concurrent_client, monkeypatch, revocation
+):
+    client = concurrent_client
+    project, admin = _coadmin(client)
+    pid = project["id"]
+    authorized, resume, revoking, revoked = Event(), Event(), Event(), Event()
+
+    if revocation == "remove":
+        original = members_service.add_member
+
+        def paused_add(*args, **kwargs):
+            authorized.set()
+            assert resume.wait(5)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(members_service, "add_member", paused_add)
+
+        def restore():
+            return client.post(
+                f"/api/projects/{pid}/members",
+                json={"email": admin["email"], "role": "admin"},
+                cookies=_as(admin),
+            )
+    else:
+        original = members_service.set_member_role
+
+        def paused_promote(db, project_id, user_id, role):
+            if role == MemberRole.admin:
+                authorized.set()
+                assert resume.wait(5)
+            return original(db, project_id, user_id, role)
+
+        monkeypatch.setattr(members_service, "set_member_role", paused_promote)
+
+        def restore():
+            return client.patch(
+                f"/api/projects/{pid}/members/{admin['id']}",
+                json={"role": "admin"},
+                cookies=_as(admin),
+            )
+
+    def revoke():
+        revoking.set()
+        response = _revoke_admin(client, project, admin, revocation)
+        revoked.set()
+        return response
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        restoring = pool.submit(restore)
+        try:
+            assert authorized.wait(5)
+            revocation_request = pool.submit(revoke)
+            assert revoking.wait(5)
+            # An unprotected write lets revocation finish here, then resurrects
+            # Admin access when resumed. A protected one holds revocation back.
+            assert not revoked.wait(0.2)
+        finally:
+            resume.set()
+        response = restoring.result(timeout=5)
+        revocation_request.result(timeout=5)
+    assert response.status_code == (409 if revocation == "remove" else 200), response.text
+    after = client.get(f"/api/projects/{pid}", cookies=_as(admin))
+    if revocation == "remove":
+        assert after.status_code == 404
+    else:
+        assert after.status_code == 200
+        assert after.json()["role"] == "editor"
+
+
+@pytest.mark.parametrize("revocation", ["remove", "demote"])
+@pytest.mark.parametrize("action", ["add_member", "promote", "settings", "delete"])
+def test_revocation_before_admin_lock_denies_every_admin_write(
+    concurrent_client, monkeypatch, revocation, action
+):
+    client = concurrent_client
+    project, admin = _coadmin(client)
+    pid = project["id"]
+    waiting, resume = Event(), Event()
+    original_lock = auth.lock_project
+
+    def paused_lock(db, project_id):
+        if (db.info.get("activity") or {}).get("actor_id") == admin["id"]:
+            waiting.set()
+            assert resume.wait(5)
+        return original_lock(db, project_id)
+
+    monkeypatch.setattr(auth, "lock_project", paused_lock)
+
+    def write():
+        cookies = _as(admin)
+        if action == "add_member":
+            return client.post(
+                f"/api/projects/{pid}/members",
+                json={"email": admin["email"], "role": "admin"},
+                cookies=cookies,
+            )
+        if action == "promote":
+            return client.patch(
+                f"/api/projects/{pid}/members/{admin['id']}",
+                json={"role": "admin"},
+                cookies=cookies,
+            )
+        if action == "settings":
+            return client.patch(
+                f"/api/projects/{pid}",
+                json={"name": "Unauthorized rename"},
+                cookies=cookies,
+            )
+        return client.request(
+            "DELETE",
+            f"/api/projects/{pid}",
+            json={"confirm_slug": project["slug"]},
+            cookies=cookies,
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        writing = pool.submit(write)
+        try:
+            assert waiting.wait(5)
+            _revoke_admin(client, project, admin, revocation)
+        finally:
+            resume.set()
+        response = writing.result(timeout=5)
+    assert response.status_code == (404 if revocation == "remove" else 403), response.text
+    stored = client.get(f"/api/projects/{pid}")
+    assert stored.status_code == 200
+    assert stored.json()["name"] == project["name"]
+    after = client.get(f"/api/projects/{pid}", cookies=_as(admin))
+    if revocation == "remove":
+        assert after.status_code == 404
+    else:
+        assert after.json()["role"] == "editor"
+
+
+@pytest.mark.parametrize("revocation", ["remove", "demote"])
+def test_api_key_revoke_rechecks_current_membership_and_role(
+    concurrent_client, monkeypatch, revocation
+):
+    client = concurrent_client
+    project, admin = _coadmin(client)
+    pid = project["id"]
+    key = client.post(f"/api/projects/{pid}/api-keys", json={"name": "Other admin's key"}).json()
+    authorized, resume = Event(), Event()
+    original = projects_service.revoke_api_key
+
+    def paused_revoke(*args, **kwargs):
+        authorized.set()
+        assert resume.wait(5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(projects_service, "revoke_api_key", paused_revoke)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        revoking = pool.submit(
+            client.delete,
+            f"/api/projects/{pid}/api-keys/{key['id']}",
+            cookies=_as(admin),
+        )
+        try:
+            assert authorized.wait(5)
+            _revoke_admin(client, project, admin, revocation)
+        finally:
+            resume.set()
+        response = revoking.result(timeout=5)
+    assert response.status_code == (404 if revocation == "remove" else 403), response.text
+    assert (
+        client.get(f"/api/projects/{pid}/strings", headers={"X-API-Key": key["key"]}).status_code
+        == 200
+    )
