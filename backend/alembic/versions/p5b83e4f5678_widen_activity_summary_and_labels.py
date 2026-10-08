@@ -81,16 +81,18 @@ _NARROW = [
 
 def _assert_fits() -> None:
     bind = op.get_bind()
+    offenders: list[str] = []
     for table, column, limit in _NARROW:
         n = bind.execute(
             sa.text(f"SELECT count(*) FROM {table} WHERE length({column}) > :n"),
             {"n": limit},
         ).scalar()
         if n:
-            raise RuntimeError(
-                f"Cannot downgrade p5b83e4f5678: {n} row(s) in {table}.{column} "
-                f"exceed {limit} characters"
-            )
+            offenders.append(f"{n} row(s) in {table}.{column} exceed {limit} characters")
+    if offenders:
+        raise RuntimeError(
+            "Cannot downgrade p5b83e4f5678: " + "; ".join(offenders)
+        )
 
 
 def downgrade() -> None:

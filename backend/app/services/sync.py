@@ -669,7 +669,7 @@ def _import_locale_maps(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"key {key_preview(key)!r} must be at most {KEY_MAX_LENGTH} characters"
+                    f"key {key_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
                 ),
             )
     _prepare_import_collections(db, project, index, maps, module_id, tags)

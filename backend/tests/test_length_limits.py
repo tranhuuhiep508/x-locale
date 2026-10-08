@@ -120,9 +120,9 @@ def test_import_and_push_reject_key_over_512(api):
         f"/api/projects/{pid}/import",
         files=json_upload({LONG_KEY: "Xin chào"}),
     )
+    preview = f"{KEY_PREVIEW!r}… (513 chars)"
     assert uploaded.status_code == 400, uploaded.text
-    assert KEY_PREVIEW in uploaded.text
-    assert "513 chars" in uploaded.text
+    assert preview in uploaded.text
     assert "512" in uploaded.text
 
     pushed = api.post(
@@ -130,8 +130,7 @@ def test_import_and_push_reject_key_over_512(api):
         json={"strings": {LONG_KEY: "Xin chào"}, "base_language": "vi"},
     )
     assert pushed.status_code == 400, pushed.text
-    assert KEY_PREVIEW in pushed.text
-    assert "513 chars" in pushed.text
+    assert preview in pushed.text
     assert "512" in pushed.text
     assert api.get(f"/api/projects/{pid}/strings").json()["total"] == 0
 
@@ -194,7 +193,7 @@ def test_push_rejects_module_slug_over_128(client):
         },
     )
     assert pushed.status_code == 400, pushed.text
-    assert "module slug" in pushed.text
+    assert f"module slug {'a' * 40!r}… (129 chars)" in pushed.text
     assert "128" in pushed.text
 
 
@@ -242,8 +241,7 @@ def test_excel_import_rejects_long_key_and_tag_name(client):
     )
     assert long_key.status_code == 400, long_key.text
     assert f"Sheet {FLAT_SHEET!r} row 2" in long_key.text
-    assert KEY_PREVIEW in long_key.text
-    assert "513 chars" in long_key.text
+    assert f"key {KEY_PREVIEW!r}… (513 chars)" in long_key.text
     assert "512" in long_key.text
 
     long_tag = client.post(
@@ -257,7 +255,7 @@ def test_excel_import_rejects_long_key_and_tag_name(client):
         },
     )
     assert long_tag.status_code == 400, long_tag.text
-    assert "tag name" in long_tag.text
+    assert f"tag name {'t' * 40!r}… (129 chars)" in long_tag.text
     assert "128" in long_tag.text
 
 
@@ -289,8 +287,9 @@ def test_snapshot_apply_rejects_keys_over_512():
     assert "512" in current.value.detail
 
 
-def test_legacy_underscore_locale_still_creates_imports_and_pushes(client):
-    rejected = client.post(
+@on_each_database
+def test_legacy_underscore_locale_still_creates_imports_and_pushes(api):
+    rejected = api.post(
         "/api/projects",
         json={
             "name": "Legacy rejected at the door",
@@ -301,36 +300,36 @@ def test_legacy_underscore_locale_still_creates_imports_and_pushes(client):
     )
     assert rejected.status_code == 400, rejected.text
 
-    project = make_project(client, layout="flat")
+    project = make_project(api, layout="flat")
     pid = project["id"]
     _set_target_languages(pid, ["en_US"])
 
-    created = client.post(
+    created = api.post(
         f"/api/projects/{pid}/strings",
         json={"key": "hello", "source_text": "Xin chào"},
     )
     assert created.status_code == 201, created.text
     assert "en_US" in {item["locale"] for item in created.json()["translations"]}
 
-    uploaded = client.post(
+    uploaded = api.post(
         f"/api/projects/{pid}/import",
         files=json_upload({"imported": "Nhập"}),
     )
     assert uploaded.status_code == 200, uploaded.text
 
-    pushed = client.post(
+    pushed = api.post(
         f"/api/projects/{pid}/strings/import",
         json={"strings": {"pushed": "Đẩy"}, "base_language": "vi"},
     )
     assert pushed.status_code == 200, pushed.text
 
-    stored = {item["key"]: item for item in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    stored = {item["key"]: item for item in api.get(f"/api/projects/{pid}/strings").json()["items"]}
     for key in ("hello", "imported", "pushed"):
         locales = {item["locale"] for item in stored[key]["translations"]}
         assert "en_US" in locales
 
     _set_target_languages(pid, ["a" * 17])
-    overflow = client.post(
+    overflow = api.post(
         f"/api/projects/{pid}/strings",
         json={"key": "overflow", "source_text": "Không"},
     )
@@ -345,16 +344,33 @@ def test_widen_downgrade_names_rows_that_do_not_fit(tmp_path, monkeypatch):
     cfg = Config("alembic.ini")
     command.upgrade(cfg, "head")
     engine = create_engine(url)
+    project_id = uuid.uuid4().hex
     with engine.begin() as connection:
         connection.execute(
             text(
                 "INSERT INTO projects (id, name, slug, base_language, target_languages, layout) "
                 "VALUES (:id, 'Wide', 'wide', :base, '[\"en\"]', 'flat')"
             ),
-            {"id": uuid.uuid4().hex, "base": "abcdefghijk"},
+            {"id": project_id, "base": "abcdefghijk"},
         )
-    with pytest.raises(
-        RuntimeError,
-        match=r"1 row\(s\) in projects\.base_language exceed 10 characters",
-    ):
+        connection.execute(
+            text(
+                "INSERT INTO activities ("
+                "id, project_id, actor_type, actor_label, action, entity_type, entity_id, "
+                "event_type, summary, is_revertible"
+                ") VALUES ("
+                ":id, :project_id, 'system', 'system', 'update', 'string', 'entity', "
+                "'string.updated', :summary, 0"
+                ")"
+            ),
+            {
+                "id": uuid.uuid4().hex,
+                "project_id": project_id,
+                "summary": "s" * 600,
+            },
+        )
+    with pytest.raises(RuntimeError, match="Cannot downgrade p5b83e4f5678") as caught:
         command.downgrade(cfg, "o4f61c2d3456")
+    message = str(caught.value)
+    assert "1 row(s) in activities.summary exceed 512 characters" in message
+    assert "1 row(s) in projects.base_language exceed 10 characters" in message

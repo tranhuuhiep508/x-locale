@@ -353,7 +353,7 @@ def import_workbook(
                 continue
             if len(key) > KEY_MAX_LENGTH:
                 raise ValueError(
-                    f"Sheet {sheet_name!r} row {row_number}: key {key_preview(key)!r} "
+                    f"Sheet {sheet_name!r} row {row_number}: key {key_preview(key)} "
                     f"must be at most {KEY_MAX_LENGTH} characters"
                 )
             if modular:

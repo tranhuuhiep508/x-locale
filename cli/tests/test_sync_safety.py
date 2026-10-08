@@ -59,15 +59,13 @@ def test_flat_status_and_push_name_file_and_long_key(workspace):
         load_status_snapshot(config, export={"vi": {}, "en": {}}, state=sync_state(config))
     status_message = str(status_error.value)
     assert str(path) in status_message
-    assert "k" * 40 in status_message
-    assert "513 chars" in status_message
+    assert f"key {'k' * 40!r}… (513 chars)" in status_message
 
     with pytest.raises(XLocaleError) as push_error:
         push_strings(config, client=api.client)
     push_message = str(push_error.value)
     assert str(path) in push_message
-    assert "k" * 40 in push_message
-    assert "513 chars" in push_message
+    assert f"key {'k' * 40!r}… (513 chars)" in push_message
     assert api.calls == []
 
 

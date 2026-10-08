@@ -21,8 +21,14 @@ def field_too_long(field: str, limit: int) -> str:
     return f"{field} must be at most {limit} characters"
 
 
-def key_preview(key: str, width: int = 40) -> str:
-    return key if len(key) <= width else f"{key[:width]}… ({len(key)} chars)"
+def key_preview(value: str, width: int = 40) -> str:
+    """Quoted preview. The length sits outside the quotes when the value is cut.
+
+    The CLI uses the same shape: 'abcd'… (513 chars).
+    """
+    if len(value) <= width:
+        return repr(value)
+    return f"{value[:width]!r}… ({len(value)} chars)"
 
 
 def validate_locale_code(code: str) -> str:
@@ -38,7 +44,10 @@ def validate_locale_code(code: str) -> str:
 def validate_module_slug(slug: str) -> str:
     normalized = (slug or "").strip()
     if len(normalized) > MODULE_SLUG_MAX_LENGTH:
-        raise ValueError(field_too_long("module slug", MODULE_SLUG_MAX_LENGTH))
+        raise ValueError(
+            f"module slug {key_preview(normalized)} must be at most "
+            f"{MODULE_SLUG_MAX_LENGTH} characters"
+        )
     if not SLUG_RE.fullmatch(normalized):
         raise ValueError(f"Invalid module slug: {slug!r}")
     return normalized
@@ -70,7 +79,9 @@ def require_string_key(key: str) -> str:
 def ensure_max_length(value: str, *, field: str, limit: int) -> str:
     """Raise ValueError so file import can turn the message into HTTP 400."""
     if len(value) > limit:
-        raise ValueError(field_too_long(field, limit))
+        raise ValueError(
+            f"{field} {key_preview(value)} must be at most {limit} characters"
+        )
     return value
 
 

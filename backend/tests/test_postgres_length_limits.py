@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import pytest
+from alembic.config import Config
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from alembic import command
+from app.config import settings
 from app.models import Activity, StringEntry, Translation, User
 from tests.helpers import json_upload, make_project
-from tests.postgres_support import alembic_check, postgres_url
+from tests.postgres_support import BACKEND_DIR, alembic_check, postgres_url, prepare_schema
 
 pytestmark = pytest.mark.postgres
 
@@ -21,6 +25,48 @@ TARGET_LOCALE = "en-abcdefgh"
 def test_alembic_check_reports_no_string_length_drift(pg_session):
     del pg_session
     alembic_check(postgres_url())
+
+
+def _string_tags_pk(url: str) -> str | None:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return connection.execute(
+                text(
+                    """
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'string_tags'::regclass
+                      AND contype = 'p'
+                    """
+                )
+            ).scalar()
+    finally:
+        engine.dispose()
+
+
+def test_create_all_pk_rename_is_guarded_both_ways(monkeypatch):
+    """create_all already names the PK string_tags_pkey.
+
+    Upgrade from a stamp below r7 must leave that name alone. Downgrade must
+    rename it to uq_string_tag, and the next upgrade must rename it back.
+    """
+    url = postgres_url()
+    monkeypatch.setattr(settings, "database_url", url)
+    prepare_schema(url, "create_all")
+    assert _string_tags_pk(url) == "string_tags_pkey"
+
+    cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    command.stamp(cfg, "q6c94f5a6789")
+    command.upgrade(cfg, "head")
+    assert _string_tags_pk(url) == "string_tags_pkey"
+
+    command.downgrade(cfg, "q6c94f5a6789")
+    assert _string_tags_pk(url) == "uq_string_tag"
+
+    command.upgrade(cfg, "head")
+    assert _string_tags_pk(url) == "string_tags_pkey"
+    alembic_check(url)
 
 
 def _activity_for_key(db: Session, key: str) -> Activity:

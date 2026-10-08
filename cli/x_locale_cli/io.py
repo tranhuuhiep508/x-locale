@@ -44,6 +44,16 @@ def _without_trailing_commas(text: str) -> str:
     return "".join(characters)
 
 
+def _value_preview(value: str, width: int = 40) -> str:
+    """Quoted preview. The length sits outside the quotes when the value is cut.
+
+    Matches backend app.helpers.key_preview.
+    """
+    if len(value) <= width:
+        return repr(value)
+    return f"{value[:width]!r}… ({len(value)} chars)"
+
+
 def load_json_file(path: Path) -> Any:
     """Load JSON from *path*, tolerating trailing commas from common formatters."""
     text = path.read_text(encoding="utf-8")
@@ -65,7 +75,7 @@ def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
             )
         if len(key) > KEY_MAX_LENGTH:
             raise XLocaleError(
-                f"key {key[:40]!r}… ({len(key)} chars) must be at most {KEY_MAX_LENGTH} characters"
+                f"key {_value_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
             )
         strings[key] = value
     return strings
@@ -143,14 +153,14 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
             continue
         if subdir.name.startswith("_") or subdir.name.startswith("."):
             continue
-        if len(subdir.name) > MODULE_SLUG_MAX_LENGTH:
-            raise XLocaleError(
-                f"module slug {subdir.name[:40]!r}… ({len(subdir.name)} chars) "
-                f"in {subdir} must be at most {MODULE_SLUG_MAX_LENGTH} characters"
-            )
         base_file = subdir / f"{base_language}.json"
         if not base_file.exists():
             continue
+        if len(subdir.name) > MODULE_SLUG_MAX_LENGTH:
+            raise XLocaleError(
+                f"module slug {_value_preview(subdir.name)} "
+                f"in {subdir} must be at most {MODULE_SLUG_MAX_LENGTH} characters"
+            )
         data = load_json_file(base_file)
         if not isinstance(data, dict):
             raise XLocaleError(f"Locale JSON in {base_file} must be a top-level object")

@@ -49,9 +49,20 @@ class LocaleJsonTests(unittest.TestCase):
         with self.assertRaises(XLocaleError) as caught:
             parse_locale_json({"k" * 513: "Xin chào"})
         message = str(caught.exception)
-        self.assertIn("k" * 40, message)
-        self.assertIn("513 chars", message)
+        self.assertIn(f"key {'k' * 40!r}… (513 chars)", message)
         self.assertIn("512", message)
+
+    def test_scan_skips_long_directory_without_base_language_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            long_dir = root / ("m" * 129)
+            long_dir.mkdir()
+            (long_dir / "en.json").write_text('{"skip": "me"}\n', encoding="utf-8")
+            auth = root / "auth"
+            auth.mkdir()
+            (auth / "vi.json").write_text('{"hello": "Xin chào"}\n', encoding="utf-8")
+            result = scan_modular_base(root, "vi")
+            self.assertEqual(result, {"auth": {"hello": "Xin chào"}})
 
     def test_scan_modular_base_rejects_slug_over_128(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -62,10 +73,9 @@ class LocaleJsonTests(unittest.TestCase):
             with self.assertRaises(XLocaleError) as caught:
                 scan_modular_base(Path(tmp), "vi")
             message = str(caught.exception)
-            self.assertIn("module slug", message)
+            self.assertIn(f"module slug {'a' * 40!r}… (129 chars)", message)
             self.assertIn("128", message)
             self.assertIn(str(module_dir), message)
-            self.assertIn("129 chars", message)
 
     def test_parse_locale_json_rejects_nested_values(self) -> None:
         with self.assertRaises(XLocaleError):
@@ -338,8 +348,7 @@ class ModularStatusHelpersTests(unittest.TestCase):
             load_unassigned_base(self.root, "vi")
         message = str(caught.exception)
         self.assertIn(str(path), message)
-        self.assertIn("k" * 40, message)
-        self.assertIn("513 chars", message)
+        self.assertIn(f"key {'k' * 40!r}… (513 chars)", message)
 
     def test_collect_local_keys_includes_modules_and_unassigned(self) -> None:
         self._write("auth", "vi.json", data={"auth.email": "Email"})

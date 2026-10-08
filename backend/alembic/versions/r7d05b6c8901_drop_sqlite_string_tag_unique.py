@@ -20,20 +20,27 @@ branch_labels = None
 depends_on = None
 
 
+def _rename_pk(bind, old: str, new: str) -> None:
+    # create_all and a pg_dump of a create_all database already use string_tags_pkey.
+    if sa.inspect(bind).get_pk_constraint("string_tags").get("name") == old:
+        op.execute(f"ALTER TABLE string_tags RENAME CONSTRAINT {old} TO {new}")
+
+
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":  # parity with create_all naming
+        _rename_pk(bind, "uq_string_tag", "string_tags_pkey")
+        return
     uniques = {item["name"] for item in sa.inspect(bind).get_unique_constraints("string_tags")}
-    if "uq_string_tag" in uniques:  # SQLite only; on PG this name is the PK
+    if "uq_string_tag" in uniques:
         with op.batch_alter_table("string_tags") as batch_op:
             batch_op.drop_constraint("uq_string_tag", type_="unique")
-    if bind.dialect.name == "postgresql":  # parity with create_all naming
-        op.execute("ALTER TABLE string_tags RENAME CONSTRAINT uq_string_tag TO string_tags_pkey")
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute("ALTER TABLE string_tags RENAME CONSTRAINT string_tags_pkey TO uq_string_tag")
+        _rename_pk(bind, "string_tags_pkey", "uq_string_tag")
     else:
         with op.batch_alter_table("string_tags") as batch_op:
             batch_op.create_unique_constraint("uq_string_tag", ["string_id", "tag_id"])
