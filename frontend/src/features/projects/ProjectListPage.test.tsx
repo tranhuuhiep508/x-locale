@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { projectsApi } from '@/lib/api/projects'
 import type { ProjectSummary } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { ProjectListPage } from './ProjectListPage'
@@ -74,5 +75,22 @@ describe('project delete confirm', () => {
     expect(confirm.disabled).toBe(true)
     fireEvent.change(slug, { target: { value: 'demo-app' } })
     expect(confirm.disabled).toBe(false)
+  })
+
+  it('keeps the project name on the dialog while delete completes', async () => {
+    let finish: (() => void) | undefined
+    vi.mocked(projectsApi.delete).mockImplementation(
+      () => new Promise((resolve) => {
+        finish = () => resolve(undefined)
+      }),
+    )
+    renderList('admin')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Demo App' }))
+    fireEvent.change(screen.getByLabelText('Project slug'), { target: { value: 'demo-app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete project' }))
+    expect(screen.getByRole('heading', { name: 'Delete "Demo App"?' })).toBeTruthy()
+    finish?.()
+    await waitFor(() => expect(projectsApi.delete).toHaveBeenCalledWith('demo-app', 'demo-app'))
+    expect(screen.queryByText(/undefined/)).toBeNull()
   })
 })

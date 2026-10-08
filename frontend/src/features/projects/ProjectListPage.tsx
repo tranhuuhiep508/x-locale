@@ -42,6 +42,7 @@ export function ProjectListPage() {
   const { data: projects = [] } = useQuery(projectsQuery())
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [slugConfirm, setSlugConfirm] = useState('')
   const qc = useQueryClient()
   const toast = useToast()
@@ -52,8 +53,7 @@ export function ProjectListPage() {
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
       qc.invalidateQueries({ queryKey: queryKeys.projects.detail(project.slug) })
       toast.success('Project deleted')
-      setDeleteTarget(null)
-      setSlugConfirm('')
+      setDeleteOpen(false)
     },
     onError: () => toast.error('Failed to delete project'),
   })
@@ -266,6 +266,7 @@ export function ProjectListPage() {
                           e.preventDefault()
                           setSlugConfirm('')
                           setDeleteTarget(p)
+                          setDeleteOpen(true)
                         }}
                       >
                         <Trash2 className="size-3.5" />
@@ -330,13 +331,14 @@ export function ProjectListPage() {
       </PageBody>
 
       <ConfirmDialog
-        open={deleteTarget !== null}
+        open={deleteOpen}
         onClose={() => {
+          setDeleteOpen(false)
           setDeleteTarget(null)
           setSlugConfirm('')
         }}
         onConfirm={() => deleteTarget && slugConfirm === deleteTarget.slug && deleteMut.mutate(deleteTarget)}
-        title={`Delete "${deleteTarget?.name}"?`}
+        title={deleteTarget ? `Delete "${deleteTarget.name}"?` : 'Delete project?'}
         description={
           deleteTarget ? (
             <div className="flex flex-col gap-3 text-left">
