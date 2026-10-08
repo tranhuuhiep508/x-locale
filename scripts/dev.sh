@@ -80,7 +80,7 @@ while (( SECONDS < STARTUP_DEADLINE )); do
     echo "Backend exited before becoming ready."
     exit 1
   fi
-  if curl -sf --connect-timeout 1 --max-time 2 "$BACKEND_URL/healthcheck/readliness" >/dev/null 2>&1; then
+  if curl -sf --connect-timeout 1 --max-time 2 "$BACKEND_URL/healthcheck/readiness" >/dev/null 2>&1; then
     BACKEND_READY=true
     break
   fi
@@ -104,7 +104,7 @@ echo "x-locale dev stack is running:"
 echo "  Dashboard: $FRONTEND_URL"
 echo "  API docs:  $BACKEND_URL/docs"
 echo "  Liveness: $BACKEND_URL/healthcheck/liveness"
-echo "  Readiness: $BACKEND_URL/healthcheck/readliness"
+echo "  Readiness: $BACKEND_URL/healthcheck/readiness"
 echo "Press Ctrl+C to stop both services."
 echo ""
 
