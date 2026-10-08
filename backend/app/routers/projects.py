@@ -12,7 +12,7 @@ from app.auth import (
     ProjectAccess,
     SessionAdmin,
     SessionMember,
-    SessionMemberForRevoke,
+    SessionMemberNoKey,
 )
 from app.database import DbSession
 from app.models import ApiKey, MemberRole
@@ -128,7 +128,7 @@ def remove_member(
 
 @router.get("/{project_id}/api-keys", response_model=list[ApiKeyOut])
 def list_api_keys(
-    access: SessionMember,
+    access: SessionMemberNoKey,
     db: DbSession,
 ) -> list[ApiKey]:
     return projects_service.list_api_keys(db, access.project.id)
@@ -137,7 +137,7 @@ def list_api_keys(
 @router.post("/{project_id}/api-keys", response_model=ApiKeyCreated, status_code=201)
 def create_api_key(
     payload: ApiKeyCreate,
-    access: SessionMember,
+    access: SessionMemberNoKey,
     db: DbSession,
 ) -> ApiKeyCreated:
     return projects_service.create_api_key(db, access.project.id, payload, access.user)
@@ -146,7 +146,7 @@ def create_api_key(
 @router.delete("/{project_id}/api-keys/{key_id}", status_code=204)
 def revoke_api_key(
     key_id: uuid.UUID,
-    access: SessionMemberForRevoke,
+    access: SessionMemberNoKey,
     db: DbSession,
 ) -> None:
     projects_service.revoke_api_key(

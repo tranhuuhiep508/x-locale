@@ -372,22 +372,62 @@ def test_admin_revokes_another_users_api_key(client):
     assert stale.status_code == 401
 
 
-def test_api_key_alone_cannot_revoke(client):
+def test_membership_lock_compiles_to_for_no_key_update(client):
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.members import _project_lock_query
+
+    generator, db = _session()
+    try:
+        sql = str(
+            _project_lock_query(db, uuid.uuid4()).statement.compile(
+                dialect=postgresql.dialect()
+            )
+        )
+    finally:
+        generator.close()
+    assert "FOR NO KEY UPDATE" in sql
+
+
+def test_api_key_cannot_list_create_or_revoke(client):
     project = make_project(client, "Key only")
+    other = make_project(client, "Key other")
     pid = project["id"]
     created = client.post(f"/api/projects/{pid}/api-keys", json={"name": "cli"}).json()
     client.cookies.clear()
-    denied = _delete(
-        client,
-        f"/api/projects/{pid}/api-keys/{created['id']}",
-        headers={"X-API-Key": created["key"]},
-    )
-    assert denied.status_code == 401
-    assert denied.json()["detail"] == "Not authenticated"
-    catalog = client.get(
-        f"/api/projects/{pid}/strings",
-        headers={"X-API-Key": created["key"]},
-    )
+    headers = {"X-API-Key": created["key"]}
+    paths = {
+        "get": f"/api/projects/{pid}/api-keys",
+        "post": f"/api/projects/{pid}/api-keys",
+        "delete": f"/api/projects/{pid}/api-keys/{created['id']}",
+    }
+    for method, path in paths.items():
+        response = client.request(
+            method,
+            path,
+            headers=headers,
+            json={"name": "from-key"} if method == "post" else None,
+        )
+        assert response.status_code == 403, f"{method} {response.status_code} {response.text}"
+        assert response.json()["detail"] == "API keys cannot perform this action"
+
+    bogus = {"X-API-Key": "not-a-real-key"}
+    for method, path in paths.items():
+        response = client.request(method, path, headers=bogus, json={"name": "x"})
+        assert response.status_code == 401, f"{method} {response.status_code} {response.text}"
+        assert response.json()["detail"] == "Invalid API key"
+
+    foreign = {
+        "get": f"/api/projects/{other['id']}/api-keys",
+        "post": f"/api/projects/{other['id']}/api-keys",
+        "delete": f"/api/projects/{other['id']}/api-keys/{created['id']}",
+    }
+    for method, path in foreign.items():
+        response = client.request(method, path, headers=headers, json={"name": "x"})
+        assert response.status_code == 404, f"{method} {response.status_code} {response.text}"
+        assert response.json()["detail"] == "Project not found"
+
+    catalog = client.get(f"/api/projects/{pid}/strings", headers=headers)
     assert catalog.status_code == 200, catalog.text
 
 

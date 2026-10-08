@@ -33,9 +33,20 @@ def member_out(member: ProjectMember, user: User) -> MemberOut:
     )
 
 
+def _project_lock_query(db: Session, project_id: uuid.UUID):
+    """FOR NO KEY UPDATE, so an API-key insert's FOR KEY SHARE lock can proceed."""
+    return (
+        db.query(Project.id)
+        .filter(Project.id == project_id)
+        .with_for_update(key_share=True)
+    )
+
+
 def _lock_project(db: Session, project_id: uuid.UUID) -> None:
     """Serialize membership changes for one project until commit or rollback."""
-    db.query(Project.id).filter(Project.id == project_id).with_for_update().one()
+    row = _project_lock_query(db, project_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _admin_count(db: Session, project_id: uuid.UUID) -> int:
