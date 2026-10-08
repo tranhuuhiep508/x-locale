@@ -6,7 +6,14 @@ import uuid
 
 from fastapi import APIRouter
 
-from app.auth import CurrentUser, MemberApi, ProjectAccess, SessionAdmin, SessionMember
+from app.auth import (
+    CurrentUser,
+    MemberApi,
+    ProjectAccess,
+    SessionAdmin,
+    SessionMember,
+    SessionMemberForRevoke,
+)
 from app.database import DbSession
 from app.models import ApiKey, MemberRole
 from app.schemas import (
@@ -139,7 +146,7 @@ def create_api_key(
 @router.delete("/{project_id}/api-keys/{key_id}", status_code=204)
 def revoke_api_key(
     key_id: uuid.UUID,
-    access: SessionMember,
+    access: SessionMemberForRevoke,
     db: DbSession,
 ) -> None:
     projects_service.revoke_api_key(

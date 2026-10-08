@@ -372,6 +372,60 @@ def test_admin_revokes_another_users_api_key(client):
     assert stale.status_code == 401
 
 
+def test_api_key_alone_cannot_revoke(client):
+    project = make_project(client, "Key only")
+    pid = project["id"]
+    created = client.post(f"/api/projects/{pid}/api-keys", json={"name": "cli"}).json()
+    client.cookies.clear()
+    denied = _delete(
+        client,
+        f"/api/projects/{pid}/api-keys/{created['id']}",
+        headers={"X-API-Key": created["key"]},
+    )
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "Not authenticated"
+    catalog = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": created["key"]},
+    )
+    assert catalog.status_code == 200, catalog.text
+
+
+def test_remove_member_keeps_keys_on_other_projects(client):
+    project_a = make_project(client, "Project A")
+    project_b = make_project(client, "Project B")
+    editor = _add_user("cross-key@example.com", "Cross")
+    for project in (project_a, project_b):
+        added = client.post(
+            f"/api/projects/{project['id']}/members",
+            json={"email": editor["email"], "role": "editor"},
+        )
+        assert added.status_code == 201, added.text
+    cookies = _as(editor)
+    key_a = client.post(
+        f"/api/projects/{project_a['id']}/api-keys",
+        json={"name": "key-a"},
+        cookies=cookies,
+    ).json()
+    key_b = client.post(
+        f"/api/projects/{project_b['id']}/api-keys",
+        json={"name": "key-b"},
+        cookies=cookies,
+    ).json()
+    removed = client.delete(f"/api/projects/{project_a['id']}/members/{editor['id']}")
+    assert removed.status_code == 204, removed.text
+    stale = client.get(
+        f"/api/projects/{project_a['id']}/strings",
+        headers={"X-API-Key": key_a["key"]},
+    )
+    assert stale.status_code == 401
+    fresh = client.get(
+        f"/api/projects/{project_b['id']}/strings",
+        headers={"X-API-Key": key_b["key"]},
+    )
+    assert fresh.status_code == 200, fresh.text
+
+
 def test_admin_manages_members_by_email(client):
     project = make_project(client, "Team")
     pid = project["id"]

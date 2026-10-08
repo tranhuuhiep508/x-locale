@@ -266,6 +266,19 @@ def session_member(
     return _member_access(db, project_id, user)
 
 
+def session_member_for_revoke(
+    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
+    db: Session = Depends(get_db),
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> MemberAccess:
+    """Revoke requires a session. An API key with no session is 401, before dev bypass."""
+    if x_api_key and not x_locale_session:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = _require_session_user(db, x_locale_session)
+    return _member_access(db, project_id, user)
+
+
 def member_api(
     project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
     db: Session = Depends(get_db),
@@ -299,5 +312,6 @@ CurrentUser = Annotated[User, Depends(current_user)]
 ProjectFromApiKey = Annotated[Project, Depends(project_from_api_key)]
 ProjectAccess = Annotated[Project, Depends(project_access)]
 SessionMember = Annotated[MemberAccess, Depends(session_member)]
+SessionMemberForRevoke = Annotated[MemberAccess, Depends(session_member_for_revoke)]
 MemberApi = Annotated[MemberAccess, Depends(member_api)]
 SessionAdmin = Annotated[MemberAccess, Depends(session_admin)]
