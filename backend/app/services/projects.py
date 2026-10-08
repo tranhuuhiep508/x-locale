@@ -219,6 +219,7 @@ def create_api_key(
         id=api_key.id,
         name=api_key.name,
         key_prefix=api_key.key_prefix,
+        created_by=api_key.created_by,
         created_at=api_key.created_at,
         last_used_at=api_key.last_used_at,
         revoked_at=api_key.revoked_at,
@@ -226,7 +227,16 @@ def create_api_key(
     )
 
 
-def revoke_api_key(db: Session, project_id: uuid.UUID, key_id: uuid.UUID) -> None:
+OWN_KEY_ONLY = "You can only revoke API keys you created"
+
+
+def revoke_api_key(
+    db: Session,
+    project_id: uuid.UUID,
+    key_id: uuid.UUID,
+    user: User,
+    role: MemberRole | str,
+) -> None:
     api_key = (
         db.query(ApiKey)
         .filter(ApiKey.id == key_id, ApiKey.project_id == project_id)
@@ -234,5 +244,7 @@ def revoke_api_key(db: Session, project_id: uuid.UUID, key_id: uuid.UUID) -> Non
     )
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
+    if role_name(role) != MemberRole.admin.value and api_key.created_by != user.id:
+        raise HTTPException(status_code=403, detail=OWN_KEY_ONLY)
     api_key.revoked_at = datetime.now(UTC)
     db.commit()

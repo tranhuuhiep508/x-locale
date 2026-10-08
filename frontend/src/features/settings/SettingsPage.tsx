@@ -141,6 +141,7 @@ export function SettingsPage() {
     onError: () => toast.error('Failed to revoke key'),
   })
 
+  const isAdmin = project?.role === 'admin'
   const apiKeyTable = useReactTable({
     data: apiKeyData,
     columns: apiKeyColumns,
@@ -155,12 +156,11 @@ export function SettingsPage() {
     globalFilterFn: 'includesString',
     meta: {
       onRevoke: setDeleteKeyTarget,
+      canRevoke: (key: ApiKey) => isAdmin || (me?.id != null && key.created_by === me.id),
     },
   })
 
   if (!project) return null
-
-  const isAdmin = project.role === 'admin'
   const targetLangs = languages.filter((l) => l.code !== form.base_language)
   const isDirty = saveForm !== null
 
@@ -330,7 +330,7 @@ export function SettingsPage() {
       {/* API Keys */}
       <PageSection
         title="API keys"
-        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
+        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project. Editors can revoke only keys they created."
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/40 p-4 shadow-2xs">

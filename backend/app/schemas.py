@@ -134,6 +134,7 @@ class ApiKeyOut(BaseModel):
     id: UUID
     name: str
     key_prefix: str
+    created_by: UUID | None = None
     created_at: UtcDateTime | None = None
     last_used_at: UtcDateTime | None = None
     revoked_at: UtcDateTime | None = None

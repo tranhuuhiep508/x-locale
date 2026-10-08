@@ -26,6 +26,7 @@ from app.models import (
     User,
 )
 from app.services.members import LAST_ADMIN
+from app.services.projects import OWN_KEY_ONLY
 from tests.helpers import make_project
 
 CONFIRM = "confirm_slug must exactly match the project slug"
@@ -298,6 +299,77 @@ def test_editor_can_edit_catalog_but_not_settings_delete_or_members(client):
     ):
         response = client.request(method, path, json=body, cookies=cookies)
         assert response.status_code == 403, method
+
+
+def _editor_with_keys(client, slug: str):
+    project = make_project(client, slug)
+    pid = project["id"]
+    editor = _add_user(f"{slug}@example.com", "Editor")
+    added = client.post(
+        f"/api/projects/{pid}/members",
+        json={"email": editor["email"], "role": "editor"},
+    )
+    assert added.status_code == 201, added.text
+    cookies = _as(editor)
+    own = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "editor-key"},
+        cookies=cookies,
+    )
+    assert own.status_code == 201, own.text
+    admin_key = client.post(
+        f"/api/projects/{pid}/api-keys",
+        json={"name": "admin-key"},
+    )
+    assert admin_key.status_code == 201, admin_key.text
+    return pid, cookies, own.json(), admin_key.json()
+
+
+def test_editor_revokes_own_api_key(client):
+    pid, cookies, own, _admin_key = _editor_with_keys(client, "own-key")
+    assert own["created_by"]
+    revoked = _delete(client, f"/api/projects/{pid}/api-keys/{own['id']}", cookies=cookies)
+    assert revoked.status_code == 204, revoked.text
+    listed = client.get(f"/api/projects/{pid}/api-keys", cookies=cookies).json()
+    assert own["id"] not in {row["id"] for row in listed}
+    stale = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": own["key"]},
+    )
+    assert stale.status_code == 401
+
+
+def test_editor_cannot_revoke_another_users_api_key(client):
+    pid, cookies, _own, admin_key = _editor_with_keys(client, "other-key")
+    denied = _delete(client, f"/api/projects/{pid}/api-keys/{admin_key['id']}", cookies=cookies)
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == OWN_KEY_ONLY
+    still = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": admin_key["key"]},
+    )
+    assert still.status_code == 200
+    outsider = _add_user("key-outsider@example.com")
+    hidden = _delete(
+        client,
+        f"/api/projects/{pid}/api-keys/{admin_key['id']}",
+        cookies=_as(outsider),
+    )
+    assert hidden.status_code == 404
+    assert hidden.json()["detail"] == "Project not found"
+
+
+def test_admin_revokes_another_users_api_key(client):
+    pid, _cookies, own, _admin_key = _editor_with_keys(client, "admin-revoke")
+    revoked = _delete(client, f"/api/projects/{pid}/api-keys/{own['id']}")
+    assert revoked.status_code == 204, revoked.text
+    listed = client.get(f"/api/projects/{pid}/api-keys").json()
+    assert own["id"] not in {row["id"] for row in listed}
+    stale = client.get(
+        f"/api/projects/{pid}/strings",
+        headers={"X-API-Key": own["key"]},
+    )
+    assert stale.status_code == 401
 
 
 def test_admin_manages_members_by_email(client):

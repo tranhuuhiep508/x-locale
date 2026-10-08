@@ -154,4 +154,41 @@ describe('project settings and members by role', () => {
     const role = screen.getByRole('combobox', { name: 'Role for dev@example.com' }) as HTMLButtonElement
     expect(role.disabled).toBe(true)
   })
+
+  it('lets an editor revoke only their own API key', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, role: 'editor' })
+    vi.mocked(projectsApi.listMembers).mockResolvedValue([editorMember])
+    vi.mocked(projectsApi.listApiKeys).mockResolvedValue([
+      {
+        id: 'k-mine', name: 'mine', key_prefix: 'xlocale_mine', created_by: 'me',
+        created_at: null, last_used_at: null, revoked_at: null,
+      },
+      {
+        id: 'k-ci', name: 'ci', key_prefix: 'xlocale_ci00', created_by: 'someone',
+        created_at: null, last_used_at: null, revoked_at: null,
+      },
+    ])
+    renderSettings()
+    const own = await screen.findByRole('button', { name: 'Revoke mine' }) as HTMLButtonElement
+    const other = screen.getByRole('button', { name: 'Revoke ci' }) as HTMLButtonElement
+    expect(own.disabled).toBe(false)
+    expect(other.disabled).toBe(true)
+    expect(other.title).toBe('Only an admin can revoke another member’s key')
+    fireEvent.click(other)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('lets an admin revoke another member API key', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue(project)
+    vi.mocked(projectsApi.listMembers).mockResolvedValue([editorMember])
+    vi.mocked(projectsApi.listApiKeys).mockResolvedValue([
+      {
+        id: 'k-ci', name: 'ci', key_prefix: 'xlocale_ci00', created_by: 'someone',
+        created_at: null, last_used_at: null, revoked_at: null,
+      },
+    ])
+    renderSettings()
+    const revoke = await screen.findByRole('button', { name: 'Revoke ci' }) as HTMLButtonElement
+    expect(revoke.disabled).toBe(false)
+  })
 })
