@@ -50,7 +50,9 @@ def lock_project(db: Session, project_id: uuid.UUID) -> None:
             db.query(Project)
             .filter(Project.id == project_id)
             .update(
-                {Project.id: Project.id, Project.updated_at: Project.updated_at},
+                # Self-assigning updated_at takes SQLite's write lock and suppresses
+                # onupdate. Do not touch the PK: that runs FK checks on every child table.
+                {Project.updated_at: Project.updated_at},
                 synchronize_session=False,
             )
         )
@@ -146,7 +148,12 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    # Removal and key creation share the project-before-key lock order.
+    # Lock order: projects row (FOR NO KEY UPDATE) before api_keys.
+    # Key-authorized catalog writes go the other way (api_keys.last_used_at,
+    # then FOR KEY SHARE on projects from FK inserts). That is safe only
+    # because NO KEY UPDATE does not conflict with KEY SHARE. Any path that
+    # writes api_keys and then UPDATEs, DELETEs or locks projects will
+    # deadlock with this function.
     lock_project(db, project_id)
     member = _get_member(db, project_id, user_id)
     if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
