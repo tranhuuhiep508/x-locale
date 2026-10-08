@@ -42,6 +42,12 @@ export const projectApiKeysQuery = (id: string) =>
     queryFn: () => projectsApi.listApiKeys(id),
   })
 
+export const projectMembersQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.projects.members(id),
+    queryFn: () => projectsApi.listMembers(id),
+  })
+
 export const projectCoverageQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.projects.strings.coverage(id),

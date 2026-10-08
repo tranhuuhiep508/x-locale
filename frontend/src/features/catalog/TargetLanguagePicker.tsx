@@ -8,10 +8,12 @@ export function TargetLanguagePicker({
   languages,
   value,
   onChange,
+  disabled = false,
 }: {
   languages: Language[]
   value: string[]
   onChange: (value: string[]) => void
+  disabled?: boolean
 }) {
   const [search, setSearch] = useState('')
   const query = search.trim().toLowerCase()
@@ -30,6 +32,7 @@ export function TargetLanguagePicker({
             aria-label="Search target languages"
             placeholder="Find a language…"
             value={search}
+            disabled={disabled}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') event.preventDefault()
@@ -43,6 +46,7 @@ export function TargetLanguagePicker({
           type="multiple"
           aria-label="Target languages"
           value={value}
+          disabled={disabled}
           onValueChange={onChange}
           className="grid w-full grid-cols-1 gap-1 sm:grid-cols-2"
         >

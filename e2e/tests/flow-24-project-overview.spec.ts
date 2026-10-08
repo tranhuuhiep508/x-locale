@@ -88,6 +88,8 @@ test("overview coverage and pending edits open the matching catalog results", as
       page.getByRole("button", { name: "Review publish changes" }),
     ).toBeVisible();
   } finally {
-    await page.request.delete(`/api/projects/${slug}`);
+    await page.request.delete(`/api/projects/${slug}`, {
+      data: { confirm_slug: slug },
+    });
   }
 });

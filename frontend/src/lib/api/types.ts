@@ -1,6 +1,7 @@
 // ── Enums ─────────────────────────────────────────────────────────────
 export type TranslationStatus = 'draft' | 'public'
 export type ProjectLayout = 'flat' | 'modular'
+export type ProjectRole = 'admin' | 'editor'
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 // ── Auth ───────────────────────────────────────────────────────────────
@@ -39,6 +40,16 @@ export interface ProjectSummary {
   string_count: number
   created_at: string | null
   updated_at: string | null
+  /** Session membership. Absent or null for API-key bootstrap. */
+  role?: ProjectRole | null
+}
+
+export interface ProjectMember {
+  user_id: string
+  email: string
+  name: string
+  role: ProjectRole
+  created_at: string | null
 }
 
 export interface Project extends ProjectSummary {

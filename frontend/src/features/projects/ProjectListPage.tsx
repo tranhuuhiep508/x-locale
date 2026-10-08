@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { projectsApi } from '@/lib/api/projects'
 import type { ProjectSummary } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -41,16 +42,18 @@ export function ProjectListPage() {
   const { data: projects = [] } = useQuery(projectsQuery())
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null)
+  const [slugConfirm, setSlugConfirm] = useState('')
   const qc = useQueryClient()
   const toast = useToast()
 
   const deleteMut = useMutation({
-    mutationFn: (slug: string) => projectsApi.delete(slug),
-    onSuccess: (_data, slug) => {
+    mutationFn: (project: ProjectSummary) => projectsApi.delete(project.slug, project.slug),
+    onSuccess: (_data, project) => {
       qc.invalidateQueries({ queryKey: queryKeys.projects.lists() })
-      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(slug) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.detail(project.slug) })
       toast.success('Project deleted')
       setDeleteTarget(null)
+      setSlugConfirm('')
     },
     onError: () => toast.error('Failed to delete project'),
   })
@@ -252,20 +255,23 @@ export function ProjectListPage() {
                     />
                   </Link>
 
-                  <CardAction>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={`Delete ${p.name}`}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setDeleteTarget(p)
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </CardAction>
+                  {p.role === 'admin' ? (
+                    <CardAction>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Delete ${p.name}`}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          setSlugConfirm('')
+                          setDeleteTarget(p)
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </CardAction>
+                  ) : null}
                 </CardHeader>
 
                 <CardContent className="space-y-3 pb-3">
@@ -325,11 +331,38 @@ export function ProjectListPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.slug)}
+        onClose={() => {
+          setDeleteTarget(null)
+          setSlugConfirm('')
+        }}
+        onConfirm={() => deleteTarget && slugConfirm === deleteTarget.slug && deleteMut.mutate(deleteTarget)}
         title={`Delete "${deleteTarget?.name}"?`}
-        description="This will permanently delete the project and all its strings, translations, and history."
+        description={
+          deleteTarget ? (
+            <div className="flex flex-col gap-3 text-left">
+              <p>
+                This permanently deletes the project and everything in it — strings, translations,
+                modules, tags, API keys, and history. There is no undo.
+              </p>
+              <Field>
+                <FieldLabel htmlFor="confirm_project_slug">
+                  Type <span className="font-mono text-foreground">{deleteTarget.slug}</span> to confirm
+                </FieldLabel>
+                <Input
+                  id="confirm_project_slug"
+                  aria-label="Project slug"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={slugConfirm}
+                  onChange={(event) => setSlugConfirm(event.target.value)}
+                />
+                <FieldDescription>Delete stays off until this matches the project slug exactly.</FieldDescription>
+              </Field>
+            </div>
+          ) : null
+        }
         confirmLabel="Delete project"
+        confirmDisabled={deleteTarget === null || slugConfirm !== deleteTarget.slug}
         isLoading={deleteMut.isPending}
       />
     </AppShell>
