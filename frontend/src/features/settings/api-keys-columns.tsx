@@ -7,6 +7,7 @@ import { formatDate } from '@/lib/utils'
 
 export type ApiKeyTableMeta = {
   onRevoke: (key: ApiKey) => void
+  canRevoke: (key: ApiKey) => boolean
 }
 
 function metaOf(table: Table<ApiKey>) {
@@ -67,13 +68,16 @@ export const apiKeyColumns: ColumnDef<ApiKey>[] = [
     cell: ({ row, table }) => {
       if (row.original.revoked_at) return null
       const meta = metaOf(table)
+      const allowed = meta.canRevoke(row.original)
       return (
         <Button
           variant="ghost"
           size="icon-sm"
           className="text-muted-foreground hover:text-destructive"
           onClick={() => meta.onRevoke(row.original)}
+          disabled={!allowed}
           aria-label={`Revoke ${row.original.name}`}
+          title={allowed ? undefined : 'Only an admin can revoke another member’s key'}
         >
           <Trash2 />
         </Button>

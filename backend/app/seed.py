@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from app.auth import hash_api_key
+from app.auth import get_or_create_dev_user, hash_api_key
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
     ApiKey,
+    MemberRole,
     Module,
     Project,
     ProjectLayout,
+    ProjectMember,
     StringEntry,
     Translation,
 )
@@ -35,6 +37,26 @@ DEMO_STRINGS = [
 ]
 
 
+def _ensure_dev_admin(db, project: Project) -> None:
+    """Give the Dev User an Admin membership on the demo project.
+
+    Used only when AUTH_DEV_BYPASS is on, so local and e2e sessions can see
+    Demo App. Sets created_by when it is empty and inserts Admin if missing.
+    An existing membership role is left unchanged. This is separate from the
+    migration, which adds no Admin when created_by is null.
+    """
+    user = get_or_create_dev_user(db)
+    if project.created_by is None:
+        project.created_by = user.id
+    member = (
+        db.query(ProjectMember)
+        .filter(ProjectMember.project_id == project.id, ProjectMember.user_id == user.id)
+        .first()
+    )
+    if member is None:
+        db.add(ProjectMember(project_id=project.id, user_id=user.id, role=MemberRole.admin))
+
+
 def seed_demo_data(*, force: bool = False) -> Project | None:
     db = SessionLocal()
     try:
@@ -42,7 +64,12 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
         demo_hash = hash_api_key(settings.x_locale_demo_api_key)
         existing_key = db.query(ApiKey).filter(ApiKey.key_hash == demo_hash).first()
         if existing_key and not force:
-            return db.query(Project).filter(Project.id == existing_key.project_id).first()
+            project = db.query(Project).filter(Project.id == existing_key.project_id).first()
+            if project is not None:
+                _ensure_dev_admin(db, project)
+                db.commit()
+                db.refresh(project)
+            return project
 
         if existing_key and force:
             project = db.query(Project).filter(Project.id == existing_key.project_id).first()
@@ -50,15 +77,20 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
                 db.delete(project)
                 db.commit()
 
+        dev_user = get_or_create_dev_user(db)
         project = Project(
             name="Demo App",
             slug="demo-app",
             base_language="vi",
             target_languages=["en", "ja"],
             layout=ProjectLayout.modular,
+            created_by=dev_user.id,
         )
         db.add(project)
         db.flush()
+        db.add(
+            ProjectMember(project_id=project.id, user_id=dev_user.id, role=MemberRole.admin)
+        )
 
         # API key — use the configured demo key (not randomly generated) so docs stay valid
         raw = settings.x_locale_demo_api_key

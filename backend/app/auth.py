@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.helpers import resolve_project_ref
-from app.models import ApiKey, Project, User
+from app.models import ApiKey, MemberRole, Project, ProjectMember, User
+from app.services.members import lock_project
 
 SESSION_COOKIE = "x_locale_session"
 SESSION_TTL_HOURS = 72
@@ -109,41 +110,38 @@ def set_activity_context(db: Session, ctx: AuthContext, *, batch_id: uuid.UUID |
     db.info["activity"] = info
 
 
+def _require_session_user(db: Session, token: str | None) -> User:
+    if token:
+        payload = decode_session_token(token)
+        return _user_from_session_payload(db, payload)
+    if settings.dev_bypass_active:
+        user = get_or_create_dev_user(db)
+        db.commit()
+        return user
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+def _bind_user_activity(db: Session, user: User) -> None:
+    set_activity_context(
+        db,
+        AuthContext(
+            actor_type="user",
+            actor_id=str(user.id),
+            actor_label=user.email or user.name,
+            user=user,
+        ),
+    )
+
+
 def current_user(
     request: Request,
     db: Session = Depends(get_db),
     x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> User:
     """Require an authenticated UI session (or AUTH_DEV_BYPASS)."""
-    if x_locale_session:
-        payload = decode_session_token(x_locale_session)
-        user = _user_from_session_payload(db, payload)
-        set_activity_context(
-            db,
-            AuthContext(
-                actor_type="user",
-                actor_id=str(user.id),
-                actor_label=user.email or user.name,
-                user=user,
-            ),
-        )
-        return user
-
-    if settings.dev_bypass_active:
-        user = get_or_create_dev_user(db)
-        db.commit()
-        set_activity_context(
-            db,
-            AuthContext(
-                actor_type="user",
-                actor_id=str(user.id),
-                actor_label=user.email or user.name,
-                user=user,
-            ),
-        )
-        return user
-
-    raise HTTPException(status_code=401, detail="Not authenticated")
+    user = _require_session_user(db, x_locale_session)
+    _bind_user_activity(db, user)
+    return user
 
 
 def optional_user(
@@ -201,13 +199,22 @@ def project_from_api_key(
     return project
 
 
+def membership_for(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> ProjectMember | None:
+    return (
+        db.query(ProjectMember)
+        .filter(ProjectMember.project_id == project_id, ProjectMember.user_id == user_id)
+        .populate_existing()
+        .first()
+    )
+
+
 def project_access(
     project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_user),
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> Project:
-    """Accept either session user (any project) or API key matching the project."""
+    """API key for its own project, or a session member. Non-members get 404."""
     raw = x_api_key
     if raw:
         _, project = _resolve_api_key(db, raw)
@@ -219,19 +226,78 @@ def project_access(
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    set_activity_context(
-        db,
-        AuthContext(
-            actor_type="user",
-            actor_id=str(user.id),
-            actor_label=user.email or user.name,
-            user=user,
-        ),
+    _bind_user_activity(db, user)
+    resolved = resolve_project_ref(db, project_id)
+    if membership_for(db, resolved.id, user.id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return resolved
+
+
+@dataclass(frozen=True)
+class MemberAccess:
+    project: Project
+    user: User
+    member: ProjectMember
+
+
+def _member_access(
+    db: Session, project_ref: str, user: User, *, for_write: bool = False
+) -> MemberAccess:
+    _bind_user_activity(db, user)
+    project = resolve_project_ref(db, project_ref)
+    if for_write:
+        # Hold the lifecycle lock from fresh authorization through commit or
+        # rollback, so removal/demotion cannot precede an authorized write.
+        lock_project(db, project.id)
+    member = membership_for(db, project.id, user.id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return MemberAccess(project=project, user=user, member=member)
+
+
+def _reject_api_key(db: Session, project_ref: str, raw_key: str) -> None:
+    """Keys can do catalog work only. Mismatch stays 404 so existence does not leak."""
+    _, key_project = _resolve_api_key(db, raw_key)
+    resolved = resolve_project_ref(db, project_ref)
+    if key_project.id != resolved.id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    raise HTTPException(status_code=403, detail="API keys cannot perform this action")
+
+
+def member_api(
+    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
+    db: Session = Depends(get_db),
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> MemberAccess:
+    """Member read for a session user. API keys cannot call member APIs."""
+    if x_api_key:
+        _reject_api_key(db, project_id, x_api_key)
+    user = _require_session_user(db, x_locale_session)
+    return _member_access(db, project_id, user)
+
+
+def session_admin(
+    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
+    db: Session = Depends(get_db),
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> MemberAccess:
+    """Session Admin. Editors get 403, non-members 404, API keys 403."""
+    if x_api_key:
+        _reject_api_key(db, project_id, x_api_key)
+    access = _member_access(
+        db, project_id, _require_session_user(db, x_locale_session), for_write=True
     )
-    return resolve_project_ref(db, project_id)
+    if access.member.role != MemberRole.admin:
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return access
 
 
 # Type aliases for Annotated Depends
 CurrentUser = Annotated[User, Depends(current_user)]
 ProjectFromApiKey = Annotated[Project, Depends(project_from_api_key)]
 ProjectAccess = Annotated[Project, Depends(project_access)]
+MemberApi = Annotated[MemberAccess, Depends(member_api)]
+SessionMemberNoKey = MemberApi
+SessionAdmin = Annotated[MemberAccess, Depends(session_admin)]

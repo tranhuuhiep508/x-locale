@@ -6,9 +6,10 @@ type Props = {
   value: string
   onChange: (value: string) => void
   error?: string
+  disabled?: boolean
 }
 
-export function TranslationContextField({ id, value, onChange, error }: Props) {
+export function TranslationContextField({ id, value, onChange, error, disabled = false }: Props) {
   return (
     <Field data-invalid={error ? 'true' : undefined}>
       <FieldLabel htmlFor={id}>Translation context (optional)</FieldLabel>
@@ -16,6 +17,7 @@ export function TranslationContextField({ id, value, onChange, error }: Props) {
         id={id}
         value={value}
         maxLength={500}
+        disabled={disabled}
         placeholder="Use a friendly tone. Keep product names in English."
         onChange={(event) => onChange(event.target.value)}
         aria-describedby={`${id}_help ${id}_count${error ? ` ${id}_error` : ''}`}

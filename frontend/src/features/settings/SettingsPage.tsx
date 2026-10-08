@@ -47,6 +47,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageBody, PageHeader, PageSection } from '@/components/layout/PageHeader'
+import { ProjectMembersSection } from '@/features/settings/ProjectMembersSection'
 import { useToast } from '@/lib/toast'
 import { cliInitCommand } from '@/lib/cli-connect'
 const routeApi = getRouteApi('/projects/$projectRef/settings')
@@ -140,6 +141,7 @@ export function SettingsPage() {
     onError: () => toast.error('Failed to revoke key'),
   })
 
+  const isAdmin = project?.role === 'admin'
   const apiKeyTable = useReactTable({
     data: apiKeyData,
     columns: apiKeyColumns,
@@ -154,11 +156,11 @@ export function SettingsPage() {
     globalFilterFn: 'includesString',
     meta: {
       onRevoke: setDeleteKeyTarget,
+      canRevoke: (key: ApiKey) => isAdmin || (me?.id != null && key.created_by === me.id),
     },
   })
 
   if (!project) return null
-
   const targetLangs = languages.filter((l) => l.code !== form.base_language)
   const isDirty = saveForm !== null
 
@@ -192,6 +194,7 @@ export function SettingsPage() {
                 <Input
                   id="project_name"
                   value={form.name}
+                  disabled={!isAdmin}
                   aria-invalid={errors.name ? true : undefined}
                   onChange={(e) => setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))}
                 />
@@ -203,6 +206,7 @@ export function SettingsPage() {
                   <FieldLabel htmlFor="base_language">Base language</FieldLabel>
                   <Select
                     value={form.base_language}
+                    disabled={!isAdmin}
                     onValueChange={(v) =>
                       setSaveForm((f) => ({
                         ...(f ?? form),
@@ -236,6 +240,7 @@ export function SettingsPage() {
                   </div>
                   <Select
                     value={form.layout}
+                    disabled={!isAdmin}
                     onValueChange={(v) =>
                       setSaveForm((f) => ({
                         ...(f ?? form),
@@ -269,6 +274,7 @@ export function SettingsPage() {
             <TargetLanguagePicker
               languages={targetLangs}
               value={form.target_languages}
+              disabled={!isAdmin}
               onChange={(target_languages) =>
                 setSaveForm((f) => ({ ...(f ?? form), target_languages }))
               }
@@ -288,6 +294,7 @@ export function SettingsPage() {
                 id="project_translation_context"
                 value={form.translation_context ?? ''}
                 error={errors.translation_context}
+                disabled={!isAdmin}
                 onChange={(translation_context) =>
                   setSaveForm((f) => ({ ...(f ?? form), translation_context }))
                 }
@@ -297,22 +304,33 @@ export function SettingsPage() {
         </Card>
       </PageSection>
 
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {isDirty ? (
-          <p role="status" className="text-sm font-medium text-amber-600 dark:text-amber-400">
-            Unsaved changes
-          </p>
-        ) : null}
-        <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending} size="default">
-          {updateMut.isPending ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-          Save changes
-        </Button>
-      </div>
+      {isAdmin ? (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {isDirty ? (
+            <p role="status" className="text-sm font-medium text-amber-600 dark:text-amber-400">
+              Unsaved changes
+            </p>
+          ) : null}
+          <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending} size="default">
+            {updateMut.isPending ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
+            Save changes
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Only project admins can change these settings.</p>
+      )}
+
+      <PageSection
+        title="Members"
+        description="Admins add people who have already signed in. Editors can work in the catalog but cannot change settings or membership."
+      >
+        <ProjectMembersSection projectId={projectId} isAdmin={isAdmin} />
+      </PageSection>
 
       {/* API Keys */}
       <PageSection
         title="API keys"
-        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project."
+        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project. Editors can revoke only keys they created."
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/40 p-4 shadow-2xs">

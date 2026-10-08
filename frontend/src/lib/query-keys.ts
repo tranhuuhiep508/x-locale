@@ -7,6 +7,7 @@ const projectKeys = {
   details: () => [...projectKeys.all(), 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
   apiKeys: (id: string) => [...projectKeys.detail(id), 'api-keys'] as const,
+  members: (id: string) => [...projectKeys.detail(id), 'members'] as const,
   modules: (id: string) => [...projectKeys.detail(id), 'modules'] as const,
   tags: (id: string) => [...projectKeys.detail(id), 'tags'] as const,
   strings: {
