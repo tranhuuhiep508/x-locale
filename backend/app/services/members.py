@@ -35,17 +35,28 @@ def member_out(member: ProjectMember, user: User) -> MemberOut:
 
 def _project_lock_query(db: Session, project_id: uuid.UUID):
     """FOR NO KEY UPDATE, so an API-key insert's FOR KEY SHARE lock can proceed."""
-    return (
-        db.query(Project.id)
-        .filter(Project.id == project_id)
-        .with_for_update(key_share=True)
-    )
+    return db.query(Project.id).filter(Project.id == project_id).with_for_update(key_share=True)
 
 
-def _lock_project(db: Session, project_id: uuid.UUID) -> None:
-    """Serialize membership changes for one project until commit or rollback."""
-    row = _project_lock_query(db, project_id).first()
-    if row is None:
+def lock_project(db: Session, project_id: uuid.UUID) -> None:
+    """Lock before membership reads or key writes, through commit/rollback.
+
+    SQLite ignores SELECT FOR UPDATE. A no-op UPDATE acquires its write lock
+    without changing project data or updated_at. PostgreSQL uses NO KEY UPDATE
+    so foreign-key checks from catalog/key inserts remain compatible.
+    """
+    if db.get_bind().dialect.name == "sqlite":
+        found = (
+            db.query(Project)
+            .filter(Project.id == project_id)
+            .update(
+                {Project.id: Project.id, Project.updated_at: Project.updated_at},
+                synchronize_session=False,
+            )
+        )
+    else:
+        found = _project_lock_query(db, project_id).first() is not None
+    if not found:
         raise HTTPException(status_code=404, detail="Project not found")
 
 
@@ -62,6 +73,7 @@ def _get_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> Proje
     member = (
         db.query(ProjectMember)
         .filter(ProjectMember.project_id == project_id, ProjectMember.user_id == user_id)
+        .populate_existing()
         .first()
     )
     if member is None:
@@ -94,6 +106,7 @@ def find_user_by_email(db: Session, email: str) -> User:
 
 
 def add_member(db: Session, project_id: uuid.UUID, email: str, role: MemberRole) -> MemberOut:
+    lock_project(db, project_id)
     user = find_user_by_email(db, email)
     existing = (
         db.query(ProjectMember)
@@ -116,7 +129,7 @@ def add_member(db: Session, project_id: uuid.UUID, email: str, role: MemberRole)
 def set_member_role(
     db: Session, project_id: uuid.UUID, user_id: uuid.UUID, role: MemberRole
 ) -> MemberOut:
-    _lock_project(db, project_id)
+    lock_project(db, project_id)
     member = _get_member(db, project_id, user_id)
     demoting_last_admin = (
         member.role == MemberRole.admin
@@ -133,15 +146,15 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    # Lock order: api_keys rows, then the projects row. Any transaction that locks or UPDATEs projects and then writes api_keys (key-authorised or session) can deadlock with this revoke.
+    # Removal and key creation share the project-before-key lock order.
+    lock_project(db, project_id)
+    member = _get_member(db, project_id, user_id)
+    if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
+        raise HTTPException(status_code=400, detail=LAST_ADMIN)
     db.query(ApiKey).filter(
         ApiKey.project_id == project_id,
         ApiKey.created_by == user_id,
         ApiKey.revoked_at.is_(None),
     ).update({ApiKey.revoked_at: datetime.now(UTC)}, synchronize_session=False)
-    _lock_project(db, project_id)
-    member = _get_member(db, project_id, user_id)
-    if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:
-        raise HTTPException(status_code=400, detail=LAST_ADMIN)
     db.delete(member)
     db.commit()

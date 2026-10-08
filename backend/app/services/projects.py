@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import generate_api_key
+from app.auth import generate_api_key, membership_for
 from app.config import settings
 from app.helpers import ensure_unique_slug, slugify, validate_locale_code
 from app.models import ApiKey, MemberRole, Project, ProjectMember, StringEntry, User
@@ -20,7 +20,7 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
 )
-from app.services.members import role_name
+from app.services.members import lock_project, role_name
 
 
 def project_out(project: Project, string_count: int, role: str | None = None) -> ProjectOut:
@@ -171,6 +171,7 @@ def delete_project(db: Session, project: Project, confirm_slug: str | None) -> N
         raise HTTPException(
             status_code=400, detail="confirm_slug must exactly match the project slug"
         )
+    lock_project(db, project.id)
     db.delete(project)
     db.commit()
 
@@ -191,6 +192,11 @@ def create_api_key(
     payload: ApiKeyCreate,
     user: User,
 ) -> ApiKeyCreated:
+    lock_project(db, project_id)
+    # Authorization may have preceded a concurrent removal. Recheck while
+    # holding the same lock as removal, before rotating or inserting any key.
+    if membership_for(db, project_id, user.id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     project = get_project(db, project_id)
     now = datetime.now(UTC)
     previous = (
