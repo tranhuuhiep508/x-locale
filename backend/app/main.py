@@ -96,7 +96,7 @@ def liveness(response: Response) -> dict[str, str]:
 
 
 @app.get(
-    "/healthcheck/readliness",
+    "/healthcheck/readiness",
     tags=["healthcheck"],
     responses={503: {"description": "Database unavailable"}},
 )

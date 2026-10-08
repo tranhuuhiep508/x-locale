@@ -11,7 +11,7 @@ from app.database import get_db
 from app.main import app
 
 
-@pytest.mark.parametrize("path", ["/healthcheck/liveness", "/healthcheck/readliness"])
+@pytest.mark.parametrize("path", ["/healthcheck/liveness", "/healthcheck/readiness"])
 def test_probes_allow_unauthenticated_requests(client, monkeypatch, path):
     monkeypatch.setattr(settings, "auth_dev_bypass", False)
 
@@ -39,7 +39,7 @@ def test_database_failure_only_affects_readiness_and_can_recover(client, error):
     assert liveness.json() == {"status": "ok"}
     database.execute.assert_not_called()
 
-    readiness = client.get("/healthcheck/readliness")
+    readiness = client.get("/healthcheck/readiness")
     assert readiness.status_code == 503
     assert readiness.json() == {"status": "not_ready"}
     assert readiness.headers["cache-control"] == "no-store"
@@ -47,7 +47,7 @@ def test_database_failure_only_affects_readiness_and_can_recover(client, error):
 
     # A later successful query restores readiness without restarting the app.
     database.execute.side_effect = None
-    recovered = client.get("/healthcheck/readliness")
+    recovered = client.get("/healthcheck/readiness")
     assert recovered.status_code == 200
     assert recovered.json() == {"status": "ok"}
 
@@ -61,7 +61,7 @@ def test_readiness_executes_real_database_query(client):
             yield database
 
     app.dependency_overrides[get_db] = closed_database
-    assert client.get("/healthcheck/readliness").status_code == 503
+    assert client.get("/healthcheck/readiness").status_code == 503
 
     app.dependency_overrides[get_db] = original_get_db
-    assert client.get("/healthcheck/readliness").status_code == 200
+    assert client.get("/healthcheck/readiness").status_code == 200
