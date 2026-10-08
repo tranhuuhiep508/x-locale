@@ -266,19 +266,6 @@ def session_member(
     return _member_access(db, project_id, user)
 
 
-def session_member_no_key(
-    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
-    db: Session = Depends(get_db),
-    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
-    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> MemberAccess:
-    """Session member for API-key management. A key is rejected before dev bypass."""
-    if x_api_key:
-        _reject_api_key(db, project_id, x_api_key)
-    user = _require_session_user(db, x_locale_session)
-    return _member_access(db, project_id, user)
-
-
 def member_api(
     project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
     db: Session = Depends(get_db),
@@ -312,6 +299,6 @@ CurrentUser = Annotated[User, Depends(current_user)]
 ProjectFromApiKey = Annotated[Project, Depends(project_from_api_key)]
 ProjectAccess = Annotated[Project, Depends(project_access)]
 SessionMember = Annotated[MemberAccess, Depends(session_member)]
-SessionMemberNoKey = Annotated[MemberAccess, Depends(session_member_no_key)]
 MemberApi = Annotated[MemberAccess, Depends(member_api)]
+SessionMemberNoKey = MemberApi
 SessionAdmin = Annotated[MemberAccess, Depends(session_admin)]
