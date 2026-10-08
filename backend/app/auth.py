@@ -256,16 +256,6 @@ def _reject_api_key(db: Session, project_ref: str, raw_key: str) -> None:
     raise HTTPException(status_code=403, detail="API keys cannot perform this action")
 
 
-def session_member(
-    project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
-    db: Session = Depends(get_db),
-    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
-) -> MemberAccess:
-    """Session user who belongs to the project. Missing membership is 404."""
-    user = _require_session_user(db, x_locale_session)
-    return _member_access(db, project_id, user)
-
-
 def member_api(
     project_id: Annotated[str, Path(description="Project UUID or immutable slug")],
     db: Session = Depends(get_db),
@@ -298,7 +288,6 @@ def session_admin(
 CurrentUser = Annotated[User, Depends(current_user)]
 ProjectFromApiKey = Annotated[Project, Depends(project_from_api_key)]
 ProjectAccess = Annotated[Project, Depends(project_access)]
-SessionMember = Annotated[MemberAccess, Depends(session_member)]
 MemberApi = Annotated[MemberAccess, Depends(member_api)]
 SessionMemberNoKey = MemberApi
 SessionAdmin = Annotated[MemberAccess, Depends(session_admin)]
