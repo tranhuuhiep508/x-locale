@@ -261,7 +261,10 @@ def _clear_module_refs(db: Session, project_id: uuid.UUID, module_id: uuid.UUID)
     db.query(StringEntry).filter(
         StringEntry.project_id == project_id,
         StringEntry.module_id == module_id,
-    ).update({StringEntry.module_id: None}, synchronize_session="fetch")
+    ).update(
+        {StringEntry.module_id: None, StringEntry.updated_at: StringEntry.updated_at},
+        synchronize_session="fetch",
+    )
     db.query(StringEntry).filter(
         StringEntry.project_id == project_id,
         StringEntry.published_module_id == module_id,

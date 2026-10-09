@@ -289,7 +289,7 @@ def test_module_fk_matcher_requires_foreign_key_sqlstate():
     assert is_module_project_fk_error(type("Err", (), {"orig": other})()) is False
 
 
-def test_published_module_clear_keeps_updated_at():
+def test_module_clear_keeps_updated_at_and_actor():
     engine = _fk_engine()
     past = datetime(2020, 1, 1, tzinfo=UTC)
     with Session(engine) as db:
@@ -301,6 +301,9 @@ def test_published_module_clear_keeps_updated_at():
             source_text="x",
             status=TranslationStatus.public,
             updated_at=past,
+            updated_by_type=ActorType.user,
+            updated_by_id="editor-1",
+            updated_by_label="Ada",
         )
         working = StringEntry(
             project_id=project.id,
@@ -309,10 +312,20 @@ def test_published_module_clear_keeps_updated_at():
             source_text="x",
             status=TranslationStatus.draft,
             updated_at=past,
+            updated_by_type=ActorType.user,
+            updated_by_id="editor-1",
+            updated_by_label="Ada",
         )
         db.add_all([published, working])
         db.commit()
-        db.execute(update(StringEntry).values(updated_at=past))
+        db.execute(
+            update(StringEntry).values(
+                updated_at=past,
+                updated_by_type=ActorType.user,
+                updated_by_id="editor-1",
+                updated_by_label="Ada",
+            )
+        )
         db.commit()
         _clear_module_refs(db, project.id, module.id)
         db.refresh(published)
@@ -323,8 +336,28 @@ def test_published_module_clear_keeps_updated_at():
 
         assert year(published.updated_at) == 2020
         assert published.published_module_id is None
+        assert published.updated_by_id == "editor-1"
+        assert published.updated_by_label == "Ada"
         assert working.module_id is None
-        assert year(working.updated_at) != 2020
+        assert year(working.updated_at) == 2020
+        assert working.updated_by_id == "editor-1"
+        assert working.updated_by_label == "Ada"
+
+
+def test_delete_module_keeps_working_string_audit_stamp(client):
+    project_a, _, module_a, _ = _projects_and_modules(client)
+    pid = project_a["id"]
+    created = _string_in(client, pid, module_a["id"], key="working-linked")
+    before = client.get(f"/api/projects/{pid}/strings/{created['id']}").json()
+
+    deleted = client.delete(f"/api/projects/{pid}/modules/{module_a['id']}")
+    assert deleted.status_code == 204, deleted.text
+
+    after = client.get(f"/api/projects/{pid}/strings/{created['id']}").json()
+    assert after["module_id"] is None
+    assert after["updated_at"] == before["updated_at"]
+    assert after["updated_by_type"] == before["updated_by_type"]
+    assert after["updated_by_label"] == before["updated_by_label"]
 
 
 def test_delete_module_clears_working_and_published_module(client):

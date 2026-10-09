@@ -867,13 +867,23 @@ def _parse_datetime(raw: Any) -> datetime | None:
     return None
 
 
-def _owned_module_id(db: Session, project_id: uuid.UUID, raw: Any) -> uuid.UUID | None:
+def _owned_module_id(
+    db: Session,
+    project_id: uuid.UUID,
+    raw: Any,
+    *,
+    references: SnapshotReferences | None = None,
+) -> uuid.UUID | None:
     """Keep a module ref only when it belongs to this project.
 
     History restore already clears foreign modules while building the target.
     Checking again at the write keeps a deferred cross-project FK from waiting
-    until commit and returning 500.
+    until commit and returning 500. A preloaded SnapshotReferences answers
+    from its cache and queries only for an id it has not seen.
     """
+    if references is not None:
+        resolved = references.module(raw)
+        return uuid.UUID(resolved) if resolved else None
     if not raw:
         return None
     try:
@@ -883,7 +893,13 @@ def _owned_module_id(db: Session, project_id: uuid.UUID, raw: Any) -> uuid.UUID 
     return require_module_in_project(db, project_id, module_id, on_missing="clear")
 
 
-def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+def _apply_published_snapshot(
+    db: Session,
+    entry: StringEntry,
+    snap: dict[str, Any],
+    *,
+    references: SnapshotReferences | None = None,
+) -> None:
     if "published_key" in snap:
         entry.published_key = require_max_length(
             snap.get("published_key"), field="published_key", limit=KEY_MAX_LENGTH
@@ -897,7 +913,12 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
     if "published_at" in snap:
         entry.published_at = _parse_datetime(snap.get("published_at"))
     if "published_module_id" in snap:
-        entry.published_module_id = _owned_module_id(db, entry.project_id, snap.get("published_module_id"))
+        entry.published_module_id = _owned_module_id(
+            db,
+            entry.project_id,
+            snap.get("published_module_id"),
+            references=references,
+        )
     if "published_translations" in snap:
         _set_entry_published_translations(
             db, entry, translation_map(snap.get("published_translations"), published=True)
@@ -1029,7 +1050,9 @@ def _apply_working_copy_only(
     entry.description = target["description"]
     if include_status:
         entry.status = TranslationStatus(target["status"])
-    entry.module_id = _owned_module_id(db, entry.project_id, target.get("module_id"))
+    entry.module_id = _owned_module_id(
+        db, entry.project_id, target.get("module_id"), references=references
+    )
     _set_entry_tags(db, entry, target.get("tag_ids") or [], references=references)
     _set_entry_translations(db, entry, target.get("translations") or {})
 
@@ -1042,7 +1065,7 @@ def _apply_working_snapshot(
     references: SnapshotReferences,
 ) -> None:
     _apply_working_copy_only(db, entry, target, include_status=True, references=references)
-    _apply_published_snapshot(db, entry, target)
+    _apply_published_snapshot(db, entry, target, references=references)
 
 
 def apply_revert(

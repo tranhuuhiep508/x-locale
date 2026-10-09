@@ -43,6 +43,9 @@ def test_rich_undo_read_budget_preserves_exact_audit_snapshots(tmp_path, size, f
                 event.remove(engine, "before_cursor_execute", hook)
             assert counter["string_full_loads"] <= 2 * size
             assert counter["select"] <= 12 * size + 30
+            # Rich rows carry both module_id and published_module_id.
+            # One preloaded SELECT covers every ref; a per-string lookup would be 2 * size.
+            assert counter["module_reads"] == 1
         validate(engine, batch, size, True, locales, force)
     finally:
         engine.dispose()
