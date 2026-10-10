@@ -1,1 +1,2 @@
-CREATE DATABASE xlocale_test TEMPLATE template0;
+CREATE DATABASE xlocale_test TEMPLATE template0
+    LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C';

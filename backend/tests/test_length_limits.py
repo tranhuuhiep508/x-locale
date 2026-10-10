@@ -300,7 +300,9 @@ def test_legacy_underscore_locale_still_creates_imports_and_pushes(client):
     )
     assert pushed.status_code == 200, pushed.text
 
-    stored = {item["key"]: item for item in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    stored = {
+        item["key"]: item for item in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
     for key in ("hello", "imported", "pushed"):
         locales = {item["locale"] for item in stored[key]["translations"]}
         assert "en_US" in locales

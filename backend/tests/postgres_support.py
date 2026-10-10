@@ -252,8 +252,6 @@ def pg_schema(request, monkeypatch) -> Iterator[tuple[TestClient, sessionmaker[S
         drop_database(url)
 
 
-def _schema_client(
-    url: str, mode: str
-) -> Iterator[tuple[TestClient, sessionmaker[Session], str]]:
+def _schema_client(url: str, mode: str) -> Iterator[tuple[TestClient, sessionmaker[Session], str]]:
     for client, session_factory in _client_for(url):
         yield client, session_factory, mode

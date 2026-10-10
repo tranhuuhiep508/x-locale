@@ -47,6 +47,32 @@ def _postgres_base_url() -> str:
     return "postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale"
 
 
+def redact_database_url(url: str) -> str:
+    """Hide the password with SQLAlchemy's renderer from the backend environment."""
+    completed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "--project",
+            str(BACKEND_ROOT),
+            "python",
+            "-c",
+            "from sqlalchemy.engine import make_url; import os; "
+            "print(make_url(os.environ['X_LOCALE_REDACT_URL']).render_as_string(hide_password=True))",
+        ],
+        cwd=BACKEND_ROOT,
+        env={**os.environ, "X_LOCALE_REDACT_URL": url},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    rendered = completed.stdout.strip()
+    if completed.returncode == 0 and rendered:
+        return rendered
+    return "database url"
+
+
 def unique_database_url() -> str:
     """A database name that is unique for this process, on the configured server."""
     base = _postgres_base_url()
@@ -54,7 +80,9 @@ def unique_database_url() -> str:
     if any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in name):
         raise RuntimeError(f"Refusing database name {name!r}.")
     if "://" not in base or "/" not in base.split("://", 1)[1]:
-        raise RuntimeError(f"Cannot derive a database name from {base!r}.")
+        raise RuntimeError(
+            f"Cannot derive a database name from {redact_database_url(base)}."
+        )
     prefix, rest = base.split("://", 1)
     path, query = (rest.split("?", 1) + [""])[:2]
     head, _, _db = path.rpartition("/")
@@ -63,14 +91,19 @@ def unique_database_url() -> str:
 
 
 def _admin(action: str, database_url: str) -> None:
-    subprocess.run(
-        ["uv", "run", "python", "-m", "app.postgres_admin", action, database_url],
-        cwd=BACKEND_ROOT,
-        env=backend_env(database_url),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        subprocess.run(
+            ["uv", "run", "python", "-m", "app.postgres_admin", action, database_url],
+            cwd=BACKEND_ROOT,
+            env=backend_env(database_url),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"postgres_admin {action} failed for {redact_database_url(database_url)}:\n{exc.stderr}"
+        ) from None
 
 
 def migrate_database(database_url: str) -> None:

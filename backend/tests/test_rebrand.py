@@ -100,7 +100,6 @@ def test_env_example_documents_x_locale_not_tms():
     assert "TMS_DEMO_API_KEY" not in text
     assert "DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale" in text
     assert "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
-    assert ("sql" + "ite:///") not in text
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 

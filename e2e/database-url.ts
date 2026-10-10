@@ -7,10 +7,22 @@ const urlFile = path.join(dataDir, 'database-url')
 
 const DEFAULT_BASE = 'postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale'
 
+function redactDatabaseUrl(url: string): string {
+  try {
+    const driver = url.startsWith('postgresql+psycopg:') ? 'postgresql+psycopg:' : 'postgresql:'
+    const parsed = new URL(url.replace(/^postgresql\+psycopg:/, 'postgresql:'))
+    if (parsed.password) parsed.password = '***'
+    const rendered = parsed.toString().replace(/\/$/, '')
+    return rendered.replace(/^postgresql:/, driver)
+  } catch {
+    return url.replace(/:([^:@/]+)@/, ':***@')
+  }
+}
+
 function withDatabaseName(base: string, name: string): string {
   const match = base.match(/^(.*\/)([^/?]+)(\?.*)?$/)
   if (!match) {
-    throw new Error(`Cannot derive a database name from ${base}`)
+    throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(base)}`)
   }
   return `${match[1]}${name}${match[3] ?? ''}`
 }

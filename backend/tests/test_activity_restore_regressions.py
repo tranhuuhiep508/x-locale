@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from app.database import Base, get_db
 from app.main import app
 from app.models import Activity
-from app.services.activity_state import project_snapshot, restore_transaction, snapshots_match
+from app.services.activity_state import (
+    is_key_integrity_error,
+    project_snapshot,
+    restore_transaction,
+    snapshots_match,
+)
 from tests.helpers import make_project, publish_strings
 from tests.pg import open_engine
 
@@ -337,6 +342,23 @@ def test_snapshot_compatibility_and_missing_vs_empty_fields():
     assert not snapshots_match(
         {"published_translations": {"en": ""}}, {"published_translations": {"en": None}}
     )
+
+
+def test_key_integrity_error_matches_postgres_unique_violation():
+    class Orig(Exception):
+        def __init__(self, sqlstate: str, constraint_name: str, message: str) -> None:
+            super().__init__(message)
+            self.sqlstate = sqlstate
+            self.diag = type("Diag", (), {"constraint_name": constraint_name})()
+
+    def wrapped(orig: Exception) -> IntegrityError:
+        return IntegrityError("INSERT", {}, orig)
+
+    assert is_key_integrity_error(wrapped(Orig("23505", "uq_project_key_alive", "duplicate key")))
+    assert not is_key_integrity_error(wrapped(Orig("23505", "strings_pkey", "duplicate key")))
+    legacy_text = "UNIQUE constraint failed: strings.project_id, strings.key"
+    assert not is_key_integrity_error(wrapped(Orig("", "", legacy_text)))
+    assert legacy_text in str(wrapped(Orig("", "", legacy_text)).orig)
 
 
 def test_unrelated_integrity_errors_are_not_mislabeled():

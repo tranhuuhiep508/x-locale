@@ -231,7 +231,13 @@ def test_import_workbook_dry_run_via_api(client):
     # Dry-run = True
     r = client.post(
         f"/api/projects/{pid}/import?dry_run=true",
-        files={"file": ("test.xlsx", content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "test.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert r.status_code == 200, r.text
     data = r.json()
@@ -246,7 +252,13 @@ def test_import_workbook_dry_run_via_api(client):
     # Now apply (dry_run = False)
     r_apply = client.post(
         f"/api/projects/{pid}/import?dry_run=false",
-        files={"file": ("test.xlsx", content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "test.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert r_apply.status_code == 200, r_apply.text
     catalog_applied = client.get(f"/api/projects/{pid}/strings").json()
@@ -275,7 +287,13 @@ def test_import_workbook_mismatched_project_slug_rejected(client):
 
     r = client.post(
         f"/api/projects/{pid}/import",
-        files={"file": ("mismatch.xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "mismatch.xlsx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert r.status_code == 400
     assert "belongs to project" in r.text.lower()
@@ -302,12 +320,62 @@ def test_import_workbook_skips_sheet_without_key_column(client):
 
     r = client.post(
         f"/api/projects/{pid}/import",
-        files={"file": ("multi.xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "multi.xlsx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert r.status_code == 200, r.text
     catalog = client.get(f"/api/projects/{pid}/strings").json()
     assert catalog["total"] == 1
     assert catalog["items"][0]["key"] == "valid_key"
+
+
+def test_workbook_tag_order_matches_catalog_sort():
+    low = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    mid = uuid.UUID("00000000-0000-0000-0000-000000000002")
+    high = uuid.UUID("00000000-0000-0000-0000-000000000003")
+    project = Project(
+        name="Tag Order",
+        slug="tag-order",
+        base_language="vi",
+        target_languages=["en"],
+        layout=ProjectLayout.flat,
+    )
+
+    def entry(tags: list[Tag]) -> StringEntry:
+        return StringEntry(
+            key="greet",
+            source_text="Xin chào",
+            description="",
+            status=TranslationStatus.draft,
+            tags=tags,
+            translations=[],
+        )
+
+    forward = [
+        Tag(id=high, name="beta"),
+        Tag(id=low, name="alpha"),
+        Tag(id=mid, name="beta"),
+    ]
+    reverse = list(reversed(forward))
+    expected = "alpha,beta,beta"
+    assert [tag.name for tag in sorted(forward, key=lambda tag: (tag.name, str(tag.id)))] == [
+        "alpha",
+        "beta",
+        "beta",
+    ]
+
+    def tags_cell(tags: list[Tag]) -> str:
+        workbook = load_workbook(io.BytesIO(build_workbook(project, [entry(tags)], stage="draft")))
+        rows = list(workbook[FLAT_SHEET].iter_rows(values_only=True))
+        return rows[1][2]
+
+    assert tags_cell(forward) == expected
+    assert tags_cell(reverse) == expected
 
 
 def test_build_workbook_sanitizes_formula_injection():
@@ -349,10 +417,10 @@ def test_build_workbook_sanitizes_formula_injection():
     rows = list(wb[FLAT_SHEET].iter_rows(values_only=True))
     by_key = {r[0]: r for r in rows[1:]}
 
-    dangerous = by_key["'=HYPERLINK(\"http://evil\")"]
-    assert dangerous[0] == "'=HYPERLINK(\"http://evil\")"
+    dangerous = by_key['\'=HYPERLINK("http://evil")']
+    assert dangerous[0] == '\'=HYPERLINK("http://evil")'
     assert dangerous[1] == "'+cmd|' /C calc'"
-    assert dangerous[2] == "'@malicious,safe,-1day"
+    assert dangerous[2] == "'-1day,@malicious,safe"
     assert dangerous[3] == "'=SUM(A1:A10)"
     assert dangerous[4] == "'@malicious_link"
 
@@ -491,4 +559,3 @@ def test_import_workbook_desanitizes_key_and_tags_round_trip(client):
         "plain.key",
         "'quoted.key",
     }
-

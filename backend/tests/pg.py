@@ -8,8 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.engine import Engine, make_url
 
 from app.postgres_admin import create_database, drop_database, replace_database
 
@@ -37,6 +36,18 @@ def load_dotenv_defaults() -> None:
             os.environ[key] = value.strip().strip('"').strip("'")
 
 
+def _database_endpoint(url: str) -> tuple[str, int, str]:
+    """Host, port, and database after SQLAlchemy parses the URL.
+
+    ``localhost`` and ``127.0.0.1`` are the same host. An omitted port is 5432.
+    """
+    parsed = make_url(url)
+    host = (parsed.host or "").strip().lower()
+    if host == "localhost":
+        host = "127.0.0.1"
+    return host, parsed.port or 5432, parsed.database or ""
+
+
 def validate_test_database_env(test_url: str, app_url: str) -> str:
     """Return the test URL or exit before pytest can truncate a dev database."""
     test_url = test_url.strip()
@@ -48,17 +59,26 @@ def validate_test_database_env(test_url: str, app_url: str) -> str:
         )
     if not is_postgres_url(test_url):
         raise SystemExit("TEST_DATABASE_URL must be a Postgres URL.")
-    if test_url == app_url:
+    test_host, test_port, test_db = _database_endpoint(test_url)
+    if app_url and is_postgres_url(app_url):
+        app_host, app_port, app_db = _database_endpoint(app_url)
+        same_endpoint = (test_host, test_port, test_db) == (app_host, app_port, app_db)
+        same_database = bool(test_db) and test_db == app_db
+        if same_endpoint or same_database:
+            raise SystemExit(
+                "TEST_DATABASE_URL must not point at the DATABASE_URL database. "
+                "Refusing to TRUNCATE a database the app is configured to use."
+            )
+    if "test" not in test_db.lower():
         raise SystemExit(
-            "TEST_DATABASE_URL must not equal DATABASE_URL. "
-            "Refusing to TRUNCATE a database the app is configured to use."
+            "TEST_DATABASE_URL must name a dedicated test database (e.g. xlocale_test)."
         )
     return test_url
 
 
 def open_engine(url: str | None = None) -> Engine:
     target = url or os.environ["DATABASE_URL"]
-    return create_engine(target, pool_pre_ping=True, poolclass=NullPool)
+    return create_engine(target, pool_pre_ping=True, pool_size=5, max_overflow=20)
 
 
 def truncate_all(engine: Engine) -> None:

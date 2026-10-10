@@ -46,18 +46,31 @@ The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a 
 
 ### Native Postgres
 
-Install PostgreSQL 16 and initialize the cluster with collation C:
+Install PostgreSQL 16 and initialize a cluster with collation C.
+
+Debian and Ubuntu create a cluster named `main` when the package is installed, so `pg_createcluster 16 main` fails until that cluster is removed. Drop it when this server should listen on port 5432:
 
 ```bash
+pg_dropcluster --stop 16 main
 pg_createcluster 16 main --locale=C --encoding=UTF8
 pg_ctlcluster 16 main start
-createuser -s xlocale
-psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
-createdb -O xlocale -T template0 xlocale
-createdb -O xlocale -T template0 xlocale_test
 ```
 
-Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate FROM pg_database WHERE datname = current_database()` must be `C`.
+To keep the existing `main` cluster, add one named `xlocale` and use the port from `pg_lsclusters`:
+
+```bash
+pg_createcluster 16 xlocale --locale=C --encoding=UTF8
+pg_ctlcluster 16 xlocale start
+```
+
+```bash
+createuser -s xlocale
+psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
+createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
+createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
+```
+
+Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.
 
 ## Quick start (full Docker stack)
 

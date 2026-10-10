@@ -27,6 +27,43 @@ def _admin_engine(url: str):
     )
 
 
+def redact_database_url(url: str) -> str:
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "unparsed database url"
+
+
+def _create_database_sql(name: str, template: str) -> str:
+    """template0 is required for LC_COLLATE. libc C keeps comparisons on datcollate."""
+    return (
+        f'CREATE DATABASE "{name}" TEMPLATE "{template}" '
+        "LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
+    )
+
+
+def _terminate_own_backends(conn, name: str) -> None:
+    """Signal only this role's sessions. Autovacuum belongs to a superuser."""
+    conn.execute(
+        text(
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = :name
+              AND pid <> pg_backend_pid()
+              AND usename = current_user
+            """
+        ),
+        {"name": name},
+    )
+
+
+def _role_can_force_drop(conn) -> bool:
+    return bool(
+        conn.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")).scalar()
+    )
+
+
 def create_database(url: str, *, template: str = "template0") -> None:
     """Create url's database from template0 unless it already exists."""
     if any(char not in _NAME_OK for char in template):
@@ -41,7 +78,7 @@ def create_database(url: str, *, template: str = "template0") -> None:
             ).scalar()
             if exists:
                 return
-            conn.execute(text(f'CREATE DATABASE "{name}" TEMPLATE "{template}"'))
+            conn.execute(text(_create_database_sql(name, template)))
     finally:
         engine.dispose()
 
@@ -51,17 +88,11 @@ def drop_database(url: str) -> None:
     engine = _admin_engine(url)
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text(
-                    """
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE datname = :name AND pid <> pg_backend_pid()
-                    """
-                ),
-                {"name": name},
-            )
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+            _terminate_own_backends(conn, name)
+            if _role_can_force_drop(conn):
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+            else:
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
     finally:
         engine.dispose()
 
@@ -88,16 +119,7 @@ def recreate_from_template(url: str, template: str) -> None:
     engine = _admin_engine(url)
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text(
-                    """
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE datname = :name AND pid <> pg_backend_pid()
-                    """
-                ),
-                {"name": template},
-            )
+            _terminate_own_backends(conn, template)
             conn.execute(text(f'CREATE DATABASE "{name}" TEMPLATE "{template}"'))
     finally:
         engine.dispose()

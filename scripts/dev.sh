@@ -77,7 +77,7 @@ else
   echo "Docker Compose is not available. Expecting a native Postgres server (see README)."
 fi
 
-echo "==> Creating the test database if it is missing..."
+echo "==> Creating the test database if it is missing (template0, libc collation C)..."
 (
   cd "$ROOT/backend"
   uv run python -m app.postgres_admin create \
