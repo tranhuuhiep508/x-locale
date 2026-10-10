@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import yaml
@@ -48,29 +49,22 @@ def _postgres_base_url() -> str:
 
 
 def redact_database_url(url: str) -> str:
-    """Hide the password with SQLAlchemy's renderer from the backend environment."""
-    completed = subprocess.run(
-        [
-            "uv",
-            "run",
-            "--no-sync",
-            "--project",
-            str(BACKEND_ROOT),
-            "python",
-            "-c",
-            "from sqlalchemy.engine import make_url; import os; "
-            "print(make_url(os.environ['X_LOCALE_REDACT_URL']).render_as_string(hide_password=True))",
-        ],
-        cwd=BACKEND_ROOT,
-        env={**os.environ, "X_LOCALE_REDACT_URL": url},
-        capture_output=True,
-        text=True,
-        check=False,
+    """Mask the password in this process. The CLI env does not import SQLAlchemy."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "database url"
+    if not parts.scheme or parts.hostname is None:
+        return "database url"
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    port = f":{parts.port}" if parts.port is not None else ""
+    if parts.password is None:
+        auth = "" if parts.username is None else f"{parts.username}@"
+    else:
+        auth = f"{parts.username or ''}:***@"
+    return urlunsplit(
+        (parts.scheme, f"{auth}{host}{port}", parts.path, parts.query, parts.fragment)
     )
-    rendered = completed.stdout.strip()
-    if completed.returncode == 0 and rendered:
-        return rendered
-    return "database url"
 
 
 def unique_database_url() -> str:

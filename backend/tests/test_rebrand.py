@@ -32,11 +32,7 @@ DOT_TMS_ALLOWED = {".gitignore"}
 def _is_test_path(rel: str) -> bool:
     normalized = rel.replace("\\", "/")
     name = Path(normalized).name
-    return (
-        "/tests/" in f"/{normalized}"
-        or name.endswith(".test.ts")
-        or name.endswith(".test.tsx")
-    )
+    return "/tests/" in f"/{normalized}" or name.endswith(".test.ts") or name.endswith(".test.tsx")
 
 
 def test_openapi_title_is_x_locale(client):
@@ -99,7 +95,10 @@ def test_env_example_documents_x_locale_not_tms():
     assert "TMS_SECRET" not in text
     assert "TMS_DEMO_API_KEY" not in text
     assert "DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale" in text
-    assert "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
+    assert (
+        "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
+    )
+    assert "sqlite:///" not in text
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -108,7 +107,9 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     dev = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "POSTGRES_USER: xlocale" in dev
     assert "POSTGRES_DB: xlocale" in dev
-    assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev  # pragma: allowlist secret
+    assert (
+        "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev
+    )  # pragma: allowlist secret
     assert "X_LOCALE_SECRET:" in dev
     assert "X_LOCALE_DEMO_API_KEY:" in dev
     assert "TMS_SECRET" not in dev
@@ -215,7 +216,7 @@ def test_tracked_sources_have_no_forbidden_tms_token(needle: str):
         path = REPO_ROOT / rel
         try:
             text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+        except UnicodeDecodeError, IsADirectoryError, FileNotFoundError:
             continue
         if needle in text:
             hits.append(rel)
@@ -233,7 +234,7 @@ def test_tracked_sources_have_no_legacy_dot_tms_config_dir():
         path = REPO_ROOT / rel
         try:
             text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+        except UnicodeDecodeError, IsADirectoryError, FileNotFoundError:
             continue
         if ".tms/" in text or ".tms`" in text or "``.tms``" in text:
             hits.append(rel)

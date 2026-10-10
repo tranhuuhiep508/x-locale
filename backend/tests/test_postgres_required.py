@@ -9,9 +9,10 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 from app.config import require_postgres_database_url
-from tests.pg import validate_test_database_env
+from tests.pg import assert_connected_test_database, truncate_all, validate_test_database_env
 
 _BACKEND = Path(__file__).resolve().parents[1]
 _FILE_URL = "sqlite:///:memory:"
@@ -69,6 +70,95 @@ def test_validate_test_database_env_accepts_a_distinct_test_database():
     test_url = "postgresql+psycopg://user:secret@127.0.0.1:5432/xlocale_test?sslmode=disable"
     app_url = "postgresql://user:secret@localhost/xlocale"
     assert validate_test_database_env(test_url, app_url) == test_url
+
+
+@pytest.mark.parametrize("key", ["dbname", "DBNAME", "service", "servicefile"])
+def test_validate_test_database_env_rejects_libpq_target_overrides(key: str):
+    with pytest.raises(SystemExit, match="not the query string"):
+        validate_test_database_env(
+            f"postgresql+psycopg://localhost/xlocale_test?sslmode=disable&{key}=xlrev_app",
+            "postgresql+psycopg://localhost/xlocale",
+        )
+
+
+def test_connected_database_matches_the_parsed_test_name(database_engine):
+    expected = make_url(os.environ["TEST_DATABASE_URL"]).database
+    with database_engine.connect() as conn:
+        actual = conn.execute(text("SELECT current_database()")).scalar()
+    assert actual == expected
+    assert_connected_test_database(database_engine, os.environ["TEST_DATABASE_URL"], "xlocale")
+
+
+def test_connected_database_refuses_a_different_parsed_name(database_engine):
+    with pytest.raises(SystemExit, match="Refusing to TRUNCATE"):
+        assert_connected_test_database(
+            database_engine,
+            "postgresql+psycopg://localhost/other_test",
+            "xlocale",
+        )
+
+
+def test_connected_database_refuses_the_app_database_name(database_engine):
+    current = make_url(os.environ["TEST_DATABASE_URL"]).database or ""
+    with pytest.raises(SystemExit, match="Refusing to TRUNCATE"):
+        assert_connected_test_database(
+            database_engine,
+            os.environ["TEST_DATABASE_URL"],
+            current,
+        )
+
+
+class _Scalar:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def scalar(self) -> str:
+        return self.value
+
+
+class _NameConnection:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def execute(self, _statement: object) -> _Scalar:
+        return _Scalar(self.name)
+
+    def __enter__(self) -> _NameConnection:
+        return self
+
+    def __exit__(self, *_args: object) -> bool:
+        return False
+
+
+class _NameEngine:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def connect(self) -> _NameConnection:
+        return _NameConnection(self.name)
+
+
+def test_connected_database_refuses_a_name_without_test():
+    with pytest.raises(SystemExit, match="Refusing to TRUNCATE"):
+        assert_connected_test_database(
+            _NameEngine("xlrev_app"), "postgresql://localhost/xlrev_app", "other"
+        )
+
+
+def test_truncate_all_leaves_lock_timeout_at_default(database_engine):
+    truncate_all(database_engine)
+    pool = database_engine.pool
+    capacity = pool.size() + pool._max_overflow
+    held = []
+    try:
+        for _ in range(capacity):
+            conn = database_engine.connect()
+            held.append(conn)
+            shown = conn.execute(text("SHOW lock_timeout")).scalar()
+            assert shown == "0"
+    finally:
+        for conn in held:
+            conn.close()
 
 
 @pytest.mark.parametrize("url", ["", _FILE_URL])

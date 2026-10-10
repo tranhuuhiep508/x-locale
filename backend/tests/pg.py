@@ -36,6 +36,9 @@ def load_dotenv_defaults() -> None:
             os.environ[key] = value.strip().strip('"').strip("'")
 
 
+_TARGET_QUERY_KEYS = frozenset({"dbname", "service", "servicefile"})
+
+
 def _database_endpoint(url: str) -> tuple[str, int, str]:
     """Host, port, and database after SQLAlchemy parses the URL.
 
@@ -59,6 +62,12 @@ def validate_test_database_env(test_url: str, app_url: str) -> str:
         )
     if not is_postgres_url(test_url):
         raise SystemExit("TEST_DATABASE_URL must be a Postgres URL.")
+    # psycopg merges these libpq keys over the URL path, so ?dbname= can point
+    # the suite at a different database than the one the guard parsed.
+    if _TARGET_QUERY_KEYS & {key.lower() for key in make_url(test_url).query}:
+        raise SystemExit(
+            "TEST_DATABASE_URL must name its database in the path, not the query string."
+        )
     test_host, test_port, test_db = _database_endpoint(test_url)
     if app_url and is_postgres_url(app_url):
         app_host, app_port, app_db = _database_endpoint(app_url)
@@ -76,6 +85,29 @@ def validate_test_database_env(test_url: str, app_url: str) -> str:
     return test_url
 
 
+def path_database_name(url: str) -> str:
+    """Database name from a Postgres URL path. Empty when the URL is not Postgres."""
+    if not is_postgres_url(url):
+        return ""
+    return make_url(url.strip()).database or ""
+
+
+def assert_connected_test_database(engine: Engine, test_url: str, app_database_name: str) -> None:
+    """Refuse to continue unless this session is the dedicated test database.
+
+    ``current_database()`` is the name the server actually opened. It must match
+    the path in ``test_url``, contain ``test``, and differ from the app database.
+    """
+    expected = make_url(test_url).database or ""
+    with engine.connect() as conn:
+        actual = conn.execute(text("SELECT current_database()")).scalar()
+    name = "" if actual is None else str(actual)
+    if name != expected or "test" not in name.lower() or name == app_database_name:
+        raise SystemExit(
+            f"Connected to {actual!r}, not a dedicated test database. Refusing to TRUNCATE."
+        )
+
+
 def open_engine(url: str | None = None) -> Engine:
     target = url or os.environ["DATABASE_URL"]
     return create_engine(target, pool_pre_ping=True, pool_size=5, max_overflow=20)
@@ -89,7 +121,7 @@ def truncate_all(engine: Engine) -> None:
         return
     quoted = ", ".join(f'"{table.name}"' for table in tables)
     with engine.begin() as conn:
-        conn.execute(text("SET lock_timeout = '5s'"))
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         conn.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
 
 

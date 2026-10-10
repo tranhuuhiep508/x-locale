@@ -358,7 +358,6 @@ def test_key_integrity_error_matches_postgres_unique_violation():
     assert not is_key_integrity_error(wrapped(Orig("23505", "strings_pkey", "duplicate key")))
     legacy_text = "UNIQUE constraint failed: strings.project_id, strings.key"
     assert not is_key_integrity_error(wrapped(Orig("", "", legacy_text)))
-    assert legacy_text in str(wrapped(Orig("", "", legacy_text)).orig)
 
 
 def test_unrelated_integrity_errors_are_not_mislabeled():
