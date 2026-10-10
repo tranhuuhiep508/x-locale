@@ -29,6 +29,8 @@ jobs:
           --health-retries 10
 
     env:
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
+      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test  # pragma: allowlist secret
       E2E_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_e2e_${{ github.run_id }}_${{ github.run_attempt }}  # pragma: allowlist secret
 
     steps:
@@ -69,7 +71,9 @@ jobs:
           echo "collation=${collation}"
           test "${collation}" = "C|c"
           # PostgreSQL 16 removed the lc_collate GUC. datcollate and datlocprovider are the check.
-          # Playwright global-setup creates the suffixed database itself.
+          # xlocale_test is the bootstrap database. Playwright creates the suffixed database itself.
+          psql -h localhost -U xlocale -d xlocale -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0 LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
 
       - name: Install Playwright OS dependencies
         run: |

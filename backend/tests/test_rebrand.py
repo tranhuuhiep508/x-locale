@@ -102,8 +102,9 @@ def test_env_example_documents_x_locale_not_tms():
     assert "sqlite:///" not in text
     assert "AUTH_DEV_BYPASS=false" in text
     scopes = next(line for line in text.splitlines() if line.startswith("OIDC_SCOPES="))
-    assert scopes.startswith('OIDC_SCOPES="') and scopes.endswith('"')
-    assert " " in scopes
+    value = scopes.split("=", 1)[1].split(" #", 1)[0].strip()
+    assert value.startswith('"') and value.endswith('"')
+    assert " " in value
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
