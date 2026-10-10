@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
 import yaml
@@ -79,7 +79,16 @@ def reset_allocated_database_url() -> None:
     _allocated_database_url = None
 
 
+def _reject_target_overrides(url: str) -> None:
+    keys = {key.lower() for key, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)}
+    if keys & {"dbname", "service", "servicefile"}:
+        raise RuntimeError(
+            "Harness database URLs must name their database in the path, not the query string."
+        )
+
+
 def _path_database_name(url: str) -> str:
+    _reject_target_overrides(url)
     if "://" not in url or "/" not in url.split("://", 1)[1]:
         raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
     _prefix, rest = url.split("://", 1)
@@ -91,6 +100,7 @@ def _path_database_name(url: str) -> str:
 
 
 def _with_database_name(url: str, name: str) -> str:
+    _reject_target_overrides(url)
     prefix, rest = url.split("://", 1)
     path, query = (rest.split("?", 1) + [""])[:2]
     head, sep, _db = path.rpartition("/")

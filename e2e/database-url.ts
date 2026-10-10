@@ -9,6 +9,7 @@ const DEFAULT_BASE = 'postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocal
 const PREFIX = 'xlocale_e2e_'
 const MAX_IDENT = 63
 const NAME_OK = /^[A-Za-z0-9_]+$/
+const TARGET_QUERY_KEYS = new Set(['dbname', 'service', 'servicefile'])
 
 /** URL globalSetup recorded after create-new. Teardown must match its host, port, and name. */
 export const CREATED_DATABASE_ENV = 'XLOCALE_E2E_CREATED_DATABASE'
@@ -40,6 +41,13 @@ export function databaseEndpoint(url: string): { host: string; port: string; nam
   } catch {
     throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(url)}`)
   }
+  for (const key of parsed.searchParams.keys()) {
+    if (TARGET_QUERY_KEYS.has(key.toLowerCase())) {
+      throw new Error(
+        'Harness database URLs must name their database in the path, not the query string.',
+      )
+    }
+  }
   const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''))
   if (!name || parsed.protocol !== 'postgresql:') {
     throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(url)}`)
@@ -48,11 +56,9 @@ export function databaseEndpoint(url: string): { host: string; port: string; nam
 }
 
 function withDatabaseName(base: string, name: string): string {
-  const match = base.match(/^(.*\/)([^/?]+)(\?.*)?$/)
-  if (!match) {
-    throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(base)}`)
-  }
-  return `${match[1]}${name}${match[3] ?? ''}`
+  const parsed = new URL(base)
+  parsed.pathname = `/${name}`
+  return parsed.toString()
 }
 
 function defaultTrackingFile(): string {
@@ -148,7 +154,9 @@ export function readTrackedDatabaseUrl(): string | null {
   const file = process.env.E2E_DATABASE_URL_FILE?.trim()
   if (!file || !fs.existsSync(file)) return null
   const text = fs.readFileSync(file, 'utf8').trim()
-  return text || null
+  if (!text) return null
+  databaseEndpoint(text)
+  return text
 }
 
 export function clearTrackedDatabaseUrl(): void {

@@ -33,6 +33,40 @@ function useFile(): string {
   return file
 }
 
+test('allocation rejects libpq target overrides before recording a database', () => {
+  for (const variable of ['DATABASE_URL', 'E2E_DATABASE_URL']) {
+    for (const key of ['dbname', 'DBNAME', 'db%6eame', 'service', 'servicefile']) {
+      const file = useFile()
+      process.env.DATABASE_URL = 'postgresql+psycopg://localhost/xlocale'
+      delete process.env.E2E_DATABASE_URL
+      const name = variable === 'DATABASE_URL' ? 'xlocale' : 'xlocale_e2e_stem'
+      process.env[variable] = `postgresql+psycopg://localhost/${name}?sslmode=disable&${key}=xlocale`
+      assert.throws(() => allocateE2eDatabaseUrl(), /database.*path.*query string/)
+      assert.equal(fs.existsSync(file), false)
+    }
+  }
+})
+
+test('recorded URLs and teardown reject target overrides too', () => {
+  const file = useFile()
+  const url = 'postgresql://localhost/xlocale_e2e_run_1700000000_abc?dbname=xlocale'
+  fs.writeFileSync(file, url)
+  assert.throws(() => allocateE2eDatabaseUrl(), /database.*path.*query string/)
+  assert.throws(() => assertTeardownDatabase(url, undefined, url), /database.*path.*query string/)
+})
+
+test('allocation preserves connection options while replacing only the database path', () => {
+  useFile()
+  process.env.DATABASE_URL =
+    'postgresql+psycopg://role:pass$TOKEN@localhost/xlocale?sslmode=verify-full&sslrootcert=/etc/postgres/root.crt'
+  const parsed = new URL(allocateE2eDatabaseUrl())
+  assert.match(parsed.pathname, /^\/xlocale_e2e_[0-9]{10}_[0-9a-f]+$/)
+  assert.equal(parsed.protocol, 'postgresql+psycopg:')
+  assert.equal(parsed.password, 'pass$TOKEN')
+  assert.equal(parsed.searchParams.get('sslmode'), 'verify-full')
+  assert.equal(parsed.searchParams.get('sslrootcert'), '/etc/postgres/root.crt')
+})
+
 test('allocate requires the e2e prefix and rejects non-test names', () => {
   for (const stem of ['latest', 'contest_prod', 'xlocale', 'xlocale_test', 'production']) {
     assert.throws(() => allocateDatabaseName(stem, 'xlocale'), /xlocale_e2e_/)

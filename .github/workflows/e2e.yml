@@ -106,7 +106,7 @@ jobs:
           npx playwright install chromium
 
       - name: Test the E2E database name guard
-        run: node --experimental-strip-types --test database-url.test.ts
+        run: npm run test:database-url
         working-directory: e2e
 
       - name: Run Playwright E2E

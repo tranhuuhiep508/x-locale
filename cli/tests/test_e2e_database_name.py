@@ -6,7 +6,6 @@ import re
 import subprocess
 
 import pytest
-
 from tests.e2e import support
 from tests.e2e.support import (
     allocate_cli_database_name,
@@ -62,6 +61,28 @@ def test_unique_database_url_keeps_the_first_allocation(monkeypatch: pytest.Monk
     monkeypatch.setenv("CLI_E2E_DATABASE_NAME", "xlocale_cli_two")
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/production")
     assert unique_database_url() == first
+
+
+@pytest.mark.parametrize("key", ["dbname", "DBNAME", "db%6eame", "service", "servicefile"])
+def test_start_rejects_target_overrides_before_any_database_action(monkeypatch, key):
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+psycopg://localhost/xlocale?sslmode=disable&{key}=xlocale",
+    )
+    monkeypatch.setattr(support, "_admin", lambda *_: pytest.fail("Database action was attempted"))
+    with pytest.raises(RuntimeError, match="database.*path.*query string"):
+        start_backend_server()
+
+
+def test_rewriting_rejects_target_overrides_and_preserves_connection_options():
+    with pytest.raises(RuntimeError, match="database.*path.*query string"):
+        support._with_database_name(
+            "postgresql://localhost/xlocale?dbname=xlocale", "xlocale_cli_run"
+        )
+    base = "postgresql+psycopg://role:pass$TOKEN@localhost/xlocale?sslmode=verify-full&sslrootcert=/etc/root.crt"
+    assert support._with_database_name(base, "xlocale_cli_run") == (
+        "postgresql+psycopg://role:pass$TOKEN@localhost/xlocale_cli_run?sslmode=verify-full&sslrootcert=/etc/root.crt"
+    )
 
 
 def test_unique_database_url_refuses_the_app_database_and_a_non_test_name(

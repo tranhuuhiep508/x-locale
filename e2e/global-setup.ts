@@ -7,6 +7,7 @@ import {
   clearTrackedDatabaseUrl,
   readTrackedDatabaseUrl,
 } from './database-url'
+import { runPostgresAdmin } from './postgres-admin'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -25,14 +26,6 @@ function e2eEnv(databaseUrl: string) {
   }
 }
 
-function admin(action: 'sweep' | 'create-new' | 'drop', databaseUrl: string, env: NodeJS.ProcessEnv) {
-  execSync(`uv run python -m app.postgres_admin ${action} ${JSON.stringify(databaseUrl)}`, {
-    cwd: path.join(repoRoot, 'backend'),
-    env,
-    stdio: 'inherit',
-  })
-}
-
 export default async function globalSetup() {
   const databaseUrl = readTrackedDatabaseUrl()
   if (!databaseUrl) {
@@ -40,8 +33,8 @@ export default async function globalSetup() {
   }
   const env = e2eEnv(databaseUrl)
   try {
-    admin('sweep', databaseUrl, env)
-    admin('create-new', databaseUrl, env)
+    runPostgresAdmin('sweep', databaseUrl, env)
+    runPostgresAdmin('create-new', databaseUrl, env)
     process.env[CREATED_DATABASE_ENV] = databaseUrl
   } catch (error) {
     // create-new failed, so this run did not create the database. Do not drop it.
@@ -61,7 +54,7 @@ export default async function globalSetup() {
     })
   } catch (error) {
     try {
-      admin('drop', databaseUrl, env)
+      runPostgresAdmin('drop', databaseUrl, env)
     } finally {
       clearTrackedDatabaseUrl()
     }

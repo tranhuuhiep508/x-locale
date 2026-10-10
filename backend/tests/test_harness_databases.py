@@ -105,9 +105,7 @@ def test_bootstrap_name_reads_a_tmp_env_file_when_the_variable_is_unset(tmp_path
     assert from_file.returncode == 0, from_file.stderr
     assert from_file.stdout.strip() == "bootstrap_from_file"
 
-    env["TEST_DATABASE_URL"] = (
-        "postgresql+psycopg://role:local@127.0.0.1:5433/bootstrap_from_env"
-    )
+    env["TEST_DATABASE_URL"] = "postgresql+psycopg://role:local@127.0.0.1:5433/bootstrap_from_env"
     from_env = subprocess.run(
         [sys.executable, "-c", script],
         cwd=tmp_path,
@@ -118,6 +116,47 @@ def test_bootstrap_name_reads_a_tmp_env_file_when_the_variable_is_unset(tmp_path
     )
     assert from_env.returncode == 0, from_env.stderr
     assert from_env.stdout.strip() == "bootstrap_from_env"
+
+
+def test_missing_bootstrap_is_created_using_only_a_tmp_env_file(tmp_path: Path):
+    url = new_database_url("xl_test")
+    name = database_name(url)
+    (tmp_path / ".env").write_text(
+        f"DATABASE_URL={os.environ['DATABASE_URL']}\nTEST_DATABASE_URL={url}\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env.pop("DATABASE_URL", None)
+    env.pop("TEST_DATABASE_URL", None)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from app.config import settings; "
+                "from app.postgres_admin import create_database; "
+                "create_database(settings.test_database_url)",
+            ],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert name in _names()
+    finally:
+        drop_database(url)
+
+
+def test_maintenance_database_prefers_exported_application_url(monkeypatch):
+    from app.config import settings
+    from app.postgres_admin import _maintenance_database
+
+    monkeypatch.setattr(settings, "database_url", "postgresql://localhost/app_from_file")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/app_from_env")
+    assert _maintenance_database(os.environ["TEST_DATABASE_URL"]) == "app_from_env"
 
 
 def test_missing_createdb_is_explained(monkeypatch):

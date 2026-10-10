@@ -86,6 +86,10 @@ def _maintenance_database(url: str) -> str:
     if database_name(url) != bootstrap:
         return bootstrap
     app_url = os.environ.get("DATABASE_URL", "").strip()
+    if not app_url:
+        from app.config import settings
+
+        app_url = (settings.database_url or "").strip()
     if app_url:
         app_name = make_url(app_url).database
         if app_name and all(char in _NAME_OK for char in app_name) and app_name != bootstrap:
