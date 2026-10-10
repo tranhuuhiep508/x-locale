@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from x_locale_cli.errors import XLocaleError
+from x_locale_cli.limits import KEY_MAX_LENGTH, MODULE_SLUG_MAX_LENGTH
 from x_locale_cli.models import (
     DEFAULT_BASE_LANGUAGE,
     UNASSIGNED_SLUG,
@@ -43,6 +44,16 @@ def _without_trailing_commas(text: str) -> str:
     return "".join(characters)
 
 
+def _value_preview(value: str, width: int = 40) -> str:
+    """Quoted preview. The length sits outside the quotes when the value is cut.
+
+    Matches backend app.helpers.key_preview.
+    """
+    if len(value) <= width:
+        return repr(value)
+    return f"{value[:width]!r}… ({len(value)} chars)"
+
+
 def load_json_file(path: Path) -> Any:
     """Load JSON from *path*, tolerating trailing commas from common formatters."""
     text = path.read_text(encoding="utf-8")
@@ -61,6 +72,10 @@ def parse_locale_json(data: dict[str, Any]) -> dict[str, str]:
         if not isinstance(value, str):
             raise XLocaleError(
                 f"Locale JSON requires string values; got {type(value).__name__} for key {key!r}"
+            )
+        if len(key) > KEY_MAX_LENGTH:
+            raise XLocaleError(
+                f"key {_value_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
             )
         strings[key] = value
     return strings
@@ -141,6 +156,11 @@ def scan_modular_base(output_dir: Path, base_language: str) -> dict[str, dict[st
         base_file = subdir / f"{base_language}.json"
         if not base_file.exists():
             continue
+        if len(subdir.name) > MODULE_SLUG_MAX_LENGTH:
+            raise XLocaleError(
+                f"module slug {_value_preview(subdir.name)} "
+                f"in {subdir} must be at most {MODULE_SLUG_MAX_LENGTH} characters"
+            )
         data = load_json_file(base_file)
         if not isinstance(data, dict):
             raise XLocaleError(f"Locale JSON in {base_file} must be a top-level object")
@@ -159,7 +179,10 @@ def load_unassigned_base(output_dir: Path, base_language: str) -> dict[str, str]
     data = load_json_file(path)
     if not isinstance(data, dict):
         raise XLocaleError(f"Locale JSON in {path} must be a top-level object")
-    return parse_locale_json(data)
+    try:
+        return parse_locale_json(data)
+    except XLocaleError as exc:
+        raise XLocaleError(f"Invalid locale file {path}: {exc}") from exc
 
 
 def collect_modular_local_keys(output_dir: Path, base_language: str) -> dict[str, str]:

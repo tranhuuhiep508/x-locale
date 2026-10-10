@@ -20,6 +20,7 @@ from app.ai import (
     translate_batch,
 )
 from app.database import SessionLocal
+from app.helpers import require_locale_code
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
 from app.services.catalog import owned_module
@@ -195,6 +196,7 @@ def count_work(
 
 
 def _ensure_translation(db: Session, entry: StringEntry, locale: str) -> Translation:
+    locale = require_locale_code(locale)
     translation = next((t for t in entry.translations if t.locale == locale), None)
     if translation is None:
         translation = Translation(string_id=entry.id, locale=locale, value="")

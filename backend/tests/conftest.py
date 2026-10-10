@@ -20,6 +20,8 @@ os.environ["OIDC_ISSUER"] = ""
 os.environ["OIDC_CLIENT_ID"] = ""
 os.environ["OIDC_CLIENT_SECRET"] = ""
 
+pytest_plugins = ["tests.postgres_support"]
+
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):

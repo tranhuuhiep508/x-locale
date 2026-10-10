@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session, defer, selectinload
 
+from app.helpers import require_locale_code, require_max_length, require_string_key
+from app.limits import KEY_MAX_LENGTH
 from app.models import (
     Activity,
     ActivityAction,
@@ -66,6 +68,7 @@ from app.services.activity_state import (
     translation_map,
     validate_undo_timestamps,
 )
+from app.services.catalog import require_module_in_project
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -825,6 +828,7 @@ def _set_entry_tags(
 def _set_entry_translations(db: Session, entry: StringEntry, translations: dict[str, str]) -> None:
     by_locale = {t.locale: t for t in list(entry.translations or [])}
     for locale, value in translations.items():
+        locale = require_locale_code(locale)
         existing = by_locale.get(locale)
         if existing is None:
             translation = Translation(string_id=entry.id, locale=locale, value=value)
@@ -841,6 +845,7 @@ def _set_entry_published_translations(
 ) -> None:
     by_locale = {t.locale: t for t in entry.translations}
     for locale, value in translations.items():
+        locale = require_locale_code(locale)
         existing = by_locale.get(locale)
         if existing is None:
             translation = Translation(
@@ -862,9 +867,43 @@ def _parse_datetime(raw: Any) -> datetime | None:
     return None
 
 
-def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, Any]) -> None:
+def _owned_module_id(
+    db: Session,
+    project_id: uuid.UUID,
+    raw: Any,
+    *,
+    references: SnapshotReferences | None = None,
+) -> uuid.UUID | None:
+    """Keep a module ref only when it belongs to this project.
+
+    History restore already clears foreign modules while building the target.
+    Checking again at the write keeps a deferred cross-project FK from waiting
+    until commit and returning 500. A preloaded SnapshotReferences answers
+    from its cache and queries only for an id it has not seen.
+    """
+    if references is not None:
+        resolved = references.module(raw)
+        return uuid.UUID(resolved) if resolved else None
+    if not raw:
+        return None
+    try:
+        module_id = uuid.UUID(str(raw))
+    except ValueError, TypeError:
+        return None
+    return require_module_in_project(db, project_id, module_id, on_missing="clear")
+
+
+def _apply_published_snapshot(
+    db: Session,
+    entry: StringEntry,
+    snap: dict[str, Any],
+    *,
+    references: SnapshotReferences | None = None,
+) -> None:
     if "published_key" in snap:
-        entry.published_key = snap.get("published_key")
+        entry.published_key = require_max_length(
+            snap.get("published_key"), field="published_key", limit=KEY_MAX_LENGTH
+        )
     if "published_source_text" in snap:
         entry.published_source_text = snap.get("published_source_text")
     if "pending_delete" in snap:
@@ -874,8 +913,11 @@ def _apply_published_snapshot(db: Session, entry: StringEntry, snap: dict[str, A
     if "published_at" in snap:
         entry.published_at = _parse_datetime(snap.get("published_at"))
     if "published_module_id" in snap:
-        entry.published_module_id = (
-            uuid.UUID(snap["published_module_id"]) if snap.get("published_module_id") else None
+        entry.published_module_id = _owned_module_id(
+            db,
+            entry.project_id,
+            snap.get("published_module_id"),
+            references=references,
         )
     if "published_translations" in snap:
         _set_entry_published_translations(
@@ -1003,12 +1045,14 @@ def _apply_working_copy_only(
 ) -> None:
     """Apply an already resolved target; validation belongs to the caller."""
     db.info["restore_key"] = target["key"]
-    entry.key = target["key"]
+    entry.key = require_string_key(target["key"])
     entry.source_text = target["source_text"]
     entry.description = target["description"]
     if include_status:
         entry.status = TranslationStatus(target["status"])
-    entry.module_id = uuid.UUID(target["module_id"]) if target.get("module_id") else None
+    entry.module_id = _owned_module_id(
+        db, entry.project_id, target.get("module_id"), references=references
+    )
     _set_entry_tags(db, entry, target.get("tag_ids") or [], references=references)
     _set_entry_translations(db, entry, target.get("translations") or {})
 
@@ -1021,7 +1065,7 @@ def _apply_working_snapshot(
     references: SnapshotReferences,
 ) -> None:
     _apply_working_copy_only(db, entry, target, include_status=True, references=references)
-    _apply_published_snapshot(db, entry, target)
+    _apply_published_snapshot(db, entry, target, references=references)
 
 
 def apply_revert(

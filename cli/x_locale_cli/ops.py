@@ -108,7 +108,10 @@ def _local_and_remote_base(config: Config, export: Any) -> tuple[dict[str, str],
         raw = load_json_file(src)
         if not isinstance(raw, dict):
             raise XLocaleError(f"Locale JSON in {src} must be a top-level object")
-        local_base = parse_locale_json(raw)
+        try:
+            local_base = parse_locale_json(raw)
+        except XLocaleError as exc:
+            raise XLocaleError(f"Invalid locale file {src}: {exc}") from exc
     return local_base, remote_base
 
 
@@ -202,8 +205,11 @@ def _push_strings(
         source_path = resolve_push_source(config, None)
         raw = load_json_file(source_path)
         if not isinstance(raw, dict):
-            raise XLocaleError("Locale JSON must be a top-level object")
-        flat_strings = parse_locale_json(raw)
+            raise XLocaleError(f"Locale JSON in {source_path} must be a top-level object")
+        try:
+            flat_strings = parse_locale_json(raw)
+        except XLocaleError as exc:
+            raise XLocaleError(f"Invalid locale file {source_path}: {exc}") from exc
         local_hashes = catalog_hashes_flat(flat_strings)
         local_key_count = len(local_hashes)
         details = [config.layout.value, str(source_path)]

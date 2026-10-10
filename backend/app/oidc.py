@@ -7,6 +7,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from app.limits import (
+    AVATAR_URL_MAX_LENGTH,
+    EMAIL_MAX_LENGTH,
+    OIDC_ISSUER_MAX_LENGTH,
+    OIDC_SUB_MAX_LENGTH,
+    USER_NAME_MAX_LENGTH,
+)
+
 # Personal Microsoft accounts (Outlook/Hotmail/Xbox) use this Entra tenant.
 CONSUMERS_TENANT_ID = "9188040d-6c67-4c5b-b112-36a304b66dad"
 
@@ -64,6 +72,12 @@ class OidcProfileError(ValueError):
     pass
 
 
+def _bounded(value: str, *, field: str, limit: int) -> str:
+    if len(value) > limit:
+        raise OidcProfileError(f"{field} must be at most {limit} characters")
+    return value
+
+
 def map_oidc_profile(claims: Mapping[str, Any], *, configured_issuer: str) -> OidcProfile:
     configured = normalize_issuer(configured_issuer)
     raw_iss = claims.get("iss")
@@ -84,9 +98,11 @@ def map_oidc_profile(claims: Mapping[str, Any], *, configured_issuer: str) -> Oi
     picture = claims.get("picture")
     avatar = str(picture) if picture else None
     return OidcProfile(
-        issuer=iss,
-        sub=str(sub),
-        email=str(email),
-        name=str(name),
-        avatar=avatar,
+        issuer=_bounded(iss, field="issuer", limit=OIDC_ISSUER_MAX_LENGTH),
+        sub=_bounded(str(sub), field="sub", limit=OIDC_SUB_MAX_LENGTH),
+        email=_bounded(str(email), field="email", limit=EMAIL_MAX_LENGTH),
+        name=_bounded(str(name), field="name", limit=USER_NAME_MAX_LENGTH),
+        avatar=(
+            _bounded(avatar, field="avatar", limit=AVATAR_URL_MAX_LENGTH) if avatar else None
+        ),
     )

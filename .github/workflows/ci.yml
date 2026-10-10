@@ -54,6 +54,53 @@ jobs:
       - name: Run pytest
         run: cd backend && uv run pytest
 
+  backend-postgres:
+    name: backend-postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: xlocale
+          POSTGRES_PASSWORD: xlocale
+          POSTGRES_DB: xlocale
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xlocale -d xlocale"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale
+      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale
+      AUTH_DEV_BYPASS: "true"
+      X_LOCALE_SECRET: test-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install PostgreSQL 16 client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: cd backend && uv sync --all-extras
+
+      - name: Apply migrations and check for drift
+        working-directory: backend
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Run Postgres tests
+        working-directory: backend
+        run: uv run pytest -m postgres
+
   cli:
     name: cli-unit
     runs-on: ubuntu-latest

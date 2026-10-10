@@ -45,6 +45,38 @@ class LocaleJsonTests(unittest.TestCase):
         data = {"auth.sign_in": "Sign in", "common.save": "Save"}
         self.assertEqual(parse_locale_json(data), data)
 
+    def test_parse_locale_json_rejects_key_over_512(self) -> None:
+        with self.assertRaises(XLocaleError) as caught:
+            parse_locale_json({"k" * 513: "Xin chào"})
+        message = str(caught.exception)
+        self.assertIn(f"key {'k' * 40!r}… (513 chars)", message)
+        self.assertIn("512", message)
+
+    def test_scan_skips_long_directory_without_base_language_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            long_dir = root / ("m" * 129)
+            long_dir.mkdir()
+            (long_dir / "en.json").write_text('{"skip": "me"}\n', encoding="utf-8")
+            auth = root / "auth"
+            auth.mkdir()
+            (auth / "vi.json").write_text('{"hello": "Xin chào"}\n', encoding="utf-8")
+            result = scan_modular_base(root, "vi")
+            self.assertEqual(result, {"auth": {"hello": "Xin chào"}})
+
+    def test_scan_modular_base_rejects_slug_over_128(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            slug = "a" * 129
+            module_dir = Path(tmp) / slug
+            module_dir.mkdir()
+            (module_dir / "vi.json").write_text('{"hello": "Xin chào"}\n', encoding="utf-8")
+            with self.assertRaises(XLocaleError) as caught:
+                scan_modular_base(Path(tmp), "vi")
+            message = str(caught.exception)
+            self.assertIn(f"module slug {'a' * 40!r}… (129 chars)", message)
+            self.assertIn("128", message)
+            self.assertIn(str(module_dir), message)
+
     def test_parse_locale_json_rejects_nested_values(self) -> None:
         with self.assertRaises(XLocaleError):
             parse_locale_json({"auth": {"sign_in": "Sign in"}})
@@ -307,6 +339,16 @@ class ModularStatusHelpersTests(unittest.TestCase):
     def test_load_unassigned_base(self) -> None:
         self._write(UNASSIGNED_SLUG, "vi.json", data={"orphan": "X"})
         self.assertEqual(load_unassigned_base(self.root, "vi"), {"orphan": "X"})
+
+    def test_load_unassigned_base_names_file_and_long_key(self) -> None:
+        key = "k" * 513
+        self._write(UNASSIGNED_SLUG, "vi.json", data={key: "Xin chào"})
+        path = self.root / UNASSIGNED_SLUG / "vi.json"
+        with self.assertRaises(XLocaleError) as caught:
+            load_unassigned_base(self.root, "vi")
+        message = str(caught.exception)
+        self.assertIn(str(path), message)
+        self.assertIn(f"key {'k' * 40!r}… (513 chars)", message)
 
     def test_collect_local_keys_includes_modules_and_unassigned(self) -> None:
         self._write("auth", "vi.json", data={"auth.email": "Email"})

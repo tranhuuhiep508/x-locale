@@ -1,14 +1,19 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
+
+from app import models  # noqa: F401 — register all models on Base.metadata
 from app.config import settings
 from app.database import Base
-from app import models  # noqa: F401 — register all models on Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+
+
+def _configure_url() -> None:
+    config.set_main_option("sqlalchemy.url", settings.database_url)
+
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -17,6 +22,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    _configure_url()
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -24,12 +30,14 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=url.startswith("sqlite") if url else False,
+        compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
+    _configure_url()
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -40,6 +48,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=settings.database_url.startswith("sqlite"),
+            compare_type=True,
         )
         with context.begin_transaction():
             context.run_migrations()

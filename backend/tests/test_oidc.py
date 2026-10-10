@@ -74,6 +74,40 @@ def test_map_oidc_profile_rejects_common_as_stored_issuer_without_token_iss():
         map_oidc_profile({"sub": "abc", "email": "a@b.c"}, configured_issuer=COMMON)
 
 
+def test_map_oidc_profile_rejects_overlong_claims():
+    long_issuer = "https://issuer.example/" + ("a" * 500)
+    with pytest.raises(OidcProfileError, match="issuer must be at most 512"):
+        map_oidc_profile(
+            {"iss": long_issuer, "sub": "abc", "email": "a@b.c"},
+            configured_issuer=long_issuer,
+        )
+    with pytest.raises(OidcProfileError, match="sub must be at most 512"):
+        map_oidc_profile(
+            {"iss": WORK_ISS, "sub": "s" * 513, "email": "a@b.c"},
+            configured_issuer=COMMON,
+        )
+    with pytest.raises(OidcProfileError, match="email must be at most 320"):
+        map_oidc_profile(
+            {"iss": WORK_ISS, "sub": "abc", "email": "e" * 321},
+            configured_issuer=COMMON,
+        )
+    with pytest.raises(OidcProfileError, match="name must be at most 255"):
+        map_oidc_profile(
+            {"iss": WORK_ISS, "sub": "abc", "email": "a@b.c", "name": "n" * 256},
+            configured_issuer=COMMON,
+        )
+    with pytest.raises(OidcProfileError, match="avatar must be at most 1024"):
+        map_oidc_profile(
+            {
+                "iss": WORK_ISS,
+                "sub": "abc",
+                "email": "a@b.c",
+                "picture": "https://cdn.example/" + ("a" * 1100),
+            },
+            configured_issuer=COMMON,
+        )
+
+
 def test_map_oidc_profile_rejects_bad_issuer():
     with pytest.raises(OidcProfileError, match="Rejected"):
         map_oidc_profile(

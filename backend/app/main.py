@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -23,6 +24,7 @@ from app.routers import (
     tags,
     translate,
 )
+from app.services.catalog import is_module_project_fk_error
 
 
 @asynccontextmanager
@@ -76,6 +78,18 @@ app.include_router(translate.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(activities.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
+
+
+@app.exception_handler(IntegrityError)
+async def module_project_fk_handler(_request: Request, exc: IntegrityError) -> JSONResponse:
+    """Deferred composite module FKs are checked at commit, not at flush.
+
+    An explicit project check should already have returned 400. This is the
+    safety net so a missed call site cannot surface as a database 500.
+    """
+    if is_module_project_fk_error(exc):
+        return JSONResponse(status_code=400, content={"detail": "Unknown module"})
+    raise exc
 
 
 @app.get("/health")

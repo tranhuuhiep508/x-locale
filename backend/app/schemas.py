@@ -4,6 +4,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.limits import (
+    KEY_MAX_LENGTH,
+    MODULE_NAME_MAX_LENGTH,
+    MODULE_SLUG_MAX_LENGTH,
+    TAG_COLOR_MAX_LENGTH,
+    TAG_NAME_MAX_LENGTH,
+)
 from app.models import ProjectLayout, TranslationStatus
 from app.timefmt import UtcDateTime
 
@@ -157,8 +164,10 @@ class ModuleCreate(TranslationContextInput):
 
 
 class ModuleUpdate(TranslationContextInput):
-    slug: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]*$")
-    name: str | None = None
+    slug: str | None = Field(
+        default=None, max_length=MODULE_SLUG_MAX_LENGTH, pattern=r"^[a-z][a-z0-9_-]*$"
+    )
+    name: str | None = Field(default=None, min_length=1, max_length=MODULE_NAME_MAX_LENGTH)
     description: str | None = None
     position: int | None = None
 
@@ -184,8 +193,8 @@ class TagCreate(BaseModel):
 
 
 class TagUpdate(BaseModel):
-    name: str | None = None
-    color: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=TAG_NAME_MAX_LENGTH)
+    color: str | None = Field(default=None, max_length=TAG_COLOR_MAX_LENGTH)
 
 
 class TagOut(BaseModel):
@@ -258,7 +267,7 @@ class StringCreate(BaseModel):
 
 
 class StringUpdate(BaseModel):
-    key: str | None = None
+    key: str | None = Field(default=None, max_length=KEY_MAX_LENGTH)
     source_text: str | None = None
     description: str | None = None
     module_id: UUID | None = None

@@ -10,15 +10,32 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.limits import KEY_MAX_LENGTH, LOCALE_MAX_LENGTH, MODULE_SLUG_MAX_LENGTH
 from app.models import Project, StringEntry
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 LOCALE_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
 
 
+def field_too_long(field: str, limit: int) -> str:
+    return f"{field} must be at most {limit} characters"
+
+
+def key_preview(value: str, width: int = 40) -> str:
+    """Quoted preview. The length sits outside the quotes when the value is cut.
+
+    The CLI uses the same shape: 'abcd'… (513 chars).
+    """
+    if len(value) <= width:
+        return repr(value)
+    return f"{value[:width]!r}… ({len(value)} chars)"
+
+
 def validate_locale_code(code: str) -> str:
     """BCP-47-style locale tag safe for paths and DB (single segment)."""
     normalized = (code or "").strip()
+    if len(normalized) > LOCALE_MAX_LENGTH:
+        raise ValueError(field_too_long("locale", LOCALE_MAX_LENGTH))
     if not LOCALE_RE.fullmatch(normalized):
         raise ValueError(f"Invalid locale code: {code!r}")
     return normalized
@@ -26,9 +43,46 @@ def validate_locale_code(code: str) -> str:
 
 def validate_module_slug(slug: str) -> str:
     normalized = (slug or "").strip()
+    if len(normalized) > MODULE_SLUG_MAX_LENGTH:
+        raise ValueError(
+            f"module slug {key_preview(normalized)} must be at most "
+            f"{MODULE_SLUG_MAX_LENGTH} characters"
+        )
     if not SLUG_RE.fullmatch(normalized):
         raise ValueError(f"Invalid module slug: {slug!r}")
     return normalized
+
+
+def require_locale_code(code: str) -> str:
+    """Reject a locale that cannot fit in the column. Raises HTTP 400.
+
+    Length only. Project create/update and Excel headers still run
+    validate_locale_code. String, translation, and activity writes must
+    keep accepting legacy target languages such as en_US.
+    """
+    if len(code) > LOCALE_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail=field_too_long("locale", LOCALE_MAX_LENGTH))
+    return code
+
+
+def require_max_length(value: str | None, *, field: str, limit: int) -> str | None:
+    """Reject a value that would overflow a varchar. None is unchanged."""
+    if value is not None and len(value) > limit:
+        raise HTTPException(status_code=400, detail=field_too_long(field, limit))
+    return value
+
+
+def require_string_key(key: str) -> str:
+    return require_max_length(key, field="key", limit=KEY_MAX_LENGTH) or ""
+
+
+def ensure_max_length(value: str, *, field: str, limit: int) -> str:
+    """Raise ValueError so file import can turn the message into HTTP 400."""
+    if len(value) > limit:
+        raise ValueError(
+            f"{field} {key_preview(value)} must be at most {limit} characters"
+        )
+    return value
 
 
 def slugify(name: str) -> str:
