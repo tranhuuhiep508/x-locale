@@ -58,6 +58,32 @@ echo "==> Freeing dev ports..."
 kill_port "$BACKEND_PORT"
 kill_port "$FRONTEND_PORT"
 
+echo "==> Ensuring Postgres is up..."
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  docker compose -f "$ROOT/docker-compose.yml" up -d postgres
+  ready=false
+  for _ in $(seq 1 30); do
+    if docker compose -f "$ROOT/docker-compose.yml" exec -T postgres pg_isready -U xlocale -d xlocale >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != true ]]; then
+    echo "Postgres did not become ready. See README for a native Postgres setup."
+    exit 1
+  fi
+else
+  echo "Docker Compose is not available. Expecting a native Postgres server (see README)."
+fi
+
+echo "==> Creating the test database if it is missing..."
+(
+  cd "$ROOT/backend"
+  uv run python -m app.postgres_admin create \
+    "${TEST_DATABASE_URL:-postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test}"
+)
+
 echo "==> Preparing backend (migrate + seed)..."
 (
   cd "$ROOT/backend"

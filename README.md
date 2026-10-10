@@ -5,14 +5,19 @@ activity log, AI auto-translate, Excel round-trip, and CLI sync.
 
 ## Prerequisites
 
-- **Option A (local dev):** [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 20+
-- **Option B (production-like):** [Docker](https://docs.docker.com/get-docker/)
+- [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 20+
+- Postgres 16. Local dev starts it with Docker Compose. A native server is documented below.
 
-## Quick start (local, no Docker)
+## Quick start
 
 ```bash
 cp .env.example .env
+docker compose up -d postgres
 ```
+
+`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
+
+`scripts/dev.sh` runs that Compose command, creates `xlocale_test` if it is missing, migrates, seeds, and starts the API and the dashboard.
 
 **Terminal 1 — backend:**
 
@@ -37,9 +42,24 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-SQLite (`backend/x-locale.db`) is the default. Delete it and re-run migrate + seed to reset.
+The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL.
 
-## Quick start (Docker)
+### Native Postgres
+
+Install PostgreSQL 16 and initialize the cluster with collation C:
+
+```bash
+pg_createcluster 16 main --locale=C --encoding=UTF8
+pg_ctlcluster 16 main start
+createuser -s xlocale
+psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
+createdb -O xlocale -T template0 xlocale
+createdb -O xlocale -T template0 xlocale_test
+```
+
+Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate FROM pg_database WHERE datname = current_database()` must be `C`.
+
+## Quick start (full Docker stack)
 
 ```bash
 cp .env.example .env
@@ -191,7 +211,7 @@ produce an empty queue when no other target locale is missing.
 ## Development
 
 ```bash
-# Backend tests
+# Backend tests. TEST_DATABASE_URL must be Postgres and must differ from DATABASE_URL.
 cd backend && uv sync --all-extras && uv run pytest
 
 # Frontend typecheck + build
