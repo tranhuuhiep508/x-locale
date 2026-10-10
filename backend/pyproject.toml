@@ -47,6 +47,3 @@ ignore = ["E501", "B008", "UP037", "UP042"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = [
-  "postgres: tests that require TEST_DATABASE_URL (real Postgres). Skipped when unset.",
-]

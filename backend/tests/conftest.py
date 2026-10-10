@@ -1,4 +1,4 @@
-"""Backend test fixtures."""
+"""Backend test fixtures. One Postgres database, truncated between tests."""
 
 from __future__ import annotations
 
@@ -6,13 +6,22 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-# Use in-memory SQLite for tests before app imports engine.
-# Cloud/dev hosts may inject OIDC_*; bypass is ignored when OIDC is configured.
-os.environ["DATABASE_URL"] = "sqlite://"
+from tests.pg import (
+    disposable_database,
+    load_dotenv_defaults,
+    open_engine,
+    truncate_all,
+    validate_test_database_env,
+)
+
+load_dotenv_defaults()
+_TEST_DATABASE_URL = validate_test_database_env(
+    os.environ.get("TEST_DATABASE_URL", ""),
+    os.environ.get("DATABASE_URL", ""),
+)
+os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 os.environ["AUTH_DEV_BYPASS"] = "true"
 os.environ["X_LOCALE_SECRET"] = "test-secret"
 os.environ["X_LOCALE_DEMO_API_KEY"] = "test-demo-key"
@@ -23,16 +32,44 @@ os.environ["OIDC_CLIENT_SECRET"] = ""
 pytest_plugins = ["tests.postgres_support"]
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    db_path = tmp_path / "test.db"
-    url = f"sqlite:///{db_path}"
-    monkeypatch.setenv("DATABASE_URL", url)
+@pytest.fixture(scope="session")
+def database_engine():
+    import app.models  # noqa: F401
+    from app.database import Base, register_activity_listener
 
-    # Re-import with patched settings is tricky; create tables on a fresh engine
-    from app import models  # noqa: F401
+    engine = open_engine()
+    Base.metadata.create_all(bind=engine)
+    register_activity_listener()
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_leftover_databases():
+    from app.postgres_admin import list_databases
+
+    before = list_databases(_TEST_DATABASE_URL)
+    yield
+    after = list_databases(_TEST_DATABASE_URL)
+    leaked = sorted(name for name in after - before if name.startswith("xltest_"))
+    assert leaked == [], f"throwaway databases left behind: {leaked}"
+
+
+@pytest.fixture(autouse=True)
+def _truncate_between_tests(database_engine):
+    truncate_all(database_engine)
+    yield
+
+
+@pytest.fixture()
+def session_factory(database_engine):
+    return sessionmaker(bind=database_engine, autoflush=False, autocommit=False)
+
+
+@pytest.fixture()
+def client(database_engine, session_factory, monkeypatch):
     from app.config import settings
-    from app.database import Base, enable_sqlite_foreign_keys, get_db, register_activity_listener
+    from app.database import get_db
     from app.main import app
 
     monkeypatch.setattr(settings, "auth_dev_bypass", True)
@@ -40,23 +77,19 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "oidc_client_id", "")
     monkeypatch.setattr(settings, "oidc_client_secret", "")
 
-    engine = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
-    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-    register_activity_listener()
-
     def override_get_db():
-        db = TestingSession()
+        db = session_factory()
         try:
             yield db
         finally:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-
-    with TestClient(app) as c:
-        yield c
-
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
-    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def throwaway_database():
+    yield from disposable_database()

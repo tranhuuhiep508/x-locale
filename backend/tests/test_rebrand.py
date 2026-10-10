@@ -98,8 +98,9 @@ def test_env_example_documents_x_locale_not_tms():
     assert "X_LOCALE_DEMO_API_KEY=" in text
     assert "TMS_SECRET" not in text
     assert "TMS_DEMO_API_KEY" not in text
-    assert "sqlite:///./x-locale.db" in text
-    assert "postgresql+psycopg://xlocale:xlocale@" in text
+    assert "DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale" in text
+    assert "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
+    assert ("sql" + "ite:///") not in text
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -108,21 +109,24 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     dev = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "POSTGRES_USER: xlocale" in dev
     assert "POSTGRES_DB: xlocale" in dev
-    assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev
+    assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev  # pragma: allowlist secret
     assert "X_LOCALE_SECRET:" in dev
     assert "X_LOCALE_DEMO_API_KEY:" in dev
     assert "TMS_SECRET" not in dev
     assert "POSTGRES_USER: tms" not in dev
+    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in dev
 
     prod = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
     assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
     assert "seed-demo" not in prod
+    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
 
 
-def test_sqlite_default_filename_in_config_source():
+def test_config_requires_a_postgres_url():
     text = (REPO_ROOT / "backend" / "app" / "config.py").read_text(encoding="utf-8")
-    assert "x-locale.db" in text
+    assert "require_postgres_database_url" in text
+    assert "x-locale.db" not in text
     assert "tms.db" not in text
 
 

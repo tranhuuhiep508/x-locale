@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import settings
+from app.config import require_postgres_database_url, settings
 from app.database import DbSession, register_activity_listener
 from app.routers import (
     activities,
@@ -25,6 +25,8 @@ from app.routers import (
     translate,
 )
 from app.services.catalog import is_module_project_fk_error
+
+require_postgres_database_url(settings.database_url)
 
 
 @asynccontextmanager

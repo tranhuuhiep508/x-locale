@@ -6,7 +6,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,7 @@ from app.main import app
 from app.models import Activity
 from app.services.activity_state import project_snapshot, restore_transaction, snapshots_match
 from tests.helpers import make_project, publish_strings
+from tests.pg import open_engine
 
 
 def setup_string(client):
@@ -306,7 +306,7 @@ def test_batch_key_validation_accounts_for_keys_released_by_earlier_inverse_step
 
 
 def test_snapshot_compatibility_and_missing_vs_empty_fields():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     current = {
         "translations": {"en": "Hello", "fr": "Bonjour"},
@@ -340,7 +340,7 @@ def test_snapshot_compatibility_and_missing_vs_empty_fields():
 
 
 def test_unrelated_integrity_errors_are_not_mislabeled():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     with Session(engine) as db:
         with pytest.raises(IntegrityError):
             with restore_transaction(db):

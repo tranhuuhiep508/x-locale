@@ -5,8 +5,10 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from app import models  # noqa: F401 — register all models on Base.metadata
-from app.config import settings
+from app.config import require_postgres_database_url, settings
 from app.database import Base
+
+require_postgres_database_url(settings.database_url)
 
 config = context.config
 
@@ -29,7 +31,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=url.startswith("sqlite") if url else False,
         compare_type=True,
     )
     with context.begin_transaction():
@@ -47,7 +48,6 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=settings.database_url.startswith("sqlite"),
             compare_type=True,
         )
         with context.begin_transaction():

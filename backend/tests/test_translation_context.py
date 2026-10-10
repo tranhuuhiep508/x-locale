@@ -20,6 +20,7 @@ from app.models import Module, Project, StringEntry
 from app.services import translate as translate_service
 from app.services.translate import _load_entries_by_ids, compose_translation_context, work_items
 from tests.helpers import make_project, publish_strings
+from tests.pg import open_engine
 
 
 def _module(client, pid, slug="auth", context="Module instructions"):
@@ -391,7 +392,7 @@ def test_missing_and_apply_never_invoke_ai_or_persist_composed_description(clien
 
 
 def test_eager_loading_mixed_modules_avoids_lazy_queries():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         project = Project(name="Test", slug="test", translation_context="Project")
@@ -476,8 +477,8 @@ def test_context_edits_leave_exports_sync_excel_and_published_snapshots_unchange
     ] == published
 
 
-def test_context_migration_upgrade_downgrade_reupgrade(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path / 'migration.db'}"
+def test_context_migration_upgrade_downgrade_reupgrade(throwaway_database, monkeypatch):
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     config = Config("alembic.ini")
     command.upgrade(config, "m2d49a0b1234")

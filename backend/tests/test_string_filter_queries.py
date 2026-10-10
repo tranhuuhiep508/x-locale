@@ -7,16 +7,17 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, update
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.database import Base
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
 from app.services.strings import resolve_string_ids, string_query
+from tests.pg import open_engine
 
 
 def test_advanced_string_query_filters_compose():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
 
@@ -120,7 +121,7 @@ def test_advanced_string_query_filters_compose():
 
 @pytest.fixture()
 def filter_catalog():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as db:
@@ -243,7 +244,7 @@ def test_conflicting_organization_filters_and_explicit_ids(filter_catalog):
 
 
 def test_string_time_since_until_filters():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
 
@@ -280,7 +281,7 @@ def test_string_time_since_until_filters():
 
 
 def test_string_time_filter_conflicts():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
 

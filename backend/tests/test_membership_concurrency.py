@@ -5,13 +5,9 @@ from datetime import UTC, datetime
 from threading import Barrier, Event, Lock
 
 import pytest
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
 
 from app import auth
 from app.auth import SESSION_COOKIE, create_session_token
-from app.database import enable_sqlite_foreign_keys, get_db
-from app.main import app
 from app.models import MemberRole, Project, ProjectMember, User
 from app.services import members as members_service
 from app.services import projects as projects_service
@@ -21,26 +17,8 @@ from tests.test_project_members import _add_user, _as, _session
 
 @pytest.fixture()
 def concurrent_client(client):
-    # StaticPool shares one connection; races require independent transactions.
-    previous_override = app.dependency_overrides[get_db]
-    generator = previous_override()
-    db = next(generator)
-    url = db.get_bind().url
-    generator.close()
-    engine = create_engine(url, connect_args={"check_same_thread": False})
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
-    testing_session = sessionmaker(bind=engine, autoflush=False)
-
-    def override_get_db():
-        with testing_session() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        yield client
-    finally:
-        app.dependency_overrides[get_db] = previous_override
-        engine.dispose()
+    """Same client. The session engine opens a connection per request."""
+    return client
 
 
 def _editor(client):

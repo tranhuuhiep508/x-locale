@@ -1,15 +1,11 @@
-"""Postgres-backed API tests.
-
-The default suite stays on SQLite. These helpers run only when
-TEST_DATABASE_URL points at a real Postgres database (CI service container).
-"""
+"""Schema shapes that module delete has to survive, each on a throwaway database."""
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -17,21 +13,29 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
+
+from app.postgres_admin import create_database, drop_database
+from tests.pg import new_database_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
-def postgres_url() -> str:
-    url = os.environ.get("TEST_DATABASE_URL", "").strip()
-    if not url:
-        pytest.skip("TEST_DATABASE_URL is not set")
-    return url
+@contextmanager
+def migration_database_url(url: str) -> Iterator[None]:
+    """Point Alembic at url for the duration of the block, then restore it."""
+    from app.config import settings
+
+    previous = settings.database_url
+    settings.database_url = url
+    try:
+        yield
+    finally:
+        settings.database_url = previous
 
 
 def reset_public_schema(url: str) -> None:
-    from sqlalchemy import text
-
-    engine = create_engine(url)
+    engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
@@ -52,14 +56,15 @@ def upgrade_head(url: str) -> None:
 
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", url)
-    command.upgrade(cfg, "head")
+    with migration_database_url(url):
+        command.upgrade(cfg, "head")
 
 
 def _create_all(url: str) -> None:
     import app.models  # noqa: F401
     from app.database import Base
 
-    engine = create_engine(url)
+    engine = create_engine(url, poolclass=NullPool)
     Base.metadata.create_all(engine)
     engine.dispose()
 
@@ -70,7 +75,7 @@ def install_immediate_module_fks(url: str) -> None:
     That is the trigger order a pg_dump restore can produce for the old
     constraints: the NO ACTION check runs while module_id is still set.
     """
-    engine = create_engine(url)
+    engine = create_engine(url, poolclass=NullPool)
     with engine.begin() as conn:
         names = conn.execute(
             text(
@@ -135,7 +140,7 @@ def install_immediate_module_fks(url: str) -> None:
 def dump_and_restore(url: str) -> None:
     """Round-trip the schema through pg_dump/pg_restore's SQL path."""
     if shutil.which("pg_dump") is None or shutil.which("psql") is None:
-        pytest.skip("pg_dump and psql are required for the restore test")
+        raise RuntimeError("pg_dump and psql are required for the restore test")
     target = libpq_url(url)
     dumped = subprocess.run(
         [
@@ -194,7 +199,8 @@ def alembic_check(url: str) -> None:
 
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", url)
-    command.check(cfg)
+    with migration_database_url(url):
+        command.check(cfg)
 
 
 def _bind_dev_settings(monkeypatch, url: str) -> None:
@@ -211,7 +217,7 @@ def _client_for(url: str) -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     from app.database import get_db, register_activity_listener
     from app.main import app
 
-    engine: Engine = create_engine(url)
+    engine: Engine = create_engine(url, poolclass=NullPool)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     register_activity_listener()
 
@@ -230,23 +236,24 @@ def _client_for(url: str) -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     engine.dispose()
 
 
-@pytest.fixture()
-def pg_session(monkeypatch) -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
-    """Alembic-upgraded Postgres with the same dev-bypass client the sqlite tests use."""
-    url = postgres_url()
-    _bind_dev_settings(monkeypatch, url)
-    prepare_schema(url, "alembic")
-    yield from _client_for(url)
-
-
 SCHEMA_MODES = ("alembic", "create_all", "restored_order", "pg_dump")
 
 
 @pytest.fixture(params=SCHEMA_MODES)
 def pg_schema(request, monkeypatch) -> Iterator[tuple[TestClient, sessionmaker[Session], str]]:
     """API client on each schema shape module delete has to survive."""
-    url = postgres_url()
-    _bind_dev_settings(monkeypatch, url)
-    prepare_schema(url, request.param)
+    url = new_database_url()
+    create_database(url)
+    try:
+        _bind_dev_settings(monkeypatch, url)
+        prepare_schema(url, request.param)
+        yield from _schema_client(url, request.param)
+    finally:
+        drop_database(url)
+
+
+def _schema_client(
+    url: str, mode: str
+) -> Iterator[tuple[TestClient, sessionmaker[Session], str]]:
     for client, session_factory in _client_for(url):
-        yield client, session_factory, request.param
+        yield client, session_factory, mode

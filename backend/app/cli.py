@@ -15,8 +15,9 @@ def _root() -> None:
 @app.command("seed-demo")
 def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo project")) -> None:
     """Seed the Demo App project (Vietnamese base, modular layout)."""
-    from app.config import settings
+    from app.config import require_postgres_database_url, settings
 
+    require_postgres_database_url(settings.database_url)
     if not settings.auth_dev_bypass:
         typer.echo("seed-demo is only allowed when AUTH_DEV_BYPASS=true", err=True)
         raise typer.Exit(1)

@@ -5,11 +5,10 @@ from __future__ import annotations
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, text
 
 from alembic import command
 from app.config import settings
-from app.database import enable_sqlite_foreign_keys
 
 
 def _project(client):
@@ -156,27 +155,32 @@ def test_list_sort_invalid_params_400(client, params):
     assert detail
 
 
-def test_migration_creates_updated_at_partial_index(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path / 'sort-index.db'}"
+def test_migration_creates_updated_at_partial_index(throwaway_database, monkeypatch):
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "head")
 
     engine = create_engine(url)
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
     with engine.connect() as conn:
-        index_sql = conn.exec_driver_sql(
-            "SELECT sql FROM sqlite_master WHERE name = 'ix_strings_project_updated_at_alive'"
+        index_sql = conn.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE indexname = 'ix_strings_project_updated_at_alive'"
+            )
         ).scalar()
     assert index_sql
     assert "deleted_at" in index_sql.lower()
     assert "updated_at" in index_sql.lower()
+    engine.dispose()
 
 
 @pytest.mark.parametrize("starting_state", ["fresh", "catalog_sort", "time_range"])
-def test_shared_index_migration_upgrade_and_downgrade(tmp_path, monkeypatch, starting_state):
-    url = f"sqlite:///{tmp_path / 'shared-index.db'}"
+def test_shared_index_migration_upgrade_and_downgrade(
+    throwaway_database, monkeypatch, starting_state
+):
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
     engine = create_engine(url)
@@ -188,17 +192,21 @@ def test_shared_index_migration_upgrade_and_downgrade(tmp_path, monkeypatch, sta
         # changed to reuse the catalog sorting migration.
         command.upgrade(cfg, "l1c38f9a0123")
         with engine.begin() as conn:
-            conn.exec_driver_sql(
-                "CREATE INDEX ix_strings_project_updated_at_alive "
-                "ON strings (project_id, updated_at) WHERE deleted_at IS NULL"
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_strings_project_updated_at_alive "
+                    "ON strings (project_id, updated_at) WHERE deleted_at IS NULL"
+                )
             )
         command.stamp(cfg, "m2d49a0b1234")
 
     def index_count():
         with engine.connect() as conn:
-            return conn.exec_driver_sql(
-                "SELECT count(*) FROM sqlite_master "
-                "WHERE name = 'ix_strings_project_updated_at_alive'"
+            return conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_indexes "
+                    "WHERE indexname = 'ix_strings_project_updated_at_alive'"
+                )
             ).scalar()
 
     command.upgrade(cfg, "head")

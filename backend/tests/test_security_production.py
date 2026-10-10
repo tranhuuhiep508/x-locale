@@ -81,7 +81,6 @@ def test_openapi_hidden_when_oidc_configured():
     import os
 
     env = os.environ.copy()
-    env["DATABASE_URL"] = "sqlite://"
     env["AUTH_DEV_BYPASS"] = "false"
     env["X_LOCALE_SECRET"] = "prod-test-secret-value"
     env["OIDC_ISSUER"] = "https://login.example.test/tenant/v2.0"

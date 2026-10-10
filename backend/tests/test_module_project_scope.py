@@ -7,14 +7,13 @@ from datetime import UTC, datetime
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import MetaData, Table, create_engine, event, select, update
+from sqlalchemy import MetaData, Table, create_engine, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.pool import StaticPool
 
 from alembic import command
 from app.config import settings
-from app.database import Base, enable_sqlite_foreign_keys
+from app.database import Base
 from app.models import (
     Activity,
     ActivityAction,
@@ -35,6 +34,7 @@ from app.services.catalog import (
 from app.services.strings import serialize_string
 from app.services.sync import build_modular_export
 from tests.helpers import make_project, publish_strings
+from tests.pg import open_engine
 
 FOREIGN_SLUG = "secret-b"
 
@@ -192,7 +192,7 @@ def test_null_module_id_still_allowed_on_create_update_and_move(client):
 
 
 def test_to_module_out_counts_only_strings_in_the_module_project():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
 
     with Session(engine) as db:
@@ -237,8 +237,10 @@ def test_to_module_out_counts_only_strings_in_the_module_project():
                     deleted_at=datetime.now(UTC),
                 ),
             ]
-        )
-        db.commit()
+            )
+        # The leak row points at another project's module. The composite FK is
+        # deferred, so the row is visible after flush and rejected at commit.
+        db.flush()
         db.refresh(module_a)
 
         out = to_module_out(db, module_a)
@@ -387,8 +389,7 @@ def _project_pair(db: Session):
 
 
 def _fk_engine():
-    engine = create_engine("sqlite://")
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
+    engine = open_engine()
     Base.metadata.create_all(engine)
     return engine
 
@@ -525,14 +526,7 @@ def test_database_rejects_cross_project_module_refs():
 
 
 def test_scrub_clears_foreign_module_refs():
-    engine = create_engine("sqlite://", poolclass=StaticPool)
-
-    @event.listens_for(engine, "connect")
-    def _fk_off(dbapi_connection, _connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=OFF")
-        cursor.close()
-
+    engine = open_engine()
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         project_a, _, _, module_b = _project_pair(db)
@@ -545,7 +539,7 @@ def test_scrub_clears_foreign_module_refs():
             status=TranslationStatus.draft,
         )
         db.add(entry)
-        db.commit()
+        db.flush()
         scrub_foreign_module_refs(db.connection())
         db.commit()
         db.refresh(entry)
@@ -658,15 +652,14 @@ def test_revert_clears_foreign_module_and_restores_same_project_module():
         assert FOREIGN_SLUG not in restored_out.model_dump_json()
 
 
-def test_migration_scrubs_foreign_modules_then_enforces(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path / 'migrate.db'}"
+def test_migration_scrubs_foreign_modules_then_enforces(throwaway_database, monkeypatch):
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "k0f16d7e8f9a")
 
     engine = create_engine(url)
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
     # Seed the historical schema through reflected tables, independent of new ORM columns.
     metadata = MetaData()
     projects = Table("projects", metadata, autoload_with=engine)
@@ -718,8 +711,8 @@ def test_migration_scrubs_foreign_modules_then_enforces(tmp_path, monkeypatch):
         db.rollback()
 
     with engine.connect() as conn:
-        index_sql = conn.exec_driver_sql(
-            "SELECT sql FROM sqlite_master WHERE name = 'uq_project_key_alive'"
+        index_sql = conn.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_project_key_alive'")
         ).scalar()
     assert index_sql
     assert "deleted_at" in index_sql.lower()
