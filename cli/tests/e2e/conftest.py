@@ -16,10 +16,8 @@ from .support import (
 
 
 @pytest.fixture(scope="session")
-def backend_server(tmp_path_factory: pytest.TempPathFactory) -> BackendServer:
-    data_dir = tmp_path_factory.mktemp("cli-e2e-backend")
-    db_path = data_dir / "e2e.db"
-    server = start_backend_server(db_path)
+def backend_server() -> BackendServer:
+    server = start_backend_server()
     yield server
     server.stop()
 

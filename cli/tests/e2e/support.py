@@ -26,10 +26,10 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def backend_env(db_path: Path) -> dict[str, str]:
+def backend_env(database_url: str) -> dict[str, str]:
     return {
         **os.environ,
-        "DATABASE_URL": f"sqlite:///{db_path}",
+        "DATABASE_URL": database_url,
         "AUTH_DEV_BYPASS": "true",
         "OIDC_ISSUER": "",
         "OIDC_CLIENT_ID": "",
@@ -39,12 +39,45 @@ def backend_env(db_path: Path) -> dict[str, str]:
     }
 
 
-def migrate_database(db_path: Path) -> None:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+def _postgres_base_url() -> str:
+    configured = os.environ.get("DATABASE_URL", "").strip()
+    lowered = configured.lower()
+    if lowered.startswith(("postgresql://", "postgresql+", "postgres://", "postgres+")):
+        return configured
+    return "postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale"
+
+
+def unique_database_url() -> str:
+    """A database name that is unique for this process, on the configured server."""
+    base = _postgres_base_url()
+    name = os.environ.get("CLI_E2E_DATABASE_NAME", "").strip() or f"xlocale_cli_{uuid.uuid4().hex}"
+    if any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in name):
+        raise RuntimeError(f"Refusing database name {name!r}.")
+    if "://" not in base or "/" not in base.split("://", 1)[1]:
+        raise RuntimeError(f"Cannot derive a database name from {base!r}.")
+    prefix, rest = base.split("://", 1)
+    path, query = (rest.split("?", 1) + [""])[:2]
+    head, _, _db = path.rpartition("/")
+    suffix = f"?{query}" if query else ""
+    return f"{prefix}://{head}/{name}{suffix}"
+
+
+def _admin(action: str, database_url: str) -> None:
+    subprocess.run(
+        ["uv", "run", "python", "-m", "app.postgres_admin", action, database_url],
+        cwd=BACKEND_ROOT,
+        env=backend_env(database_url),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def migrate_database(database_url: str) -> None:
     subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=BACKEND_ROOT,
-        env=backend_env(db_path),
+        env=backend_env(database_url),
         check=True,
         capture_output=True,
         text=True,
@@ -69,22 +102,28 @@ def wait_for_health(base_url: str, *, timeout: float = 60.0) -> None:
 @dataclass(frozen=True)
 class BackendServer:
     base_url: str
-    db_path: Path
+    database_url: str
     process: subprocess.Popen[str]
 
     def stop(self) -> None:
-        if self.process.poll() is not None:
-            return
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=5)
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+        _admin("drop", self.database_url)
 
 
-def start_backend_server(db_path: Path) -> BackendServer:
-    migrate_database(db_path)
+def start_backend_server() -> BackendServer:
+    database_url = unique_database_url()
+    _admin("create", database_url)
+    try:
+        migrate_database(database_url)
+    except Exception:
+        _admin("drop", database_url)
+        raise
     port = find_free_port()
     base_url = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
@@ -98,7 +137,7 @@ def start_backend_server(db_path: Path) -> BackendServer:
             f"--port={port}",
         ],
         cwd=BACKEND_ROOT,
-        env=backend_env(db_path),
+        env=backend_env(database_url),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -108,8 +147,9 @@ def start_backend_server(db_path: Path) -> BackendServer:
     except Exception:
         process.kill()
         process.wait(timeout=5)
+        _admin("drop", database_url)
         raise
-    return BackendServer(base_url=base_url, db_path=db_path, process=process)
+    return BackendServer(base_url=base_url, database_url=database_url, process=process)
 
 
 def login_admin_client(base_url: str) -> httpx.Client:
