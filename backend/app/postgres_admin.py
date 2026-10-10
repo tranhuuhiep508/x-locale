@@ -55,8 +55,16 @@ def harness_database_name(stem: str, *, epoch: int | None = None, unique: str | 
 
 
 def _configured_bootstrap_name() -> str:
-    """Database named by TEST_DATABASE_URL. Harnesses connect here, not to postgres."""
+    """Database named by TEST_DATABASE_URL. Harnesses connect here, not to postgres.
+
+    The environment variable wins. When it is empty, Settings supplies the value
+    from ``.env``, which is how the README configures a local harness.
+    """
     configured = os.environ.get("TEST_DATABASE_URL", "").strip()
+    if not configured:
+        from app.config import settings
+
+        configured = (settings.test_database_url or "").strip()
     if not configured:
         raise SystemExit(
             "TEST_DATABASE_URL must name the bootstrap database used for CREATE and DROP."

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 from alembic.config import Config
@@ -75,6 +78,46 @@ def test_maintenance_database_is_the_bootstrap_not_postgres():
     bootstrap = make_url(os.environ["TEST_DATABASE_URL"]).database
     assert _maintenance_database(url) == bootstrap
     assert bootstrap != "postgres"
+
+
+def test_bootstrap_name_reads_a_tmp_env_file_when_the_variable_is_unset(tmp_path: Path):
+    """Harness subprocesses do not export TEST_DATABASE_URL. The file still counts."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TEST_DATABASE_URL=postgresql+psycopg://role:local@127.0.0.1:5433/bootstrap_from_file\n",
+        encoding="utf-8",
+    )
+    script = (
+        "from app.postgres_admin import _configured_bootstrap_name\n"
+        "print(_configured_bootstrap_name())\n"
+    )
+    env = os.environ.copy()
+    env.pop("TEST_DATABASE_URL", None)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    from_file = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert from_file.returncode == 0, from_file.stderr
+    assert from_file.stdout.strip() == "bootstrap_from_file"
+
+    env["TEST_DATABASE_URL"] = (
+        "postgresql+psycopg://role:local@127.0.0.1:5433/bootstrap_from_env"
+    )
+    from_env = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert from_env.returncode == 0, from_env.stderr
+    assert from_env.stdout.strip() == "bootstrap_from_env"
 
 
 def test_missing_createdb_is_explained(monkeypatch):
