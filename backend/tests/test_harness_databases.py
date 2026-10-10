@@ -2,24 +2,27 @@
 
 from __future__ import annotations
 
+import os
+import time
 import uuid
-from datetime import timedelta
 
 import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
 from app.postgres_admin import (
+    STALE_HARNESS_DATABASE_AGE,
     create_database,
     database_name,
     drop_database,
+    harness_database_name,
     replace_database,
     sweep_stale_harness_databases,
 )
 from tests.pg import (
     assert_no_preexisting_app_tables,
-    databases_created_by_this_run,
     forget_database_created_by_this_run,
     new_database_url,
     note_database_created_by_this_run,
@@ -64,55 +67,88 @@ def test_create_new_refuses_a_database_that_already_exists():
         drop_database(url)
 
 
-def test_missing_createdb_is_explained():
-    role = f"xl_nocreatedb_{uuid.uuid4().hex[:8]}"
-    admin = create_engine(
-        replace_database(os_test_url(), "postgres"),
-        isolation_level="AUTOCOMMIT",
-        poolclass=NullPool,
-    )
+def test_maintenance_database_is_the_bootstrap_not_postgres():
+    from app.postgres_admin import _maintenance_database
+
+    url = replace_database(os.environ["TEST_DATABASE_URL"], harness_database_name("xl_test"))
+    bootstrap = make_url(os.environ["TEST_DATABASE_URL"]).database
+    assert _maintenance_database(url) == bootstrap
+    assert bootstrap != "postgres"
+
+
+def test_missing_createdb_is_explained(monkeypatch):
+    """The message uses this server's host, port, and credentials. No superuser role."""
+    base = make_url(os.environ["TEST_DATABASE_URL"])
+    url = base.set(database=harness_database_name("xl_test")).render_as_string(hide_password=False)
+    probe = create_engine(base.render_as_string(hide_password=False), poolclass=NullPool)
     try:
-        with admin.connect() as conn:
-            conn.execute(
-                text(f"CREATE ROLE {role} LOGIN PASSWORD 'nocreatedb' NOSUPERUSER NOCREATEDB")
-            )
-        url = _role_url(role, f"xl_test_{uuid.uuid4().hex}")
-        with pytest.raises(SystemExit, match="CREATEDB"):
-            create_database(url, exclusive=True)
+        with probe.connect() as conn:
+            conn.execute(text("SELECT 1"))
     finally:
-        with admin.connect() as conn:
-            conn.execute(text(f"DROP ROLE IF EXISTS {role}"))
-        admin.dispose()
+        probe.dispose()
+
+    def fail_create(engine_url: str):
+        parsed = make_url(engine_url)
+        assert parsed.host == base.host
+        assert parsed.port == base.port
+        assert parsed.username == base.username
+        assert parsed.password == base.password
+        assert parsed.database != "postgres"
+
+        class _Result:
+            def scalar(self):
+                return None
+
+        class _Conn:
+            def execute(self, statement, params=None):
+                if "CREATE DATABASE" in str(statement):
+                    raise Exception("permission denied to create database")
+                return _Result()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+        class _Engine:
+            def connect(self):
+                return _Conn()
+
+            def dispose(self):
+                return None
+
+        return _Engine()
+
+    monkeypatch.setattr("app.postgres_admin._admin_engine", fail_create)
+    with pytest.raises(SystemExit, match="CREATEDB"):
+        create_database(url, exclusive=True)
 
 
 def test_sweep_drops_only_stale_unused_harness_databases():
-    stale_url = _empty_database()
-    fresh_url = _empty_database()
-    busy_url = _empty_database()
-    plain_url = new_database_url("xlkeep")
-    create_database(plain_url, exclusive=True)
+    token = uuid.uuid4().hex[:8]
+    prefix = f"xl_test_{token}_"
+    other = f"xl_test_{uuid.uuid4().hex[:8]}_"
+    old = int(time.time()) - int(STALE_HARNESS_DATABASE_AGE.total_seconds()) - 120
+    fresh_epoch = int(time.time())
+    stale_url = _create_at(prefix, old)
+    fresh_url = _create_at(prefix, fresh_epoch)
+    busy_url = _create_at(prefix, old)
+    other_url = _create_at(other, old)
     busy = create_engine(busy_url, poolclass=NullPool)
     busy_conn = busy.connect()
     try:
-        kept = sweep_stale_harness_databases(os_test_url(), min_age=timedelta(days=1))
-        assert database_name(stale_url) not in kept
-        assert database_name(stale_url) in _names()
-        dropped = sweep_stale_harness_databases(
-            os_test_url(),
-            min_age=timedelta(0),
-            exclude=set(databases_created_by_this_run()) | {database_name(fresh_url)},
-        )
-        assert database_name(stale_url) in dropped
+        dropped = sweep_stale_harness_databases(os_test_url(), prefixes=(prefix,))
         remaining = _names()
+        assert database_name(stale_url) in dropped
         assert database_name(stale_url) not in remaining
         assert database_name(fresh_url) in remaining
         assert database_name(busy_url) in remaining
-        assert database_name(plain_url) in remaining
-        assert "xlocale" in remaining
+        assert database_name(other_url) in remaining
     finally:
         busy_conn.close()
         busy.dispose()
-        for url in (stale_url, fresh_url, busy_url, plain_url):
+        for url in (stale_url, fresh_url, busy_url, other_url):
             drop_database(url)
 
 
@@ -128,16 +164,14 @@ def test_percent_in_database_url_round_trips_through_configparser():
 
 
 def os_test_url() -> str:
-    import os
-
     return os.environ["TEST_DATABASE_URL"]
 
 
-def _role_url(role: str, name: str) -> str:
-    return replace_database(
-        f"postgresql+psycopg://{role}:nocreatedb@localhost:5432/postgres",
-        name,
-    )
+def _create_at(prefix: str, epoch: int) -> str:
+    stem = prefix[:-1] if prefix.endswith("_") else prefix
+    url = replace_database(os_test_url(), harness_database_name(stem, epoch=epoch))
+    create_database(url, exclusive=True)
+    return url
 
 
 def _names() -> set[str]:

@@ -10,7 +10,11 @@ const PREFIX = 'xlocale_e2e_'
 const MAX_IDENT = 63
 const NAME_OK = /^[A-Za-z0-9_]+$/
 
+/** Database name globalSetup recorded after create-new. Teardown must match it. */
+export const CREATED_DATABASE_ENV = 'XLOCALE_E2E_CREATED_DATABASE'
+
 let allocatedUrl: string | null = null
+let createdTrackingFile: string | null = null
 
 function redactDatabaseUrl(url: string): string {
   try {
@@ -40,10 +44,15 @@ function withDatabaseName(base: string, name: string): string {
   return `${match[1]}${name}${match[3] ?? ''}`
 }
 
+function defaultTrackingFile(): string {
+  return path.join(dataDir, `database-url-${process.pid}`)
+}
+
 function trackingFile(): string {
   const fromEnv = process.env.E2E_DATABASE_URL_FILE?.trim()
   if (fromEnv) return fromEnv
-  const file = path.join(dataDir, `database-url-${process.pid}`)
+  const file = defaultTrackingFile()
+  createdTrackingFile = file
   process.env.E2E_DATABASE_URL_FILE = file
   return file
 }
@@ -57,8 +66,8 @@ function postgresUrl(value: string | undefined): string | null {
  * Build a database name this run will create.
  *
  * `stem` must start with `xlocale_e2e_` and must not be the application database.
- * A unique suffix is always appended. `suffix` includes the leading `_` when tests
- * pin it; otherwise a random suffix is used.
+ * The name is `{stem}_{epoch}_{hex}` after one trailing underscore is removed, so
+ * the default stem does not become `xlocale_e2e__`.
  */
 export function allocateDatabaseName(stem: string, appName: string, suffix?: string): string {
   if (!NAME_OK.test(stem)) {
@@ -72,22 +81,23 @@ export function allocateDatabaseName(stem: string, appName: string, suffix?: str
   if (stem === appName) {
     throw new Error(`Refusing the application database name ${JSON.stringify(stem)}.`)
   }
-  const extra = suffix ?? `_${crypto.randomUUID().replaceAll('-', '')}`
+  const epoch = Math.floor(Date.now() / 1000).toString()
+  const extra = suffix ?? `_${epoch}_${crypto.randomUUID().replaceAll('-', '')}`
   if (!/^_[A-Za-z0-9_]+$/.test(extra)) {
     throw new Error(`Refusing database suffix ${JSON.stringify(extra)}.`)
   }
-  let base = stem
+  let base = stem.endsWith('_') ? stem.slice(0, -1) : stem
   if (base.length + extra.length > MAX_IDENT) {
     base = base.slice(0, MAX_IDENT - extra.length)
   }
-  if (!base.startsWith(PREFIX)) {
+  if (!base.startsWith(PREFIX.slice(0, -1))) {
     throw new Error(
       `Refusing database name ${JSON.stringify(stem)}. The ${PREFIX} prefix does not fit in ${MAX_IDENT} characters.`,
     )
   }
   const name = `${base}${extra}`
-  if (name === appName) {
-    throw new Error(`Refusing the application database name ${JSON.stringify(name)}.`)
+  if (name.includes('__') || name === appName) {
+    throw new Error(`Refusing database name ${JSON.stringify(name)}.`)
   }
   return name
 }
@@ -133,7 +143,39 @@ export function readTrackedDatabaseUrl(): string | null {
 export function clearTrackedDatabaseUrl(): void {
   allocatedUrl = null
   const file = process.env.E2E_DATABASE_URL_FILE?.trim()
-  if (file && fs.existsSync(file)) fs.unlinkSync(file)
+  if (!file) return
+  const owned = file === createdTrackingFile || file === defaultTrackingFile()
+  if (owned && fs.existsSync(file)) fs.unlinkSync(file)
+}
+
+/**
+ * Teardown may drop only the database globalSetup recorded.
+ *
+ * The tracked name must use the `xlocale_e2e_` prefix, must not be the application
+ * database, and must equal the name stored in `XLOCALE_E2E_CREATED_DATABASE`.
+ */
+export function assertTeardownDatabase(
+  url: string,
+  appUrl: string | undefined,
+  createdName: string | undefined,
+): string {
+  const name = databaseNameFromUrl(url)
+  if (!NAME_OK.test(name) || !name.startsWith(PREFIX)) {
+    throw new Error(`Refusing tracked database ${JSON.stringify(name)}.`)
+  }
+  const configured = appUrl?.trim() ?? ''
+  if (configured.startsWith('postgres')) {
+    const appName = databaseNameFromUrl(configured)
+    if (name === appName) {
+      throw new Error(`Refusing the application database name ${JSON.stringify(name)}.`)
+    }
+  }
+  if (!createdName || createdName !== name) {
+    throw new Error(
+      `Refusing tracked database ${JSON.stringify(name)}. It does not match the database this run created.`,
+    )
+  }
+  return name
 }
 
 /** @internal Test hook so one process can allocate more than one run. */

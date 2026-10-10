@@ -3,16 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Read DATABASE_URL and TEST_DATABASE_URL from the repo .env. .env.example keeps
-# AUTH_DEV_BYPASS=false so a copied file is not a bypass. This script turns the
-# bypass on only for the processes it starts, after the file is read.
-if [[ -f "$ROOT/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT/.env"
-  set +a
-fi
+# Do not read .env as a shell script. The app loads it. .env.example keeps
+# AUTH_DEV_BYPASS=false. This export applies only to the processes started here.
 export AUTH_DEV_BYPASS=true
+
+if [[ "${1:-}" == "--check" ]]; then
+  cd "$ROOT/backend"
+  uv run python -c "from app.config import settings; raise SystemExit(0 if settings.database_url.startswith('postgres') else 1)"
+  exit 0
+fi
 
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
@@ -92,8 +91,7 @@ fi
 echo "==> Creating the test database if it is missing (template0, libc collation C)..."
 (
   cd "$ROOT/backend"
-  uv run python -m app.postgres_admin create \
-    "${TEST_DATABASE_URL:-postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test}"
+  uv run python -c "from app.config import settings; from app.postgres_admin import create_database; create_database(settings.test_database_url)"
 )
 
 echo "==> Preparing backend (migrate + seed)..."

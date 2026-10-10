@@ -2,7 +2,12 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { clearTrackedDatabaseUrl, readTrackedDatabaseUrl } from './database-url'
+import {
+  CREATED_DATABASE_ENV,
+  clearTrackedDatabaseUrl,
+  databaseNameFromUrl,
+  readTrackedDatabaseUrl,
+} from './database-url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -38,6 +43,7 @@ export default async function globalSetup() {
   try {
     admin('sweep', databaseUrl, env)
     admin('create-new', databaseUrl, env)
+    process.env[CREATED_DATABASE_ENV] = databaseNameFromUrl(databaseUrl)
   } catch (error) {
     // create-new failed, so this run did not create the database. Do not drop it.
     clearTrackedDatabaseUrl()

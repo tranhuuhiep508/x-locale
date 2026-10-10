@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from app.postgres_admin import (
     create_database,
     database_name,
     drop_database,
+    harness_database_name,
     replace_database,
     sweep_stale_harness_databases,
 )
@@ -205,8 +205,8 @@ def truncate_all(engine: Engine) -> None:
 
 
 def new_database_url(prefix: str = "xltest") -> str:
-    name = f"{prefix}_{uuid.uuid4().hex}"
-    return replace_database(os.environ["TEST_DATABASE_URL"], name)
+    """``{prefix}_{epoch}_{hex}`` on the TEST_DATABASE_URL server."""
+    return replace_database(os.environ["TEST_DATABASE_URL"], harness_database_name(prefix))
 
 
 def disposable_database(prefix: str = "xltest") -> Iterator[str]:
@@ -224,9 +224,9 @@ def disposable_database(prefix: str = "xltest") -> Iterator[str]:
 def prepare_session_database(test_url: str) -> str:
     """Create this process's database and point later connections at it.
 
-    The name is ``xl_test_`` plus a unique suffix, so two pytest processes on
-    one server do not share or truncate each other's database. Stale harness
-    databases from a killed run are dropped first.
+    The name is ``xl_test_{epoch}_{hex}``, so two pytest processes on one server
+    do not share or truncate each other's database. Stale harness databases from
+    a killed run are dropped first, using the epoch stored in the name.
     """
     os.environ["TEST_DATABASE_URL"] = test_url
     sweep_stale_harness_databases(test_url, exclude=set(_CREATED_BY_THIS_RUN))

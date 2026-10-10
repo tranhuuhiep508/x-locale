@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import typer
 
 app = typer.Typer(help="x-locale backend management commands", no_args_is_help=True)
@@ -18,6 +20,13 @@ def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo p
     from app.config import require_postgres_database_url, settings
 
     require_postgres_database_url(settings.database_url)
+    if not force and _seed_demo_refused(settings):
+        typer.echo(
+            "seed-demo refuses to run when OIDC is configured or ENV=production. "
+            "Pass --force to seed anyway.",
+            err=True,
+        )
+        raise typer.Exit(1)
     from app.seed import seed_demo_data
 
     project = seed_demo_data(force=force)
@@ -58,6 +67,13 @@ def prune_activities_cmd() -> None:
             )
     finally:
         db.close()
+
+
+def _seed_demo_refused(settings) -> bool:
+    """Production must not receive the default demo API key. A fresh clone may seed."""
+    if settings.oidc_configured:
+        return True
+    return os.environ.get("ENV", "").strip().lower() == "production"
 
 
 if __name__ == "__main__":

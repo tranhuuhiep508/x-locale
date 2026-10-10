@@ -5,8 +5,10 @@ import path from 'node:path'
 import { afterEach, test } from 'node:test'
 
 import {
+  CREATED_DATABASE_ENV,
   allocateDatabaseName,
   allocateE2eDatabaseUrl,
+  assertTeardownDatabase,
   clearTrackedDatabaseUrl,
   databaseNameFromUrl,
   readTrackedDatabaseUrl,
@@ -22,6 +24,7 @@ afterEach(() => {
   delete process.env.E2E_DATABASE_NAME
   delete process.env.DATABASE_URL
   delete process.env.E2E_DATABASE_URL_FILE
+  delete process.env[CREATED_DATABASE_ENV]
 })
 
 function useFile(): string {
@@ -43,13 +46,20 @@ test('allocate refuses the application database name', () => {
 test('allocate appends a unique suffix under the identifier limit', () => {
   const first = allocateDatabaseName('xlocale_e2e_run', 'xlocale')
   const second = allocateDatabaseName('xlocale_e2e_run', 'xlocale')
-  assert.ok(first.startsWith('xlocale_e2e_run_'))
-  assert.ok(second.startsWith('xlocale_e2e_run_'))
+  assert.match(first, /^xlocale_e2e_run_[0-9]{10}_[0-9a-f]+$/)
+  assert.match(second, /^xlocale_e2e_run_[0-9]{10}_[0-9a-f]+$/)
   assert.notEqual(first, second)
   assert.ok(first.length <= 63)
   const fitted = allocateDatabaseName(`xlocale_e2e_${'a'.repeat(80)}`, 'xlocale')
   assert.ok(fitted.startsWith('xlocale_e2e_'))
   assert.ok(fitted.length <= 63)
+  assert.equal(fitted.includes('__'), false)
+})
+
+test('the default stem does not produce a double underscore', () => {
+  const name = allocateDatabaseName('xlocale_e2e_', 'xlocale')
+  assert.match(name, /^xlocale_e2e_[0-9]{10}_[0-9a-f]+$/)
+  assert.equal(name.includes('__'), false)
 })
 
 test('the run records one URL and teardown does not re-read the environment', () => {
@@ -66,7 +76,46 @@ test('the run records one URL and teardown does not re-read the environment', ()
   assert.equal(allocateE2eDatabaseUrl(), url)
   assert.equal(readTrackedDatabaseUrl(), url)
   clearTrackedDatabaseUrl()
+  assert.equal(readTrackedDatabaseUrl(), url)
+})
+
+test('clearing a run-owned tracking file removes it', () => {
+  delete process.env.E2E_DATABASE_URL_FILE
+  process.env.DATABASE_URL = 'postgresql://localhost/xlocale'
+  const url = allocateE2eDatabaseUrl()
+  const file = process.env.E2E_DATABASE_URL_FILE
+  assert.ok(file?.endsWith(`database-url-${process.pid}`))
+  clearTrackedDatabaseUrl()
+  assert.equal(fs.existsSync(file!), false)
   assert.equal(readTrackedDatabaseUrl(), null)
+  assert.ok(url.startsWith('postgresql://localhost/xlocale_e2e_'))
+})
+
+test('a refused setup does not delete a user-supplied tracking file', () => {
+  const file = useFile()
+  fs.writeFileSync(file, 'postgresql://localhost/xlocale_e2e_keep')
+  clearTrackedDatabaseUrl()
+  assert.equal(fs.readFileSync(file, 'utf8'), 'postgresql://localhost/xlocale_e2e_keep')
+})
+
+test('teardown refuses a tracked name that was not created in this process', () => {
+  const app = 'postgresql://localhost/xlocale'
+  const created = 'xlocale_e2e_run_1700000000_abc'
+  const url = `postgresql://localhost/${created}`
+  assert.throws(() => assertTeardownDatabase(url, app, undefined), /does not match/)
+  assert.throws(
+    () => assertTeardownDatabase(url, app, 'xlocale_e2e_other_1700000000_def'),
+    /does not match/,
+  )
+  assert.throws(
+    () => assertTeardownDatabase('postgresql://localhost/xlocale', app, 'xlocale'),
+    /Refusing tracked database/,
+  )
+  assert.throws(
+    () => assertTeardownDatabase('postgresql://localhost/xlocale_e2e_app', 'postgresql://localhost/xlocale_e2e_app', 'xlocale_e2e_app'),
+    /application database/,
+  )
+  assert.equal(assertTeardownDatabase(url, app, created), created)
 })
 
 test('a missing tracking file drops nothing even when the environment names a database', () => {
@@ -81,9 +130,11 @@ test('setup creates a new database and teardown reads only the tracked file', ()
   const teardown = fs.readFileSync(new URL('./global-teardown.ts', import.meta.url), 'utf8')
   assert.match(setup, /create-new/)
   assert.match(setup, /readTrackedDatabaseUrl/)
+  assert.match(setup, /CREATED_DATABASE_ENV/)
   assert.doesNotMatch(setup, /postgres_admin create /)
   assert.match(setup, /clearTrackedDatabaseUrl/)
   assert.match(teardown, /readTrackedDatabaseUrl/)
+  assert.match(teardown, /assertTeardownDatabase/)
   assert.doesNotMatch(teardown, /e2eDatabaseUrl\(/)
   assert.doesNotMatch(teardown, /allocateE2eDatabaseUrl\(/)
 })

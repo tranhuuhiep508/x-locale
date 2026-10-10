@@ -5,7 +5,7 @@ activity log, AI auto-translate, Excel round-trip, and CLI sync.
 
 ## Prerequisites
 
-- [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 20+
+- [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 22.6+
 - Postgres 16. Local dev starts it with Docker Compose. A native server is documented below.
 
 ## Quick start
@@ -17,7 +17,7 @@ docker compose up -d postgres
 
 `docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
 
-`scripts/dev.sh` reads `.env` (including `TEST_DATABASE_URL`), runs that Compose command, creates the test database if it is missing, migrates, seeds, and starts the API and the dashboard. `.env.example` keeps `AUTH_DEV_BYPASS=false`. The script exports `AUTH_DEV_BYPASS=true` for its own processes only, so a fresh clone can sign in as the Dev User without changing the example. `seed-demo` writes the Demo App and does not depend on that flag.
+`scripts/dev.sh` does not read `.env` as a shell script. The app loads `DATABASE_URL` and `TEST_DATABASE_URL` from that file. The script exports `AUTH_DEV_BYPASS=true` for its own processes only. `.env.example` keeps `AUTH_DEV_BYPASS=false`, so a fresh clone can sign in as the Dev User without changing the example. `scripts/dev.sh --check` loads that config and exits. `seed-demo` still runs when the bypass is off. It refuses when OIDC is configured or `ENV=production`, unless `--force` is passed, so production does not receive the default demo API key.
 
 **Terminal 1 — backend:**
 
@@ -43,7 +43,7 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`.
+The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`. It exits when OIDC is configured or `ENV=production` unless you pass `--force`.
 
 ### Native Postgres
 
@@ -65,11 +65,13 @@ sudo -u postgres pg_ctlcluster 16 xlocale start
 ```
 
 ```bash
-sudo -u postgres createuser -s xlocale
+sudo -u postgres createuser -d xlocale
 sudo -u postgres psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
 sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
 sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
 ```
+
+`xlocale` is a `CREATEDB` role, not a superuser. `TEST_DATABASE_URL` points at `xlocale_test`. That database is the bootstrap connection for `CREATE DATABASE` and `DROP DATABASE`. The harness connects to it, not to the `postgres` database, so this role does not need access to `postgres`.
 
 Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.
 

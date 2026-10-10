@@ -5,7 +5,7 @@ End-to-end tests for the x-locale web UI. These are the **PR merge gate** for co
 ## Prerequisites
 
 - Backend: [uv](https://astral.sh/uv/) + Python 3.14+ (same as local dev)
-- Frontend: Node.js 20+
+- Frontend: Node.js 22.6+
 - Playwright browsers (installed once)
 
 ## Quick start
@@ -20,20 +20,20 @@ npm run e2e
 
 ### Environment
 
-E2E uses a **unique Postgres database per run** and **dedicated ports** (`8001` / `5174`) so it never attaches to a local `npm run dev` stack on `:8000` / `:5173`. Playwright always starts its own servers (`reuseExistingServer: false`) and stays at **one worker**. Override with `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` if those ports are taken. `E2E_DATABASE_URL` is only a stem: its database name must start with `xlocale_e2e_` and must not be the application database. The config appends a unique suffix, writes that URL to a per-run file, and `global-setup.ts` creates it with `create-new` (an existing database is refused). `global-teardown.ts` drops only the URL in that file. It does not read `E2E_DATABASE_URL` again. When `E2E_DATABASE_URL` is unset, the stem is `xlocale_e2e_` on the server in `DATABASE_URL`, falling back to the local URL in `.env.example`.
+E2E uses a **unique Postgres database per run** and **dedicated ports** (`8001` / `5174`) so it never attaches to a local `npm run dev` stack on `:8000` / `:5173`. Playwright always starts its own servers (`reuseExistingServer: false`) and stays at **one worker**. Override with `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` if those ports are taken. `E2E_DATABASE_URL` is only a stem: its database name must start with `xlocale_e2e_` and must not be the application database. The config appends `_{epoch}_{hex}` (a trailing underscore on the stem is removed first), writes that URL to a per-run file, and `global-setup.ts` creates it with `create-new` (an existing database is refused). `global-teardown.ts` drops that database only after the name still has the `xlocale_e2e_` prefix, is not the application database, and matches the name global setup stored in the process. It does not read `E2E_DATABASE_URL` again. When `E2E_DATABASE_URL` is unset, the stem is `xlocale_e2e_` on the server in `DATABASE_URL`, falling back to the local URL in `.env.example`.
 
 | Variable | E2E value | Notes |
 |----------|-----------|-------|
 | `AUTH_DEV_BYPASS` | `true` | Dev User session without OIDC |
 | `OIDC_*` | empty | Bypass is ignored when OIDC is configured |
-| `E2E_DATABASE_URL` | `xlocale_e2e_` stem | Name prefix only. The run appends a suffix, creates that database from `template0`, and drops that database |
+| `E2E_DATABASE_URL` | `xlocale_e2e_` stem | Name prefix only. The run appends `_{epoch}_{hex}`, creates that database from `template0`, and drops that database |
 | `X_LOCALE_SECRET` | `e2e-test-secret` | JWT signing for session cookie |
 | `AI_TRANSLATE_STUB` | `true` | Deterministic translate responses (no Bedrock) |
 | `AI_TRANSLATE_STUB_DELAY_MS` | `400` | Keeps translate progress UI visible in specs |
 | `E2E_BACKEND_PORT` | `8001` | Isolated uvicorn; never `:8000` |
 | `E2E_FRONTEND_PORT` | `5174` | Isolated Vite; never `:5173` |
 
-`global-setup.ts` sweeps stale harness databases, creates this run's database, then runs `alembic upgrade head` and `seed-demo --force`. If create fails, the tracking file is removed so teardown cannot drop a database this run did not create. Each spec file calls `resetDemoDatabase()` in `beforeAll` so flows stay independent while sharing one DB. `global-teardown.ts` drops the tracked database.
+`global-setup.ts` sweeps stale harness databases, creates this run's database, then runs `alembic upgrade head` and `seed-demo --force`. If create fails, a tracking file this run created is removed. A file supplied with `E2E_DATABASE_URL_FILE` is left in place. Teardown still refuses to drop unless the name matches the database this process created. Each spec file calls `resetDemoDatabase()` in `beforeAll` so flows stay independent while sharing one DB. `global-teardown.ts` drops the tracked database.
 
 ### Useful commands
 

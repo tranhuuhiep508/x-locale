@@ -101,7 +101,7 @@ def _with_database_name(url: str, name: str) -> str:
 
 
 def allocate_cli_database_name(stem: str, app_name: str) -> str:
-    """A new ``xlocale_cli_`` name. The stem is a prefix, never the database itself."""
+    """A new ``xlocale_cli_{epoch}_{hex}`` name. The stem is never the database itself."""
     if not stem or any(char not in _NAME_OK for char in stem):
         raise RuntimeError(f"Refusing database name {stem!r}.")
     if not stem.startswith(CLI_E2E_PREFIX):
@@ -110,17 +110,20 @@ def allocate_cli_database_name(stem: str, app_name: str) -> str:
         )
     if stem == app_name:
         raise RuntimeError(f"Refusing the application database name {stem!r}.")
-    suffix = "_" + uuid.uuid4().hex
-    trimmed = stem
-    if len(stem) + len(suffix) > _MAX_IDENT:
-        trimmed = stem[: _MAX_IDENT - len(suffix)]
-    if not trimmed.startswith(CLI_E2E_PREFIX):
+    body = stem[:-1] if stem.endswith("_") else stem
+    epoch = str(int(time.time()))
+    token = uuid.uuid4().hex
+    suffix = f"_{epoch}_{token}"
+    trimmed = body
+    if len(body) + len(suffix) > _MAX_IDENT:
+        trimmed = body[: _MAX_IDENT - len(suffix)]
+    if not trimmed.startswith(CLI_E2E_PREFIX.rstrip("_")):
         raise RuntimeError(
             f"Refusing database name {stem!r}. The {CLI_E2E_PREFIX!r} prefix does not fit."
         )
     name = f"{trimmed}{suffix}"
-    if name == app_name:
-        raise RuntimeError(f"Refusing the application database name {name!r}.")
+    if "__" in name or name == app_name:
+        raise RuntimeError(f"Refusing database name {name!r}.")
     return name
 
 

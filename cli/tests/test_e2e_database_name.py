@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 
 import pytest
@@ -35,14 +36,21 @@ def test_allocate_refuses_the_application_database_name():
 def test_allocate_appends_a_unique_suffix():
     first = allocate_cli_database_name("xlocale_cli_run", "xlocale")
     second = allocate_cli_database_name("xlocale_cli_run", "xlocale")
-    assert first.startswith("xlocale_cli_run_")
-    assert second.startswith("xlocale_cli_run_")
+    assert re.fullmatch(r"xlocale_cli_run_[0-9]{10}_[0-9a-f]+", first)
+    assert re.fullmatch(r"xlocale_cli_run_[0-9]{10}_[0-9a-f]+", second)
     assert first != second
     assert len(first) <= 63
     long_stem = "xlocale_cli_" + ("a" * 80)
     fitted = allocate_cli_database_name(long_stem, "xlocale")
     assert fitted.startswith("xlocale_cli_")
+    assert "__" not in fitted
     assert len(fitted) <= 63
+
+
+def test_allocate_strips_the_prefix_trailing_underscore():
+    name = allocate_cli_database_name("xlocale_cli_", "xlocale")
+    assert re.fullmatch(r"xlocale_cli_[0-9]{10}_[0-9a-f]+", name)
+    assert "__" not in name
 
 
 def test_unique_database_url_keeps_the_first_allocation(monkeypatch: pytest.MonkeyPatch):

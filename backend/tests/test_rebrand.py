@@ -7,6 +7,7 @@ Postgres, PATH shadowing of ``/usr/bin/locale``, full Excel/AI translate E2E.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -100,6 +101,9 @@ def test_env_example_documents_x_locale_not_tms():
     )
     assert "sqlite:///" not in text
     assert "AUTH_DEV_BYPASS=false" in text
+    scopes = next(line for line in text.splitlines() if line.startswith("OIDC_SCOPES="))
+    assert scopes.startswith('OIDC_SCOPES="') and scopes.endswith('"')
+    assert " " in scopes
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -124,14 +128,39 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
 
 
-def test_dev_sh_reads_dotenv_and_enables_bypass_for_its_process():
-    text = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
-    assert 'source "$ROOT/.env"' in text
-    assert "TEST_DATABASE_URL" in text
-    assert text.index('source "$ROOT/.env"') < text.index("export AUTH_DEV_BYPASS=true")
+def test_dev_sh_check_loads_example_env():
+    script = REPO_ROOT / "scripts" / "dev.sh"
+    text = script.read_text(encoding="utf-8")
+    assert "source " not in text
+    assert "export AUTH_DEV_BYPASS=true" in text
+    assert "--check" in text
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Node.js 22.6+" in readme
     assert "sudo -u postgres pg_createcluster" in readme
     assert "sudo -u postgres createdb" in readme
+    assert "createuser -d xlocale" in readme
+    env_file = REPO_ROOT / ".env"
+    original = env_file.read_bytes() if env_file.exists() else None
+    try:
+        env_file.write_bytes((REPO_ROOT / ".env.example").read_bytes())
+        env = os.environ.copy()
+        env.pop("DATABASE_URL", None)
+        env.pop("TEST_DATABASE_URL", None)
+        env.pop("AUTH_DEV_BYPASS", None)
+        result = subprocess.run(
+            ["bash", str(script), "--check"],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+    finally:
+        if original is None:
+            env_file.unlink(missing_ok=True)
+        else:
+            env_file.write_bytes(original)
 
 
 def test_config_requires_a_postgres_url():

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
     database_url: str = ""
+    # Bootstrap database for CREATE/DROP. Harnesses connect here, not to postgres.
+    test_database_url: str = ""
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
