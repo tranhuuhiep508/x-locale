@@ -62,6 +62,7 @@ test('the run records one URL and teardown does not re-read the environment', ()
   assert.notEqual(name, 'xlocale')
   process.env.E2E_DATABASE_URL = 'postgresql://localhost/xlocale_e2e_other'
   process.env.DATABASE_URL = 'postgresql://localhost/production'
+  resetE2eDatabaseAllocation()
   assert.equal(allocateE2eDatabaseUrl(), url)
   assert.equal(readTrackedDatabaseUrl(), url)
   clearTrackedDatabaseUrl()

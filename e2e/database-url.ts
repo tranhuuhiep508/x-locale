@@ -92,9 +92,20 @@ export function allocateDatabaseName(stem: string, appName: string, suffix?: str
   return name
 }
 
-/** Allocate this run's URL and record it. Later calls in this process return the same URL. */
+/**
+ * Allocate this run's URL and record it.
+ *
+ * Playwright loads the config in each worker. A worker must reuse the URL the
+ * first process recorded. Allocating again would point seed and the app at a
+ * database global-setup never created.
+ */
 export function allocateE2eDatabaseUrl(): string {
   if (allocatedUrl) return allocatedUrl
+  const recorded = readTrackedDatabaseUrl()
+  if (recorded) {
+    allocatedUrl = recorded
+    return recorded
+  }
   const configured = postgresUrl(process.env.DATABASE_URL)
   const fromEnv = postgresUrl(process.env.E2E_DATABASE_URL)
   const server = fromEnv ?? configured ?? DEFAULT_BASE
