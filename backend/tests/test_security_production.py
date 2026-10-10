@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -65,16 +66,20 @@ def test_project_rejects_invalid_locale(client):
     assert r.status_code == 400
 
 
-def test_seed_demo_exits_when_bypass_off(monkeypatch):
-    monkeypatch.setenv("AUTH_DEV_BYPASS", "false")
+def test_seed_demo_runs_when_bypass_is_off():
+    """seed-demo writes rows. It does not turn on the Dev User login."""
+    env = os.environ.copy()
+    env["AUTH_DEV_BYPASS"] = "false"
     result = subprocess.run(
         [sys.executable, "-m", "app.cli", "seed-demo"],
         cwd=_BACKEND_ROOT,
+        env=env,
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0
-    assert "AUTH_DEV_BYPASS" in result.stderr + result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "Demo project ready" in result.stdout
+    assert "AUTH_DEV_BYPASS" not in result.stderr
 
 
 def test_openapi_hidden_when_oidc_configured():

@@ -49,13 +49,23 @@ def libpq_url(url: str) -> str:
     )
 
 
+def set_sqlalchemy_url(cfg, url: str) -> None:
+    """Store a URL in an Alembic Config.
+
+    ConfigParser treats ``%`` as interpolation. A socket host is ``%2F`` and an
+    encoded password contains ``%``, so each percent is stored as ``%%``.
+    ``get_main_option`` returns the original URL.
+    """
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+
+
 def upgrade_head(url: str) -> None:
     from alembic.config import Config
 
     from alembic import command
 
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", url)
+    set_sqlalchemy_url(cfg, url)
     with migration_database_url(url):
         command.upgrade(cfg, "head")
 
@@ -198,7 +208,7 @@ def alembic_check(url: str) -> None:
     from alembic import command
 
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", url)
+    set_sqlalchemy_url(cfg, url)
     with migration_database_url(url):
         command.check(cfg)
 

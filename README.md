@@ -17,7 +17,7 @@ docker compose up -d postgres
 
 `docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
 
-`scripts/dev.sh` runs that Compose command, creates `xlocale_test` if it is missing, migrates, seeds, and starts the API and the dashboard.
+`scripts/dev.sh` reads `.env` (including `TEST_DATABASE_URL`), runs that Compose command, creates the test database if it is missing, migrates, seeds, and starts the API and the dashboard. `.env.example` keeps `AUTH_DEV_BYPASS=false`. The script exports `AUTH_DEV_BYPASS=true` for its own processes only, so a fresh clone can sign in as the Dev User without changing the example. `seed-demo` writes the Demo App and does not depend on that flag.
 
 **Terminal 1 — backend:**
 
@@ -26,7 +26,8 @@ cd backend
 uv sync --all-extras
 uv run alembic upgrade head
 uv run python -m app.cli seed-demo
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Local Dev User. .env.example leaves AUTH_DEV_BYPASS=false.
+AUTH_DEV_BYPASS=true uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Terminal 2 — frontend:**
@@ -42,7 +43,7 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL.
+The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`.
 
 ### Native Postgres
 
@@ -51,23 +52,23 @@ Install PostgreSQL 16 and initialize a cluster with collation C.
 Debian and Ubuntu create a cluster named `main` when the package is installed, so `pg_createcluster 16 main` fails until that cluster is removed. Drop it when this server should listen on port 5432:
 
 ```bash
-pg_dropcluster --stop 16 main
-pg_createcluster 16 main --locale=C --encoding=UTF8
-pg_ctlcluster 16 main start
+sudo -u postgres pg_dropcluster --stop 16 main
+sudo -u postgres pg_createcluster 16 main --locale=C --encoding=UTF8
+sudo -u postgres pg_ctlcluster 16 main start
 ```
 
 To keep the existing `main` cluster, add one named `xlocale` and use the port from `pg_lsclusters`:
 
 ```bash
-pg_createcluster 16 xlocale --locale=C --encoding=UTF8
-pg_ctlcluster 16 xlocale start
+sudo -u postgres pg_createcluster 16 xlocale --locale=C --encoding=UTF8
+sudo -u postgres pg_ctlcluster 16 xlocale start
 ```
 
 ```bash
-createuser -s xlocale
-psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
-createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
-createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
+sudo -u postgres createuser -s xlocale
+sudo -u postgres psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
+sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
+sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
 ```
 
 Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.

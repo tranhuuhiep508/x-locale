@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 
 import pytest
@@ -10,10 +11,14 @@ from sqlalchemy.orm import sessionmaker
 
 from tests.pg import (
     assert_connected_test_database,
+    assert_no_preexisting_app_tables,
+    databases_created_by_this_run,
     disposable_database,
+    forget_database_created_by_this_run,
     load_dotenv_defaults,
     open_engine,
     path_database_name,
+    prepare_session_database,
     truncate_all,
     validate_test_database_env,
 )
@@ -25,7 +30,22 @@ _TEST_DATABASE_URL = validate_test_database_env(
     _APP_DATABASE_URL,
 )
 _APP_DATABASE_NAME = path_database_name(_APP_DATABASE_URL)
-os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
+_RUN_DATABASE_URL = prepare_session_database(_TEST_DATABASE_URL)
+os.environ["DATABASE_URL"] = _RUN_DATABASE_URL
+
+
+def _drop_run_database() -> None:
+    """Drop the session database if fixture teardown did not run."""
+    from app.postgres_admin import database_name, drop_database
+
+    try:
+        drop_database(_RUN_DATABASE_URL)
+    except Exception:
+        return
+    forget_database_created_by_this_run(database_name(_RUN_DATABASE_URL))
+
+
+atexit.register(_drop_run_database)
 os.environ["AUTH_DEV_BYPASS"] = "true"
 os.environ["X_LOCALE_SECRET"] = "test-secret"
 os.environ["X_LOCALE_DEMO_API_KEY"] = "test-demo-key"
@@ -42,21 +62,31 @@ def database_engine():
     from app.database import Base, register_activity_listener
 
     engine = open_engine()
-    assert_connected_test_database(engine, _TEST_DATABASE_URL, _APP_DATABASE_NAME)
+    assert_connected_test_database(engine, _RUN_DATABASE_URL, _APP_DATABASE_NAME)
+    assert_no_preexisting_app_tables(engine)
     Base.metadata.create_all(bind=engine)
     register_activity_listener()
     yield engine
     engine.dispose()
+    from app.postgres_admin import database_name, drop_database
+
+    name = database_name(_RUN_DATABASE_URL)
+    drop_database(_RUN_DATABASE_URL)
+    forget_database_created_by_this_run(name)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _no_leftover_databases():
+    """Fail only for databases this process created and did not drop.
+
+    Another pytest process on the same server has its own ``xl_test_`` name,
+    so its databases are not this run's leftovers.
+    """
     from app.postgres_admin import list_databases
 
-    before = list_databases(_TEST_DATABASE_URL)
     yield
-    after = list_databases(_TEST_DATABASE_URL)
-    leaked = sorted(name for name in after - before if name.startswith("xltest_"))
+    present = list_databases(_RUN_DATABASE_URL)
+    leaked = sorted(name for name in databases_created_by_this_run() if name in present)
     assert leaked == [], f"throwaway databases left behind: {leaked}"
 
 

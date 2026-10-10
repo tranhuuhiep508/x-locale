@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { e2eDatabaseUrl } from './database-url'
+import { clearTrackedDatabaseUrl, readTrackedDatabaseUrl } from './database-url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -21,23 +21,45 @@ function e2eEnv(databaseUrl: string) {
   }
 }
 
+function admin(action: 'sweep' | 'create-new' | 'drop', databaseUrl: string, env: NodeJS.ProcessEnv) {
+  execSync(`uv run python -m app.postgres_admin ${action} ${JSON.stringify(databaseUrl)}`, {
+    cwd: path.join(repoRoot, 'backend'),
+    env,
+    stdio: 'inherit',
+  })
+}
+
 export default async function globalSetup() {
-  const databaseUrl = e2eDatabaseUrl()
+  const databaseUrl = readTrackedDatabaseUrl()
+  if (!databaseUrl) {
+    throw new Error('Playwright did not record a database URL for this run.')
+  }
   const env = e2eEnv(databaseUrl)
-  const backend = path.join(repoRoot, 'backend')
-  execSync(`uv run python -m app.postgres_admin create ${JSON.stringify(databaseUrl)}`, {
-    cwd: backend,
-    env,
-    stdio: 'inherit',
-  })
-  execSync('uv run alembic upgrade head', {
-    cwd: backend,
-    env,
-    stdio: 'inherit',
-  })
-  execSync('uv run python -m app.cli seed-demo --force', {
-    cwd: backend,
-    env,
-    stdio: 'inherit',
-  })
+  try {
+    admin('sweep', databaseUrl, env)
+    admin('create-new', databaseUrl, env)
+  } catch (error) {
+    // create-new failed, so this run did not create the database. Do not drop it.
+    clearTrackedDatabaseUrl()
+    throw error
+  }
+  try {
+    execSync('uv run alembic upgrade head', {
+      cwd: path.join(repoRoot, 'backend'),
+      env,
+      stdio: 'inherit',
+    })
+    execSync('uv run python -m app.cli seed-demo --force', {
+      cwd: path.join(repoRoot, 'backend'),
+      env,
+      stdio: 'inherit',
+    })
+  } catch (error) {
+    try {
+      admin('drop', databaseUrl, env)
+    } finally {
+      clearTrackedDatabaseUrl()
+    }
+    throw error
+  }
 }

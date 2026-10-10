@@ -67,21 +67,78 @@ def redact_database_url(url: str) -> str:
     )
 
 
-def unique_database_url() -> str:
-    """A database name that is unique for this process, on the configured server."""
-    base = _postgres_base_url()
-    name = os.environ.get("CLI_E2E_DATABASE_NAME", "").strip() or f"xlocale_cli_{uuid.uuid4().hex}"
-    if any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in name):
-        raise RuntimeError(f"Refusing database name {name!r}.")
-    if "://" not in base or "/" not in base.split("://", 1)[1]:
-        raise RuntimeError(
-            f"Cannot derive a database name from {redact_database_url(base)}."
-        )
-    prefix, rest = base.split("://", 1)
+CLI_E2E_PREFIX = "xlocale_cli_"
+_NAME_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+_MAX_IDENT = 63
+_allocated_database_url: str | None = None
+
+
+def reset_allocated_database_url() -> None:
+    """Test hook. A real run keeps the first URL it allocated."""
+    global _allocated_database_url
+    _allocated_database_url = None
+
+
+def _path_database_name(url: str) -> str:
+    if "://" not in url or "/" not in url.split("://", 1)[1]:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
+    _prefix, rest = url.split("://", 1)
+    path, _query = (rest.split("?", 1) + [""])[:2]
+    _head, sep, name = path.rpartition("/")
+    if not sep or not name:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
+    return name
+
+
+def _with_database_name(url: str, name: str) -> str:
+    prefix, rest = url.split("://", 1)
     path, query = (rest.split("?", 1) + [""])[:2]
-    head, _, _db = path.rpartition("/")
+    head, sep, _db = path.rpartition("/")
+    if not sep:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
     suffix = f"?{query}" if query else ""
     return f"{prefix}://{head}/{name}{suffix}"
+
+
+def allocate_cli_database_name(stem: str, app_name: str) -> str:
+    """A new ``xlocale_cli_`` name. The stem is a prefix, never the database itself."""
+    if not stem or any(char not in _NAME_OK for char in stem):
+        raise RuntimeError(f"Refusing database name {stem!r}.")
+    if not stem.startswith(CLI_E2E_PREFIX):
+        raise RuntimeError(
+            f"Refusing database name {stem!r}. Harness databases must start with {CLI_E2E_PREFIX!r}."
+        )
+    if stem == app_name:
+        raise RuntimeError(f"Refusing the application database name {stem!r}.")
+    suffix = "_" + uuid.uuid4().hex
+    trimmed = stem
+    if len(stem) + len(suffix) > _MAX_IDENT:
+        trimmed = stem[: _MAX_IDENT - len(suffix)]
+    if not trimmed.startswith(CLI_E2E_PREFIX):
+        raise RuntimeError(
+            f"Refusing database name {stem!r}. The {CLI_E2E_PREFIX!r} prefix does not fit."
+        )
+    name = f"{trimmed}{suffix}"
+    if name == app_name:
+        raise RuntimeError(f"Refusing the application database name {name!r}.")
+    return name
+
+
+def unique_database_url() -> str:
+    """The URL this process will create. Later calls return that same URL.
+
+    ``CLI_E2E_DATABASE_NAME`` is a stem. A unique suffix is always appended so two
+    runs that share a stem do not create, migrate, or drop one database.
+    """
+    global _allocated_database_url
+    if _allocated_database_url is not None:
+        return _allocated_database_url
+    base = _postgres_base_url()
+    app_name = _path_database_name(base)
+    stem = os.environ.get("CLI_E2E_DATABASE_NAME", "").strip() or CLI_E2E_PREFIX
+    name = allocate_cli_database_name(stem, app_name)
+    _allocated_database_url = _with_database_name(base, name)
+    return _allocated_database_url
 
 
 def _admin(action: str, database_url: str) -> None:
@@ -145,7 +202,9 @@ class BackendServer:
 
 def start_backend_server() -> BackendServer:
     database_url = unique_database_url()
-    _admin("create", database_url)
+    _admin("sweep", database_url)
+    # create-new raises when the name exists. This run did not create it, so do not drop it.
+    _admin("create-new", database_url)
     try:
         migrate_database(database_url)
     except Exception:
@@ -243,7 +302,9 @@ def api_key_client(base_url: str, api_key: str) -> httpx.Client:
     )
 
 
-def create_module(admin: httpx.Client, project_id: str, slug: str, name: str | None = None) -> dict[str, Any]:
+def create_module(
+    admin: httpx.Client, project_id: str, slug: str, name: str | None = None
+) -> dict[str, Any]:
     response = admin.post(
         f"/api/projects/{project_id}/modules",
         json={"slug": slug, "name": name or slug.title()},

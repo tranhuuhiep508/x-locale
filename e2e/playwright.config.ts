@@ -2,11 +2,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
-import { e2eDatabaseUrl } from './database-url'
+import { allocateE2eDatabaseUrl } from './database-url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
-const databaseUrl = e2eDatabaseUrl()
+const databaseUrl = allocateE2eDatabaseUrl()
 
 /** Dedicated ports so local `npm run dev` (:8000 / :5173) can stay up. */
 const backendPort = Number(process.env.E2E_BACKEND_PORT ?? 8001)

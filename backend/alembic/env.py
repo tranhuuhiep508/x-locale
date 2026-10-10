@@ -14,7 +14,8 @@ config = context.config
 
 
 def _configure_url() -> None:
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    # ConfigParser interpolates %. %% keeps a socket host (%2F) and encoded passwords.
+    config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 
 if config.config_file_name is not None:

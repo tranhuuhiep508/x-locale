@@ -2,6 +2,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Read DATABASE_URL and TEST_DATABASE_URL from the repo .env. .env.example keeps
+# AUTH_DEV_BYPASS=false so a copied file is not a bypass. This script turns the
+# bypass on only for the processes it starts, after the file is read.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+export AUTH_DEV_BYPASS=true
+
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 BACKEND_URL="http://localhost:${BACKEND_PORT}"

@@ -2,14 +2,22 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { e2eDatabaseUrl } from '../database-url'
+import { readTrackedDatabaseUrl } from '../database-url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+
+function trackedDatabaseUrl(): string {
+  const url = readTrackedDatabaseUrl()
+  if (!url) {
+    throw new Error('No database was recorded for this Playwright run.')
+  }
+  return url
+}
 
 function e2eEnv() {
   return {
     ...process.env,
-    DATABASE_URL: e2eDatabaseUrl(),
+    DATABASE_URL: trackedDatabaseUrl(),
     AUTH_DEV_BYPASS: 'true',
     OIDC_ISSUER: '',
     OIDC_CLIENT_ID: '',

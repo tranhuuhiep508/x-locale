@@ -35,6 +35,7 @@ from app.services.strings import serialize_string
 from app.services.sync import build_modular_export
 from tests.helpers import make_project, publish_strings
 from tests.pg import open_engine
+from tests.postgres_support import set_sqlalchemy_url
 
 FOREIGN_SLUG = "secret-b"
 
@@ -237,7 +238,7 @@ def test_to_module_out_counts_only_strings_in_the_module_project():
                     deleted_at=datetime.now(UTC),
                 ),
             ]
-            )
+        )
         # The leak row points at another project's module. The composite FK is
         # deferred, so the row is visible after flush and rejected at commit.
         db.flush()
@@ -656,7 +657,7 @@ def test_migration_scrubs_foreign_modules_then_enforces(throwaway_database, monk
     url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", url)
+    set_sqlalchemy_url(cfg, url)
     command.upgrade(cfg, "k0f16d7e8f9a")
 
     engine = create_engine(url)
@@ -668,23 +669,45 @@ def test_migration_scrubs_foreign_modules_then_enforces(throwaway_database, monk
     project_a_id, project_b_id, module_a_id, module_b_id = [uuid.uuid4() for _ in range(4)]
     with engine.begin() as connection:
         for pid, name in [(project_a_id, "A"), (project_b_id, "B")]:
-            connection.execute(projects.insert().values(
-                id=pid.hex, name=name, slug=f"project-{name.lower()}",
-                base_language="vi", target_languages=["en"], layout="flat",
-            ))
-        for mid, pid, slug in [(module_a_id, project_a_id, "auth"), (module_b_id, project_b_id, FOREIGN_SLUG)]:
-            connection.execute(modules.insert().values(
-                id=mid.hex, project_id=pid.hex, slug=slug, name=slug, position=0,
-            ))
+            connection.execute(
+                projects.insert().values(
+                    id=pid.hex,
+                    name=name,
+                    slug=f"project-{name.lower()}",
+                    base_language="vi",
+                    target_languages=["en"],
+                    layout="flat",
+                )
+            )
+        for mid, pid, slug in [
+            (module_a_id, project_a_id, "auth"),
+            (module_b_id, project_b_id, FOREIGN_SLUG),
+        ]:
+            connection.execute(
+                modules.insert().values(
+                    id=mid.hex,
+                    project_id=pid.hex,
+                    slug=slug,
+                    name=slug,
+                    position=0,
+                )
+            )
         for key, mid, published_mid, status in [
             ("leak", module_b_id, module_b_id.hex, "public"),
             ("keep", module_a_id, None, "draft"),
         ]:
-            connection.execute(strings.insert().values(
-                id=uuid.uuid4().hex, project_id=project_a_id.hex, module_id=mid.hex,
-                published_module_id=published_mid, key=key, source_text=key, status=status,
-                pending_delete=False,
-            ))
+            connection.execute(
+                strings.insert().values(
+                    id=uuid.uuid4().hex,
+                    project_id=project_a_id.hex,
+                    module_id=mid.hex,
+                    published_module_id=published_mid,
+                    key=key,
+                    source_text=key,
+                    status=status,
+                    pending_delete=False,
+                )
+            )
 
     command.upgrade(cfg, "head")
 

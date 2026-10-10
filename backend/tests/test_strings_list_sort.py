@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 
 from alembic import command
 from app.config import settings
+from tests.postgres_support import set_sqlalchemy_url
 
 
 def _project(client):
@@ -37,9 +38,7 @@ def test_list_sort_default_matches_key_asc(client):
     _string(client, pid, "a-key", "A")
 
     default = _list(client, pid, page_size=50).json()["items"]
-    explicit = _list(
-        client, pid, page_size=50, sort="key", order="asc"
-    ).json()["items"]
+    explicit = _list(client, pid, page_size=50, sort="key", order="asc").json()["items"]
     assert [row["id"] for row in default] == [row["id"] for row in explicit]
     assert [row["key"] for row in default] == ["a-key", "b-key"]
 
@@ -121,8 +120,12 @@ def test_list_sort_with_time_range(client):
     _string(client, pid, "b", "B")
 
     r = _list(
-        client, pid, sort="key", order="desc",
-        since="2000-01-01T00:00:00Z", until="2100-01-01T00:00:00Z",
+        client,
+        pid,
+        sort="key",
+        order="desc",
+        since="2000-01-01T00:00:00Z",
+        until="2100-01-01T00:00:00Z",
     )
     assert r.status_code == 200
     assert [row["key"] for row in r.json()["items"]] == ["b", "a"]
@@ -159,7 +162,7 @@ def test_migration_creates_updated_at_partial_index(throwaway_database, monkeypa
     url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", url)
+    set_sqlalchemy_url(cfg, url)
     command.upgrade(cfg, "head")
 
     engine = create_engine(url)

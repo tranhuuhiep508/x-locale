@@ -99,6 +99,7 @@ def test_env_example_documents_x_locale_not_tms():
         "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
     )
     assert "sqlite:///" not in text
+    assert "AUTH_DEV_BYPASS=false" in text
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -121,6 +122,16 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
     assert "seed-demo" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
+
+
+def test_dev_sh_reads_dotenv_and_enables_bypass_for_its_process():
+    text = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
+    assert 'source "$ROOT/.env"' in text
+    assert "TEST_DATABASE_URL" in text
+    assert text.index('source "$ROOT/.env"') < text.index("export AUTH_DEV_BYPASS=true")
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "sudo -u postgres pg_createcluster" in readme
+    assert "sudo -u postgres createdb" in readme
 
 
 def test_config_requires_a_postgres_url():

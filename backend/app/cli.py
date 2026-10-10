@@ -18,10 +18,6 @@ def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo p
     from app.config import require_postgres_database_url, settings
 
     require_postgres_database_url(settings.database_url)
-    if not settings.auth_dev_bypass:
-        typer.echo("seed-demo is only allowed when AUTH_DEV_BYPASS=true", err=True)
-        raise typer.Exit(1)
-
     from app.seed import seed_demo_data
 
     project = seed_demo_data(force=force)
@@ -29,6 +25,7 @@ def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo p
         typer.echo(f"Demo project ready: {project.name} ({project.id}) slug={project.slug}")
     else:
         typer.echo("Seed failed")
+
 
 @app.command("migrate")
 def migrate() -> None:
@@ -57,8 +54,7 @@ def prune_activities_cmd() -> None:
             typer.echo("ACTIVITY_RETENTION_DAYS=0; nothing pruned")
         else:
             typer.echo(
-                f"Pruned {deleted} activity rows older than "
-                f"{settings.activity_retention_days} days"
+                f"Pruned {deleted} activity rows older than {settings.activity_retention_days} days"
             )
     finally:
         db.close()

@@ -50,9 +50,10 @@ jobs:
             -c "ALTER SYSTEM SET synchronous_commit=off" \
             -c "ALTER SYSTEM SET full_page_writes=off" \
             -c "SELECT pg_reload_conf()"
-          collate=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datcollate FROM pg_database WHERE datname = current_database()")
-          echo "datcollate=${collate}"
-          test "${collate}" = "C"
+          collation=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datcollate || '|' || datlocprovider FROM pg_database WHERE datname = current_database()")
+          echo "collation=${collation}"
+          test "${collation}" = "C|c"
+          # PostgreSQL 16 removed the lc_collate GUC. datcollate and datlocprovider are the check.
 
       - name: Install backend dependencies
         run: cd backend && uv sync --all-extras
@@ -70,7 +71,15 @@ jobs:
         env:
           PGPASSWORD: xlocale
         run: |
-          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
-            -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'xlocale_cli_${{ github.run_id }}_${{ github.run_attempt }}' AND pid <> pg_backend_pid()"
-          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
-            -c "DROP DATABASE IF EXISTS xlocale_cli_${{ github.run_id }}_${{ github.run_attempt }}"
+          set -euo pipefail
+          prefix="xlocale_cli_${{ github.run_id }}_${{ github.run_attempt }}"
+          like="$(printf '%s' "$prefix" | sed 's/_/\\_/g')\\_%"
+          mapfile -t names < <(psql -h localhost -U xlocale -d postgres -Atqc \
+            "SELECT datname FROM pg_database WHERE datname = '${prefix}' OR datname LIKE '${like}' ESCAPE '\\'")
+          for name in "${names[@]}"; do
+            [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || continue
+            psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+              -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${name}' AND pid <> pg_backend_pid()"
+            psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+              -c "DROP DATABASE IF EXISTS \"${name}\""
+          done

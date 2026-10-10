@@ -12,7 +12,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
 from app.config import require_postgres_database_url
-from tests.pg import assert_connected_test_database, truncate_all, validate_test_database_env
+from tests.pg import (
+    POOL_MAX_OVERFLOW,
+    POOL_SIZE,
+    assert_connected_test_database,
+    is_dedicated_test_database_name,
+    truncate_all,
+    validate_test_database_env,
+)
 
 _BACKEND = Path(__file__).resolve().parents[1]
 _FILE_URL = "sqlite:///:memory:"
@@ -70,6 +77,18 @@ def test_validate_test_database_env_accepts_a_distinct_test_database():
     test_url = "postgresql+psycopg://user:secret@127.0.0.1:5432/xlocale_test?sslmode=disable"
     app_url = "postgresql://user:secret@localhost/xlocale"
     assert validate_test_database_env(test_url, app_url) == test_url
+    other = "postgresql+psycopg://localhost/test_xlocale"
+    assert validate_test_database_env(other, "postgresql://localhost/xlocale") == other
+
+
+@pytest.mark.parametrize("name", ["latest", "contest_prod", "xlocale_testing", "mytest"])
+def test_validate_test_database_env_rejects_names_without_a_test_token(name: str):
+    with pytest.raises(SystemExit, match="dedicated test database"):
+        validate_test_database_env(
+            f"postgresql+psycopg://localhost/{name}",
+            "postgresql+psycopg://localhost/xlocale",
+        )
+    assert not is_dedicated_test_database_name(name)
 
 
 @pytest.mark.parametrize("key", ["dbname", "DBNAME", "service", "servicefile"])
@@ -82,11 +101,12 @@ def test_validate_test_database_env_rejects_libpq_target_overrides(key: str):
 
 
 def test_connected_database_matches_the_parsed_test_name(database_engine):
-    expected = make_url(os.environ["TEST_DATABASE_URL"]).database
+    expected = make_url(os.environ["DATABASE_URL"]).database
     with database_engine.connect() as conn:
         actual = conn.execute(text("SELECT current_database()")).scalar()
     assert actual == expected
-    assert_connected_test_database(database_engine, os.environ["TEST_DATABASE_URL"], "xlocale")
+    assert is_dedicated_test_database_name(str(actual))
+    assert_connected_test_database(database_engine, os.environ["DATABASE_URL"], "xlocale")
 
 
 def test_connected_database_refuses_a_different_parsed_name(database_engine):
@@ -99,11 +119,11 @@ def test_connected_database_refuses_a_different_parsed_name(database_engine):
 
 
 def test_connected_database_refuses_the_app_database_name(database_engine):
-    current = make_url(os.environ["TEST_DATABASE_URL"]).database or ""
+    current = make_url(os.environ["DATABASE_URL"]).database or ""
     with pytest.raises(SystemExit, match="Refusing to TRUNCATE"):
         assert_connected_test_database(
             database_engine,
-            os.environ["TEST_DATABASE_URL"],
+            os.environ["DATABASE_URL"],
             current,
         )
 
@@ -138,17 +158,17 @@ class _NameEngine:
         return _NameConnection(self.name)
 
 
-def test_connected_database_refuses_a_name_without_test():
+@pytest.mark.parametrize("name", ["xlrev_app", "latest", "contest_prod"])
+def test_connected_database_refuses_a_name_without_test(name: str):
     with pytest.raises(SystemExit, match="Refusing to TRUNCATE"):
-        assert_connected_test_database(
-            _NameEngine("xlrev_app"), "postgresql://localhost/xlrev_app", "other"
-        )
+        assert_connected_test_database(_NameEngine(name), f"postgresql://localhost/{name}", "other")
 
 
 def test_truncate_all_leaves_lock_timeout_at_default(database_engine):
     truncate_all(database_engine)
     pool = database_engine.pool
-    capacity = pool.size() + pool._max_overflow
+    assert pool.size() == POOL_SIZE
+    capacity = POOL_SIZE + POOL_MAX_OVERFLOW
     held = []
     try:
         for _ in range(capacity):
@@ -211,7 +231,13 @@ def test_database_collation_is_c(database_engine):
                 """
             )
         ).scalar()
-    assert datcollate == "C"
-    assert datlocprovider == "c"
+    assert datcollate == "C", (
+        f"Test database collation is {datcollate!r} with provider {datlocprovider!r}; "
+        "expected datcollate 'C' and datlocprovider 'c'."
+    )
+    assert datlocprovider == "c", (
+        f"Test database collation is {datcollate!r} with provider {datlocprovider!r}; "
+        "expected datcollate 'C' and datlocprovider 'c'."
+    )
     if shown is not None:
-        assert shown == "C"
+        assert shown == "C", f"lc_collate is {shown!r}; expected 'C'"
