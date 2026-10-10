@@ -7,7 +7,6 @@ Postgres, PATH shadowing of ``/usr/bin/locale``, full Excel/AI translate E2E.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -101,10 +100,15 @@ def test_env_example_documents_x_locale_not_tms():
     )
     assert "sqlite:///" not in text
     assert "AUTH_DEV_BYPASS=false" in text
+    assert "ENV=production" in text
+    assert "--allow-production" in text
     scopes = next(line for line in text.splitlines() if line.startswith("OIDC_SCOPES="))
-    value = scopes.split("=", 1)[1].split(" #", 1)[0].strip()
-    assert value.startswith('"') and value.endswith('"')
-    assert " " in value
+    assert scopes.startswith('OIDC_SCOPES="')
+    from tests.pg import dotenv_value
+
+    parsed_scopes = dotenv_value(scopes.split("=", 1)[1])
+    assert " " in parsed_scopes
+    assert "pragma" not in parsed_scopes
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -129,39 +133,20 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
 
 
-def test_dev_sh_check_loads_example_env():
-    script = REPO_ROOT / "scripts" / "dev.sh"
-    text = script.read_text(encoding="utf-8")
-    assert "source " not in text
-    assert "export AUTH_DEV_BYPASS=true" in text
-    assert "--check" in text
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Node.js 22.6+" in readme
-    assert "sudo -u postgres pg_createcluster" in readme
-    assert "sudo -u postgres createdb" in readme
-    assert "createuser -d xlocale" in readme
-    env_file = REPO_ROOT / ".env"
-    original = env_file.read_bytes() if env_file.exists() else None
-    try:
-        env_file.write_bytes((REPO_ROOT / ".env.example").read_bytes())
-        env = os.environ.copy()
-        env.pop("DATABASE_URL", None)
-        env.pop("TEST_DATABASE_URL", None)
-        env.pop("AUTH_DEV_BYPASS", None)
-        result = subprocess.run(
-            ["bash", str(script), "--check"],
-            cwd=REPO_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr
-    finally:
-        if original is None:
-            env_file.unlink(missing_ok=True)
-        else:
-            env_file.write_bytes(original)
+def test_env_example_scopes_parse_and_dotenv_ignores_inline_comments(monkeypatch):
+    from app.config import Settings
+    from tests.pg import dotenv_value
+
+    monkeypatch.delenv("OIDC_SCOPES", raising=False)
+    loaded = Settings(_env_file=REPO_ROOT / ".env.example")
+    example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    scopes = next(line for line in example.splitlines() if line.startswith("OIDC_SCOPES="))
+    assert loaded.oidc_scopes == dotenv_value(scopes.split("=", 1)[1])
+    assert " " in loaded.oidc_scopes
+    assert "pragma" not in loaded.oidc_scopes
+    assert dotenv_value('"alpha beta" # pragma: allowlist secret') == "alpha beta"
+    assert dotenv_value("plain # comment") == "plain"
+    assert dotenv_value('"hash # inside"') == "hash # inside"
 
 
 def test_config_requires_a_postgres_url():
@@ -233,6 +218,15 @@ def test_docs_smoke_readme_and_agents():
         assert "tms_session" not in text
     assert agents.startswith("# AGENTS.md\n\nx-locale")
     assert readme.startswith("# x-locale\n")
+    assert "Node.js 22.6+" in readme
+    assert "sudo -u postgres pg_createcluster" in readme
+    assert "sudo -u postgres createdb" in readme
+    assert "createuser -d xlocale" in readme
+    assert "--allow-production" in readme
+    script = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
+    assert "source " not in script
+    assert "export AUTH_DEV_BYPASS=true" in script
+    assert "--check" not in script
 
 
 def _tracked_files() -> list[str]:

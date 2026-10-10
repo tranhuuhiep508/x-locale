@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import {
   CREATED_DATABASE_ENV,
   clearTrackedDatabaseUrl,
-  databaseNameFromUrl,
   readTrackedDatabaseUrl,
 } from './database-url'
 
@@ -43,7 +42,7 @@ export default async function globalSetup() {
   try {
     admin('sweep', databaseUrl, env)
     admin('create-new', databaseUrl, env)
-    process.env[CREATED_DATABASE_ENV] = databaseNameFromUrl(databaseUrl)
+    process.env[CREATED_DATABASE_ENV] = databaseUrl
   } catch (error) {
     // create-new failed, so this run did not create the database. Do not drop it.
     clearTrackedDatabaseUrl()

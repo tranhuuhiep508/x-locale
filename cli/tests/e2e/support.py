@@ -110,7 +110,7 @@ def allocate_cli_database_name(stem: str, app_name: str) -> str:
         )
     if stem == app_name:
         raise RuntimeError(f"Refusing the application database name {stem!r}.")
-    body = stem[:-1] if stem.endswith("_") else stem
+    body = stem.removesuffix("_")
     epoch = str(int(time.time()))
     token = uuid.uuid4().hex
     suffix = f"_{epoch}_{token}"

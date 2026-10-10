@@ -13,6 +13,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
 from app.postgres_admin import (
+    HARNESS_DATABASE_PREFIXES,
     STALE_HARNESS_DATABASE_AGE,
     create_database,
     database_name,
@@ -127,8 +128,14 @@ def test_missing_createdb_is_explained(monkeypatch):
 
 def test_sweep_drops_only_stale_unused_harness_databases():
     token = uuid.uuid4().hex[:8]
-    prefix = f"xl_test_{token}_"
-    other = f"xl_test_{uuid.uuid4().hex[:8]}_"
+    # Outside HARNESS_DATABASE_PREFIXES, so another run's startup sweep cannot drop these.
+    prefix = f"xlsweep_{token}_"
+    other = f"xlsweep_{uuid.uuid4().hex[:8]}_"
+    for candidate in (prefix, other):
+        assert not any(
+            candidate.startswith(item) or item.startswith(candidate)
+            for item in HARNESS_DATABASE_PREFIXES
+        )
     old = int(time.time()) - int(STALE_HARNESS_DATABASE_AGE.total_seconds()) - 120
     fresh_epoch = int(time.time())
     stale_url = _create_at(prefix, old)

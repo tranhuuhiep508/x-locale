@@ -30,6 +30,24 @@ def is_postgres_url(url: str | None) -> bool:
     return lowered.startswith(("postgresql://", "postgresql+", "postgres://", "postgres+"))
 
 
+def dotenv_value(raw: str) -> str:
+    """Value from one .env assignment. Quotes win, and an inline comment does not."""
+    value = raw.strip()
+    if not value:
+        return ""
+    quote = value[0]
+    if quote in {'"', "'"}:
+        end = value.find(quote, 1)
+        if end != -1:
+            return value[1:end]
+    comment = value.find(" #")
+    if comment == -1:
+        comment = value.find("\t#")
+    if comment != -1:
+        value = value[:comment]
+    return value.strip()
+
+
 def load_dotenv_defaults() -> None:
     """Fill empty process env from the repo .env without overriding real variables."""
     for path in (REPO_ROOT / ".env", REPO_ROOT / "backend" / ".env"):
@@ -43,7 +61,7 @@ def load_dotenv_defaults() -> None:
             key = key.strip()
             if os.environ.get(key, "").strip():
                 continue
-            os.environ[key] = value.strip().strip('"').strip("'")
+            os.environ[key] = dotenv_value(value)
 
 
 _TARGET_QUERY_KEYS = frozenset({"dbname", "service", "servicefile"})

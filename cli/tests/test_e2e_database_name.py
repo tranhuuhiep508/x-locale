@@ -6,6 +6,7 @@ import re
 import subprocess
 
 import pytest
+
 from tests.e2e import support
 from tests.e2e.support import (
     allocate_cli_database_name,

@@ -17,7 +17,7 @@ docker compose up -d postgres
 
 `docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
 
-`scripts/dev.sh` does not read `.env` as a shell script. The app loads `DATABASE_URL` and `TEST_DATABASE_URL` from that file. The script exports `AUTH_DEV_BYPASS=true` for its own processes only. `.env.example` keeps `AUTH_DEV_BYPASS=false`, so a fresh clone can sign in as the Dev User without changing the example. `scripts/dev.sh --check` loads that config and exits. `seed-demo` still runs when the bypass is off. It refuses when OIDC is configured or `ENV=production`, unless `--force` is passed, so production does not receive the default demo API key.
+The commands below are the setup. `scripts/dev.sh` is only a local shortcut: it exports `AUTH_DEV_BYPASS=true` for the processes it starts and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
 
 **Terminal 1 — backend:**
 
@@ -43,7 +43,7 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`. It exits when OIDC is configured or `ENV=production` unless you pass `--force`.
+The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`. It exits when OIDC is configured or `ENV=production` unless you pass `--allow-production`. `--force` only recreates Demo App.
 
 ### Native Postgres
 

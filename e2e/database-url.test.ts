@@ -100,22 +100,34 @@ test('a refused setup does not delete a user-supplied tracking file', () => {
 
 test('teardown refuses a tracked name that was not created in this process', () => {
   const app = 'postgresql://localhost/xlocale'
-  const created = 'xlocale_e2e_run_1700000000_abc'
-  const url = `postgresql://localhost/${created}`
-  assert.throws(() => assertTeardownDatabase(url, app, undefined), /does not match/)
+  const createdName = 'xlocale_e2e_run_1700000000_abc'
+  const created = `postgresql://localhost/${createdName}`
+  assert.throws(() => assertTeardownDatabase(created, app, undefined), /does not match/)
   assert.throws(
-    () => assertTeardownDatabase(url, app, 'xlocale_e2e_other_1700000000_def'),
+    () => assertTeardownDatabase(created, app, 'postgresql://localhost/xlocale_e2e_other_1700000000_def'),
     /does not match/,
   )
   assert.throws(
-    () => assertTeardownDatabase('postgresql://localhost/xlocale', app, 'xlocale'),
+    () => assertTeardownDatabase('postgresql://localhost/xlocale', app, 'postgresql://localhost/xlocale'),
     /Refusing tracked database/,
   )
   assert.throws(
-    () => assertTeardownDatabase('postgresql://localhost/xlocale_e2e_app', 'postgresql://localhost/xlocale_e2e_app', 'xlocale_e2e_app'),
+    () => assertTeardownDatabase('postgresql://localhost/xlocale_e2e_app', 'postgresql://localhost/xlocale_e2e_app', 'postgresql://localhost/xlocale_e2e_app'),
     /application database/,
   )
-  assert.equal(assertTeardownDatabase(url, app, created), created)
+  assert.throws(
+    () => assertTeardownDatabase('postgresql://other.example/xlocale_e2e_run_1700000000_abc', app, created),
+    /does not match/,
+  )
+  assert.throws(
+    () => assertTeardownDatabase('postgresql://localhost:5433/xlocale_e2e_run_1700000000_abc', app, created),
+    /does not match/,
+  )
+  assert.equal(assertTeardownDatabase(created, app, created), createdName)
+  assert.equal(
+    assertTeardownDatabase('postgresql://localhost:5432/xlocale_e2e_run_1700000000_abc', app, created),
+    createdName,
+  )
 })
 
 test('a missing tracking file drops nothing even when the environment names a database', () => {
@@ -131,6 +143,8 @@ test('setup creates a new database and teardown reads only the tracked file', ()
   assert.match(setup, /create-new/)
   assert.match(setup, /readTrackedDatabaseUrl/)
   assert.match(setup, /CREATED_DATABASE_ENV/)
+  assert.match(setup, /seed-demo --force/)
+  assert.doesNotMatch(setup, /allow-production/)
   assert.doesNotMatch(setup, /postgres_admin create /)
   assert.match(setup, /clearTrackedDatabaseUrl/)
   assert.match(teardown, /readTrackedDatabaseUrl/)

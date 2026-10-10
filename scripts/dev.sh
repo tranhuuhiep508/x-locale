@@ -7,12 +7,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # AUTH_DEV_BYPASS=false. This export applies only to the processes started here.
 export AUTH_DEV_BYPASS=true
 
-if [[ "${1:-}" == "--check" ]]; then
-  cd "$ROOT/backend"
-  uv run python -c "from app.config import settings; raise SystemExit(0 if settings.database_url.startswith('postgres') else 1)"
-  exit 0
-fi
-
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 BACKEND_URL="http://localhost:${BACKEND_PORT}"

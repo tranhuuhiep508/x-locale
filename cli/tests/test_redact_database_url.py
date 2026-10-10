@@ -16,7 +16,9 @@ def test_redact_database_url_masks_the_password(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(subprocess, "run", fail)
     url = "postgresql+psycopg://xlocale:s3cret@localhost:5432/xlocale_test?sslmode=disable"
     redacted = redact_database_url(url)
-    assert redacted == "postgresql+psycopg://xlocale:***@localhost:5432/xlocale_test?sslmode=disable"
+    assert (
+        redacted == "postgresql+psycopg://xlocale:***@localhost:5432/xlocale_test?sslmode=disable"
+    )
     assert "s3cret" not in redacted
 
 

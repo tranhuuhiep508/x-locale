@@ -10,7 +10,7 @@ const PREFIX = 'xlocale_e2e_'
 const MAX_IDENT = 63
 const NAME_OK = /^[A-Za-z0-9_]+$/
 
-/** Database name globalSetup recorded after create-new. Teardown must match it. */
+/** URL globalSetup recorded after create-new. Teardown must match its host, port, and name. */
 export const CREATED_DATABASE_ENV = 'XLOCALE_E2E_CREATED_DATABASE'
 
 let allocatedUrl: string | null = null
@@ -29,11 +29,22 @@ function redactDatabaseUrl(url: string): string {
 }
 
 export function databaseNameFromUrl(url: string): string {
-  const match = url.match(/^(.*\/)([^/?]+)(\?.*)?$/)
-  if (!match?.[2]) {
+  return databaseEndpoint(url).name
+}
+
+/** Host, port, and database name. An omitted port is 5432. */
+export function databaseEndpoint(url: string): { host: string; port: string; name: string } {
+  let parsed: URL
+  try {
+    parsed = new URL(url.replace(/^postgresql\+psycopg:/, 'postgresql:'))
+  } catch {
     throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(url)}`)
   }
-  return match[2]
+  const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''))
+  if (!name || parsed.protocol !== 'postgresql:') {
+    throw new Error(`Cannot derive a database name from ${redactDatabaseUrl(url)}`)
+  }
+  return { host: parsed.hostname, port: parsed.port || '5432', name }
 }
 
 function withDatabaseName(base: string, name: string): string {
@@ -152,14 +163,16 @@ export function clearTrackedDatabaseUrl(): void {
  * Teardown may drop only the database globalSetup recorded.
  *
  * The tracked name must use the `xlocale_e2e_` prefix, must not be the application
- * database, and must equal the name stored in `XLOCALE_E2E_CREATED_DATABASE`.
+ * database, and its host, port, and name must equal the URL stored in
+ * `XLOCALE_E2E_CREATED_DATABASE`.
  */
 export function assertTeardownDatabase(
   url: string,
   appUrl: string | undefined,
-  createdName: string | undefined,
+  createdUrl: string | undefined,
 ): string {
-  const name = databaseNameFromUrl(url)
+  const tracked = databaseEndpoint(url)
+  const name = tracked.name
   if (!NAME_OK.test(name) || !name.startsWith(PREFIX)) {
     throw new Error(`Refusing tracked database ${JSON.stringify(name)}.`)
   }
@@ -170,9 +183,15 @@ export function assertTeardownDatabase(
       throw new Error(`Refusing the application database name ${JSON.stringify(name)}.`)
     }
   }
-  if (!createdName || createdName !== name) {
+  if (!createdUrl) {
     throw new Error(
       `Refusing tracked database ${JSON.stringify(name)}. It does not match the database this run created.`,
+    )
+  }
+  const created = databaseEndpoint(createdUrl)
+  if (tracked.host !== created.host || tracked.port !== created.port || name !== created.name) {
+    throw new Error(
+      `Refusing tracked database ${JSON.stringify(name)} on ${tracked.host}:${tracked.port}. It does not match the database this run created.`,
     )
   }
   return name
