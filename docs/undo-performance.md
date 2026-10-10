@@ -2,57 +2,64 @@
 
 The harness in `backend/benchmarks/undo.py` measures the real production service, including its audit listener, on disposable Postgres databases. Each trial is cloned with `CREATE DATABASE ... TEMPLATE` from a seeded database. The database named by `DATABASE_URL` is not written.
 
-The tables below are historical measurements from 2026-10-04, taken on file-backed databases against baseline `69e33ff` and the backend refactor in `2a03608`. They are not Postgres timings. That baseline revision cannot be rerun with this harness, because it only knew how to open a file database. Do not treat the seconds below as current Postgres performance.
+The tables below are from a Postgres 16 run on 2026-10-10. For 1,000 public strings with ten translations and three tags each, normal Undo took a median **6.3317 seconds** (7,003 SELECTs, 11,003 statements) and preview a median **0.3278 seconds** (10 SELECTs, 10 statements). Forced Undo on that fixture took a median **6.3258 seconds**, with the same statement and SELECT counts.
 
-For 1,000 public strings with ten translations and three tags each, normal Undo improved from **29.08 seconds to 4.61 seconds** (84% less elapsed time). SELECTs fell from **25,001 to 7,003** (72% fewer), and full string loads from six to two per inverse. Forced Undo improved from **26.49 seconds to 4.67 seconds**.
+## Environment
 
-The earlier exploratory measurement was 27.03 seconds for the baseline and 5.32 seconds for a limited prototype. The tables below are the complete rerun against the final service, with the same interpreter, fixtures, machine, and project filesystem for both revisions.
+- Date: 2026-10-10 (run started 2026-10-10T03:43:46Z)
+- PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), `datcollate` `C`, `datctype` `C`. The cluster was created with `pg_createcluster 16 main --locale=C --encoding=UTF8`.
+- Python 3.14.8, backend dependencies from the repo lockfile
+- Host: 4 CPUs, 16 GiB RAM. Throwaway databases on the local server (`127.0.0.1:5432`)
+- One warm-up, one instrumented SQL-count pass, then three uninstrumented timed trials. Medians are over those three trials. Seeding, cloning, authentication, project lookup, and verification are outside the elapsed time. Preview and Undo use separate sessions.
 
 ## Normal Undo
 
-| Fixture | Strings | Baseline median (range), s | Final median (range), s | SELECTs: baseline → final |
-| --- | ---: | ---: | ---: | ---: |
-| Plain | 100 | 0.86 (0.86–0.91) | 0.50 (0.48–0.53) | 1,501 → 701 |
-| Plain | 500 | 3.06 (2.88–3.27) | 2.91 (2.09–2.95) | 7,501 → 3,501 |
-| Plain | 1,000 | 5.98 (5.91–6.19) | 3.89 (3.87–3.90) | 15,001 → 7,001 |
-| Rich | 100 | 1.26 (1.23–1.35) | 0.48 (0.46–0.56) | 2,501 → 703 |
-| Rich | 500 | 10.63 (10.16–10.87) | 2.44 (2.42–2.55) | 12,501 → 3,503 |
-| Rich | 1,000 | 29.08 (28.42–29.19) | 4.61 (4.49–4.74) | 25,001 → 7,003 |
+| Fixture | Strings | Undo median (s) | Preview median (s) | Statements (preview / undo) | SELECTs (preview / undo) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Plain | 100 | 0.4999 | 0.0192 | 6 / 1,101 | 6 / 701 |
+| Plain | 500 | 2.5188 | 0.0615 | 6 / 5,501 | 6 / 3,501 |
+| Plain | 1,000 | 5.0081 | 0.1559 | 8 / 11,001 | 8 / 7,001 |
+| Rich | 100 | 0.6295 | 0.0411 | 8 / 1,103 | 8 / 703 |
+| Rich | 500 | 3.1070 | 0.1671 | 8 / 5,503 | 8 / 3,503 |
+| Rich | 1,000 | 6.3317 | 0.3278 | 10 / 11,003 | 10 / 7,003 |
 
 ## Forced Undo
 
-| Fixture | Strings | Baseline median (range), s | Final median (range), s | SELECTs: baseline → final |
-| --- | ---: | ---: | ---: | ---: |
-| Plain | 100 | 0.62 (0.54–0.65) | 0.38 (0.37–0.41) | 1,401 → 701 |
-| Plain | 500 | 2.81 (2.70–2.88) | 1.86 (1.80–1.90) | 7,001 → 3,501 |
-| Plain | 1,000 | 5.41 (5.15–5.62) | 3.71 (3.69–3.78) | 14,001 → 7,001 |
-| Rich | 100 | 1.17 (1.11–1.29) | 0.46 (0.45–0.49) | 2,401 → 703 |
-| Rich | 500 | 9.54 (9.39–9.68) | 2.35 (2.28–2.39) | 12,001 → 3,503 |
-| Rich | 1,000 | 26.49 (25.32–26.97) | 4.67 (4.58–4.75) | 24,001 → 7,003 |
+| Fixture | Strings | Undo median (s) | Preview median (s) | Statements (preview / undo) | SELECTs (preview / undo) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Plain | 100 | 0.5119 | 0.0182 | 6 / 1,101 | 6 / 701 |
+| Plain | 500 | 2.5586 | 0.0592 | 6 / 5,501 | 6 / 3,501 |
+| Plain | 1,000 | 5.0774 | 0.1512 | 8 / 11,001 | 8 / 7,001 |
+| Rich | 100 | 0.6324 | 0.0399 | 8 / 1,103 | 8 / 703 |
+| Rich | 500 | 3.1626 | 0.1689 | 8 / 5,503 | 8 / 3,503 |
+| Rich | 1,000 | 6.3258 | 0.3189 | 10 / 11,003 | 10 / 7,003 |
 
-## Method and acceptance
+Rich 500 normal undo median is stored as `3.107` by the harness (`round(..., 4)`); the table shows `3.1070`.
 
-- Python 3.14 with the installed backend dependencies. The current harness uses Postgres: a seeded template database is cloned for every iteration. The 2026-10-04 numbers above were collected on file databases before this port.
-- Plain: draft strings, one working translation, no tags/modules. Rich: public strings, ten translations, three tags per string, ten shared modules, twelve shared tags, and a published snapshot. Each string has one existing-string update to undo.
-- Normal live values are A2 after A1 → A2. Forced fixtures have a later A3 edit. Both restore A1; forced markers must record A3 → A1.
-- One warm-up, one separately instrumented SQL-count pass, then three uninstrumented timed runs. Preview and execution use separate sessions; seeding, copying, authentication/project lookup, and verification are outside elapsed time.
-- Every iteration checks exact persisted values, published state, marker before/after snapshots, one marker per inverse, marker grouping, original revert links, and total audit count.
-- All fixtures meet the budget of at most two full string loads per inverse and at most `12 × strings + 30` SELECTs. Both 1,000-string rich modes exceed the required 60% time reduction. Wall-clock thresholds are not CI assertions.
-- The final 1,000-string rich normal preview uses ten SELECTs versus 3,004 at baseline; its measured median is 0.35 seconds versus 1.46 seconds.
-- The 2026-10-04 ranges exclude HTTP/browser overhead. They are historical file-database measurements. Other inverse kinds and error paths are covered by the backend/API and browser regression suites.
+## Method
+
+- Plain: draft strings, one working translation, no tags or modules. Rich: public strings, ten translations, three tags per string, ten shared modules, twelve shared tags, and a published snapshot. Each string has one existing-string update to undo.
+- Normal live values are A2 after A1 → A2. Forced fixtures have a later A3 edit. Both restore A1; forced markers record A3 → A1.
+- Every iteration checks exact persisted values, published state, marker before/after snapshots, one marker per inverse, marker grouping, original revert links, and total audit count. Every case in both runs reported that check as verified.
+- Undo performs two full string loads per inverse (200, 1,000, and 2,000 loads at 100, 500, and 1,000 strings). SELECT counts stay within `12 × strings + 30` (the largest is 7,003 at 1,000 strings). Wall-clock thresholds are not CI assertions.
+- These timings exclude HTTP and browser overhead. Other inverse kinds and error paths are covered by the backend/API and browser regression suites.
+
+## Historical file-database note
+
+Measurements dated 2026-10-04 were taken on file-backed databases, comparing baseline `69e33ff` with refactor `2a03608`, on a different machine. They are not Postgres results. On that run, rich 1,000-string normal Undo was 4.61 s median after the refactor (29.08 s at baseline), and forced Undo was 4.67 s (26.49 s at baseline). Do not compare those seconds with the Postgres table above.
 
 ## Reproduce
 
-From `backend/`, with Postgres running and `DATABASE_URL` set to a Postgres URL on that server (the named database is only used to find the server; throwaway databases are created and dropped):
+From `backend/`, with Postgres 16 running at collation C and `DATABASE_URL` set to a Postgres URL on that server (the named database is only used to find the server; throwaway databases are created and dropped):
 
 ```bash
 PYTHONPATH=. uv run --no-sync python benchmarks/undo.py \
   --sizes 100 500 1000 --profiles plain rich --trials 3 \
-  --output /tmp/undo-final-normal.json
+  --output /tmp/undo-pg-normal.json
 
 PYTHONPATH=. uv run --no-sync python benchmarks/undo.py \
   --sizes 100 500 1000 --profiles plain rich --trials 3 --force \
-  --output /tmp/undo-final-forced.json
+  --output /tmp/undo-pg-forced.json
 ```
 
 The script prints per-case JSON and saves samples, ranges, query categories, and correctness results. Throwaway databases are dropped when each case finishes.
