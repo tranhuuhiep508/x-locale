@@ -327,7 +327,12 @@ class StringEntry(Base):
     )
     published_key: Mapped[str | None] = mapped_column(String(KEY_MAX_LENGTH), nullable=True)
     published_module_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("modules.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "modules.id", name="fk_strings_published_module_id_modules", ondelete="SET NULL"
+        ),
+        nullable=True,
+        index=True,
     )
     published_source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

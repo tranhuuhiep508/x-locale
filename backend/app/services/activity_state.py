@@ -84,9 +84,17 @@ def _reference_id(raw: Any) -> uuid.UUID | None:
 class SnapshotReferences:
     """Project-scoped, request-local reference resolution; cache misses as well as hits."""
 
-    def __init__(self, db: Session, project_id: uuid.UUID, snapshots: list[dict | None]):
+    def __init__(
+        self,
+        db: Session,
+        project_id: uuid.UUID,
+        snapshots: list[dict | None],
+        *,
+        lock_modules: bool = False,
+    ):
         self.db = db
         self.project_id = project_id
+        self.lock_modules = lock_modules
         self.modules: set[uuid.UUID] = set()
         self.tags: dict[uuid.UUID, Tag] = {}
         self._known_modules: set[uuid.UUID] = set()
@@ -107,15 +115,17 @@ class SnapshotReferences:
         self._load_tags(tag_ids)
 
     def _load_modules(self, ids: set[uuid.UUID]) -> None:
-        missing = list(ids - self._known_modules)
+        missing = sorted(ids - self._known_modules)
         for offset in range(0, len(missing), 400):
             chunk = missing[offset : offset + 400]
-            self.modules.update(
-                mid
-                for (mid,) in self.db.query(Module.id)
+            query = (
+                self.db.query(Module.id)
                 .filter(Module.project_id == self.project_id, Module.id.in_(chunk))
-                .all()
+                .order_by(Module.id)
             )
+            if self.lock_modules:
+                query = query.with_for_update(read=True, key_share=True)
+            self.modules.update(mid for (mid,) in query.all())
             self._known_modules.update(chunk)
 
     def _load_tags(self, ids: set[uuid.UUID]) -> None:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Module, Project, StringEntry, StringTag, Tag
 from app.schemas import ModuleCreate, ModuleOut, ModuleUpdate, TagCreate, TagOut, TagUpdate
+from app.services.write_transactions import run_write
 
 
 def module_out(module: Module, string_count: int) -> ModuleOut:
@@ -276,10 +277,24 @@ def _clear_module_refs(db: Session, project_id: uuid.UUID, module_id: uuid.UUID)
 
 
 def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
-    module = get_module(db, project.id, module_id)
-    _clear_module_refs(db, project.id, module.id)
-    db.delete(module)
-    db.commit()
+    project_id = project.id
+
+    def write() -> None:
+        # Undo holds module locks before writing strings. Delete must use the
+        # same order, including when it waits for an undo to commit.
+        module = (
+            db.query(Module)
+            .filter(Module.project_id == project_id, Module.id == module_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if module is None:
+            raise HTTPException(status_code=404, detail="Module not found")
+        _clear_module_refs(db, project_id, module.id)
+        db.delete(module)
+
+    run_write(db, project_id, "delete_module", write)
 
 
 def list_tags(db: Session, project: Project) -> list[TagOut]:

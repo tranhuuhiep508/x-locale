@@ -63,12 +63,12 @@ from app.services.activity_state import (
     key_conflict_message,
     normalized_time,
     project_snapshot,
-    restore_transaction,
     snapshots_match,
     translation_map,
     validate_undo_timestamps,
 )
 from app.services.catalog import require_module_in_project
+from app.services.write_transactions import run_write
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -572,46 +572,57 @@ def restore_activity_version(
     string_id: uuid.UUID,
     activity_id: uuid.UUID,
 ) -> RestoreVersionOut:
-    from app.activity import set_restore_intent
-    from app.services.strings import get_string
+    project_id = project.id
 
-    activity = (
-        db.query(Activity)
-        .filter(
-            Activity.id == activity_id,
-            Activity.project_id == project.id,
-            Activity.string_id == string_id,
+    def write() -> tuple[Activity, bool]:
+        from app.activity import set_restore_intent
+        from app.services.strings import get_string
+
+        activity = (
+            db.query(Activity)
+            .filter(
+                Activity.id == activity_id,
+                Activity.project_id == project_id,
+                Activity.string_id == string_id,
+            )
+            .first()
         )
-        .first()
-    )
-    if not activity:
-        raise HTTPException(status_code=404, detail="Activity not found")
-    if not activity.after:
-        raise HTTPException(status_code=400, detail="This version cannot be restored")
-    action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    if not is_history_restorable(activity.event_type, action):
-        raise HTTPException(
-            status_code=400, detail=_history_restore_reject_detail(activity.event_type)
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        if not activity.after:
+            raise HTTPException(status_code=400, detail="This version cannot be restored")
+        action = activity.action.value if hasattr(activity.action, "value") else activity.action
+        if not is_history_restorable(activity.event_type, action):
+            raise HTTPException(
+                status_code=400, detail=_history_restore_reject_detail(activity.event_type)
+            )
+        entry = get_string(db, project_id, string_id)
+        if entry.deleted_at is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Restore the string from Deleted before restoring a version",
+            )
+        references = SnapshotReferences(
+            db, project_id, [activity.after, _live_snapshot(entry)], lock_modules=True
         )
-    entry = get_string(db, project.id, string_id)
-    if entry.deleted_at is not None:
-        raise HTTPException(
-            status_code=400,
-            detail="Restore the string from Deleted before restoring a version",
-        )
-    still_pending = bool(entry.pending_delete)
-    references = SnapshotReferences(db, project.id, [activity.after, _live_snapshot(entry)])
-    target = _history_target(db, entry, activity.after, references=references)
-    if _working_copy_matches(entry, target):
-        raise HTTPException(
-            status_code=400,
-            detail=_history_restore_noop_detail(still_pending),
-        )
-    with restore_transaction(db):
-        check_key_available(db, project.id, entry.id, target)
+        db.refresh(entry)
+        if entry.deleted_at is not None:
+            raise HTTPException(
+                status_code=400, detail="Restore the string from Deleted before restoring a version"
+            )
+        still_pending = bool(entry.pending_delete)
+        target = _history_target(db, entry, activity.after, references=references)
+        if _working_copy_matches(entry, target):
+            raise HTTPException(
+                status_code=400,
+                detail=_history_restore_noop_detail(still_pending),
+            )
+        check_key_available(db, project_id, entry.id, target)
         set_restore_intent(db)
         _apply_working_copy_only(db, entry, target, references=references)
-        db.commit()
+        return activity, still_pending
+
+    activity, still_pending = run_write(db, project_id, "restore_version", write, restore=True)
     db.expire_all()
     latest = (
         db.query(Activity)
@@ -728,6 +739,7 @@ def _working_copy_matches(entry: StringEntry, target: dict[str, Any]) -> bool:
 
 def restore_last_history(db: Session, project: Project, entries: list[StringEntry]) -> int:
     from app.activity import set_restore_intent
+    from app.services.strings import load_string_entries
 
     affected = 0
     active = [entry for entry in entries if entry.deleted_at is None]
@@ -756,20 +768,24 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
             *[_live_snapshot(entry) for entry in active],
             *[a.before for a in latest_by_string.values()],
         ],
+        lock_modules=True,
     )
-    with restore_transaction(db):
-        set_restore_intent(db)
-        for entry in active:
-            latest = latest_by_string.get(entry.id)
-            if not latest or not latest.before:
-                continue
-            target = _history_target(db, entry, latest.before, references=references)
-            if _working_copy_matches(entry, target):
-                continue
-            check_key_available(db, project.id, entry.id, target)
-            _apply_working_copy_only(db, entry, target, references=references)
-            db.flush()
-            affected += 1
+    # Reads before the module lock may predate a concurrent delete.
+    active = load_string_entries(db, project.id, ids, refresh=True)
+    set_restore_intent(db)
+    for entry in active:
+        if entry.deleted_at is not None:
+            continue
+        latest = latest_by_string.get(entry.id)
+        if not latest or not latest.before:
+            continue
+        target = _history_target(db, entry, latest.before, references=references)
+        if _working_copy_matches(entry, target):
+            continue
+        check_key_available(db, project.id, entry.id, target)
+        _apply_working_copy_only(db, entry, target, references=references)
+        db.flush()
+        affected += 1
     return affected
 
 
@@ -1087,7 +1103,7 @@ def apply_revert(
     if etype == "string":
         if references is None:
             references = SnapshotReferences(
-                db, activity.project_id, [activity.before, activity.after]
+                db, activity.project_id, [activity.before, activity.after], lock_modules=True
             )
         if target is None:
             validate_undo_timestamps(activity.id, activity.before, activity.after)
@@ -1147,28 +1163,32 @@ def revert_activity(
     *,
     force: bool = False,
 ) -> Activity:
-    activity = (
-        db.query(Activity)
-        .filter(Activity.id == activity_id, Activity.project_id == project.id)
-        .first()
-    )
-    if not activity:
-        raise HTTPException(status_code=404, detail="Activity not found")
-    if not activity.is_revertible:
-        raise HTTPException(status_code=400, detail="Activity is not revertible")
-    if activity.reverted_by_id and not force:
-        raise HTTPException(status_code=400, detail="Activity already reverted")
+    project_id = project.id
 
-    from app.activity import attach_batch
+    def write() -> Activity:
+        activity = (
+            db.query(Activity)
+            .filter(Activity.id == activity_id, Activity.project_id == project_id)
+            .first()
+        )
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+        if not activity.is_revertible:
+            raise HTTPException(status_code=400, detail="Activity is not revertible")
+        if activity.reverted_by_id and not force:
+            raise HTTPException(status_code=400, detail="Activity already reverted")
 
-    batch_id = uuid.uuid4()
-    with restore_transaction(db):
+        from app.activity import attach_batch
+
+        batch_id = uuid.uuid4()
         existing = attach_batch(db, batch_id, "revert")
-        references = SnapshotReferences(db, project.id, [activity.before, activity.after])
+        references = SnapshotReferences(
+            db, project_id, [activity.before, activity.after], lock_modules=True
+        )
         before, after = _execute_inverse(db, activity, force=force, references=references)
         revert_marker = _make_revert_marker(
             db,
-            project_id=project.id,
+            project_id=project_id,
             activity=activity,
             existing=existing,
             batch_id=batch_id,
@@ -1178,7 +1198,9 @@ def revert_activity(
         db.add(revert_marker)
         db.flush()
         activity.reverted_by_id = revert_marker.id
-        db.commit()
+        return activity
+
+    activity = run_write(db, project_id, "revert_activity", write, restore=True)
     db.refresh(activity)
     return activity
 
@@ -1190,34 +1212,39 @@ def revert_batch(
     *,
     force: bool = False,
 ) -> dict[str, Any]:
-    activities = (
-        db.query(Activity)
-        .filter(
-            Activity.project_id == project.id,
-            Activity.batch_id == batch_id,
-            Activity.is_revertible.is_(True),
-            Activity.reverted_by_id.is_(None),
+    project_id = project.id
+
+    def write() -> dict[str, Any]:
+        activities = (
+            db.query(Activity)
+            .filter(
+                Activity.project_id == project_id,
+                Activity.batch_id == batch_id,
+                Activity.is_revertible.is_(True),
+                Activity.reverted_by_id.is_(None),
+            )
+            .order_by(*_inverse_order())
+            .all()
         )
-        .order_by(*_inverse_order())
-        .all()
-    )
-    if not activities:
-        raise HTTPException(status_code=404, detail="No revertible activities in batch")
+        if not activities:
+            raise HTTPException(status_code=404, detail="No revertible activities in batch")
 
-    from app.activity import attach_batch
+        from app.activity import attach_batch
 
-    new_batch = uuid.uuid4()
-    reverted = 0
-    with restore_transaction(db):
+        new_batch = uuid.uuid4()
+        reverted = 0
         existing = attach_batch(db, new_batch, "revert")
         references = SnapshotReferences(
-            db, project.id, [snapshot for a in activities for snapshot in (a.before, a.after)]
+            db,
+            project_id,
+            [snapshot for a in activities for snapshot in (a.before, a.after)],
+            lock_modules=True,
         )
         for activity in activities:
             before, after = _execute_inverse(db, activity, force=force, references=references)
             marker = _make_revert_marker(
                 db,
-                project_id=project.id,
+                project_id=project_id,
                 activity=activity,
                 existing=existing,
                 batch_id=new_batch,
@@ -1228,8 +1255,9 @@ def revert_batch(
             db.flush()
             activity.reverted_by_id = marker.id
             reverted += 1
-        db.commit()
-    return {"reverted": reverted, "batch_id": str(new_batch)}
+        return {"reverted": reverted, "batch_id": str(new_batch)}
+
+    return run_write(db, project_id, "revert_batch", write, restore=True)
 
 
 def _load_activity_entry(db: Session, activity: Activity) -> StringEntry | None:
