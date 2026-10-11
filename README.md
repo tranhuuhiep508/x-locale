@@ -17,7 +17,7 @@ docker compose up -d postgres
 
 `docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
 
-The commands below are the setup. `scripts/dev.sh` is only a local shortcut: it exports `AUTH_DEV_BYPASS=true` for the processes it starts and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
+The commands below are the setup. `scripts/dev.sh` is only a local shortcut and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. For local dev with no OIDC, set `AUTH_DEV_BYPASS=true` in your `.env`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
 
 **Terminal 1 — backend:**
 
@@ -26,8 +26,7 @@ cd backend
 uv sync --all-extras
 uv run alembic upgrade head
 uv run python -m app.cli seed-demo
-# Local Dev User. .env.example leaves AUTH_DEV_BYPASS=false.
-AUTH_DEV_BYPASS=true uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Terminal 2 — frontend:**

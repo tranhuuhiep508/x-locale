@@ -225,7 +225,7 @@ def test_docs_smoke_readme_and_agents():
     assert "--allow-production" in readme
     script = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
     assert "source " not in script
-    assert "export AUTH_DEV_BYPASS=true" in script
+    assert "AUTH_DEV_BYPASS" not in script
     assert "--check" not in script
 
 

@@ -3,9 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Do not read .env as a shell script. The app loads it. .env.example keeps
-# AUTH_DEV_BYPASS=false. This export applies only to the processes started here.
-export AUTH_DEV_BYPASS=true
+# Do not read .env as a shell script. The app loads it.
 
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
