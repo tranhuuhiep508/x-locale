@@ -42,13 +42,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    columns = {column["name"] for column in inspector.get_columns("activities")}
-    if "event_type" not in columns:
-        return
-    indexes = {index["name"] for index in inspector.get_indexes("activities")}
-    with op.batch_alter_table("activities", schema=None) as batch_op:
-        if "ix_activities_event_type" in indexes:
-            batch_op.drop_index("ix_activities_event_type")
-        batch_op.drop_column("event_type")
+    # g7b8293a4c5d retains event_type and its index. Keep them until
+    # f60718293b4c, the revision that introduced them, removes them.
+    pass
