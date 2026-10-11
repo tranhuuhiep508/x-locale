@@ -106,6 +106,11 @@ def test_full_write_retried_with_clean_context(
             True,
             "module_reference_conflict",
         ),
+        (
+            database_error("23503", "fk_strings_published_module_id_modules", integrity=True),
+            True,
+            "module_reference_conflict",
+        ),
     ],
 )
 def test_retry_exhaustion_rolls_back_and_maps_409(

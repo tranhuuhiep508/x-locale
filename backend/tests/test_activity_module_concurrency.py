@@ -7,6 +7,7 @@ from threading import Event
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import SESSION_COOKIE, create_session_token, hash_api_key
@@ -191,22 +192,35 @@ def test_delete_completed_before_preload_clears_historical_refs(client, session_
 
 @pytest.mark.parametrize("column", ["module_id", "published_module_id"])
 @pytest.mark.parametrize("persistent", [False, True])
+@pytest.mark.parametrize("pg_schema", ["create_all", "alembic"], indirect=True)
 def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
-    client, session_factory, monkeypatch, no_retry_delay, column, persistent
+    pg_schema, monkeypatch, no_retry_delay, column, persistent
 ):
+    client, session_factory, schema = pg_schema
     case = setup_batch(client, session_factory)
     execute = activities._execute_inverse
-    calls = []
+    calls, failures = [], []
+    constraint = (
+        "fk_strings_published_module_id_modules"
+        if schema == "alembic" and column == "published_module_id"
+        else f"strings_{column}_fkey"
+    )
 
     def fail_second_inverse(db, activity, *, force, references):
         calls.append(force)
         result = execute(db, activity, force=force, references=references)
         if len(calls) == 2 or (persistent and len(calls) == 4):
             # The first inverse and its marker already flushed in this attempt.
-            db.execute(
-                text(f"UPDATE strings SET {column} = :missing WHERE id = :id"),
-                {"missing": uuid.uuid4(), "id": uuid.UUID(activity.entity_id)},
-            )
+            try:
+                db.execute(
+                    text(f"UPDATE strings SET {column} = :missing WHERE id = :id"),
+                    {"missing": uuid.uuid4(), "id": uuid.UUID(activity.entity_id)},
+                )
+            except IntegrityError as error:
+                assert error.orig.sqlstate == "23503"
+                assert error.orig.diag.constraint_name == constraint
+                failures.append(constraint)
+                raise
         return result
 
     monkeypatch.setattr(activities, "_execute_inverse", fail_second_inverse)
@@ -217,6 +231,7 @@ def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
             "module_reference_conflict"
         ).detail
     assert calls == [True] * 4 and len(no_retry_delay) == 1
+    assert failures == [constraint] * (2 if persistent else 1)
     with session_factory() as db:
         assert db.query(Activity).count() == case["baseline"] + (0 if persistent else 2)
         originals = db.query(Activity).filter(Activity.batch_id == uuid.UUID(case["batch"])).all()
