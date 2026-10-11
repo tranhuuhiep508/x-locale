@@ -643,10 +643,12 @@ def load_string_entries(
     db: Session,
     project_id: uuid.UUID,
     ids: Sequence[uuid.UUID],
+    *,
+    refresh: bool = False,
 ) -> list[StringEntry]:
     if not ids:
         return []
-    return (
+    query = (
         db.query(StringEntry)
         .options(
             selectinload(StringEntry.translations),
@@ -655,8 +657,10 @@ def load_string_entries(
             joinedload(StringEntry.published_module),
         )
         .filter(StringEntry.project_id == project_id, StringEntry.id.in_(ids))
-        .all()
     )
+    if refresh:
+        query = query.populate_existing()
+    return query.all()
 
 
 def get_string(db: Session, project_id: uuid.UUID, string_id: uuid.UUID) -> StringEntry:
@@ -910,6 +914,21 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
     from app.activity import attach_batch
 
     action = payload.action
+    if action == "restore_last_history":
+        from app.services.activities import restore_last_history
+        from app.services.write_transactions import run_write
+
+        project_id = project.id
+
+        def write() -> BatchResult:
+            ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
+            entries = load_string_entries(db, project_id, ids)
+            batch_id = uuid.uuid4()
+            attach_batch(db, batch_id, "batch")
+            affected = restore_last_history(db, project, entries)
+            return BatchResult(affected=affected, batch_id=batch_id)
+
+        return run_write(db, project_id, "restore_last_history", write, restore=True)
     fingerprint = (payload.fingerprint or "").strip()
     if action == "publish" and not fingerprint:
         raise HTTPException(
@@ -971,10 +990,6 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
         for entry in entries:
             if restore_string(entry):
                 affected += 1
-    elif action == "restore_last_history":
-        from app.services.activities import restore_last_history
-
-        affected = restore_last_history(db, project, entries)
     elif action == "move_module":
         module_id = payload.payload.get("module_id")
         mid = uuid.UUID(module_id) if module_id else None

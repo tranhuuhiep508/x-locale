@@ -116,18 +116,21 @@ describe('isUndoConflict', () => {
     expect(isUndoConflict(new Error('nope'))).toBe(false)
   })
 
-  it.each(['key_conflict', 'invalid_snapshot', 'unknown_error'])(
-    'never offers overwrite for %s',
-    (code) => {
-      expect(
-        isUndoConflict(
-          new ApiError(409, 'Key is taken', {
-            detail: { code, key: 'welcome' },
-          })
-        )
-      ).toBe(false)
-    }
-  )
+  it.each([
+    'key_conflict',
+    'invalid_snapshot',
+    'module_reference_conflict',
+    'concurrent_modification',
+    'unknown_error',
+  ])('never offers overwrite for %s', (code) => {
+    expect(
+      isUndoConflict(
+        new ApiError(409, 'Key is taken', {
+          detail: { code, key: 'welcome' },
+        })
+      )
+    ).toBe(false)
+  })
 })
 
 describe('undoOverwriteDescription', () => {

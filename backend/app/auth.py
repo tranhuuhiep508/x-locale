@@ -213,6 +213,7 @@ def project_access(
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_user),
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    x_locale_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> Project:
     """API key for its own project, or a session member. Non-members get 404."""
     raw = x_api_key
@@ -221,6 +222,9 @@ def project_access(
         resolved = resolve_project_ref(db, project_id)
         if project.id != resolved.id:
             raise HTTPException(status_code=404, detail="Project not found")
+        db.info["retry_project_access"] = lambda: project_access(
+            project_id, db, None, raw, x_locale_session
+        )
         return resolved
 
     if user is None:
@@ -230,6 +234,12 @@ def project_access(
     resolved = resolve_project_ref(db, project_id)
     if membership_for(db, resolved.id, user.id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    def reauthorize() -> Project:
+        current = _require_session_user(db, x_locale_session)
+        return project_access(project_id, db, current, None, x_locale_session)
+
+    db.info["retry_project_access"] = reauthorize
     return resolved
 
 
