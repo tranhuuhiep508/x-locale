@@ -8,6 +8,7 @@ services:
       POSTGRES_USER: xlocale
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: xlocale
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

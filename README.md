@@ -5,14 +5,19 @@ activity log, AI auto-translate, Excel round-trip, and CLI sync.
 
 ## Prerequisites
 
-- **Option A (local dev):** [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 20+
-- **Option B (production-like):** [Docker](https://docs.docker.com/get-docker/)
+- [uv](https://astral.sh/uv/), Python 3.14+, and Node.js 22.6+
+- Postgres 16. Local dev starts it with Docker Compose. A native server is documented below.
 
-## Quick start (local, no Docker)
+## Quick start
 
 ```bash
 cp .env.example .env
+docker compose up -d postgres
 ```
+
+`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
+
+The commands below are the setup. `scripts/dev.sh` is only a local shortcut and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. For local dev with no OIDC, set `AUTH_DEV_BYPASS=true` in your `.env`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
 
 **Terminal 1 — backend:**
 
@@ -37,9 +42,39 @@ npm run dev
 - Auth: Microsoft Entra SSO (work or personal). Set `AUTH_DEV_BYPASS=true` with empty `OIDC_*` for a local Dev User
 - Demo API key (CLI): `demo-api-key-change-me`
 
-SQLite (`backend/x-locale.db`) is the default. Delete it and re-run migrate + seed to reset.
+The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`. It exits when OIDC is configured or `ENV=production` unless you pass `--allow-production`. `--force` only recreates Demo App.
 
-## Quick start (Docker)
+### Native Postgres
+
+Install PostgreSQL 16 and initialize a cluster with collation C.
+
+Debian and Ubuntu create a cluster named `main` when the package is installed, so `pg_createcluster 16 main` fails until that cluster is removed. Drop it when this server should listen on port 5432:
+
+```bash
+sudo -u postgres pg_dropcluster --stop 16 main
+sudo -u postgres pg_createcluster 16 main --locale=C --encoding=UTF8
+sudo -u postgres pg_ctlcluster 16 main start
+```
+
+To keep the existing `main` cluster, add one named `xlocale` and use the port from `pg_lsclusters`:
+
+```bash
+sudo -u postgres pg_createcluster 16 xlocale --locale=C --encoding=UTF8
+sudo -u postgres pg_ctlcluster 16 xlocale start
+```
+
+```bash
+sudo -u postgres createuser -d xlocale
+sudo -u postgres psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
+sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
+sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
+```
+
+`xlocale` is a `CREATEDB` role, not a superuser. `TEST_DATABASE_URL` points at `xlocale_test`. That database is the bootstrap connection for `CREATE DATABASE` and `DROP DATABASE`. The harness connects to it, not to the `postgres` database, so this role does not need access to `postgres`.
+
+Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.
+
+## Quick start (full Docker stack)
 
 ```bash
 cp .env.example .env
@@ -191,7 +226,7 @@ produce an empty queue when no other target locale is missing.
 ## Development
 
 ```bash
-# Backend tests
+# Backend tests. TEST_DATABASE_URL must be Postgres and must differ from DATABASE_URL.
 cd backend && uv sync --all-extras && uv run pytest
 
 # Frontend typecheck + build

@@ -305,7 +305,8 @@ def serialize_string(entry: StringEntry) -> StringOut:
         module_id=module_id,
         module_slug=module_slug,
         tags=[
-            TagOut(id=t.id, name=t.name, color=t.color, string_count=0) for t in (entry.tags or [])
+            TagOut(id=t.id, name=t.name, color=t.color, string_count=0)
+            for t in sorted(entry.tags or [], key=lambda tag: (tag.name, str(tag.id)))
         ],
         created_at=entry.created_at,
         created_by_type=_actor_type_value(entry.created_by_type),
@@ -322,7 +323,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
                 confidence=t.confidence,
                 updated_at=t.updated_at,
             )
-            for t in (entry.translations or [])
+            for t in sorted(entry.translations or [], key=lambda item: item.locale)
         ],
     )
 

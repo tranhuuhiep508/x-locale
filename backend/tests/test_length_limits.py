@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import os
 import uuid
 
 import pytest
@@ -28,21 +27,6 @@ LONG_SLUG = "a" * 129
 LONG_LOCALE = "a" * 17
 REGEX_MAX_LOCALE = "abc-12345678"
 
-_MISMATCH_DBS = [pytest.param("sqlite", id="sqlite")]
-if os.environ.get("TEST_DATABASE_URL", "").strip():
-    _MISMATCH_DBS.append(pytest.param("postgres", marks=pytest.mark.postgres, id="postgres"))
-
-on_each_database = pytest.mark.parametrize("api", _MISMATCH_DBS, indirect=True)
-
-
-@pytest.fixture
-def api(request):
-    """SQLite client, plus the Postgres client when this run can reach it."""
-    if getattr(request, "param", "sqlite") == "postgres":
-        client, _session_factory = request.getfixturevalue("pg_session")
-        return client
-    return request.getfixturevalue("client")
-
 
 def _set_target_languages(project_id: str, locales: list[str]) -> None:
     from app.database import get_db
@@ -63,9 +47,8 @@ def test_validate_locale_code_accepts_regex_maximum():
     assert len(REGEX_MAX_LOCALE) == 12
 
 
-@on_each_database
-def test_project_locale_over_column_limit_is_400(api):
-    response = api.post(
+def test_project_locale_over_column_limit_is_400(client):
+    response = client.post(
         "/api/projects",
         json={
             "name": "Too long locale",
@@ -95,15 +78,14 @@ def test_project_accepts_locale_longer_than_the_old_varchar_10(client):
     assert "en-abcdefgh" in body["target_languages"]
 
 
-@on_each_database
-def test_string_update_rejects_key_over_512(api):
-    project = make_project(api, layout="flat")
-    created = api.post(
+def test_string_update_rejects_key_over_512(client):
+    project = make_project(client, layout="flat")
+    created = client.post(
         f"/api/projects/{project['id']}/strings",
         json={"key": "hello", "source_text": "Xin chào"},
     )
     assert created.status_code == 201, created.text
-    updated = api.patch(
+    updated = client.patch(
         f"/api/projects/{project['id']}/strings/{created.json()['id']}",
         json={"key": LONG_KEY},
     )
@@ -112,11 +94,10 @@ def test_string_update_rejects_key_over_512(api):
     assert "512" in updated.text
 
 
-@on_each_database
-def test_import_and_push_reject_key_over_512(api):
-    project = make_project(api, layout="flat")
+def test_import_and_push_reject_key_over_512(client):
+    project = make_project(client, layout="flat")
     pid = project["id"]
-    uploaded = api.post(
+    uploaded = client.post(
         f"/api/projects/{pid}/import",
         files=json_upload({LONG_KEY: "Xin chào"}),
     )
@@ -125,14 +106,14 @@ def test_import_and_push_reject_key_over_512(api):
     assert preview in uploaded.text
     assert "512" in uploaded.text
 
-    pushed = api.post(
+    pushed = client.post(
         f"/api/projects/{pid}/strings/import",
         json={"strings": {LONG_KEY: "Xin chào"}, "base_language": "vi"},
     )
     assert pushed.status_code == 400, pushed.text
     assert preview in pushed.text
     assert "512" in pushed.text
-    assert api.get(f"/api/projects/{pid}/strings").json()["total"] == 0
+    assert client.get(f"/api/projects/{pid}/strings").json()["total"] == 0
 
 
 def test_import_stores_512_character_key_and_activity_summary(client):
@@ -150,15 +131,14 @@ def test_import_stores_512_character_key_and_activity_summary(client):
     assert any(MAX_KEY in summary for summary in summaries)
 
 
-@on_each_database
-def test_module_slug_update_rejects_over_128(api):
-    project = make_project(api)
-    created = api.post(
+def test_module_slug_update_rejects_over_128(client):
+    project = make_project(client)
+    created = client.post(
         f"/api/projects/{project['id']}/modules",
         json={"slug": "auth", "name": "Auth"},
     )
     assert created.status_code == 201, created.text
-    updated = api.patch(
+    updated = client.patch(
         f"/api/projects/{project['id']}/modules/{created.json()['id']}",
         json={"slug": LONG_SLUG},
     )
@@ -167,14 +147,13 @@ def test_module_slug_update_rejects_over_128(api):
     assert "128" in updated.text
 
 
-@on_each_database
-def test_module_name_update_rejects_over_255(api):
-    project = make_project(api)
-    created = api.post(
+def test_module_name_update_rejects_over_255(client):
+    project = make_project(client)
+    created = client.post(
         f"/api/projects/{project['id']}/modules",
         json={"slug": "auth", "name": "Auth"},
     )
-    updated = api.patch(
+    updated = client.patch(
         f"/api/projects/{project['id']}/modules/{created.json()['id']}",
         json={"name": "n" * 256},
     )
@@ -197,10 +176,9 @@ def test_push_rejects_module_slug_over_128(client):
     assert "128" in pushed.text
 
 
-@on_each_database
-def test_tag_update_rejects_name_and_color_over_limit(api):
-    project = make_project(api, layout="flat")
-    created = api.post(
+def test_tag_update_rejects_name_and_color_over_limit(client):
+    project = make_project(client, layout="flat")
+    created = client.post(
         f"/api/projects/{project['id']}/tags",
         json={"name": "ui", "color": "#112233"},
     )
@@ -208,12 +186,12 @@ def test_tag_update_rejects_name_and_color_over_limit(api):
     tag_id = created.json()["id"]
     root = f"/api/projects/{project['id']}/tags/{tag_id}"
 
-    renamed = api.patch(root, json={"name": "t" * 129})
+    renamed = client.patch(root, json={"name": "t" * 129})
     assert renamed.status_code == 422, renamed.text
     assert "name" in renamed.text
     assert "128" in renamed.text
 
-    recolored = api.patch(root, json={"color": "c" * 33})
+    recolored = client.patch(root, json={"color": "c" * 33})
     assert recolored.status_code == 422, recolored.text
     assert "color" in recolored.text
     assert "32" in recolored.text
@@ -287,9 +265,8 @@ def test_snapshot_apply_rejects_keys_over_512():
     assert "512" in current.value.detail
 
 
-@on_each_database
-def test_legacy_underscore_locale_still_creates_imports_and_pushes(api):
-    rejected = api.post(
+def test_legacy_underscore_locale_still_creates_imports_and_pushes(client):
+    rejected = client.post(
         "/api/projects",
         json={
             "name": "Legacy rejected at the door",
@@ -300,36 +277,38 @@ def test_legacy_underscore_locale_still_creates_imports_and_pushes(api):
     )
     assert rejected.status_code == 400, rejected.text
 
-    project = make_project(api, layout="flat")
+    project = make_project(client, layout="flat")
     pid = project["id"]
     _set_target_languages(pid, ["en_US"])
 
-    created = api.post(
+    created = client.post(
         f"/api/projects/{pid}/strings",
         json={"key": "hello", "source_text": "Xin chào"},
     )
     assert created.status_code == 201, created.text
     assert "en_US" in {item["locale"] for item in created.json()["translations"]}
 
-    uploaded = api.post(
+    uploaded = client.post(
         f"/api/projects/{pid}/import",
         files=json_upload({"imported": "Nhập"}),
     )
     assert uploaded.status_code == 200, uploaded.text
 
-    pushed = api.post(
+    pushed = client.post(
         f"/api/projects/{pid}/strings/import",
         json={"strings": {"pushed": "Đẩy"}, "base_language": "vi"},
     )
     assert pushed.status_code == 200, pushed.text
 
-    stored = {item["key"]: item for item in api.get(f"/api/projects/{pid}/strings").json()["items"]}
+    stored = {
+        item["key"]: item for item in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
     for key in ("hello", "imported", "pushed"):
         locales = {item["locale"] for item in stored[key]["translations"]}
         assert "en_US" in locales
 
     _set_target_languages(pid, ["a" * 17])
-    overflow = api.post(
+    overflow = client.post(
         f"/api/projects/{pid}/strings",
         json={"key": "overflow", "source_text": "Không"},
     )
@@ -338,8 +317,8 @@ def test_legacy_underscore_locale_still_creates_imports_and_pushes(api):
     assert "16" in overflow.text
 
 
-def test_widen_downgrade_names_rows_that_do_not_fit(tmp_path, monkeypatch):
-    url = f"sqlite:///{tmp_path / 'narrow.db'}"
+def test_widen_downgrade_names_rows_that_do_not_fit(throwaway_database, monkeypatch):
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     cfg = Config("alembic.ini")
     command.upgrade(cfg, "head")
@@ -360,7 +339,7 @@ def test_widen_downgrade_names_rows_that_do_not_fit(tmp_path, monkeypatch):
                 "event_type, summary, is_revertible"
                 ") VALUES ("
                 ":id, :project_id, 'system', 'system', 'update', 'string', 'entity', "
-                "'string.updated', :summary, 0"
+                "'string.updated', :summary, false"
                 ")"
             ),
             {

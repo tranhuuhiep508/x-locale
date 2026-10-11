@@ -313,11 +313,11 @@ This suite is separate from Playwright UI tests under `e2e/`.
 ### Run locally
 
 ```bash
-# From repo root — starts an isolated SQLite backend per session, unique project per test
+# From repo root — starts a Postgres backend on a unique database, unique project per test
 cd cli && uv run pytest tests/e2e -m e2e -v
 ```
 
-The harness migrates a temp database, boots `uvicorn` on a free port, creates projects
+The harness creates a throwaway Postgres database, migrates it, boots `uvicorn` on a free port, creates projects
 via the dev-bypass session API, and runs `uv run --project cli loc …` in temp
 directories.
 

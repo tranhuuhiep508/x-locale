@@ -6,15 +6,20 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import Base, get_db
 from app.main import app
 from app.models import Activity
-from app.services.activity_state import project_snapshot, restore_transaction, snapshots_match
+from app.services.activity_state import (
+    is_key_integrity_error,
+    project_snapshot,
+    restore_transaction,
+    snapshots_match,
+)
 from tests.helpers import make_project, publish_strings
+from tests.pg import open_engine
 
 
 def setup_string(client):
@@ -306,7 +311,7 @@ def test_batch_key_validation_accounts_for_keys_released_by_earlier_inverse_step
 
 
 def test_snapshot_compatibility_and_missing_vs_empty_fields():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     Base.metadata.create_all(engine)
     current = {
         "translations": {"en": "Hello", "fr": "Bonjour"},
@@ -339,8 +344,24 @@ def test_snapshot_compatibility_and_missing_vs_empty_fields():
     )
 
 
+def test_key_integrity_error_matches_postgres_unique_violation():
+    class Orig(Exception):
+        def __init__(self, sqlstate: str, constraint_name: str, message: str) -> None:
+            super().__init__(message)
+            self.sqlstate = sqlstate
+            self.diag = type("Diag", (), {"constraint_name": constraint_name})()
+
+    def wrapped(orig: Exception) -> IntegrityError:
+        return IntegrityError("INSERT", {}, orig)
+
+    assert is_key_integrity_error(wrapped(Orig("23505", "uq_project_key_alive", "duplicate key")))
+    assert not is_key_integrity_error(wrapped(Orig("23505", "strings_pkey", "duplicate key")))
+    legacy_text = "UNIQUE constraint failed: strings.project_id, strings.key"
+    assert not is_key_integrity_error(wrapped(Orig("", "", legacy_text)))
+
+
 def test_unrelated_integrity_errors_are_not_mislabeled():
-    engine = create_engine("sqlite://")
+    engine = open_engine()
     with Session(engine) as db:
         with pytest.raises(IntegrityError):
             with restore_transaction(db):

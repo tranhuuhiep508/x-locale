@@ -41,23 +41,9 @@ def _project_lock_query(db: Session, project_id: uuid.UUID):
 def lock_project(db: Session, project_id: uuid.UUID) -> None:
     """Lock before membership reads or key writes, through commit/rollback.
 
-    SQLite ignores SELECT FOR UPDATE. A no-op UPDATE acquires its write lock
-    without changing project data or updated_at. PostgreSQL uses NO KEY UPDATE
-    so foreign-key checks from catalog/key inserts remain compatible.
+    FOR NO KEY UPDATE so foreign-key checks from catalog and key inserts can proceed.
     """
-    if db.get_bind().dialect.name == "sqlite":
-        found = (
-            db.query(Project)
-            .filter(Project.id == project_id)
-            .update(
-                # Self-assigning updated_at takes SQLite's write lock and suppresses
-                # onupdate. Do not touch the PK: that runs FK checks on every child table.
-                {Project.updated_at: Project.updated_at},
-                synchronize_session=False,
-            )
-        )
-    else:
-        found = _project_lock_query(db, project_id).first() is not None
+    found = _project_lock_query(db, project_id).first() is not None
     if not found:
         raise HTTPException(status_code=404, detail="Project not found")
 

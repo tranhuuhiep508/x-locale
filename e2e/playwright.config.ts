@@ -2,9 +2,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
+import { allocateE2eDatabaseUrl } from './database-url'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
-const dbPath = path.join(__dirname, '.data', 'e2e.db')
+const databaseUrl = allocateE2eDatabaseUrl()
 
 /** Dedicated ports so local `npm run dev` (:8000 / :5173) can stay up. */
 const backendPort = Number(process.env.E2E_BACKEND_PORT ?? 8001)
@@ -13,7 +15,7 @@ const backendUrl = `http://127.0.0.1:${backendPort}`
 const frontendUrl = `http://127.0.0.1:${frontendPort}`
 
 const e2eEnv = {
-  DATABASE_URL: `sqlite:///${dbPath}`,
+  DATABASE_URL: databaseUrl,
   AUTH_DEV_BYPASS: 'true',
   OIDC_ISSUER: '',
   OIDC_CLIENT_ID: '',
@@ -40,6 +42,7 @@ export default defineConfig({
     video: 'off',
   },
   globalSetup: path.join(__dirname, 'global-setup.ts'),
+  globalTeardown: path.join(__dirname, 'global-teardown.ts'),
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {

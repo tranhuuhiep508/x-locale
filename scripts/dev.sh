@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Do not read .env as a shell script. The app loads it.
+
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 BACKEND_URL="http://localhost:${BACKEND_PORT}"
@@ -57,6 +60,31 @@ trap cleanup INT TERM EXIT
 echo "==> Freeing dev ports..."
 kill_port "$BACKEND_PORT"
 kill_port "$FRONTEND_PORT"
+
+echo "==> Ensuring Postgres is up..."
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  docker compose -f "$ROOT/docker-compose.yml" up -d postgres
+  ready=false
+  for _ in $(seq 1 30); do
+    if docker compose -f "$ROOT/docker-compose.yml" exec -T postgres pg_isready -U xlocale -d xlocale >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != true ]]; then
+    echo "Postgres did not become ready. See README for a native Postgres setup."
+    exit 1
+  fi
+else
+  echo "Docker Compose is not available. Expecting a native Postgres server (see README)."
+fi
+
+echo "==> Creating the test database if it is missing (template0, libc collation C)..."
+(
+  cd "$ROOT/backend"
+  uv run python -c "from app.config import settings; from app.postgres_admin import create_database; create_database(settings.test_database_url)"
+)
 
 echo "==> Preparing backend (migrate + seed)..."
 (

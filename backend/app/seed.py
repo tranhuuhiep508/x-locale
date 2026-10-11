@@ -40,8 +40,8 @@ DEMO_STRINGS = [
 def _ensure_dev_admin(db, project: Project) -> None:
     """Give the Dev User an Admin membership on the demo project.
 
-    Used only when AUTH_DEV_BYPASS is on, so local and e2e sessions can see
-    Demo App. Sets created_by when it is empty and inserts Admin if missing.
+    The Dev User row owns Demo App. Signing in as that user still requires
+    AUTH_DEV_BYPASS. Sets created_by when it is empty and inserts Admin if missing.
     An existing membership role is left unchanged. This is separate from the
     migration, which adds no Admin when created_by is null.
     """
@@ -88,9 +88,7 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
         )
         db.add(project)
         db.flush()
-        db.add(
-            ProjectMember(project_id=project.id, user_id=dev_user.id, role=MemberRole.admin)
-        )
+        db.add(ProjectMember(project_id=project.id, user_id=dev_user.id, role=MemberRole.admin))
 
         # API key — use the configured demo key (not randomly generated) so docs stay valid
         raw = settings.x_locale_demo_api_key

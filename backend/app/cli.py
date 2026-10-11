@@ -13,14 +13,25 @@ def _root() -> None:
 
 
 @app.command("seed-demo")
-def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo project")) -> None:
+def seed_demo(
+    force: bool = typer.Option(False, "--force", help="Recreate demo project"),
+    allow_production: bool = typer.Option(
+        False,
+        "--allow-production",
+        help="Seed even when OIDC is configured or ENV=production",
+    ),
+) -> None:
     """Seed the Demo App project (Vietnamese base, modular layout)."""
-    from app.config import settings
+    from app.config import require_postgres_database_url, settings
 
-    if not settings.auth_dev_bypass:
-        typer.echo("seed-demo is only allowed when AUTH_DEV_BYPASS=true", err=True)
+    require_postgres_database_url(settings.database_url)
+    if not allow_production and _seed_demo_refused(settings):
+        typer.echo(
+            "seed-demo refuses to run when OIDC is configured or ENV=production. "
+            "Pass --allow-production to seed anyway.",
+            err=True,
+        )
         raise typer.Exit(1)
-
     from app.seed import seed_demo_data
 
     project = seed_demo_data(force=force)
@@ -28,6 +39,7 @@ def seed_demo(force: bool = typer.Option(False, "--force", help="Recreate demo p
         typer.echo(f"Demo project ready: {project.name} ({project.id}) slug={project.slug}")
     else:
         typer.echo("Seed failed")
+
 
 @app.command("migrate")
 def migrate() -> None:
@@ -56,11 +68,17 @@ def prune_activities_cmd() -> None:
             typer.echo("ACTIVITY_RETENTION_DAYS=0; nothing pruned")
         else:
             typer.echo(
-                f"Pruned {deleted} activity rows older than "
-                f"{settings.activity_retention_days} days"
+                f"Pruned {deleted} activity rows older than {settings.activity_retention_days} days"
             )
     finally:
         db.close()
+
+
+def _seed_demo_refused(settings) -> bool:
+    """Production must not receive the default demo API key. A fresh clone may seed."""
+    if settings.oidc_configured:
+        return True
+    return settings.env.strip().lower() == "production"
 
 
 if __name__ == "__main__":

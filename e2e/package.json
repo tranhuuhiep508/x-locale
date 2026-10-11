@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:database-url": "node --experimental-strip-types --test database-url.test.ts postgres-admin.test.ts",
     "test:ui": "playwright test --ui",
     "install:browsers": "playwright install --with-deps chromium"
   },

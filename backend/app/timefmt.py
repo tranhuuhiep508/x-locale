@@ -1,4 +1,4 @@
-"""UTC JSON timestamps. SQLite stores naive UTC; JS treats naive ISO as local."""
+"""UTC JSON timestamps. Naive values are UTC; JS treats naive ISO as local."""
 
 from datetime import UTC, datetime
 from typing import Annotated

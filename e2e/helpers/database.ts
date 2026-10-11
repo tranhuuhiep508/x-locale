@@ -2,14 +2,22 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const repoRoot = path.resolve(__dirname, '../..')
-const dbPath = path.join(__dirname, '..', '.data', 'e2e.db')
+import { readTrackedDatabaseUrl } from '../database-url'
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+
+function trackedDatabaseUrl(): string {
+  const url = readTrackedDatabaseUrl()
+  if (!url) {
+    throw new Error('No database was recorded for this Playwright run.')
+  }
+  return url
+}
 
 function e2eEnv() {
   return {
     ...process.env,
-    DATABASE_URL: `sqlite:///${dbPath}`,
+    DATABASE_URL: trackedDatabaseUrl(),
     AUTH_DEV_BYPASS: 'true',
     OIDC_ISSUER: '',
     OIDC_CLIENT_ID: '',
@@ -21,7 +29,7 @@ function e2eEnv() {
   }
 }
 
-/** Re-seed the Demo App on the isolated E2E SQLite database. */
+/** Re-seed the Demo App on this run's Postgres database. */
 export function resetDemoDatabase() {
   execSync('uv run python -m app.cli seed-demo --force', {
     cwd: path.join(repoRoot, 'backend'),

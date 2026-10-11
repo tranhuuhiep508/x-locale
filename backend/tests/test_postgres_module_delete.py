@@ -12,8 +12,6 @@ from sqlalchemy.exc import IntegrityError
 from app.models import Module, StringEntry
 from tests.helpers import json_upload, make_project, publish_strings
 
-pytestmark = pytest.mark.postgres
-
 
 def _module(client, project_id: str, slug: str) -> dict:
     created = client.post(
@@ -94,8 +92,7 @@ def test_delete_module_clears_refs_on_every_schema(pg_schema):
         assert working_only["key"] == "working-only"
 
 
-def test_cross_project_module_assignment_is_400(pg_session):
-    client, _session_factory = pg_session
+def test_cross_project_module_assignment_is_400(client):
     project_a = make_project(client, name="Project A")
     project_b = make_project(client, name="Project B")
     foreign = _module(client, project_b["id"], "secret")
@@ -134,9 +131,8 @@ def test_cross_project_module_assignment_is_400(pg_session):
     assert "Unknown module" in imported.text
 
 
-def test_deferred_module_fk_commit_is_400(pg_session, monkeypatch):
+def test_deferred_module_fk_commit_is_400(client, session_factory, monkeypatch):
     """Bypass the app check so the deferred FK is the thing that rejects the write."""
-    client, session_factory = pg_session
     project_a = make_project(client, name="Checked later A")
     project_b = make_project(client, name="Checked later B")
     foreign = _module(client, project_b["id"], "secret")

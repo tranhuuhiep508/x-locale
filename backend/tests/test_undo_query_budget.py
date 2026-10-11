@@ -14,11 +14,10 @@ from benchmarks.undo import ACTOR, engine_for, seed, sql_counter, validate
 
 @pytest.mark.parametrize("size", [25, 100])
 @pytest.mark.parametrize("force", [False, True])
-def test_rich_undo_read_budget_preserves_exact_audit_snapshots(tmp_path, size, force):
+def test_rich_undo_read_budget_preserves_exact_audit_snapshots(throwaway_database, size, force):
     register_activity_listener()
-    path = tmp_path / "benchmark.db"
-    project_id, batch, locales = seed(path, size, True, force)
-    engine = engine_for(path)
+    project_id, batch, locales = seed(throwaway_database, size, True, force)
+    engine = engine_for(throwaway_database)
     try:
         with Session(engine, autoflush=False) as db:
             project = db.get(Project, project_id)

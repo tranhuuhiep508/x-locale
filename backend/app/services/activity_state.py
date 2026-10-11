@@ -270,11 +270,17 @@ def check_key_available(
         raise key_conflict(target["key"])
 
 
+UNIQUE_VIOLATION = "23505"
+PROJECT_KEY_CONSTRAINT = "uq_project_key_alive"
+
+
 def is_key_integrity_error(error: IntegrityError) -> bool:
-    diagnostic = getattr(error.orig, "diag", None)
-    if getattr(diagnostic, "constraint_name", None) == "uq_project_key_alive":
-        return True
-    return "UNIQUE constraint failed: strings.project_id, strings.key" in str(error.orig)
+    """True for Postgres unique_violation on the live project-key index."""
+    orig = getattr(error, "orig", None)
+    if getattr(orig, "sqlstate", None) != UNIQUE_VIOLATION:
+        return False
+    diagnostic = getattr(orig, "diag", None)
+    return getattr(diagnostic, "constraint_name", None) == PROJECT_KEY_CONSTRAINT
 
 
 @contextmanager

@@ -2,7 +2,7 @@
 
 Locks export JSON, sync-state, translations.json, import results, activity
 before/after rows, and publish-preview items. Ids and timestamps are rewritten
-to stable tokens so the snapshots survive a fresh SQLite database. Translation
+to stable tokens so the snapshots survive a fresh database. Translation
 and tag list order is normalized because those collections have no defined
 order.
 """

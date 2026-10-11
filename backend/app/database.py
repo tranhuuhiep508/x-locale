@@ -5,23 +5,11 @@ from fastapi import Depends
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from app.config import settings
+from app.config import require_postgres_database_url, settings
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=connect_args)
+require_postgres_database_url(settings.database_url)
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-
-def enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
-    """SQLite ignores foreign keys unless this pragma is set on each connection."""
-    del connection_record
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
-
-if settings.database_url.startswith("sqlite"):
-    event.listen(engine, "connect", enable_sqlite_foreign_keys)
 
 
 class Base(DeclarativeBase):
