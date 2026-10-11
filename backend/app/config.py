@@ -9,7 +9,11 @@ INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlis
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    database_url: str = "sqlite:///./x-locale.db"
+    database_url: str = ""
+    # Bootstrap database for CREATE/DROP. Harnesses connect here, not to postgres.
+    test_database_url: str = ""
+    # production makes seed-demo refuse unless --allow-production is passed.
+    env: str = ""
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
@@ -72,6 +76,21 @@ class Settings(BaseSettings):
                 "X_LOCALE_SECRET must be set to a long random value when "
                 "AUTH_DEV_BYPASS is false or OIDC is configured"
             )
+
+
+def require_postgres_database_url(url: str | None) -> str:
+    """Exit unless url is a Postgres URL.
+
+    The API app, seed-demo, and Alembic call this before they touch the database.
+    The loc client does not use DATABASE_URL and does not call this.
+    """
+    value = (url or "").strip()
+    lowered = value.lower()
+    if lowered.startswith(("postgresql://", "postgresql+", "postgres://", "postgres+")):
+        return value
+    raise SystemExit(
+        "A Postgres DATABASE_URL is required (postgresql:// or postgresql+psycopg://)."
+    )
 
 
 settings = Settings()

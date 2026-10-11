@@ -1,17 +1,20 @@
 import { execSync } from 'node:child_process'
-import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const repoRoot = path.resolve(__dirname, '..')
-const dataDir = path.join(__dirname, '.data')
-const dbPath = path.join(dataDir, 'e2e.db')
+import {
+  CREATED_DATABASE_ENV,
+  clearTrackedDatabaseUrl,
+  readTrackedDatabaseUrl,
+} from './database-url'
+import { runPostgresAdmin } from './postgres-admin'
 
-function e2eEnv() {
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+function e2eEnv(databaseUrl: string) {
   return {
     ...process.env,
-    DATABASE_URL: `sqlite:///${dbPath}`,
+    DATABASE_URL: databaseUrl,
     AUTH_DEV_BYPASS: 'true',
     OIDC_ISSUER: '',
     OIDC_CLIENT_ID: '',
@@ -24,20 +27,37 @@ function e2eEnv() {
 }
 
 export default async function globalSetup() {
-  fs.mkdirSync(dataDir, { recursive: true })
-  if (fs.existsSync(dbPath)) {
-    fs.unlinkSync(dbPath)
+  const databaseUrl = readTrackedDatabaseUrl()
+  if (!databaseUrl) {
+    throw new Error('Playwright did not record a database URL for this run.')
   }
-
-  const env = e2eEnv()
-  execSync('uv run alembic upgrade head', {
-    cwd: path.join(repoRoot, 'backend'),
-    env,
-    stdio: 'inherit',
-  })
-  execSync('uv run python -m app.cli seed-demo --force', {
-    cwd: path.join(repoRoot, 'backend'),
-    env,
-    stdio: 'inherit',
-  })
+  const env = e2eEnv(databaseUrl)
+  try {
+    runPostgresAdmin('sweep', databaseUrl, env)
+    runPostgresAdmin('create-new', databaseUrl, env)
+    process.env[CREATED_DATABASE_ENV] = databaseUrl
+  } catch (error) {
+    // create-new failed, so this run did not create the database. Do not drop it.
+    clearTrackedDatabaseUrl()
+    throw error
+  }
+  try {
+    execSync('uv run alembic upgrade head', {
+      cwd: path.join(repoRoot, 'backend'),
+      env,
+      stdio: 'inherit',
+    })
+    execSync('uv run python -m app.cli seed-demo --force', {
+      cwd: path.join(repoRoot, 'backend'),
+      env,
+      stdio: 'inherit',
+    })
+  } catch (error) {
+    try {
+      runPostgresAdmin('drop', databaseUrl, env)
+    } finally {
+      clearTrackedDatabaseUrl()
+    }
+    throw error
+  }
 }

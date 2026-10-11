@@ -38,26 +38,7 @@ jobs:
   backend:
     name: backend-quality
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: cd backend && uv sync --all-extras
-
-      - name: Lint with Ruff
-        run: cd backend && uv run ruff check
-
-      - name: Run pytest
-        run: cd backend && uv run pytest
-
-  backend-postgres:
-    name: backend-postgres
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -66,30 +47,53 @@ jobs:
           POSTGRES_USER: xlocale
           POSTGRES_PASSWORD: xlocale
           POSTGRES_DB: xlocale
+          POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
         ports:
           - 5432:5432
         options: >-
+          --tmpfs /var/lib/postgresql/data
           --health-cmd "pg_isready -U xlocale -d xlocale"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale
-      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
+      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test  # pragma: allowlist secret
       AUTH_DEV_BYPASS: "true"
-      X_LOCALE_SECRET: test-secret
+      X_LOCALE_SECRET: test-secret  # pragma: allowlist secret
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install PostgreSQL 16 client
+      - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Assert collation C and create the test database
+        env:
+          PGPASSWORD: xlocale
+        run: |
+          set -euo pipefail
+          # CI only. These reload-level settings are not used by Compose or production.
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync=off" \
+            -c "ALTER SYSTEM SET synchronous_commit=off" \
+            -c "ALTER SYSTEM SET full_page_writes=off" \
+            -c "SELECT pg_reload_conf()"
+          collation=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datcollate || '|' || datlocprovider::text FROM pg_database WHERE datname = current_database()")
+          echo "collation=${collation}"
+          test "${collation}" = "C|c"
+          # PostgreSQL 16 removed the lc_collate GUC. datcollate and datlocprovider are the check.
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0 LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
 
       - name: Install dependencies
         run: cd backend && uv sync --all-extras
+
+      - name: Lint with Ruff
+        run: cd backend && uv run ruff check
 
       - name: Apply migrations and check for drift
         working-directory: backend
@@ -97,9 +101,8 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
-      - name: Run Postgres tests
-        working-directory: backend
-        run: uv run pytest -m postgres
+      - name: Run pytest
+        run: cd backend && uv run pytest
 
   cli:
     name: cli-unit

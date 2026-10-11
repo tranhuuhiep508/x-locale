@@ -187,7 +187,9 @@ def _write_sheet(
                 continue
             row_key = entry.key
             source = entry.source_text
-        tags = ",".join(t.name for t in (entry.tags or []))
+        tags = ",".join(
+            tag.name for tag in sorted(entry.tags or [], key=lambda tag: (tag.name, str(tag.id)))
+        )
         row: list[Any] = [
             _sanitize_cell_value(row_key),
             _sanitize_cell_value(entry.description),
@@ -370,8 +372,7 @@ def import_workbook(
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"String '{key}' already exists in module "
-                            f"'{live_module_label(live)}'"
+                            f"String '{key}' already exists in module '{live_module_label(live)}'"
                         ),
                     )
             total += 1
@@ -412,8 +413,7 @@ def import_workbook(
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"String '{key}' already exists in module "
-                            f"'{live_module_label(live)}'"
+                            f"String '{key}' already exists in module '{live_module_label(live)}'"
                         ),
                     )
                 raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
@@ -423,8 +423,10 @@ def import_workbook(
             label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
             created_this_row = False
             if entry:
-                if revived or entry.source_text != source_text or (
-                    description and entry.description != description
+                if (
+                    revived
+                    or entry.source_text != source_text
+                    or (description and entry.description != description)
                 ):
                     update_items.append(ImportDiffItem(key=label, source_text=source_text))
                     if not dry_run:

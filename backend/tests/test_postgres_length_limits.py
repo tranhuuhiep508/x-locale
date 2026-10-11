@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -11,9 +10,7 @@ from alembic import command
 from app.config import settings
 from app.models import Activity, StringEntry, Translation, User
 from tests.helpers import json_upload, make_project
-from tests.postgres_support import BACKEND_DIR, alembic_check, postgres_url, prepare_schema
-
-pytestmark = pytest.mark.postgres
+from tests.postgres_support import BACKEND_DIR, alembic_check, prepare_schema, upgrade_head
 
 MAX_KEY = "k" * 512
 PUSH_KEY = "p" * 512
@@ -22,9 +19,9 @@ BASE_LOCALE = "abc-12345678"
 TARGET_LOCALE = "en-abcdefgh"
 
 
-def test_alembic_check_reports_no_string_length_drift(pg_session):
-    del pg_session
-    alembic_check(postgres_url())
+def test_alembic_check_reports_no_string_length_drift(throwaway_database):
+    upgrade_head(throwaway_database)
+    alembic_check(throwaway_database)
 
 
 def _string_tags_pk(url: str) -> str | None:
@@ -45,13 +42,13 @@ def _string_tags_pk(url: str) -> str | None:
         engine.dispose()
 
 
-def test_create_all_pk_rename_is_guarded_both_ways(monkeypatch):
+def test_create_all_pk_rename_is_guarded_both_ways(throwaway_database, monkeypatch):
     """create_all already names the PK string_tags_pkey.
 
     Upgrade from a stamp below r7 must leave that name alone. Downgrade must
     rename it to uq_string_tag, and the next upgrade must rename it back.
     """
-    url = postgres_url()
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     prepare_schema(url, "create_all")
     assert _string_tags_pk(url) == "string_tags_pkey"
@@ -76,8 +73,7 @@ def _activity_for_key(db: Session, key: str) -> Activity:
     return matched[0]
 
 
-def test_import_and_push_store_512_character_keys(pg_session):
-    client, session_factory = pg_session
+def test_import_and_push_store_512_character_keys(client, session_factory):
     project = make_project(client, name="Long key import", layout="flat")
     pid = project["id"]
 
@@ -104,8 +100,7 @@ def test_import_and_push_store_512_character_keys(pg_session):
             assert stored[key].key == key
 
 
-def test_regex_max_locale_is_stored_on_translations_and_activities(pg_session):
-    client, session_factory = pg_session
+def test_regex_max_locale_is_stored_on_translations_and_activities(client, session_factory):
     created = client.post(
         "/api/projects",
         json={
@@ -140,8 +135,7 @@ def test_regex_max_locale_is_stored_on_translations_and_activities(pg_session):
         assert TARGET_LOCALE in activity_locales
 
 
-def test_actor_label_stores_a_full_length_email(pg_session):
-    client, session_factory = pg_session
+def test_actor_label_stores_a_full_length_email(client, session_factory):
     assert len(LONG_EMAIL) == 320
     me = client.get("/api/auth/me")
     assert me.status_code == 200, me.text

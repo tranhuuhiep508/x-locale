@@ -15,7 +15,7 @@ missing.
 
 | Service | Dir | Start (dev) | Port | Notes |
 |----------|------------|-------------------------------------------------------------------------|------|-------|
-| Backend | `backend/` | `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + SQLite/Postgres. Schema via Alembic (not `create_all`). |
+| Backend | `backend/` | `docker compose up -d postgres`, then `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
 | Frontend | `frontend/`| `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
 | CLI | `cli/` | `uv run --project cli loc <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
 
@@ -40,8 +40,8 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 
 ### Lint / test / build
 
-- Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`).
+- Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`). Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
-- CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running backend).
-- E2E: `npm run e2e` (Playwright; isolated `e2e/.data/e2e.db` on `:8001` / `:5174`; does not reuse local `:8000` / `:5173`).
+- CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running Postgres server).
+- E2E: `npm run e2e` (Playwright; one Postgres database per run, ports `:8001` / `:5174`, one worker; does not reuse local `:8000` / `:5173`).
 - Validate backend manually: `GET /health`, `GET /api/auth/me` (session cookie, or bypass when OIDC is unset), `GET /api/bootstrap` with `X-API-Key`.

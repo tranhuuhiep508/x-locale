@@ -825,7 +825,7 @@ def test_editor_can_translate_publish_and_import(client, monkeypatch):
     assert imported.json()["created"] >= 1
 
 
-def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):
+def test_member_migration_backfill_is_idempotent(throwaway_database, monkeypatch):
     import importlib.util
 
     from alembic.config import Config
@@ -833,7 +833,7 @@ def test_member_migration_backfill_is_idempotent(tmp_path, monkeypatch):
     from alembic import command
     from app.config import settings
 
-    url = f"sqlite:///{tmp_path / 'members.db'}"
+    url = throwaway_database
     monkeypatch.setattr(settings, "database_url", url)
     backend = Path(__file__).resolve().parents[1]
     config = Config(str(backend / "alembic.ini"))

@@ -256,10 +256,9 @@ class Tag(Base):
 class StringTag(Base):
     """Association rows. The composite primary key already enforces uniqueness.
 
-    Postgres folds a same-column unique constraint into that primary key and
-    names the key uq_string_tag. SQLite keeps a real extra UNIQUE. Revision
-    r7d05b6c8901 drops the SQLite constraint and renames the Postgres key to
-    string_tags_pkey, so the model does not declare a second constraint.
+    Postgres folds a same-column unique constraint into that primary key.
+    Revision r7d05b6c8901 renames it to string_tags_pkey, so the model does
+    not declare a second constraint.
     """
 
     __tablename__ = "string_tags"
@@ -280,14 +279,12 @@ class StringEntry(Base):
             "project_id",
             "key",
             unique=True,
-            sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
             "ix_strings_project_updated_at_alive",
             "project_id",
             "updated_at",
-            sqlite_where=text("deleted_at IS NULL"),
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # NO ACTION (not SET NULL): a composite SET NULL would also clear project_id.

@@ -32,11 +32,7 @@ DOT_TMS_ALLOWED = {".gitignore"}
 def _is_test_path(rel: str) -> bool:
     normalized = rel.replace("\\", "/")
     name = Path(normalized).name
-    return (
-        "/tests/" in f"/{normalized}"
-        or name.endswith(".test.ts")
-        or name.endswith(".test.tsx")
-    )
+    return "/tests/" in f"/{normalized}" or name.endswith(".test.ts") or name.endswith(".test.tsx")
 
 
 def test_openapi_title_is_x_locale(client):
@@ -98,8 +94,21 @@ def test_env_example_documents_x_locale_not_tms():
     assert "X_LOCALE_DEMO_API_KEY=" in text
     assert "TMS_SECRET" not in text
     assert "TMS_DEMO_API_KEY" not in text
-    assert "sqlite:///./x-locale.db" in text
-    assert "postgresql+psycopg://xlocale:xlocale@" in text
+    assert "DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale" in text
+    assert (
+        "TEST_DATABASE_URL=postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test" in text
+    )
+    assert "sqlite:///" not in text
+    assert "AUTH_DEV_BYPASS=false" in text
+    assert "ENV=production" in text
+    assert "--allow-production" in text
+    scopes = next(line for line in text.splitlines() if line.startswith("OIDC_SCOPES="))
+    assert scopes.startswith('OIDC_SCOPES="')
+    from tests.pg import dotenv_value
+
+    parsed_scopes = dotenv_value(scopes.split("=", 1)[1])
+    assert " " in parsed_scopes
+    assert "pragma" not in parsed_scopes
     assert "tms.db" not in text
     assert "://tms:tms@" not in text
 
@@ -108,21 +117,42 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     dev = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "POSTGRES_USER: xlocale" in dev
     assert "POSTGRES_DB: xlocale" in dev
-    assert "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev
+    assert (
+        "postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale" in dev
+    )  # pragma: allowlist secret
     assert "X_LOCALE_SECRET:" in dev
     assert "X_LOCALE_DEMO_API_KEY:" in dev
     assert "TMS_SECRET" not in dev
     assert "POSTGRES_USER: tms" not in dev
+    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in dev
 
     prod = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
     assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
     assert "seed-demo" not in prod
+    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
 
 
-def test_sqlite_default_filename_in_config_source():
+def test_env_example_scopes_parse_and_dotenv_ignores_inline_comments(monkeypatch):
+    from app.config import Settings
+    from tests.pg import dotenv_value
+
+    monkeypatch.delenv("OIDC_SCOPES", raising=False)
+    loaded = Settings(_env_file=REPO_ROOT / ".env.example")
+    example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    scopes = next(line for line in example.splitlines() if line.startswith("OIDC_SCOPES="))
+    assert loaded.oidc_scopes == dotenv_value(scopes.split("=", 1)[1])
+    assert " " in loaded.oidc_scopes
+    assert "pragma" not in loaded.oidc_scopes
+    assert dotenv_value('"alpha beta" # pragma: allowlist secret') == "alpha beta"
+    assert dotenv_value("plain # comment") == "plain"
+    assert dotenv_value('"hash # inside"') == "hash # inside"
+
+
+def test_config_requires_a_postgres_url():
     text = (REPO_ROOT / "backend" / "app" / "config.py").read_text(encoding="utf-8")
-    assert "x-locale.db" in text
+    assert "require_postgres_database_url" in text
+    assert "x-locale.db" not in text
     assert "tms.db" not in text
 
 
@@ -188,6 +218,15 @@ def test_docs_smoke_readme_and_agents():
         assert "tms_session" not in text
     assert agents.startswith("# AGENTS.md\n\nx-locale")
     assert readme.startswith("# x-locale\n")
+    assert "Node.js 22.6+" in readme
+    assert "sudo -u postgres pg_createcluster" in readme
+    assert "sudo -u postgres createdb" in readme
+    assert "createuser -d xlocale" in readme
+    assert "--allow-production" in readme
+    script = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
+    assert "source " not in script
+    assert "AUTH_DEV_BYPASS" not in script
+    assert "--check" not in script
 
 
 def _tracked_files() -> list[str]:
@@ -212,7 +251,7 @@ def test_tracked_sources_have_no_forbidden_tms_token(needle: str):
         path = REPO_ROOT / rel
         try:
             text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+        except UnicodeDecodeError, IsADirectoryError, FileNotFoundError:
             continue
         if needle in text:
             hits.append(rel)
@@ -230,7 +269,7 @@ def test_tracked_sources_have_no_legacy_dot_tms_config_dir():
         path = REPO_ROOT / rel
         try:
             text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+        except UnicodeDecodeError, IsADirectoryError, FileNotFoundError:
             continue
         if ".tms/" in text or ".tms`" in text or "``.tms``" in text:
             hits.append(rel)

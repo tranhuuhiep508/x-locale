@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
 import yaml
@@ -26,10 +27,10 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def backend_env(db_path: Path) -> dict[str, str]:
+def backend_env(database_url: str) -> dict[str, str]:
     return {
         **os.environ,
-        "DATABASE_URL": f"sqlite:///{db_path}",
+        "DATABASE_URL": database_url,
         "AUTH_DEV_BYPASS": "true",
         "OIDC_ISSUER": "",
         "OIDC_CLIENT_ID": "",
@@ -39,12 +40,141 @@ def backend_env(db_path: Path) -> dict[str, str]:
     }
 
 
-def migrate_database(db_path: Path) -> None:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+def _postgres_base_url() -> str:
+    configured = os.environ.get("DATABASE_URL", "").strip()
+    lowered = configured.lower()
+    if lowered.startswith(("postgresql://", "postgresql+", "postgres://", "postgres+")):
+        return configured
+    return "postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale"
+
+
+def redact_database_url(url: str) -> str:
+    """Mask the password in this process. The CLI env does not import SQLAlchemy."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "database url"
+    if not parts.scheme or parts.hostname is None:
+        return "database url"
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    port = f":{parts.port}" if parts.port is not None else ""
+    if parts.password is None:
+        auth = "" if parts.username is None else f"{parts.username}@"
+    else:
+        auth = f"{parts.username or ''}:***@"
+    return urlunsplit(
+        (parts.scheme, f"{auth}{host}{port}", parts.path, parts.query, parts.fragment)
+    )
+
+
+CLI_E2E_PREFIX = "xlocale_cli_"
+_NAME_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+_MAX_IDENT = 63
+_allocated_database_url: str | None = None
+
+
+def reset_allocated_database_url() -> None:
+    """Test hook. A real run keeps the first URL it allocated."""
+    global _allocated_database_url
+    _allocated_database_url = None
+
+
+def _reject_target_overrides(url: str) -> None:
+    keys = {key.lower() for key, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)}
+    if keys & {"dbname", "service", "servicefile"}:
+        raise RuntimeError(
+            "Harness database URLs must name their database in the path, not the query string."
+        )
+
+
+def _path_database_name(url: str) -> str:
+    _reject_target_overrides(url)
+    if "://" not in url or "/" not in url.split("://", 1)[1]:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
+    _prefix, rest = url.split("://", 1)
+    path, _query = (rest.split("?", 1) + [""])[:2]
+    _head, sep, name = path.rpartition("/")
+    if not sep or not name:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
+    return name
+
+
+def _with_database_name(url: str, name: str) -> str:
+    _reject_target_overrides(url)
+    prefix, rest = url.split("://", 1)
+    path, query = (rest.split("?", 1) + [""])[:2]
+    head, sep, _db = path.rpartition("/")
+    if not sep:
+        raise RuntimeError(f"Cannot derive a database name from {redact_database_url(url)}.")
+    suffix = f"?{query}" if query else ""
+    return f"{prefix}://{head}/{name}{suffix}"
+
+
+def allocate_cli_database_name(stem: str, app_name: str) -> str:
+    """A new ``xlocale_cli_{epoch}_{hex}`` name. The stem is never the database itself."""
+    if not stem or any(char not in _NAME_OK for char in stem):
+        raise RuntimeError(f"Refusing database name {stem!r}.")
+    if not stem.startswith(CLI_E2E_PREFIX):
+        raise RuntimeError(
+            f"Refusing database name {stem!r}. Harness databases must start with {CLI_E2E_PREFIX!r}."
+        )
+    if stem == app_name:
+        raise RuntimeError(f"Refusing the application database name {stem!r}.")
+    body = stem.removesuffix("_")
+    epoch = str(int(time.time()))
+    token = uuid.uuid4().hex
+    suffix = f"_{epoch}_{token}"
+    trimmed = body
+    if len(body) + len(suffix) > _MAX_IDENT:
+        trimmed = body[: _MAX_IDENT - len(suffix)]
+    if not trimmed.startswith(CLI_E2E_PREFIX.rstrip("_")):
+        raise RuntimeError(
+            f"Refusing database name {stem!r}. The {CLI_E2E_PREFIX!r} prefix does not fit."
+        )
+    name = f"{trimmed}{suffix}"
+    if "__" in name or name == app_name:
+        raise RuntimeError(f"Refusing database name {name!r}.")
+    return name
+
+
+def unique_database_url() -> str:
+    """The URL this process will create. Later calls return that same URL.
+
+    ``CLI_E2E_DATABASE_NAME`` is a stem. A unique suffix is always appended so two
+    runs that share a stem do not create, migrate, or drop one database.
+    """
+    global _allocated_database_url
+    if _allocated_database_url is not None:
+        return _allocated_database_url
+    base = _postgres_base_url()
+    app_name = _path_database_name(base)
+    stem = os.environ.get("CLI_E2E_DATABASE_NAME", "").strip() or CLI_E2E_PREFIX
+    name = allocate_cli_database_name(stem, app_name)
+    _allocated_database_url = _with_database_name(base, name)
+    return _allocated_database_url
+
+
+def _admin(action: str, database_url: str) -> None:
+    try:
+        subprocess.run(
+            ["uv", "run", "python", "-m", "app.postgres_admin", action, database_url],
+            cwd=BACKEND_ROOT,
+            env=backend_env(database_url),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"postgres_admin {action} failed for {redact_database_url(database_url)}:\n{exc.stderr}"
+        ) from None
+
+
+def migrate_database(database_url: str) -> None:
     subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=BACKEND_ROOT,
-        env=backend_env(db_path),
+        env=backend_env(database_url),
         check=True,
         capture_output=True,
         text=True,
@@ -69,22 +199,30 @@ def wait_for_health(base_url: str, *, timeout: float = 60.0) -> None:
 @dataclass(frozen=True)
 class BackendServer:
     base_url: str
-    db_path: Path
+    database_url: str
     process: subprocess.Popen[str]
 
     def stop(self) -> None:
-        if self.process.poll() is not None:
-            return
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=5)
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+        _admin("drop", self.database_url)
 
 
-def start_backend_server(db_path: Path) -> BackendServer:
-    migrate_database(db_path)
+def start_backend_server() -> BackendServer:
+    database_url = unique_database_url()
+    _admin("sweep", database_url)
+    # create-new raises when the name exists. This run did not create it, so do not drop it.
+    _admin("create-new", database_url)
+    try:
+        migrate_database(database_url)
+    except Exception:
+        _admin("drop", database_url)
+        raise
     port = find_free_port()
     base_url = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
@@ -98,7 +236,7 @@ def start_backend_server(db_path: Path) -> BackendServer:
             f"--port={port}",
         ],
         cwd=BACKEND_ROOT,
-        env=backend_env(db_path),
+        env=backend_env(database_url),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -108,8 +246,9 @@ def start_backend_server(db_path: Path) -> BackendServer:
     except Exception:
         process.kill()
         process.wait(timeout=5)
+        _admin("drop", database_url)
         raise
-    return BackendServer(base_url=base_url, db_path=db_path, process=process)
+    return BackendServer(base_url=base_url, database_url=database_url, process=process)
 
 
 def login_admin_client(base_url: str) -> httpx.Client:
@@ -176,7 +315,9 @@ def api_key_client(base_url: str, api_key: str) -> httpx.Client:
     )
 
 
-def create_module(admin: httpx.Client, project_id: str, slug: str, name: str | None = None) -> dict[str, Any]:
+def create_module(
+    admin: httpx.Client, project_id: str, slug: str, name: str | None = None
+) -> dict[str, Any]:
     response = admin.post(
         f"/api/projects/{project_id}/modules",
         json={"slug": slug, "name": name or slug.title()},
