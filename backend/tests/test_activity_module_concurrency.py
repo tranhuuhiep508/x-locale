@@ -192,17 +192,35 @@ def test_delete_completed_before_preload_clears_historical_refs(client, session_
 
 @pytest.mark.parametrize("column", ["module_id", "published_module_id"])
 @pytest.mark.parametrize("persistent", [False, True])
-@pytest.mark.parametrize("pg_schema", ["create_all", "alembic"], indirect=True)
+@pytest.mark.parametrize(
+    "pg_schema,legacy_names",
+    [
+        pytest.param("create_all", False, id="create_all"),
+        pytest.param("alembic", False, id="alembic"),
+        pytest.param("create_all", True, id="legacy_create_all"),
+    ],
+    indirect=["pg_schema"],
+)
 def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
-    pg_schema, monkeypatch, no_retry_delay, column, persistent
+    pg_schema, legacy_names, monkeypatch, no_retry_delay, column, persistent
 ):
-    client, session_factory, schema = pg_schema
+    client, session_factory, _ = pg_schema
+    if legacy_names:
+        with session_factory() as db:
+            # Reproduce an existing database created before the ORM name was aligned.
+            db.execute(
+                text(
+                    "ALTER TABLE strings RENAME CONSTRAINT "
+                    "fk_strings_published_module_id_modules TO strings_published_module_id_fkey"
+                )
+            )
+            db.commit()
     case = setup_batch(client, session_factory)
     execute = activities._execute_inverse
     calls, failures = [], []
     constraint = (
         "fk_strings_published_module_id_modules"
-        if schema == "alembic" and column == "published_module_id"
+        if column == "published_module_id" and not legacy_names
         else f"strings_{column}_fkey"
     )
 

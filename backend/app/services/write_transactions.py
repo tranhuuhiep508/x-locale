@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 MODULE_REFERENCE_CONSTRAINTS = frozenset(
     {
         "strings_module_id_fkey",
-        "strings_published_module_id_fkey",
-        # Alembic names this FK explicitly; create_all uses Postgres's default.
         "fk_strings_published_module_id_modules",
+        # Legacy create_all databases predate the ORM's explicit constraint name.
+        "strings_published_module_id_fkey",
     }
 )
 
