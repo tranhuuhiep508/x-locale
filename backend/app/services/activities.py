@@ -77,6 +77,7 @@ from app.services.activity_state import (
     validate_undo_timestamps,
 )
 from app.services.catalog import require_module_in_project
+from app.services.import_lock import acquire_import_lock
 from app.services.write_transactions import retryable_write_conflict, run_write
 
 FEED_CHILD_LIMIT = 50
@@ -1200,6 +1201,7 @@ def revert_activity(
     project_id = project.id
 
     def write() -> Activity:
+        acquire_import_lock(db, project_id)
         activity = (
             db.query(Activity)
             .filter(Activity.id == activity_id, Activity.project_id == project_id)
@@ -1249,6 +1251,7 @@ def revert_batch(
     project_id = project.id
 
     def write() -> dict[str, Any]:
+        acquire_import_lock(db, project_id)
         activities = (
             db.query(Activity)
             .filter(

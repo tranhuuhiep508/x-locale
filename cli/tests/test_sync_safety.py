@@ -16,7 +16,12 @@ from x_locale_cli.commands.sync import sync
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.io import load_json_file
 from x_locale_cli.models import Config, Layout, Stage
-from x_locale_cli.ops import load_status_snapshot, pull_translations, push_strings, show_status
+from x_locale_cli.ops import (
+    load_status_snapshot,
+    pull_translations,
+    push_strings,
+    show_status,
+)
 from x_locale_cli.push_index import (
     atomic_write_push_index,
     catalog_hashes_flat,
@@ -229,6 +234,56 @@ def test_backend_conflict_preserves_index_and_marker_rules(workspace, preexistin
     assert index_file_path().read_bytes() == before
     assert pending_file_path().exists() == preexisting
     assert [request.method for request in api.calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_busy_import_exits_once_and_manual_retry_preserves_recovery_rules(
+    workspace, monkeypatch, layout, preexisting
+):
+    config = config_for(workspace, layout)
+    source = config.output_path / ("auth/vi.json" if layout == "modular" else "vi.json")
+    source.write_text(json.dumps({"k": "Local", "unchanged": "Stable"}))
+    prefix = "auth/" if layout == "modular" else ""
+    atomic_write_push_index(
+        scope_from_config(config),
+        catalog_hashes_flat({f"{prefix}k": "Old", f"{prefix}unchanged": "Stable"}),
+    )
+    if preexisting:
+        pending_file_path().write_text("preexisting")
+    before = index_file_path().read_bytes()
+    api = Api(config)
+    api.import_status = 409
+    api.import_body = {
+        "detail": {
+            "code": "import_in_progress",
+            "message": "An import is already running for this project, try again when it finishes.",
+        }
+    }
+    command = import_module("x_locale_cli.commands.push")
+    monkeypatch.setattr(command, "runtime_config", lambda **kwargs: config)
+    monkeypatch.setattr("x_locale_cli.ops.api_client", lambda config: api.client)
+    rejected = CliRunner().invoke(app, ["push"])
+    assert rejected.exit_code == 1
+    assert "Push failed (409)" in rejected.output
+    assert "try again when it finishes" in " ".join(rejected.output.split())
+    assert [request.method for request in api.calls] == ["GET", "POST"]
+    assert index_file_path().read_bytes() == before
+    assert pending_file_path().exists() == preexisting
+
+    api = Api(config)
+    retried = CliRunner().invoke(app, ["push"])
+    assert retried.exit_code == 0, retried.output
+    assert [request.method for request in api.calls] == ["GET", "POST"]
+    submitted = api.calls[-1]
+    assert (submitted.url.params.get("partial") == "true") == (not preexisting)
+    payload = json.loads(submitted.content)
+    sent = payload["modules"]["auth"]["vi"] if layout == "modular" else payload["strings"]
+    assert set(sent) == ({"k", "unchanged"} if preexisting else {"k"})
+    assert json.loads(index_file_path().read_text())["entries"] == catalog_hashes_flat(
+        {f"{prefix}k": "Local", f"{prefix}unchanged": "Stable"}
+    )
+    assert not pending_file_path().exists()
 
 
 def test_version_one_index_forces_full_payload(workspace):
