@@ -247,7 +247,7 @@ def _translation_maps(
 
     for obj in index.new_by_string.get(string_id, ()):
         after[obj.locale] = obj.value or ""
-        before.setdefault(obj.locale, "")
+        before[obj.locale] = ""  # A loaded collection can already contain this unflushed row.
         changed = True
 
     for obj in index.dirty_by_string.get(string_id, ()):

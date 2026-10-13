@@ -14,6 +14,7 @@ from app.auth import ProjectAccess
 from app.database import DbSession
 from app.models import TranslationStatus
 from app.schemas import ImportPayload, ImportResult, SyncStateOut
+from app.services.import_lock import acquire_import_lock
 from app.services.sync import (
     build_flat_export,
     build_modular_export,
@@ -140,7 +141,7 @@ def download_import_template(
 
 
 @router.post("/import", response_model=ImportResult)
-async def import_project(
+def import_project(
     project: ProjectAccess,
     db: DbSession,
     file: Annotated[UploadFile, File()],
@@ -151,12 +152,13 @@ async def import_project(
     tag_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
     partial: Annotated[bool, Query()] = False,
 ) -> ImportResult:
+    acquire_import_lock(db, project.id)
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
     import_status = TranslationStatus(status)
 
     filename = (file.filename or "").lower()
-    raw = await file.read()
+    raw = file.file.read()
     if filename.endswith(".xlsx") or (file.content_type or "").endswith("spreadsheetml.sheet"):
         from app.excel import import_workbook
 
@@ -217,6 +219,7 @@ def import_strings_compat(
                 "expected": project.base_language,
             },
         )
+    acquire_import_lock(db, project.id)
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "import")
     if payload.modules:
