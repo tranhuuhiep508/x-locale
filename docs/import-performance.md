@@ -57,8 +57,16 @@ planning, writes, audit, result construction, and commit are timed. Input
 generation, schema/project setup, authentication/dependency lookup, outgoing
 HTTP serialization, and verification queries are excluded.
 
-The command reports all timing samples and statement counts as JSON. CI requires
-median fresh imports below 6 seconds and both reimports below 2 seconds.
+The command reports all timing samples and statement counts as JSON. The targets
+are median fresh imports below 6 seconds and both reimports below 2 seconds,
+measured by a manual run on a known machine.
+
+`--check` (run in CI) gates on statement counts, which do not vary with runner
+speed: at most 100 for a fresh import, 10 unchanged, and 15 for 10% changed. A
+per-row query regression adds thousands of statements at 20k keys, so it fails
+the gate on any machine. Shared CI runners vary about 2x in speed, so `--check`
+only fails timing at twice the targets (12 s fresh, 4 s reimports) to catch
+large slowdowns without failing on runner noise.
 
 Observed local medians on PostgreSQL 16 (seconds):
 
