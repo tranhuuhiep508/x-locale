@@ -104,6 +104,10 @@ jobs:
       - name: Run pytest
         run: cd backend && uv run pytest
 
+      - name: Benchmark 20k-key imports
+        working-directory: backend
+        run: uv run python -m benchmarks.imports --check
+
   cli:
     name: cli-unit
     runs-on: ubuntu-latest

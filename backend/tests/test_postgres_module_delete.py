@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -151,10 +150,16 @@ def test_deferred_module_fk_commit_is_400(client, session_factory, monkeypatch):
     assert "Unknown module" in created.text
     assert "IntegrityError" not in created.text
 
-    monkeypatch.setattr(
-        "app.services.sync._get_or_create_module",
-        lambda db, project, slug, *, dry_run: SimpleNamespace(id=uuid.UUID(foreign["id"])),
-    )
+    from app.services import import_bulk
+
+    original = import_bulk._create_references
+
+    def foreign_reference(*args, **kwargs):
+        modules = original(*args, **kwargs)
+        modules["auth"] = uuid.UUID(foreign["id"])
+        return modules
+
+    monkeypatch.setattr(import_bulk, "_create_references", foreign_reference)
     pushed = client.post(
         f"/api/projects/{project_a['id']}/strings/import",
         json={

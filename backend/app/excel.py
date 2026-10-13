@@ -4,27 +4,27 @@ from __future__ import annotations
 
 import io
 from typing import Any
-from uuid import UUID
 
-from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from app.helpers import ensure_max_length, key_preview, validate_locale_code, validate_module_slug
+from app.helpers import (
+    ensure_max_length,
+    key_preview,
+    reject_nul,
+    validate_locale_code,
+    validate_module_slug,
+)
 from app.limits import KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH
 from app.models import (
-    Module,
     Project,
     ProjectLayout,
     StringEntry,
-    Tag,
-    Translation,
     TranslationStatus,
 )
-from app.schemas import ImportDiff, ImportDiffItem, ImportResult
+from app.schemas import ImportResult
 from app.services.catalog import owned_module
-from app.services.strings import live_module_label, promote_string, restore_string
-from app.services.sync import IMPORT_DIFF_SAMPLE
+from app.services.import_bulk import ImportRow, import_rows
 
 UNASSIGNED_SHEET = "_unassigned"
 FLAT_SHEET = "strings"
@@ -210,61 +210,6 @@ def _write_sheet(
         ws.append(row)
 
 
-def _find_excel_entry(
-    db: Session,
-    project: Project,
-    key: str,
-    module_id: UUID | None,
-    *,
-    match_any_module: bool,
-) -> tuple[StringEntry | None, bool]:
-    """Return (entry, revived). Prefer live rows, then tombstones."""
-    live_exact = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.module_id == module_id,
-            StringEntry.key == key,
-            StringEntry.deleted_at.is_(None),
-        )
-        .first()
-    )
-    if live_exact is not None:
-        return live_exact, False
-    if match_any_module:
-        live_any = (
-            db.query(StringEntry)
-            .filter(
-                StringEntry.project_id == project.id,
-                StringEntry.key == key,
-                StringEntry.deleted_at.is_(None),
-            )
-            .first()
-        )
-        if live_any is not None:
-            return live_any, False
-    tomb_exact = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.module_id == module_id,
-            StringEntry.key == key,
-        )
-        .first()
-    )
-    if tomb_exact is not None:
-        return tomb_exact, True
-    if match_any_module:
-        tomb_any = (
-            db.query(StringEntry)
-            .filter(StringEntry.project_id == project.id, StringEntry.key == key)
-            .first()
-        )
-        if tomb_any is not None:
-            return tomb_any, True
-    return None, False
-
-
 def import_workbook(
     db: Session,
     project: Project,
@@ -274,237 +219,98 @@ def import_workbook(
     status: TranslationStatus = TranslationStatus.draft,
 ) -> ImportResult:
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-
-    # Validate meta if present
-    if "_meta" in wb.sheetnames:
-        meta_ws = wb["_meta"]
-        meta = {row[0]: row[1] for row in meta_ws.iter_rows(min_row=2, values_only=True) if row[0]}
-        if meta.get("project_id") and str(meta["project_id"]) != str(project.id):
-            # Soft warning — allow if slug matches; hard fail otherwise
-            if meta.get("project_slug") and meta["project_slug"] != project.slug:
-                raise ValueError(
-                    f"Workbook belongs to project {meta.get('project_slug')}, not {project.slug}"
-                )
-
-    create_items: list[ImportDiffItem] = []
-    update_items: list[ImportDiffItem] = []
-    created = 0
-    updated = 0
-    total = 0
-    modular = _is_modular(project)
-    live_rows = (
-        db.query(StringEntry)
-        .options(joinedload(StringEntry.module))
-        .filter(StringEntry.project_id == project.id, StringEntry.deleted_at.is_(None))
-        .all()
-    )
-    live_by_key = {row.key: row for row in live_rows}
-    workbook_keys: dict[str, str] = {}
-
-    for sheet_name in wb.sheetnames:
-        if sheet_name == "_meta":
-            continue
-        ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            continue
-        headers = [str(h).strip() if h else "" for h in rows[0]]
-        try:
+    rows, groups = [], []
+    try:
+        if "_meta" in wb.sheetnames:
+            meta = {
+                row[0]: row[1]
+                for row in wb["_meta"].iter_rows(min_row=2, values_only=True)
+                if row[0]
+            }
+            if meta.get("project_id") and str(meta["project_id"]) != str(project.id):
+                if meta.get("project_slug") and meta["project_slug"] != project.slug:
+                    raise ValueError(
+                        f"Workbook belongs to project {meta.get('project_slug')}, not {project.slug}"
+                    )
+        modular = _is_modular(project)
+        for sheet_name in wb.sheetnames:
+            if sheet_name == "_meta":
+                continue
+            iterator = wb[sheet_name].iter_rows(values_only=True)
+            first = next(iterator, None)
+            if first is None:
+                continue
+            headers = [str(value).strip() if value else "" for value in first]
+            if "key" not in headers:
+                continue
             key_idx = headers.index("key")
-        except ValueError:
-            continue
-        desc_idx = headers.index("description") if "description" in headers else None
-        tags_idx = headers.index("tags") if "tags" in headers else None
-
-        module_id = None
-        if modular and sheet_name != UNASSIGNED_SHEET:
-            try:
-                sheet_slug = validate_module_slug(sheet_name)
-            except ValueError as exc:
-                raise ValueError(f"Invalid sheet name {sheet_name!r}: {exc}") from exc
-            mod = (
-                db.query(Module)
-                .filter(Module.project_id == project.id, Module.slug == sheet_slug)
-                .first()
-            )
-            if not mod and not dry_run:
-                mod = Module(
-                    project_id=project.id,
-                    slug=sheet_slug,
-                    name=sheet_slug.replace("-", " ").replace("_", " ").title(),
-                )
-                db.add(mod)
-                db.flush()
-            module_id = mod.id if mod else None
-
-        locale_cols: dict[str, int] = {}
-        for i, h in enumerate(headers):
-            if not h or h in ("key", "description", "tags"):
-                continue
-            try:
-                loc = validate_locale_code(h)
-            except ValueError as exc:
-                raise ValueError(f"Invalid locale column {h!r}: {exc}") from exc
-            locale_cols[loc] = i
-
-        for row_number, row in enumerate(rows[1:], start=2):
-            if not row or row[key_idx] is None:
-                continue
-            key = _desanitize_cell_value(row[key_idx]).strip()
-            if not key:
-                continue
-            if len(key) > KEY_MAX_LENGTH:
-                raise ValueError(
-                    f"Sheet {sheet_name!r} row {row_number}: key {key_preview(key)} "
-                    f"must be at most {KEY_MAX_LENGTH} characters"
-                )
-            if modular:
-                sheet_label = "unassigned" if sheet_name == UNASSIGNED_SHEET else sheet_name
-                prior = workbook_keys.get(key)
-                if prior is not None and prior != sheet_label:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"String '{key}' appears in more than one module",
-                    )
-                workbook_keys[key] = sheet_label
-                live = live_by_key.get(key)
-                if live is not None and live_module_label(live) != sheet_label:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            f"String '{key}' already exists in module '{live_module_label(live)}'"
-                        ),
-                    )
-            total += 1
-            description = (
-                _desanitize_cell_value(row[desc_idx]).strip()
-                if desc_idx is not None and row[desc_idx]
-                else None
-            )
-            tag_names = []
-            if tags_idx is not None and row[tags_idx]:
-                tag_names = [
-                    ensure_max_length(
-                        _desanitize_cell_value(t.strip()),
-                        field="tag name",
-                        limit=TAG_NAME_MAX_LENGTH,
-                    )
-                    for t in str(row[tags_idx]).split(",")
-                    if t.strip()
-                ]
-
-            source_text = ""
-            if project.base_language in locale_cols:
-                val = row[locale_cols[project.base_language]]
-                source_text = _desanitize_cell_value(val)
-            if not source_text:
-                source_text = key  # fallback
-
-            entry, revived = _find_excel_entry(
-                db,
-                project,
-                key,
-                module_id,
-                match_any_module=not modular,
-            )
-            live = live_by_key.get(key)
-            if live is not None and (entry is None or entry.id != live.id):
-                if modular:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            f"String '{key}' already exists in module '{live_module_label(live)}'"
-                        ),
-                    )
-                raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
-            if revived and entry is not None and not dry_run:
-                restore_string(entry)
-
-            label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
-            created_this_row = False
-            if entry:
-                if (
-                    revived
-                    or entry.source_text != source_text
-                    or (description and entry.description != description)
-                ):
-                    update_items.append(ImportDiffItem(key=label, source_text=source_text))
-                    if not dry_run:
-                        entry.source_text = source_text
-                        if description is not None:
-                            entry.description = description
-                        updated += 1
-            else:
-                create_items.append(ImportDiffItem(key=label, source_text=source_text))
-                created_this_row = True
-                if not dry_run:
-                    entry = StringEntry(
-                        project_id=project.id,
-                        module_id=module_id,
-                        key=key,
-                        source_text=source_text,
-                        description=description,
-                        status=TranslationStatus.draft,
-                    )
-                    db.add(entry)
-                    db.flush()
-                    live_by_key[key] = entry
-                    created += 1
-
-            if dry_run or entry is None:
-                continue
-
-            # Tags
-            if tag_names:
-                tags = []
-                for tname in tag_names:
-                    tag = (
-                        db.query(Tag)
-                        .filter(Tag.project_id == project.id, Tag.name == tname)
-                        .first()
-                    )
-                    if not tag:
-                        tag = Tag(project_id=project.id, name=tname)
-                        db.add(tag)
-                        db.flush()
-                    tags.append(tag)
-                entry.tags = tags
-
-            # Translations
-            for locale, idx in locale_cols.items():
-                if locale == project.base_language:
+            desc_idx = headers.index("description") if "description" in headers else None
+            tags_idx = headers.index("tags") if "tags" in headers else None
+            module = None
+            if modular and sheet_name != UNASSIGNED_SHEET:
+                reject_nul(sheet_name, field="module slug", context=f"Sheet {sheet_name!r}: ")
+                try:
+                    module = validate_module_slug(sheet_name)
+                except ValueError as exc:
+                    raise ValueError(f"Invalid sheet name {sheet_name!r}: {exc}") from exc
+            groups.append((module, None))
+            locales = {}
+            for index, header in enumerate(headers):
+                if not header or header in {"key", "description", "tags"}:
                     continue
-                val = row[idx]
-                value = _desanitize_cell_value(val)
-                t = next((x for x in entry.translations if x.locale == locale), None)
-                if t is None:
-                    t = Translation(
-                        string_id=entry.id,
-                        locale=locale,
-                        value=value,
+                reject_nul(header, field="locale", context=f"Sheet {sheet_name!r}: ")
+                try:
+                    locales[validate_locale_code(header)] = index
+                except ValueError as exc:
+                    raise ValueError(f"Invalid locale column {header!r}: {exc}") from exc
+            for number, row in enumerate(iterator, start=2):
+                if not row or row[key_idx] is None:
+                    continue
+                key = _desanitize_cell_value(row[key_idx]).strip()
+                if not key:
+                    continue
+                context = f"Sheet {sheet_name!r} row {number}: "
+                reject_nul(key, field="key", key=key, context=context)
+                if len(key) > KEY_MAX_LENGTH:
+                    raise ValueError(
+                        f"{context}key {key_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
                     )
-                    db.add(t)
-                    entry.translations.append(t)
-                else:
-                    if value != t.value:
-                        t.value = value
-                        t.confidence = None
-
-            if created_this_row and status == TranslationStatus.public:
-                promote_string(entry)
-
-    diff = ImportDiff(
-        create=create_items[:IMPORT_DIFF_SAMPLE],
-        update=update_items[:IMPORT_DIFF_SAMPLE],
-        orphan=[],
-        create_count=len(create_items),
-        update_count=len(update_items),
-        orphan_count=0,
-    )
-    return ImportResult(
-        created=0 if dry_run else created,
-        updated=0 if dry_run else updated,
-        total=total,
-        dry_run=dry_run,
-        diff=diff,
-    )
+                description = (
+                    _desanitize_cell_value(row[desc_idx]).strip()
+                    if desc_idx is not None and row[desc_idx]
+                    else None
+                ) or None
+                names = ()
+                if tags_idx is not None and row[tags_idx]:
+                    names = tuple(
+                        ensure_max_length(
+                            _desanitize_cell_value(value.strip()),
+                            field="tag name",
+                            limit=TAG_NAME_MAX_LENGTH,
+                        )
+                        for value in str(row[tags_idx]).split(",")
+                        if value.strip()
+                    )
+                values = {
+                    locale: _desanitize_cell_value(row[index]) for locale, index in locales.items()
+                }
+                values[project.base_language] = values.get(project.base_language) or key
+                label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
+                rows.append(
+                    ImportRow(
+                        key=key,
+                        values=values,
+                        module=module,
+                        scoped=modular,
+                        label=label,
+                        excel=True,
+                        description=description,
+                        tag_names=names,
+                        context=context,
+                    )
+                )
+        return import_rows(
+            db, project, rows, groups=groups, dry_run=dry_run, status=status, report_orphans=False
+        )
+    finally:
+        wb.close()

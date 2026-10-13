@@ -225,6 +225,8 @@ produce an empty queue when no other target locale is missing.
 
 ## Development
 
+Import performance and compatibility: [docs/import-performance.md](docs/import-performance.md).
+
 ```bash
 # Backend tests. TEST_DATABASE_URL must be Postgres and must differ from DATABASE_URL.
 cd backend && uv sync --all-extras && uv run pytest

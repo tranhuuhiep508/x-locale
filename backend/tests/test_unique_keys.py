@@ -265,11 +265,11 @@ def test_flat_import_refuses_to_insert_a_second_live_row(client, monkeypatch):
         json={"key": "save", "source_text": "Lưu", "module_id": auth["id"]},
     )
 
-    def _miss(self, key, *, module_id):
-        del self, key, module_id
+    def _miss(catalog, key, module_id):
+        del catalog, key, module_id
         return None
 
-    monkeypatch.setattr("app.services.sync._ImportIndex.lookup", _miss)
+    monkeypatch.setattr("app.services.import_bulk._lookup", _miss)
     imported = client.post(
         f"/api/projects/{pid}/strings/import",
         json={"strings": {"save": "Khác", "other": "Mới"}},

@@ -4,27 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload
 
-from app.helpers import content_hash, export_key, key_preview, validate_module_slug
-from app.limits import KEY_MAX_LENGTH
+from app.helpers import content_hash, export_key, reject_nul, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
-from app.schemas import ImportDiff, ImportDiffItem, ImportResult, SyncStateOut
+from app.schemas import ImportResult, SyncStateOut
 from app.services.catalog import owned_module, require_module_in_project
-from app.services.strings import (
-    apply_translation_values,
-    ensure_translation_rows,
-    live_module_label,
-    promote_string,
-    restore_string,
-)
+from app.services.import_bulk import ImportRow, import_rows
 
 CLI_UNASSIGNED = "_unassigned"
-IMPORT_DIFF_SAMPLE = 100
 
 
 def load_export_entries(db: Session, project_id) -> list[StringEntry]:
@@ -375,26 +367,6 @@ def _known_locale_maps(
     return {loc: mapping for loc, mapping in locale_maps.items() if loc in allowed}
 
 
-def _get_or_create_module(
-    db: Session, project: Project, slug: str, *, dry_run: bool
-) -> Module | None:
-    try:
-        slug = validate_module_slug(slug)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    mod = db.query(Module).filter(Module.project_id == project.id, Module.slug == slug).first()
-    if mod or dry_run:
-        return mod
-    mod = Module(
-        project_id=project.id,
-        slug=slug,
-        name=slug.replace("-", " ").replace("_", " ").title(),
-    )
-    db.add(mod)
-    db.flush()
-    return mod
-
-
 def resolve_json_import_module(
     db: Session, project: Project, module_id: UUID | None
 ) -> UUID | None:
@@ -421,378 +393,6 @@ def resolve_json_import_tags(
         raise HTTPException(status_code=400, detail="Unknown tag")
     by_id = {tag.id: tag for tag in tags}
     return [by_id[tid] for tid in unique_ids]
-
-
-def _tags_would_change(entry: StringEntry, tags: list[Tag]) -> bool:
-    if not tags:
-        return False
-    existing = {tag.id for tag in (entry.tags or [])}
-    return any(tag.id not in existing for tag in tags)
-
-
-def _apply_import_tags(entry: StringEntry, tags: list[Tag]) -> bool:
-    if not tags:
-        return False
-    existing = {tag.id for tag in (entry.tags or [])}
-    changed = False
-    for tag in tags:
-        if tag.id not in existing:
-            entry.tags.append(tag)
-            existing.add(tag.id)
-            changed = True
-    return changed
-
-
-class _ImportIndex:
-    def __init__(self, entries: list[StringEntry]) -> None:
-        self.by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
-        self.deleted_by_module_key: dict[tuple[UUID | None, str], StringEntry] = {}
-        self.by_key: dict[str, StringEntry] = {}
-        self.deleted_by_key: dict[str, StringEntry] = {}
-        for entry in entries:
-            self.add(entry)
-
-    def add(self, entry: StringEntry) -> None:
-        if entry.deleted_at:
-            self.deleted_by_module_key[(entry.module_id, entry.key)] = entry
-            existing = self.deleted_by_key.get(entry.key)
-            if existing is None or entry.module_id is None:
-                self.deleted_by_key[entry.key] = entry
-            return
-        self.by_module_key[(entry.module_id, entry.key)] = entry
-        self.by_key.setdefault(entry.key, entry)
-
-    def lookup(self, key: str, *, module_id: UUID | None) -> StringEntry | None:
-        if module_id is None:
-            live = self.by_key.get(key)
-            if live is not None:
-                return live
-            return self.deleted_by_module_key.get((None, key)) or self.deleted_by_key.get(key)
-        live = self.by_module_key.get((module_id, key))
-        if live is not None:
-            return live
-        return self.deleted_by_module_key.get((module_id, key))
-
-
-def _values_changed(entry: StringEntry, project: Project, values: dict[str, str]) -> bool:
-    if project.base_language in values and entry.source_text != values[project.base_language]:
-        return True
-    if not any(locale != project.base_language for locale in values):
-        return False
-    by_locale = {t.locale: t.value for t in entry.translations}
-    for locale, value in values.items():
-        if locale == project.base_language:
-            continue
-        if by_locale.get(locale, "") != value:
-            return True
-    return False
-
-
-_PRELOAD_CHUNK = 1000
-
-
-def _preload_collections(
-    db: Session,
-    entries: list[StringEntry],
-    *,
-    translations: bool,
-    tags: bool,
-) -> None:
-    """Fill translations and tags on identities already in the session.
-
-    Chunked selectinload queries populate those collections without a later
-    lazy SELECT per string. autoflush stays off so a later module in the same
-    import does not flush the strings touched so far.
-    """
-    if not translations and not tags:
-        return
-    options = []
-    if translations:
-        options.append(selectinload(StringEntry.translations))
-    if tags:
-        options.append(selectinload(StringEntry.tags))
-    seen: set[UUID] = set()
-    ids: list[UUID] = []
-    for entry in entries:
-        if entry.id is None or entry.id in seen:
-            continue
-        seen.add(entry.id)
-        ids.append(entry.id)
-    if not ids:
-        return
-    with db.no_autoflush:
-        for start in range(0, len(ids), _PRELOAD_CHUNK):
-            chunk = ids[start : start + _PRELOAD_CHUNK]
-            db.query(StringEntry).options(*options).filter(StringEntry.id.in_(chunk)).all()
-
-
-def _import_row_will_change(
-    entry: StringEntry,
-    project: Project,
-    values: dict[str, str],
-    tags: list[Tag],
-) -> bool:
-    revived = bool(entry.deleted_at)
-    values_changed = revived or _values_changed(entry, project, values)
-    return values_changed or _tags_would_change(entry, tags)
-
-
-def _prepare_import_collections(
-    db: Session,
-    project: Project,
-    index: _ImportIndex,
-    maps: dict[str, dict[str, str]],
-    module_id: UUID | None,
-    tags: list[Tag],
-) -> None:
-    """Load the collections comparisons and activity capture will read."""
-    matched: list[tuple[StringEntry, dict[str, str]]] = []
-    has_target_locale = False
-    base = project.base_language
-    for key in _union_keys(maps):
-        values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
-        if not values:
-            continue
-        if not has_target_locale and any(locale != base for locale in values):
-            has_target_locale = True
-        entry = index.lookup(key, module_id=module_id)
-        if entry is not None:
-            matched.append((entry, values))
-    matched_entries = [entry for entry, _ in matched]
-    if has_target_locale:
-        _preload_collections(db, matched_entries, translations=True, tags=False)
-    if tags:
-        _preload_collections(db, matched_entries, translations=False, tags=True)
-    changing = [
-        entry for entry, values in matched if _import_row_will_change(entry, project, values, tags)
-    ]
-    _preload_collections(db, changing, translations=True, tags=True)
-
-
-def _preview_source_text(
-    project: Project,
-    key: str,
-    values: dict[str, str],
-    entry: StringEntry | None = None,
-) -> str:
-    if project.base_language in values:
-        return values[project.base_language]
-    if entry is not None:
-        return entry.source_text
-    return key
-
-
-def _upsert_imported_string(
-    db: Session,
-    project: Project,
-    index: _ImportIndex,
-    key: str,
-    values: dict[str, str],
-    *,
-    dry_run: bool,
-    status: TranslationStatus,
-    module_id: UUID | None,
-    tags: list[Tag],
-) -> tuple[str, StringEntry | None]:
-    """Return ('create'|'update'|'unchanged', entry_or_none)."""
-    entry = index.lookup(key, module_id=module_id)
-    live = index.by_key.get(key)
-    if live is not None and (entry is None or entry.id != live.id):
-        if module_id is None:
-            raise HTTPException(status_code=409, detail=f"String '{key}' already exists")
-        raise HTTPException(
-            status_code=409,
-            detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
-        )
-    if entry is None:
-        if not dry_run:
-            source_text = values.get(project.base_language, key)
-            entry = StringEntry(
-                id=uuid4(),
-                project_id=project.id,
-                module_id=module_id,
-                key=key,
-                source_text=source_text,
-                status=status,
-            )
-            db.add(entry)
-            ensure_translation_rows(db, entry, project)
-            apply_translation_values(
-                db,
-                entry,
-                {loc: val for loc, val in values.items() if loc != project.base_language},
-            )
-            if status == TranslationStatus.public:
-                promote_string(entry)
-            _apply_import_tags(entry, tags)
-            index.add(entry)
-        return "create", entry
-
-    revived = bool(entry.deleted_at)
-    values_changed = revived or _values_changed(entry, project, values)
-    tags_changed = _tags_would_change(entry, tags)
-    if not values_changed and not tags_changed:
-        return "unchanged", entry
-
-    if not dry_run:
-        restore_string(entry)
-        if project.base_language in values:
-            entry.source_text = values[project.base_language]
-        apply_translation_values(
-            db,
-            entry,
-            {loc: val for loc, val in values.items() if loc != project.base_language},
-        )
-        _apply_import_tags(entry, tags)
-    return "update", entry
-
-
-def _import_locale_maps(
-    db: Session,
-    project: Project,
-    locale_maps: dict[str, dict[str, str]],
-    *,
-    dry_run: bool,
-    status: TranslationStatus,
-    module_id: UUID | None,
-    report_orphans: bool,
-    index: _ImportIndex,
-    tags: list[Tag],
-) -> tuple[list[ImportDiffItem], list[ImportDiffItem], list[ImportDiffItem], int]:
-    create_items: list[ImportDiffItem] = []
-    update_items: list[ImportDiffItem] = []
-    seen: set[str] = set()
-    total = 0
-    maps = _known_locale_maps(project, locale_maps)
-    for key in _union_keys(maps):
-        if len(key) > KEY_MAX_LENGTH:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"key {key_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
-                ),
-            )
-    _prepare_import_collections(db, project, index, maps, module_id, tags)
-    for key in _union_keys(maps):
-        values = {loc: mapping[key] for loc, mapping in maps.items() if key in mapping}
-        if not values:
-            continue
-        total += 1
-        seen.add(key)
-        action, entry = _upsert_imported_string(
-            db,
-            project,
-            index,
-            key,
-            values,
-            dry_run=dry_run,
-            status=status,
-            module_id=module_id,
-            tags=tags,
-        )
-        if action == "create":
-            create_items.append(
-                ImportDiffItem(
-                    key=key,
-                    source_text=_preview_source_text(project, key, values, entry),
-                )
-            )
-        elif action == "update":
-            update_items.append(
-                ImportDiffItem(
-                    key=key,
-                    source_text=_preview_source_text(project, key, values, entry),
-                )
-            )
-    orphan_items: list[ImportDiffItem] = []
-    if report_orphans:
-        seen_orphan: set[str] = set()
-        for (mid, k), entry in index.by_module_key.items():
-            if k in seen or k in seen_orphan:
-                continue
-            if module_id is not None and mid != module_id:
-                continue
-            seen_orphan.add(k)
-            orphan_items.append(ImportDiffItem(key=k, source_text=entry.source_text))
-        orphan_items.sort(key=lambda item: item.key)
-    return create_items, update_items, orphan_items, total
-
-
-def _scope_items(slug: str, items: list[ImportDiffItem]) -> list[ImportDiffItem]:
-    return [
-        ImportDiffItem(key=f"{slug}/{item.key}", source_text=item.source_text) for item in items
-    ]
-
-
-def _result(
-    *,
-    create_items: list[ImportDiffItem],
-    update_items: list[ImportDiffItem],
-    orphan_items: list[ImportDiffItem],
-    total: int,
-    dry_run: bool,
-) -> ImportResult:
-    diff = ImportDiff(
-        create=create_items[:IMPORT_DIFF_SAMPLE],
-        update=update_items[:IMPORT_DIFF_SAMPLE],
-        orphan=orphan_items[:IMPORT_DIFF_SAMPLE],
-        create_count=len(create_items),
-        update_count=len(update_items),
-        orphan_count=len(orphan_items),
-    )
-    return ImportResult(
-        created=0 if dry_run else len(create_items),
-        updated=0 if dry_run else len(update_items),
-        total=total,
-        dry_run=dry_run,
-        diff=diff,
-    )
-
-
-def _payload_keys(project: Project, locale_maps: dict[str, dict[str, str]]) -> list[str]:
-    if not isinstance(locale_maps, dict):
-        return []
-    return _union_keys(_known_locale_maps(project, locale_maps))
-
-
-def _module_slug_for_id(db: Session, project: Project, module_id: UUID) -> str:
-    mod = db.query(Module).filter(Module.project_id == project.id, Module.id == module_id).first()
-    if mod is None:
-        return "unassigned"
-    return mod.slug
-
-
-def _claim_payload_key(owners: dict[str, str], key: str, slug: str) -> None:
-    previous = owners.get(key)
-    if previous is not None and previous != slug:
-        raise HTTPException(
-            status_code=409,
-            detail=f"String '{key}' appears in more than one module",
-        )
-    owners[key] = slug
-
-
-def _reject_other_module(index: _ImportIndex, key: str, slug: str) -> None:
-    live = index.by_key.get(key)
-    if live is None or live_module_label(live) == slug:
-        return
-    raise HTTPException(
-        status_code=409,
-        detail=f"String '{key}' already exists in module '{live_module_label(live)}'",
-    )
-
-
-def _preflight_named_keys(
-    index: _ImportIndex,
-    project: Project,
-    locale_maps: dict[str, dict[str, str]],
-    slug: str,
-    owners: dict[str, str] | None = None,
-) -> None:
-    for key in _payload_keys(project, locale_maps):
-        if owners is not None:
-            _claim_payload_key(owners, key, slug)
-        _reject_other_module(index, key, slug)
 
 
 def import_flat_strings(
@@ -823,83 +423,37 @@ def import_flat_strings(
     )
 
 
-_IMPORT_INDEX_KEY_BATCH = 500
-
-
-def _reject_deleted_payload_keys(
-    entries: list[StringEntry], keys: list[str], *, modular: bool
-) -> None:
-    """CLI imports must not cancel removals, even when the module has changed."""
-    wanted = set(keys)
-    live_keys = {entry.key for entry in entries if entry.deleted_at is None}
-    pending: set[str] = set()
-    tombstones: set[str] = set()
-    for entry in entries:
-        if entry.key not in wanted:
-            continue
-        label = _cli_identity(entry, "modular" if modular else "flat")
-        if entry.deleted_at is not None:
-            if entry.key not in live_keys:
-                tombstones.add(label)
-        elif entry.pending_delete:
-            pending.add(label)
-    if pending or tombstones:
+def _json_rows(project, locale_maps, *, module=None, scoped=False, label=None, tags=()):
+    if not isinstance(locale_maps, dict) or any(
+        not _is_str_map(mapping) for mapping in locale_maps.values()
+    ):
+        field = (
+            f"Module '{label}'"
+            if label is not None
+            else "Unassigned strings"
+            if scoped
+            else "Locale maps"
+        )
         raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "push_deleted_keys",
-                "message": (
-                    "Push includes keys removed on x-locale. Restore them in x-locale "
-                    "or remove them from local source files before pushing."
-                ),
-                "pending_remove": sorted(pending),
-                "tombstones": sorted(tombstones),
-            },
+            400, f"{field} must map locale codes to objects containing string keys and values"
         )
-
-
-def _union_modular_payload_keys(
-    project: Project,
-    modules: dict[str, dict[str, dict[str, str]]],
-    unassigned: dict[str, dict[str, str]] | None,
-) -> list[str]:
-    keys: set[str] = set()
-    for locale_maps in modules.values():
-        if isinstance(locale_maps, dict):
-            keys.update(_payload_keys(project, locale_maps))
-    if unassigned and _is_locale_maps(unassigned):
-        keys.update(_payload_keys(project, unassigned))
-    return sorted(keys)
-
-
-def _load_import_index_entries(
-    db: Session,
-    project_id,
-    keys: list[str] | None = None,
-) -> list[StringEntry]:
-    """String rows plus module slug. Translations and tags load later, in chunks.
-
-    When *keys* is set, load only those keys (including tombstones) project-wide.
-    """
-    if keys is None:
-        return (
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.module))
-            .filter(StringEntry.project_id == project_id)
-            .all()
+    for locale, mapping in locale_maps.items():
+        reject_nul(locale, field="locale")
+        for key, value in mapping.items():
+            reject_nul(key, field="key", key=key)
+            reject_nul(value, field=f"translation value ({locale})", key=key)
+    maps = _known_locale_maps(project, locale_maps)
+    return [
+        ImportRow(
+            key=key,
+            values={locale: mapping[key] for locale, mapping in maps.items() if key in mapping},
+            module=module,
+            scoped=scoped,
+            label=f"{label}/{key}" if label is not None else None,
+            tag_ids=tuple(tag.id for tag in tags),
         )
-    if not keys:
-        return []
-    entries: list[StringEntry] = []
-    for start in range(0, len(keys), _IMPORT_INDEX_KEY_BATCH):
-        batch = keys[start : start + _IMPORT_INDEX_KEY_BATCH]
-        entries.extend(
-            db.query(StringEntry)
-            .options(joinedload(StringEntry.module))
-            .filter(StringEntry.project_id == project_id, StringEntry.key.in_(batch))
-            .all()
-        )
-    return entries
+        for key in _union_keys(maps)
+    ]
 
 
 def import_locale_payload(
@@ -915,38 +469,18 @@ def import_locale_payload(
     partial: bool = False,
     reject_deleted: bool = False,
 ) -> ImportResult:
-    if partial:
-        key_list = _payload_keys(project, locale_maps)
-        entries = _load_import_index_entries(db, project.id, key_list)
-    else:
-        entries = _load_import_index_entries(db, project.id)
-    index = _ImportIndex(entries)
-    if reject_deleted:
-        _reject_deleted_payload_keys(entries, _payload_keys(project, locale_maps), modular=False)
-    if module_id is not None:
-        _preflight_named_keys(
-            index,
-            project,
-            locale_maps,
-            _module_slug_for_id(db, project, module_id),
-        )
-    create_items, update_items, orphan_items, total = _import_locale_maps(
+    return import_rows(
         db,
         project,
-        locale_maps,
+        _json_rows(
+            project, locale_maps, module=module_id, scoped=module_id is not None, tags=tags or ()
+        ),
+        groups=[(module_id, None)],
         dry_run=dry_run,
         status=status,
-        module_id=module_id,
         report_orphans=report_orphans,
-        index=index,
-        tags=tags or [],
-    )
-    return _result(
-        create_items=create_items,
-        update_items=update_items,
-        orphan_items=orphan_items,
-        total=total,
-        dry_run=dry_run,
+        partial=partial,
+        reject_deleted=reject_deleted,
     )
 
 
@@ -963,73 +497,30 @@ def import_modular_payload(
     partial: bool = False,
     reject_deleted: bool = False,
 ) -> ImportResult:
-    if partial:
-        key_list = _union_modular_payload_keys(project, modules, unassigned)
-        entries = _load_import_index_entries(db, project.id, key_list)
-    else:
-        entries = _load_import_index_entries(db, project.id)
-    import_tags = tags or []
-    index = _ImportIndex(entries)
-    if reject_deleted:
-        _reject_deleted_payload_keys(
-            entries, _union_modular_payload_keys(project, modules, unassigned), modular=True
+    rows, groups = [], []
+    for slug, maps in modules.items():
+        reject_nul(slug, field="module slug")
+        try:
+            module = validate_module_slug(slug)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        groups.append((module, slug))
+        rows.extend(
+            _json_rows(project, maps, module=module, scoped=True, label=slug, tags=tags or ())
         )
-    owners: dict[str, str] = {}
-    for slug, locale_maps in modules.items():
-        if not isinstance(locale_maps, dict):
-            continue
-        _preflight_named_keys(index, project, locale_maps, slug, owners)
-    if unassigned and _is_locale_maps(unassigned):
-        _preflight_named_keys(index, project, unassigned, "unassigned", owners)
-    create_items: list[ImportDiffItem] = []
-    update_items: list[ImportDiffItem] = []
-    orphan_items: list[ImportDiffItem] = []
-    total = 0
-
-    for slug, locale_maps in modules.items():
-        if not isinstance(locale_maps, dict):
-            continue
-        mod = _get_or_create_module(db, project, slug, dry_run=dry_run)
-        created, updated, orphans, count = _import_locale_maps(
-            db,
-            project,
-            locale_maps,
-            dry_run=dry_run,
-            status=status,
-            module_id=mod.id if mod else None,
-            report_orphans=report_orphans,
-            index=index,
-            tags=import_tags,
-        )
-        create_items.extend(_scope_items(slug, created))
-        update_items.extend(_scope_items(slug, updated))
-        orphan_items.extend(_scope_items(slug, orphans))
-        total += count
-
-    if unassigned and _is_locale_maps(unassigned):
-        created, updated, orphans, count = _import_locale_maps(
-            db,
-            project,
-            unassigned,
-            dry_run=dry_run,
-            status=status,
-            module_id=None,
-            report_orphans=report_orphans,
-            index=index,
-            tags=import_tags,
-        )
-        create_items.extend(created)
-        update_items.extend(updated)
-        orphan_items.extend(orphans)
-        total += count
-
-    orphan_items.sort(key=lambda item: item.key)
-    return _result(
-        create_items=create_items,
-        update_items=update_items,
-        orphan_items=orphan_items,
-        total=total,
+    if unassigned is not None:
+        groups.append((None, None))
+        rows.extend(_json_rows(project, unassigned, scoped=True, tags=tags or ()))
+    return import_rows(
+        db,
+        project,
+        rows,
+        groups=groups,
         dry_run=dry_run,
+        status=status,
+        report_orphans=report_orphans,
+        partial=partial,
+        reject_deleted=reject_deleted,
     )
 
 
@@ -1054,30 +545,21 @@ def import_json_data(
     tags = resolve_json_import_tags(db, project, tag_ids)
 
     modules = data.get("modules")
-    if (
-        isinstance(modules, dict)
-        and modules
-        and all(
-            isinstance(v, dict) and (not v or _is_locale_maps(v) or _is_str_map(v))
-            for v in modules.values()
-        )
-    ):
+    if isinstance(modules, dict) and modules:
         # Modular export: { modules: { slug: { locale: { key: value } } }, unassigned: {...} }
-        if any(_is_locale_maps(v) or not v for v in modules.values()):
-            unassigned = data.get("unassigned")
-            orphans = False if partial else True if report_orphans is None else report_orphans
-            return import_modular_payload(
-                db,
-                project,
-                modules,
-                unassigned if isinstance(unassigned, dict) else None,
-                dry_run=dry_run,
-                status=status,
-                tags=tags,
-                report_orphans=orphans,
-                partial=partial,
-                reject_deleted=reject_deleted,
-            )
+        orphans = False if partial else True if report_orphans is None else report_orphans
+        return import_modular_payload(
+            db,
+            project,
+            modules,
+            data.get("unassigned"),
+            dry_run=dry_run,
+            status=status,
+            tags=tags,
+            report_orphans=orphans,
+            partial=partial,
+            reject_deleted=reject_deleted,
+        )
 
     strings = data.get("strings")
     if _is_str_map(strings):

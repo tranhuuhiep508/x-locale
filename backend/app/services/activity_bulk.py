@@ -1,4 +1,4 @@
-"""Bounded, set-based writes used by batch undo (no ORM flush or audit listener)."""
+"""Bounded Core writes shared by import and undo; no ORM flush or audit listener."""
 
 import uuid
 from collections.abc import Iterator
@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import Table, cast, column, func, insert, select, update, values
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 MAX_ROWS = 1000
@@ -20,10 +21,21 @@ def _chunks(rows: list[dict[str, Any]]) -> Iterator[list[dict[str, Any]]]:
         yield rows[offset : offset + size]
 
 
-def insert_rows(db: Session, table: Table, rows: list[dict[str, Any]]) -> None:
+def insert_rows(
+    db: Session,
+    table: Table,
+    rows: list[dict[str, Any]],
+    *,
+    ignore_conflicts: bool = False,
+) -> None:
     for chunk in _chunks(rows):
         source = _row_source(table, chunk)
-        db.execute(insert(table).from_select(list(chunk[0]), select(source)))
+        statement = (pg_insert(table) if ignore_conflicts else insert(table)).from_select(
+            list(chunk[0]), select(source)
+        )
+        if ignore_conflicts:
+            statement = statement.on_conflict_do_nothing()
+        db.execute(statement)
 
 
 def _row_source(table: Table, rows: list[dict[str, Any]]):
