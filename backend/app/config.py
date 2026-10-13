@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     auth_dev_bypass: bool = False
     session_cookie_secure: bool = False
 
+    # Imports with more values, and undos with more activities, run as a background
+    # job when the client sends `Prefer: respond-async`.
+    import_async_threshold: int = 5000
+
     # Optional retention for append-only activity log (0 = keep forever)
     activity_retention_days: int = 90
 

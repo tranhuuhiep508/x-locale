@@ -2,25 +2,40 @@
 
 from __future__ import annotations
 
-import json
 import uuid
+from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.models import TranslationStatus
-from app.schemas import ImportPayload, ImportResult, SyncStateOut
+from app.models import Project, TranslationStatus
+from app.schemas import ImportPayload, ImportResult, JobAcceptedOut, SyncStateOut
 from app.services.import_lock import acquire_import_lock
+from app.services.imports import (
+    FileImportOptions,
+    import_file,
+    import_payload,
+    import_size,
+    parse_import_file,
+    payload_size,
+)
+from app.services.jobs import (
+    JobWork,
+    accepted_response,
+    run_job,
+    runs_async,
+    start_job,
+    wants_async,
+)
 from app.services.sync import (
     build_flat_export,
     build_modular_export,
     build_sync_state,
-    import_flat_strings,
-    import_json_data,
     load_export_entries,
     load_export_rows,
     normalize_export_stage,
@@ -140,10 +155,28 @@ def download_import_template(
     )
 
 
-@router.post("/import", response_model=ImportResult)
+def _import_job_work(
+    batch_id: uuid.UUID, dry_run: bool, run: Callable[[Session, Project], ImportResult]
+) -> JobWork:
+    def work(db: Session, project: Project) -> dict:
+        attach_batch(db, batch_id, "import")
+        result = run(db, project)
+        if dry_run:
+            db.rollback()
+        result.batch_id = batch_id
+        return result.model_dump(mode="json")
+
+    return work
+
+
+ASYNC_RESPONSES = {202: {"model": JobAcceptedOut, "description": "Import runs as a background job"}}
+
+
+@router.post("/import", response_model=ImportResult, responses=ASYNC_RESPONSES)
 def import_project(
     project: ProjectAccess,
     db: DbSession,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File()],
     dry_run: Annotated[bool, Query()] = False,
     status: Annotated[str, Query(pattern="^(draft|public)$")] = "draft",
@@ -151,60 +184,58 @@ def import_project(
     module_id: Annotated[uuid.UUID | None, Query()] = None,
     tag_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
     partial: Annotated[bool, Query()] = False,
-) -> ImportResult:
+    prefer: Annotated[str | None, Header()] = None,
+):
     acquire_import_lock(db, project.id)
     batch_id = uuid.uuid4()
-    attach_batch(db, batch_id, "import")
-    import_status = TranslationStatus(status)
+    options = FileImportOptions(
+        dry_run=dry_run,
+        status=TranslationStatus(status),
+        locale=locale,
+        module_id=module_id,
+        tag_ids=tag_ids,
+        partial=partial,
+    )
+    parsed = parse_import_file(file.file.read(), file.filename, file.content_type)
 
-    filename = (file.filename or "").lower()
-    raw = file.file.read()
-    if filename.endswith(".xlsx") or (file.content_type or "").endswith("spreadsheetml.sheet"):
-        from app.excel import import_workbook
-
-        db.info["activity"]["batch_kind"] = "excel_import"
-        try:
-            result = import_workbook(db, project, raw, dry_run=dry_run, status=import_status)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if not dry_run:
-            db.commit()
-        result.batch_id = batch_id
-        return result
-
-    if filename.endswith(".json") or (file.content_type or "").endswith("json") or not filename:
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid JSON file") from exc
-        result = import_json_data(
+    excel = parsed.excel is not None
+    if wants_async(prefer) and (excel or runs_async(prefer, import_size(parsed.data))):
+        job = start_job(
             db,
-            project,
-            data,
-            dry_run=dry_run,
-            locale=locale,
-            status=import_status,
-            module_id=module_id,
-            tag_ids=tag_ids,
-            report_orphans=False if partial else None,
-            partial=partial,
+            project.id,
+            "excel_import" if excel else "import",
+            {"batch_id": str(batch_id), "dry_run": dry_run},
         )
-        if not dry_run:
-            db.commit()
-        result.batch_id = batch_id
-        return result
+        background_tasks.add_task(
+            run_job,
+            job.id,
+            project.id,
+            _import_job_work(
+                batch_id,
+                dry_run,
+                lambda job_db, job_project: import_file(job_db, job_project, parsed, options),
+            ),
+        )
+        return accepted_response(job)
 
-    raise HTTPException(status_code=400, detail="Unsupported file type")
+    attach_batch(db, batch_id, "import")
+    result = import_file(db, project, parsed, options)
+    if not dry_run:
+        db.commit()
+    result.batch_id = batch_id
+    return result
 
 
-@router.post("/strings/import", response_model=ImportResult)
+@router.post("/strings/import", response_model=ImportResult, responses=ASYNC_RESPONSES)
 def import_strings_compat(
     payload: ImportPayload,
     project: ProjectAccess,
     db: DbSession,
+    background_tasks: BackgroundTasks,
     dry_run: Annotated[bool, Query()] = False,
     partial: Annotated[bool, Query()] = False,
-) -> ImportResult:
+    prefer: Annotated[str | None, Header()] = None,
+):
     """JSON-body import used by the CLI push command."""
     if payload.base_language is not None and payload.base_language != project.base_language:
         raise HTTPException(
@@ -220,29 +251,27 @@ def import_strings_compat(
             },
         )
     acquire_import_lock(db, project.id)
-    batch_id = uuid.uuid4()
-    attach_batch(db, batch_id, "import")
-    if payload.modules:
-        result = import_json_data(
-            db,
-            project,
-            {"modules": payload.modules},
-            dry_run=dry_run,
-            partial=partial,
-            reject_deleted=True,
-        )
-    elif payload.strings is not None:
-        result = import_flat_strings(
-            db,
-            project,
-            payload.strings,
-            dry_run=dry_run,
-            report_orphans=not partial,
-            partial=partial,
-            reject_deleted=True,
-        )
-    else:
+    if not payload.modules and payload.strings is None:
         raise HTTPException(status_code=400, detail="strings required")
+    batch_id = uuid.uuid4()
+    if runs_async(prefer, payload_size(payload)):
+        job = start_job(db, project.id, "import", {"batch_id": str(batch_id), "dry_run": dry_run})
+        background_tasks.add_task(
+            run_job,
+            job.id,
+            project.id,
+            _import_job_work(
+                batch_id,
+                dry_run,
+                lambda job_db, job_project: import_payload(
+                    job_db, job_project, payload, dry_run=dry_run, partial=partial
+                ),
+            ),
+        )
+        return accepted_response(job)
+
+    attach_batch(db, batch_id, "import")
+    result = import_payload(db, project, payload, dry_run=dry_run, partial=partial)
     if not dry_run:
         db.commit()
     result.batch_id = batch_id

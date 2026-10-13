@@ -78,6 +78,7 @@ from app.services.activity_state import (
 )
 from app.services.catalog import require_module_in_project
 from app.services.import_lock import acquire_import_lock
+from app.services.job_progress import report_progress
 from app.services.write_transactions import retryable_write_conflict, run_write
 
 FEED_CHILD_LIMIT = 50
@@ -1241,6 +1242,20 @@ def revert_activity(
     return activity
 
 
+def count_revertible_batch(db: Session, project_id: uuid.UUID, batch_id: uuid.UUID) -> int:
+    return (
+        db.query(func.count(Activity.id))
+        .filter(
+            Activity.project_id == project_id,
+            Activity.batch_id == batch_id,
+            Activity.is_revertible.is_(True),
+            Activity.reverted_by_id.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
+
 def revert_batch(
     db: Session,
     project: Project,
@@ -1277,8 +1292,10 @@ def revert_batch(
             [snapshot for a in activities for snapshot in (a.before, a.after)],
             lock_modules=True,
         )
+        report_progress(db, "planning", 0, len(activities))
         if all(activity.entity_type == EntityType.string for activity in activities):
             plan = _plan_batch_revert(db, activities, force=force, references=references)
+            report_progress(db, "writing", 0, len(activities))
             _persist_revert_plan(db, project_id, plan, existing=existing, batch_id=new_batch)
             db.expire_all()
             return {"reverted": len(activities), "batch_id": str(new_batch)}
