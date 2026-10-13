@@ -1,4 +1,4 @@
-"""Deterministic query budgets for the measured rich Undo workload."""
+"""Set-based query budgets and exact audit snapshots for batch Undo."""
 
 from collections import Counter
 
@@ -12,11 +12,12 @@ from app.services.activities import preview_revert_batch, revert_batch
 from benchmarks.undo import ACTOR, engine_for, seed, sql_counter, validate
 
 
-@pytest.mark.parametrize("size", [25, 100])
+@pytest.mark.parametrize("size", [100, 1000])
 @pytest.mark.parametrize("force", [False, True])
-def test_rich_undo_read_budget_preserves_exact_audit_snapshots(throwaway_database, size, force):
+@pytest.mark.parametrize("rich", [False, True])
+def test_undo_query_budget_preserves_exact_audit_snapshots(throwaway_database, size, force, rich):
     register_activity_listener()
-    project_id, batch, locales = seed(throwaway_database, size, True, force)
+    project_id, batch, locales = seed(throwaway_database, size, rich, force)
     engine = engine_for(throwaway_database)
     try:
         with Session(engine, autoflush=False) as db:
@@ -40,11 +41,12 @@ def test_rich_undo_read_budget_preserves_exact_audit_snapshots(throwaway_databas
                 assert revert_batch(db, project, batch, force=force)["reverted"] == size
             finally:
                 event.remove(engine, "before_cursor_execute", hook)
-            assert counter["string_full_loads"] <= 2 * size
-            assert counter["select"] <= 12 * size + 30
+            assert counter["statements"] <= 30, counter
+            assert counter["string_full_loads"] == 1
+            assert counter["executemany_calls"] == 0
             # Rich rows carry both module_id and published_module_id.
             # One preloaded SELECT covers every ref; a per-string lookup would be 2 * size.
-            assert counter["module_reads"] == 1
-        validate(engine, batch, size, True, locales, force)
+            assert counter["module_reads"] == int(rich)
+        validate(engine, batch, size, rich, locales, force)
     finally:
         engine.dispose()

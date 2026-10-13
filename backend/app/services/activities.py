@@ -5,11 +5,16 @@ from __future__ import annotations
 import re
 import uuid
 from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy import String, and_, case, cast, func, or_
+from sqlalchemy import String, and_, any_, bindparam, case, cast, delete, func, or_, update
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
 from app.helpers import require_locale_code, require_max_length, require_string_key
@@ -22,6 +27,7 @@ from app.models import (
     Module,
     Project,
     StringEntry,
+    StringTag,
     Tag,
     Translation,
     TranslationStatus,
@@ -42,6 +48,7 @@ from app.schemas import (
     RevertPreviewOut,
     RevertPreviewOutcomeCountsOut,
 )
+from app.services.activity_bulk import claim_rows, insert_rows, update_rows
 from app.services.activity_events import (
     EVENT_CREATED,
     EVENT_DELETED,
@@ -60,6 +67,8 @@ from app.services.activity_state import (
     InvalidSnapshot,
     SnapshotReferences,
     check_key_available,
+    is_key_integrity_error,
+    key_conflict,
     key_conflict_message,
     normalized_time,
     project_snapshot,
@@ -68,7 +77,7 @@ from app.services.activity_state import (
     validate_undo_timestamps,
 )
 from app.services.catalog import require_module_in_project
-from app.services.write_transactions import run_write
+from app.services.write_transactions import retryable_write_conflict, run_write
 
 FEED_CHILD_LIMIT = 50
 LIST_CHANGE_LIMIT = 5
@@ -954,15 +963,19 @@ def _string_ids_for_activities(activities: list[Activity]) -> set[uuid.UUID]:
     return ids
 
 
-def _load_string_entries(db: Session, string_ids: set[uuid.UUID]) -> dict[uuid.UUID, StringEntry]:
+def _load_string_entries(
+    db: Session, string_ids: set[uuid.UUID], *, refresh: bool = False
+) -> dict[uuid.UUID, StringEntry]:
     if not string_ids:
         return {}
-    rows = (
+    query = (
         db.query(StringEntry)
         .options(selectinload(StringEntry.translations), selectinload(StringEntry.tags))
         .filter(StringEntry.id.in_(string_ids))
-        .all()
     )
+    if refresh:
+        query = query.populate_existing()
+    rows = query.all()
     return {row.id: row for row in rows}
 
 
@@ -1031,24 +1044,45 @@ def _make_revert_marker(
 ) -> Activity:
     del db
     return Activity(
-        project_id=project_id,
-        actor_type=existing.get("actor_type", "user"),
-        actor_id=existing.get("actor_id"),
-        actor_label=existing.get("actor_label", "user"),
-        action=ActivityAction.update,
-        entity_type=activity.entity_type,
-        entity_id=activity.entity_id,
-        string_id=activity.string_id,
-        locale=activity.locale,
-        before=before,
-        after=after,
-        event_type="string.restored",
-        summary=_revert_summary(activity),
-        batch_id=batch_id,
-        batch_kind="revert",
-        revert_of_id=activity.id,
-        is_revertible=True,
+        **_revert_marker_values(
+            project_id=project_id,
+            activity=activity,
+            existing=existing,
+            batch_id=batch_id,
+            before=before,
+            after=after,
+        )
     )
+
+
+def _revert_marker_values(
+    *,
+    project_id: uuid.UUID,
+    activity: Activity,
+    existing: dict[str, Any],
+    batch_id: uuid.UUID,
+    before: dict | None,
+    after: dict | None,
+) -> dict[str, Any]:
+    return {
+        "project_id": project_id,
+        "actor_type": existing.get("actor_type", "user"),
+        "actor_id": existing.get("actor_id"),
+        "actor_label": existing.get("actor_label", "user"),
+        "action": ActivityAction.update,
+        "entity_type": activity.entity_type,
+        "entity_id": activity.entity_id,
+        "string_id": activity.string_id,
+        "locale": activity.locale,
+        "before": before,
+        "after": after,
+        "event_type": "string.restored",
+        "summary": _revert_summary(activity),
+        "batch_id": batch_id,
+        "batch_kind": "revert",
+        "revert_of_id": activity.id,
+        "is_revertible": True,
+    }
 
 
 def _apply_working_copy_only(
@@ -1240,6 +1274,11 @@ def revert_batch(
             [snapshot for a in activities for snapshot in (a.before, a.after)],
             lock_modules=True,
         )
+        if all(activity.entity_type == EntityType.string for activity in activities):
+            plan = _plan_batch_revert(db, activities, force=force, references=references)
+            _persist_revert_plan(db, project_id, plan, existing=existing, batch_id=new_batch)
+            db.expire_all()
+            return {"reverted": len(activities), "batch_id": str(new_batch)}
         for activity in activities:
             before, after = _execute_inverse(db, activity, force=force, references=references)
             marker = _make_revert_marker(
@@ -1258,6 +1297,301 @@ def revert_batch(
         return {"reverted": reverted, "batch_id": str(new_batch)}
 
     return run_write(db, project_id, "revert_batch", write, restore=True)
+
+
+@dataclass
+class _BatchRevertPlan:
+    entries: dict[uuid.UUID, StringEntry]
+    original_versions: Mapping[uuid.UUID, datetime]
+    states: dict[uuid.UUID, dict]
+    inverses: list[tuple[Activity, dict | None, dict]]
+    updated_at: dict[uuid.UUID, datetime]
+    changed_translations: set[tuple[uuid.UUID, str]]
+    reset_confidence: set[tuple[uuid.UUID, str]]
+
+
+def _resolved_revert_snapshot(target: dict, references: SnapshotReferences) -> dict:
+    """Project the actual persisted shape, including newly created locale rows."""
+    # Nested snapshot fields are rebuilt below; keep each inverse's outer mapping distinct.
+    target = dict(target)
+    target["id"] = str(uuid.UUID(target["id"]))
+    target["project_id"] = str(uuid.UUID(target["project_id"]))
+    target["key"] = require_string_key(target["key"])
+    target["status"] = TranslationStatus(target["status"]).value
+    target["published_key"] = require_max_length(
+        target.get("published_key"), field="published_key", limit=KEY_MAX_LENGTH
+    )
+    for name in ("module_id", "published_module_id"):
+        target[name] = references.module(target.get(name))
+    tags = references.tag_rows(target.get("tag_ids") or [])
+    target["tag_ids"] = [str(tag.id) for tag in tags]
+    target["tag_names"] = [tag.name for tag in tags]
+    working = translation_map(target.get("translations"))
+    published = translation_map(target.get("published_translations"), published=True)
+    for locale in working.keys() | published.keys():
+        require_locale_code(locale)
+        working.setdefault(locale, "")
+        published.setdefault(locale, None)
+    target["translations"], target["published_translations"] = working, published
+    for name in ("deleted_at", "published_at"):
+        parsed = normalized_time(target.get(name))
+        target[name] = parsed.isoformat() if parsed else None
+    target["pending_delete"] = bool(target.get("pending_delete"))
+    return target
+
+
+def _plan_batch_revert(
+    db: Session,
+    activities: list[Activity],
+    *,
+    force: bool,
+    references: SnapshotReferences,
+) -> _BatchRevertPlan:
+    entries = _load_string_entries(db, {uuid.UUID(a.entity_id) for a in activities}, refresh=True)
+    original_versions = MappingProxyType({sid: entry.updated_at for sid, entry in entries.items()})
+    states = {sid: _live_snapshot(entry) for sid, entry in entries.items()}
+    # Live references absent from the historical snapshots must also be resolved before writes.
+    references._load_modules(
+        {
+            mid
+            for entry in entries.values()
+            for mid in (entry.module_id, entry.published_module_id)
+            if mid
+        }
+    )
+    references._load_tags({tag.id for entry in entries.values() for tag in entry.tags})
+    candidate_keys = {state["key"] for state in states.values()}
+    candidate_keys.update(
+        snapshot["key"]
+        for activity in activities
+        for snapshot in (activity.before, activity.after)
+        if snapshot is not None and isinstance(snapshot.get("key"), str)
+    )
+    owners = (
+        dict(
+            db.query(StringEntry.key, StringEntry.id)
+            .filter(
+                StringEntry.project_id == references.project_id,
+                StringEntry.deleted_at.is_(None),
+                StringEntry.key
+                == any_(bindparam("undo_keys", sorted(candidate_keys), type_=ARRAY(String))),
+            )
+            .all()
+        )
+        if candidate_keys
+        else {}
+    )
+    plan = _BatchRevertPlan(
+        entries,
+        original_versions,
+        states,
+        [],
+        {},
+        set(),
+        set(),
+    )
+    for activity in activities:
+        validate_undo_timestamps(activity.id, activity.before, activity.after)
+        sid = uuid.UUID(activity.entity_id)
+        before = states.get(sid)
+        target = _revert_target(db, activity, before, references=references)
+        if target is None:
+            raise HTTPException(status_code=404, detail="String no longer exists")
+        owner = owners.get(target["key"])
+        if not target.get("deleted_at") and owner is not None and owner != sid:
+            raise key_conflict(target["key"])
+        if not force and not snapshots_match(before, activity.after):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Conflict on activity {activity.id}. Pass force=true to override.",
+            )
+        after = _resolved_revert_snapshot(target, references)
+        working = (before or {}).get("translations") or {}
+        published = (before or {}).get("published_translations") or {}
+        for locale, value in after["translations"].items():
+            if locale not in working or working[locale] != value:
+                plan.reset_confidence.add((sid, locale))
+                plan.changed_translations.add((sid, locale))
+            if (
+                locale not in published
+                or published[locale] != after["published_translations"][locale]
+            ):
+                plan.changed_translations.add((sid, locale))
+        if before and not before.get("deleted_at") and owners.get(before["key"]) == sid:
+            owners.pop(before["key"])
+        if not after.get("deleted_at"):
+            owners[after["key"]] = sid
+        states[sid] = after
+        plan.updated_at[sid] = datetime.now(UTC)
+        plan.inverses.append((activity, before, after))
+    return plan
+
+
+_REVERT_STRING_FIELDS = (
+    "key",
+    "source_text",
+    "description",
+    "status",
+    "module_id",
+    "published_key",
+    "published_module_id",
+    "published_source_text",
+    "published_at",
+    "pending_delete",
+    "deleted_at",
+)
+
+
+def _write_revert_content(db: Session, project_id: uuid.UUID, plan: _BatchRevertPlan) -> None:
+    from app.activity import _actor_from_session
+
+    actor_type, actor_id, actor_label, _, _ = _actor_from_session(db)
+    existing_rows, new_rows, released, changed_tags = [], [], [], []
+    translation_updates, translation_inserts, tag_inserts = [], [], []
+    for sid, now in plan.updated_at.items():
+        state, entry = plan.states[sid], plan.entries.get(sid)
+        row = {"id": sid, **{name: state.get(name) for name in _REVERT_STRING_FIELDS}}
+        for name in ("module_id", "published_module_id"):
+            row[name] = uuid.UUID(row[name]) if row[name] else None
+        for name in ("published_at", "deleted_at"):
+            row[name] = normalized_time(row[name])
+        row.update(
+            updated_at=now,
+            updated_by_type=actor_type,
+            updated_by_id=actor_id,
+            updated_by_label=actor_label,
+        )
+        if entry is not None:
+            existing_rows.append(row)
+            if entry.deleted_at is None and (
+                entry.key != row["key"] or row["deleted_at"] is not None
+            ):
+                released.append(sid)
+        else:
+            new_rows.append(
+                {
+                    **row,
+                    "project_id": project_id,
+                    "created_by_type": actor_type,
+                    "created_by_id": actor_id,
+                    "created_by_label": actor_label,
+                }
+            )
+        old_tags = {str(tag.id) for tag in entry.tags} if entry is not None else set()
+        if old_tags != set(state["tag_ids"]):
+            changed_tags.append(sid)
+            tag_inserts.extend(
+                {"string_id": sid, "tag_id": uuid.UUID(tid)} for tid in state["tag_ids"]
+            )
+        translations = {t.locale: t for t in entry.translations} if entry is not None else {}
+        for locale, value in state["translations"].items():
+            previous = translations.get(locale)
+            if previous is not None and (sid, locale) not in plan.changed_translations:
+                continue
+            translated = {
+                "id": previous.id if previous is not None else uuid.uuid4(),
+                "value": value,
+                "published_value": state["published_translations"][locale],
+                "confidence": None
+                if (sid, locale) in plan.reset_confidence or previous is None
+                else previous.confidence,
+            }
+            if previous is None:
+                translation_inserts.append({**translated, "string_id": sid, "locale": locale})
+            else:
+                translation_updates.append(translated)
+
+    # Release old live keys first; readers cannot see these transaction-local tombstones.
+    for offset in range(0, len(released), 1000):
+        db.execute(
+            update(StringEntry.__table__)
+            .where(StringEntry.id.in_(released[offset : offset + 1000]))
+            .values(deleted_at=func.now())
+        )
+    if update_rows(db, StringEntry.__table__, existing_rows) != len(existing_rows):
+        raise HTTPException(status_code=404, detail="String no longer exists")
+    insert_rows(db, StringEntry.__table__, new_rows)
+    update_rows(db, Translation.__table__, translation_updates)
+    insert_rows(db, Translation.__table__, translation_inserts)
+    for offset in range(0, len(changed_tags), 1000):
+        db.execute(
+            delete(StringTag.__table__).where(
+                StringTag.string_id.in_(changed_tags[offset : offset + 1000])
+            )
+        )
+    insert_rows(db, StringTag.__table__, tag_inserts)
+
+
+def _persist_revert_plan(
+    db: Session,
+    project_id: uuid.UUID,
+    plan: _BatchRevertPlan,
+    *,
+    existing: dict,
+    batch_id: uuid.UUID,
+) -> None:
+    try:
+        matched = claim_rows(
+            db,
+            StringEntry.__table__,
+            [
+                {"id": sid, "updated_at": version}
+                for sid, version in sorted(plan.original_versions.items())
+            ],
+        )
+        unmatched = plan.original_versions.keys() - matched
+        if unmatched:
+            remaining = {
+                sid
+                for (sid,) in db.query(StringEntry.id).filter(StringEntry.id.in_(unmatched)).all()
+            }
+            if remaining != unmatched:
+                raise HTTPException(status_code=404, detail="String no longer exists")
+            raise retryable_write_conflict("concurrent_modification")
+        _write_revert_content(db, project_id, plan)
+        markers, links = [], []
+        for activity, before, after in plan.inverses:
+            marker = _revert_marker_values(
+                project_id=project_id,
+                activity=activity,
+                existing=existing,
+                batch_id=batch_id,
+                before=before,
+                after=after,
+            )
+            marker.update(id=uuid.uuid4(), created_at=datetime.now(UTC))
+            markers.append(marker)
+            links.append({"id": activity.id, "reverted_by_id": marker["id"]})
+        insert_rows(db, Activity.__table__, markers)
+        update_rows(db, Activity.__table__, links)
+    except IntegrityError as error:
+        if not is_key_integrity_error(error):
+            raise
+        # The unique index is still authoritative when another writer wins after planning.
+        db.rollback()
+        db.expire_all()
+        targets = {
+            sid: state["key"] for sid, state in plan.states.items() if not state["deleted_at"]
+        }
+        owners = dict(
+            db.query(StringEntry.key, StringEntry.id)
+            .filter(
+                StringEntry.project_id == project_id,
+                StringEntry.deleted_at.is_(None),
+                StringEntry.key.in_(set(targets.values())),
+            )
+            .all()
+        )
+        for sid, key in targets.items():
+            owner = owners.get(key)
+            if owner is not None and owner != sid and targets.get(owner) == key:
+                raise key_conflict(key) from error
+            if owner is not None and owner != sid and owner not in plan.states:
+                raise key_conflict(key) from error
+        # A competing owner may have disappeared again before the diagnostic read.
+        detail = getattr(getattr(error.orig, "diag", None), "message_detail", "") or ""
+        key = next((key for key in targets.values() if f"=({project_id}, {key})" in detail), "")
+        raise key_conflict(key) from error
 
 
 def _load_activity_entry(db: Session, activity: Activity) -> StringEntry | None:

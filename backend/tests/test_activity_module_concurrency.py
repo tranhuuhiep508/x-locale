@@ -201,7 +201,7 @@ def test_delete_completed_before_preload_clears_historical_refs(client, session_
     ],
     indirect=["pg_schema"],
 )
-def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
+def test_real_fk_failure_after_bulk_write_retries_atomically(
     pg_schema, legacy_names, monkeypatch, no_retry_delay, column, persistent
 ):
     client, session_factory, _ = pg_schema
@@ -216,7 +216,7 @@ def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
             )
             db.commit()
     case = setup_batch(client, session_factory)
-    execute = activities._execute_inverse
+    persist = activities._persist_revert_plan
     calls, failures = [], []
     constraint = (
         "fk_strings_published_module_id_modules"
@@ -224,15 +224,15 @@ def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
         else f"strings_{column}_fkey"
     )
 
-    def fail_second_inverse(db, activity, *, force, references):
-        calls.append(force)
-        result = execute(db, activity, force=force, references=references)
-        if len(calls) == 2 or (persistent and len(calls) == 4):
-            # The first inverse and its marker already flushed in this attempt.
+    def fail_after_bulk_write(db, project_id, plan, **kwargs):
+        calls.append(True)
+        result = persist(db, project_id, plan, **kwargs)
+        if len(calls) == 1 or persistent:
+            # Content, markers and revert links already reached Postgres in this attempt.
             try:
                 db.execute(
                     text(f"UPDATE strings SET {column} = :missing WHERE id = :id"),
-                    {"missing": uuid.uuid4(), "id": uuid.UUID(activity.entity_id)},
+                    {"missing": uuid.uuid4(), "id": uuid.UUID(case["ids"][0])},
                 )
             except IntegrityError as error:
                 assert error.orig.sqlstate == "23503"
@@ -241,14 +241,15 @@ def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
                 raise
         return result
 
-    monkeypatch.setattr(activities, "_execute_inverse", fail_second_inverse)
+    monkeypatch.setattr(activities, "_persist_revert_plan", fail_after_bulk_write)
     response = undo_request(client, case)
     assert response.status_code == (409 if persistent else 200), response.text
     if persistent:
-        assert response.json()["detail"] == write_transactions.retryable_write_conflict(
-            "module_reference_conflict"
-        ).detail
-    assert calls == [True] * 4 and len(no_retry_delay) == 1
+        assert (
+            response.json()["detail"]
+            == write_transactions.retryable_write_conflict("module_reference_conflict").detail
+        )
+    assert calls == [True] * 2 and len(no_retry_delay) == 1
     assert failures == [constraint] * (2 if persistent else 1)
     with session_factory() as db:
         assert db.query(Activity).count() == case["baseline"] + (0 if persistent else 2)
@@ -258,7 +259,9 @@ def test_real_fk_failure_after_prior_inverse_flush_retries_atomically(
         else:
             assert all(activity.reverted_by_id for activity in originals)
             assert len({activity.reverted_by_id for activity in originals}) == 2
-        assert all(row.source_text == ("A2" if persistent else "A1") for row in db.query(StringEntry))
+        assert all(
+            row.source_text == ("A2" if persistent else "A1") for row in db.query(StringEntry)
+        )
 
 
 @pytest.mark.parametrize("operation", ["batch", "single", "version", "last_history", "delete"])
@@ -343,7 +346,8 @@ def test_retry_does_not_force_over_a_new_content_conflict(
     client, session_factory, monkeypatch, operation
 ):
     case = setup_batch(client, session_factory)
-    execute = activities._execute_inverse
+    name = "_plan_batch_revert" if operation == "batch" else "_execute_inverse"
+    execute = getattr(activities, name)
     calls = []
 
     def deadlock_once(db, activity, *, force, references):
@@ -357,7 +361,7 @@ def test_retry_does_not_force_over_a_new_content_conflict(
             db.get(StringEntry, uuid.UUID(case["ids"][0])).source_text = "A3"
             db.commit()
 
-    monkeypatch.setattr(activities, "_execute_inverse", deadlock_once)
+    monkeypatch.setattr(activities, name, deadlock_once)
     monkeypatch.setattr(write_transactions.time, "sleep", edit_during_backoff)
     response = undo_request(client, case, operation, force=False)
     assert response.status_code == 409, response.text
