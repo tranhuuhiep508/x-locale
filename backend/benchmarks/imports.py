@@ -16,7 +16,7 @@ from tests.pg import disposable_database, load_dotenv_defaults, validate_test_da
 
 load_dotenv_defaults()
 
-from fastapi import UploadFile  # noqa: E402
+from fastapi import BackgroundTasks, UploadFile  # noqa: E402
 from openpyxl import Workbook  # noqa: E402
 from sqlalchemy import create_engine, event, func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -102,12 +102,18 @@ def run_case(kind: str, *, size: int = 20000, trials: int = 3) -> dict:
                         try:
                             start = perf_counter()
                             if kind.startswith("cli"):
-                                result = import_strings_compat(data, project, db)
+                                result = import_strings_compat(
+                                    payload=data,
+                                    project=project,
+                                    db=db,
+                                    background_tasks=BackgroundTasks(),
+                                )
                             else:
                                 result = import_project(
-                                    project,
-                                    db,
-                                    UploadFile(
+                                    project=project,
+                                    db=db,
+                                    background_tasks=BackgroundTasks(),
+                                    file=UploadFile(
                                         file=io.BytesIO(data),
                                         filename="import.xlsx"
                                         if kind.startswith("xlsx")
