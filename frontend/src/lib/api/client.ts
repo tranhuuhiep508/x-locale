@@ -35,7 +35,7 @@ function buildUrl(path: string, params?: QueryParams): string {
   return qs ? `${url}?${qs}` : url
 }
 
-function errorMessage(errBody: unknown, statusText: string): string {
+export function errorMessage(errBody: unknown, statusText: string): string {
   const detail = (errBody as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string') return detail
   if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') {
@@ -57,11 +57,11 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 async function request<T>(
   method: string,
   path: string,
-  opts?: { body?: unknown; params?: QueryParams },
+  opts?: { body?: unknown; params?: QueryParams; headers?: Record<string, string> },
 ): Promise<T> {
   const url = buildUrl(path, opts?.params)
 
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...opts?.headers }
   let body: string | undefined
   if (opts?.body !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -88,8 +88,8 @@ export const api = {
   get: <T>(path: string, params?: QueryParams) =>
     request<T>('GET', path, { params }),
 
-  post: <T>(path: string, body?: unknown, params?: QueryParams) =>
-    request<T>('POST', path, { body, params }),
+  post: <T>(path: string, body?: unknown, params?: QueryParams, headers?: Record<string, string>) =>
+    request<T>('POST', path, { body, params, headers }),
 
   patch: <T>(path: string, body?: unknown) =>
     request<T>('PATCH', path, { body }),
@@ -100,11 +100,17 @@ export const api = {
   delete: <T>(path: string, body?: unknown) =>
     request<T>('DELETE', path, { body }),
 
-  upload: <T>(path: string, formData: FormData, params?: QueryParams): Promise<T> => {
+  upload: <T>(
+    path: string,
+    formData: FormData,
+    params?: QueryParams,
+    headers?: Record<string, string>,
+  ): Promise<T> => {
     const url = buildUrl(path, params)
     return fetch(url, {
       method: 'POST',
       credentials: 'include',
+      headers,
       body: formData,
     }).then(async (res) => {
       if (!res.ok) {

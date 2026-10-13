@@ -6,7 +6,11 @@ import {
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { isJobAccepted } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
+import { useJob } from '@/hooks/use-job'
+import { JobProgress } from '@/components/job-progress'
+import { importProgressLabel } from '@/lib/job-progress'
 import type { ImportResult, Module, Project, Tag } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -77,6 +81,7 @@ export function AddManyStringsDialog({
   const [step, setStep] = useState<'paste' | 'preview'>('paste')
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [pendingMap, setPendingMap] = useState<Record<string, string> | null>(null)
+  const [importJobId, setImportJobId] = useState<string | null>(null)
 
   const moduleOptions = [
     ...modules,
@@ -112,8 +117,33 @@ export function AddManyStringsDialog({
         })
       )
     },
+    onSuccess: (result) => {
+      if (isJobAccepted(result)) setImportJobId(result.job_id)
+      else showResult(result)
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
+
+  const importJob = useJob(importJobId, {
+    onCompleted: (job) => {
+      setImportJobId(null)
+      showResult(job.result as unknown as ImportResult)
+    },
+    onFailed: (error) => {
+      setImportJobId(null)
+      toast.error(error.message)
+    },
+  })
+
+  function showResult(result: ImportResult) {
+    if (result.dry_run) {
+      setPreview(result)
+      setStep('preview')
+      return
+    }
+    toast.success(`Added ${result.created} · updated ${result.updated}`)
+    onSuccess()
+  }
 
   function handlePreview() {
     const parsed = parseFlatI18nJson(text)
@@ -131,31 +161,15 @@ export function AddManyStringsDialog({
       setStep('preview')
       return
     }
-    importMut.mutate(
-      { map: parsed.map, dry: true },
-      {
-        onSuccess: (result) => {
-          setPreview(result)
-          setStep('preview')
-        },
-      }
-    )
+    importMut.mutate({ map: parsed.map, dry: true })
   }
 
   function handleApply() {
     if (!pendingMap || !hasImportWrites(preview)) return
-    importMut.mutate(
-      { map: pendingMap, dry: false },
-      {
-        onSuccess: (result) => {
-          toast.success(`Added ${result.created} · updated ${result.updated}`)
-          onSuccess()
-        },
-      }
-    )
+    importMut.mutate({ map: pendingMap, dry: false })
   }
 
-  const busy = importMut.isPending
+  const busy = importMut.isPending || importJobId !== null
   const applyDisabled = !hasImportWrites(preview)
 
   return (
@@ -310,6 +324,13 @@ export function AddManyStringsDialog({
           ) : (
             <ImportPreviewSummary result={preview} />
           )}
+          {importJobId ? (
+            <JobProgress
+              className="pt-4"
+              progress={importJob.data?.progress}
+              label={importProgressLabel(importJob.data?.progress)}
+            />
+          ) : null}
         </ReviewDialogBody>
 
         <ReviewDialogFooter>

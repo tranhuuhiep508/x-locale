@@ -1,10 +1,13 @@
 import { api } from '@/lib/api/client'
+import { RESPOND_ASYNC } from '@/lib/api/jobs'
 import { resolveTimeRange } from '@/lib/time-range'
 import { parseRestorePreview, parseRevertPreview } from './preview-contract'
 import type {
   ActivityDetail,
   ActivityFeedResponse,
   ActivityListResponse,
+  BatchRevertResult,
+  JobAccepted,
   RestoreVersionResult,
 } from '@/lib/api/types'
 
@@ -67,10 +70,11 @@ export const activitiesApi = {
       .get<unknown>(`/projects/${projectId}/activities/${activityId}/revert/preview`)
       .then(parseRevertPreview),
   revertBatch: (projectId: string, batchId: string, force = false) =>
-    api.post<{ reverted: number; batch_id: string }>(
+    api.post<BatchRevertResult | JobAccepted>(
       `/projects/${projectId}/activities/batch/${batchId}/revert`,
       undefined,
-      { force }
+      { force },
+      RESPOND_ASYNC
     ),
   revertBatchPreview: (projectId: string, batchId: string) =>
     api

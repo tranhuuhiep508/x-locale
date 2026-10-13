@@ -4,7 +4,16 @@ import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
-import type { ActivityChange, ActivityFeedCard, RevertPreview } from '@/lib/api/types'
+import { isJobAccepted } from '@/lib/api/jobs'
+import type {
+  ActivityChange,
+  ActivityFeedCard,
+  BatchRevertResult,
+  RevertPreview,
+} from '@/lib/api/types'
+import { useJob } from '@/hooks/use-job'
+import { JobProgress } from '@/components/job-progress'
+import { undoProgressLabel } from '@/lib/job-progress'
 import { queryKeys } from '@/lib/query-keys'
 import { activityFeedQuery, batchRevertPreviewQuery, projectQuery } from '@/lib/queries'
 import { ActivityCard } from '@/features/activity/ActivityCard'
@@ -131,6 +140,7 @@ export function ActivityPage() {
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [undoJobId, setUndoJobId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
   const { data, isLoading, isError, refetch } = useQuery(
@@ -161,22 +171,41 @@ export function ActivityPage() {
     setUndoTarget(null)
   }
 
+  function undoSucceeded(result: BatchRevertResult) {
+    toast.success(`Restored ${result.reverted} strings`)
+    qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
+    qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
+    closeUndo()
+  }
+
+  function undoFailed(e: unknown) {
+    if (e instanceof ApiError && e.status === 409) {
+      void undoPreviewQuery.refetch()
+    }
+    toast.error(e instanceof Error ? e.message : 'Undo failed')
+  }
+
   const undoMut = useMutation({
     mutationFn: ({ batchId, force }: { batchId: string; force: boolean }) =>
       activitiesApi.revertBatch(projectId, batchId, force),
     onSuccess: (result) => {
-      toast.success(`Restored ${result.reverted} strings`)
-      qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
-      qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
-      closeUndo()
+      if (isJobAccepted(result)) setUndoJobId(result.job_id)
+      else undoSucceeded(result)
     },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        void undoPreviewQuery.refetch()
-      }
-      toast.error(e instanceof Error ? e.message : 'Undo failed')
+    onError: undoFailed,
+  })
+
+  const undoJob = useJob(undoJobId, {
+    onCompleted: (job) => {
+      setUndoJobId(null)
+      undoSucceeded(job.result as unknown as BatchRevertResult)
+    },
+    onFailed: (error) => {
+      setUndoJobId(null)
+      undoFailed(error)
     },
   })
+  const undoBusy = undoMut.isPending || undoJobId !== null
 
   const items = useMemo(() => data?.items ?? [], [data?.items])
   const total = data?.total ?? 0
@@ -335,6 +364,12 @@ export function ActivityPage() {
                   ? undoDescription(undoTarget, undoPreview)
                   : ''}
             </p>
+            {undoJobId ? (
+              <JobProgress
+                progress={undoJob.data?.progress}
+                label={undoProgressLabel(undoJob.data?.progress)}
+              />
+            ) : null}
             {undoPreviewQuery.isError ? (
               <PreviewFailure
                 error={undoPreviewQuery.error}
@@ -349,7 +384,7 @@ export function ActivityPage() {
         }
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
-        isLoading={undoMut.isPending}
+        isLoading={undoBusy}
         confirmDisabled={
           undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
         }

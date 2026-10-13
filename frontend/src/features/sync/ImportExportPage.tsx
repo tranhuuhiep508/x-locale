@@ -7,8 +7,12 @@ import {
   FileText,
   Upload,
 } from 'lucide-react'
+import { isJobAccepted } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
+import { useJob } from '@/hooks/use-job'
+import { JobProgress } from '@/components/job-progress'
+import { importProgressLabel } from '@/lib/job-progress'
 import { modulesQuery, projectQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
@@ -84,6 +88,7 @@ export function ImportExportPage() {
   const [importModuleId, setImportModuleId] = useState('')
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [importJobId, setImportJobId] = useState<string | null>(null)
 
   const layout = exportLayout ?? project?.layout ?? 'flat'
   const targetLocale = importLocale ?? project?.base_language ?? 'en'
@@ -99,6 +104,21 @@ export function ImportExportPage() {
     return params
   }
 
+  function showImportResult(res: ImportResult) {
+    if (res.dry_run) {
+      setPreviewResult(res)
+      setShowPreview(true)
+      return
+    }
+    toast.success(`Import complete: ${res.created} created, ${res.updated} updated`)
+    setPreviewResult(null)
+    pendingFileRef.current = null
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
+  }
+
   const importMut = useMutation({
     mutationFn: async ({ file, dry }: { file: File; dry: boolean }) => {
       const fd = new FormData()
@@ -106,21 +126,23 @@ export function ImportExportPage() {
       return syncApi.importFile(projectId, fd, importParams(file, dry))
     },
     onSuccess: (res) => {
-      if (res.dry_run) {
-        setPreviewResult(res)
-        setShowPreview(true)
-        return
-      }
-      toast.success(`Import complete: ${res.created} created, ${res.updated} updated`)
-      setPreviewResult(null)
-      pendingFileRef.current = null
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
+      if (isJobAccepted(res)) setImportJobId(res.job_id)
+      else showImportResult(res)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
+
+  const importJob = useJob(importJobId, {
+    onCompleted: (job) => {
+      setImportJobId(null)
+      showImportResult(job.result as unknown as ImportResult)
+    },
+    onFailed: (error) => {
+      setImportJobId(null)
+      toast.error(error.message)
+    },
+  })
+  const importBusy = importMut.isPending || importJobId !== null
 
   const exportMut = useMutation({
     mutationFn: () =>
@@ -154,7 +176,7 @@ export function ImportExportPage() {
   })
 
   function importFile(file: File | undefined) {
-    if (!file || importMut.isPending) return
+    if (!file || importBusy) return
     if (!/\.(json|xlsx)$/i.test(file.name)) {
       toast.error('Choose a JSON (.json) or Excel (.xlsx) file')
       return
@@ -393,7 +415,7 @@ export function ImportExportPage() {
               type="file"
               accept=".json,.xlsx"
               className="hidden"
-              disabled={importMut.isPending}
+              disabled={importBusy}
               onChange={handleFileChange}
             />
 
@@ -403,7 +425,7 @@ export function ImportExportPage() {
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleFileDrop}
-              disabled={importMut.isPending}
+              disabled={importBusy}
               className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-50"
             >
               <Upload aria-hidden="true" className="size-6 text-muted-foreground mb-2" />
@@ -414,20 +436,26 @@ export function ImportExportPage() {
                 Maximum file size: 10 MB. Dotted keys are preserved.
               </span>
             </button>
+            {importJobId ? (
+              <JobProgress
+                progress={importJob.data?.progress}
+                label={importProgressLabel(importJob.data?.progress)}
+              />
+            ) : null}
           </CardContent>
           <CardFooter className="border-t border-border/50 bg-muted/20 pt-4">
             <Button
               variant="outline"
               onClick={() => fileRef.current?.click()}
-              disabled={importMut.isPending}
+              disabled={importBusy}
               className="w-full sm:w-auto"
             >
-              {importMut.isPending ? (
+              {importBusy ? (
                 <Spinner data-icon="inline-start" />
               ) : (
                 <Upload data-icon="inline-start" />
               )}
-              {importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
+              {importJobId ? 'Importing…' : importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
             </Button>
           </CardFooter>
         </Card>
@@ -503,7 +531,7 @@ export function ImportExportPage() {
       <ImportPreviewDialog
         open={showPreview}
         result={previewResult}
-        pending={importMut.isPending}
+        pending={importBusy}
         onCancel={() => setShowPreview(false)}
         onApply={confirmImport}
       />

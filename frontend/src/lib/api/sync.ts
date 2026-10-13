@@ -1,5 +1,6 @@
 import { api } from '@/lib/api/client'
-import type { ImportResult } from '@/lib/api/types'
+import { RESPOND_ASYNC } from '@/lib/api/jobs'
+import type { ImportResult, JobAccepted } from '@/lib/api/types'
 
 export type ExportParams = {
   format: 'json' | 'xlsx'
@@ -19,7 +20,12 @@ export type ImportFileParams = {
 
 export const syncApi = {
   importFile: (projectId: string, formData: FormData, params: ImportFileParams) =>
-    api.upload<ImportResult>(`/projects/${projectId}/import`, formData, params),
+    api.upload<ImportResult | JobAccepted>(
+      `/projects/${projectId}/import`,
+      formData,
+      params,
+      RESPOND_ASYNC,
+    ),
 
   exportFile: (projectId: string, params: ExportParams) =>
     api.download(`/projects/${projectId}/export`, params, `export.${params.format}`),
