@@ -7,8 +7,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from x_locale_cli.client import api_client, request_json
+from x_locale_cli.client import (
+    api_client,
+    is_job_accepted,
+    progress_label,
+    request_json,
+    wait_for_job,
+)
 from x_locale_cli.config import require_project_ref
+from x_locale_cli.console import console
 from x_locale_cli.errors import XLocaleError, XLocaleExit
 from x_locale_cli.io import (
     apply_pull_export,
@@ -166,6 +173,18 @@ def _exit_if_blocking(snapshot: StatusSnapshot) -> None:
         raise XLocaleExit(1)
 
 
+def _wait_for_push_job(http: Any, job_id: str) -> Any:
+    with console.status(f"Server is importing (job {job_id})...") as status:
+        return wait_for_job(
+            http,
+            job_id,
+            action="Push",
+            on_progress=lambda progress: status.update(
+                f"Server is importing (job {job_id}): {progress_label(progress)}"
+            ),
+        )
+
+
 def push_strings(
     config: Config,
     *,
@@ -285,6 +304,8 @@ def _push_strings(
                     params=params,
                     payload=payload,
                 )
+                if is_job_accepted(result):
+                    result = _wait_for_push_job(http, result["job_id"])
         except Exception as exc:
             if not dry_run:
                 maybe_clear_push_pending_after_failure(
