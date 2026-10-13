@@ -422,7 +422,7 @@ def import_rows(
                 translation.update(value=value, confidence=None)
                 dirty_translations[translation["id"]] = translation
                 mutated = True
-        if mutated or row.excel and tids:
+        if mutated:
             changed_ids.add(sid)
 
     # Publish the final working copy after all repeated rows have been applied.

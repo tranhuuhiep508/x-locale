@@ -22,7 +22,9 @@ for both new and existing strings, after all repeated rows have been processed.
 An already matching public snapshot produces no publication writes or activities.
 Excel descriptions that are absent, empty, or whitespace-only preserve existing
 text; nonblank descriptions replace it with trimmed text. Clear descriptions
-through the editor. Each JSON module must map locale codes to objects of string
+through the editor. Unchanged tagged Excel rows preserve update timestamps and
+last-editor metadata and produce no content writes or activities.
+Each JSON module must map locale codes to objects of string
 keys and values; malformed module or unassigned maps return HTTP 400 in preview
 and apply before any reference or content rows are created.
 

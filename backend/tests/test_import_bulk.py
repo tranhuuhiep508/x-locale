@@ -143,6 +143,72 @@ def test_import_sql_grows_by_chunks_and_no_change_writes_nothing(client, databas
     assert not content_writes(calls)
 
 
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+@pytest.mark.parametrize("status", ["draft", "public"])
+def test_unchanged_tagged_excel_preserves_metadata_and_writes_nothing(
+    client, session_factory, database_engine, layout, status
+):
+    project = make_project(client, layout=layout)
+    root = f"/api/projects/{project['id']}"
+    module_id = None
+    if layout == "modular":
+        module_id = client.post(
+            f"{root}/modules", json={"slug": "stable", "name": "Stable"}
+        ).json()["id"]
+    tag = client.post(f"{root}/tags", json={"name": "stable"}).json()
+    created = client.post(
+        f"{root}/strings",
+        json={
+            "key": "same",
+            "source_text": "Same",
+            "description": "Context",
+            "module_id": module_id,
+            "tag_ids": [tag["id"]],
+            "translations": {"en": "English"},
+        },
+    ).json()
+    if status == "public":
+        publish_strings(client, project["id"], [created["id"]])
+    key = client.post(f"{root}/api-keys", json={"name": "Spreadsheet importer"}).json()["key"]
+    exported = client.get(f"{root}/export", params={"format": "xlsx", "stage": status})
+    assert exported.status_code == 200, exported.text
+    with session_factory() as db:
+        before = dict(
+            db.execute(
+                select(StringEntry.__table__).where(StringEntry.id == uuid.UUID(created["id"]))
+            )
+            .mappings()
+            .one()
+        )
+    with sql_calls(database_engine) as calls:
+        imported = client.post(
+            f"{root}/import",
+            params={"status": status},
+            headers={"X-API-Key": key},
+            files={"file": ("same.xlsx", exported.content)},
+        )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["created"] == imported.json()["updated"] == 0
+    assert not content_writes(calls)
+    with session_factory() as db:
+        after = dict(
+            db.execute(
+                select(StringEntry.__table__).where(StringEntry.id == uuid.UUID(created["id"]))
+            )
+            .mappings()
+            .one()
+        )
+        assert after == before
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Activity)
+                .where(Activity.batch_id == uuid.UUID(imported.json()["batch_id"]))
+            )
+            == 0
+        )
+
+
 def test_repeated_excel_rows_create_one_final_event_and_undo_exactly(client, session_factory):
     project = make_project(client, layout="flat")
     root = f"/api/projects/{project['id']}"
