@@ -171,6 +171,13 @@ checks current server metadata, including dry-run and an empty delta. The
 configured base language must match the project; refresh stale config with
 `loc init`.
 
+Large pushes (more than the server's `IMPORT_ASYNC_THRESHOLD`, 5000 keys by
+default) run as a background job on the server. Push waits for the job, showing
+its progress, and updates the push index only after the job completes. A failed
+job prints the server's error and leaves the index unchanged. Push gives up
+waiting after `X_LOCALE_JOB_TIMEOUT` seconds (default 1800); the job may still
+finish, and the next push sends the full catalog.
+
 A push that creates or updates strings prints one absolute review link when a
 web origin can be resolved:
 

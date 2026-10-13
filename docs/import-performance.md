@@ -84,5 +84,34 @@ and sheet/row context for Excel. Values are never stripped. This delivers the
 import-side checks from XLOCALE-49; its generic psycopg error safety net remains
 separate. Other control characters retain their previous handling.
 
-Background import jobs and polling remain XLOCALE-54. Ordinary edits and history
-restores remain outside the import lock.
+Ordinary edits and history restores remain outside the import lock.
+
+## Background jobs (XLOCALE-54)
+
+A request that sends `Prefer: respond-async` runs as a background job when it is
+larger than `IMPORT_ASYNC_THRESHOLD` (default 5000):
+
+- JSON file and CLI push imports count string values in the payload.
+- Excel imports always run as a job, since rows are only known after parsing.
+- Batch undo counts the batch's revertible activities.
+- Dry runs follow the same rule.
+
+The response is `202 {job_id, status: "running", kind}` with a `Location` header.
+The job row is committed as `running` before the response, so the first
+`GET /api/jobs/{id}` sees it. Progress phases are `queued`, `parsing`,
+`validating`, `writing` (with `chunks_done`/`chunks_total`), and `done`; undo uses
+`planning` and `writing`.
+
+The import advisory lock stays the only one-import-per-project guard. The request
+takes it to reject a busy project with 409, then releases it when it commits the
+job row; the worker waits for the same lock and holds it until its single import
+transaction ends. Completion is written in that transaction, so a committed import
+never reads as running. A failure rolls everything back and records `failed`
+with the error. If the worker process dies, Postgres releases the lock, so the
+project is not blocked; the job row just stays `running`.
+
+Requests without the header keep the synchronous 200 response. Older CLIs do not
+send it, so they never mistake a 202 for a finished push. The UI and current CLI
+always send it. `loc push` polls the job (1 s backing off to 3 s, up to
+`X_LOCALE_JOB_TIMEOUT` seconds, default 1800) and updates its push index only when
+the job completes.
