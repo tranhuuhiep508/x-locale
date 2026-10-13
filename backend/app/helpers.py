@@ -85,6 +85,15 @@ def ensure_max_length(value: str, *, field: str, limit: int) -> str:
     return value
 
 
+def reject_nul(value: str | None, *, field: str, key: str | None = None, context: str = "") -> None:
+    if value is not None and "\x00" in value:
+        item = f" for key {key_preview(key)}" if key is not None else ""
+        raise HTTPException(
+            status_code=400,
+            detail=f"{context}{field}{item} contains a NUL (\\u0000) character",
+        )
+
+
 def slugify(name: str) -> str:
     s = name.lower().strip()
     s = re.sub(r"[^a-z0-9]+", "-", s)

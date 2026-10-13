@@ -186,27 +186,29 @@ def test_target_only_upload_retains_source_fallback(client):
 
 
 @pytest.mark.parametrize("layout", ["flat", "modular"])
-def test_partial_cli_import_loads_only_submitted_keys(client, monkeypatch, layout):
-    from app.services import sync as sync_service
+def test_partial_cli_import_loads_only_submitted_keys(client, database_engine, layout):
+    from sqlalchemy import event
 
     project = make_project(client, "Bounded Push", layout=layout)
     pid = project["id"]
     initial = {f"key{i}": "Before" for i in range(25)}
     body = {"strings": initial} if layout == "flat" else {"modules": {"auth": {"vi": initial}}}
     assert client.post(f"/api/projects/{pid}/strings/import", json=body).status_code == 200
-    original = sync_service._load_import_index_entries
     loaded = []
 
-    def tracked(db, project_id, keys=None):
-        loaded.append(keys)
-        return original(db, project_id, keys)
+    def tracked(_conn, _cursor, _statement, parameters, _context, _many):
+        if "import_keys" in parameters:
+            loaded.append(parameters["import_keys"])
 
-    monkeypatch.setattr(sync_service, "_load_import_index_entries", tracked)
     values = {"key1": "After"}
     body = {"strings": values} if layout == "flat" else {"modules": {"auth": {"vi": values}}}
-    response = client.post(
-        f"/api/projects/{pid}/strings/import", params={"partial": True}, json=body
-    )
+    event.listen(database_engine, "before_cursor_execute", tracked)
+    try:
+        response = client.post(
+            f"/api/projects/{pid}/strings/import", params={"partial": True}, json=body
+        )
+    finally:
+        event.remove(database_engine, "before_cursor_execute", tracked)
     assert response.status_code == 200, response.text
-    assert loaded == [["key1"]]
+    assert loaded == [["key1"]] * 3  # Strings, translations, and tag links.
     assert response.json()["diff"]["orphan_count"] == 0

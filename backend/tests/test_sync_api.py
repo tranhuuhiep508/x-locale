@@ -216,27 +216,30 @@ def test_strings_import_partial_modular_one_key(client):
         ({"modules": {"auth": {"vi": {"key": "value"}}}}, {"partial": True, "dry_run": True}),
     ],
 )
-def test_file_import_partial_loads_only_payload_keys(client, monkeypatch, payload, params):
-    from app.services import sync as sync_service
+def test_file_import_partial_loads_only_payload_keys(client, database_engine, payload, params):
+    from sqlalchemy import event
 
     project = _make_project(client, "Partial Load Spy")
     pid = project["id"]
-    captured: list[list[str] | None] = []
-    original = sync_service._load_import_index_entries
+    captured = []
 
-    def spy(db, project_id, keys=None):
-        captured.append(keys)
-        return original(db, project_id, keys)
+    def observe(_conn, _cursor, statement, parameters, _context, _many):
+        if "import_keys" in parameters:
+            captured.append((statement, parameters["import_keys"]))
 
-    monkeypatch.setattr(sync_service, "_load_import_index_entries", spy)
-    r = client.post(
-        f"/api/projects/{pid}/import",
-        files=_json_upload(payload),
-        params=params,
-    )
+    event.listen(database_engine, "before_cursor_execute", observe)
+    try:
+        r = client.post(
+            f"/api/projects/{pid}/import",
+            files=_json_upload(payload),
+            params=params,
+        )
+    finally:
+        event.remove(database_engine, "before_cursor_execute", observe)
     assert r.status_code == 200, r.text
     assert captured
-    assert captured[-1] == ["key"]
+    assert all(keys == ["key"] for _, keys in captured)
+    assert len(captured) == 3  # Strings, translations, and tag links share the key scope.
 
 
 def test_edit_public_string_keeps_published_export(client):
