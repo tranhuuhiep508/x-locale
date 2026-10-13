@@ -1,0 +1,32 @@
+# shortcut: lints the working copy of staged paths, not the index; use lint-staged if partial staging matters.
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+status=0
+
+backend_files=$(printf '%s\n' "$staged" | grep '^backend/.*\.py$' || true)
+if [ -n "$backend_files" ]; then
+  set --
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    set -- "$@" "${file#backend/}"
+  done <<EOF
+$backend_files
+EOF
+  echo "husky: ruff check backend"
+  (cd backend && uv run ruff check --force-exclude "$@") || status=$?
+fi
+
+frontend_files=$(printf '%s\n' "$staged" | grep -E '^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$' || true)
+if [ -n "$frontend_files" ]; then
+  set --
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    set -- "$@" "${file#frontend/}"
+  done <<EOF
+$frontend_files
+EOF
+  echo "husky: eslint frontend"
+  (cd frontend && npm exec -- eslint "$@") || status=$?
+fi
+
+exit "$status"

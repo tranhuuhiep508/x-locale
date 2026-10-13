@@ -41,6 +41,7 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 ### Lint / test / build
 
 - Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`). Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.
+- Git hooks: `npm install` at the repo root (`prepare` runs Husky). `pre-commit` lints staged backend Python with Ruff and staged frontend JS/TS with ESLint. `HUSKY=0` skips the hooks.
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
 - CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running Postgres server).
 - E2E: `npm run e2e` (Playwright; one Postgres database per run, ports `:8001` / `:5174`, one worker; does not reuse local `:8000` / `:5173`).

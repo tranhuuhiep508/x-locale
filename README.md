@@ -225,6 +225,10 @@ produce an empty queue when no other target locale is missing.
 
 ## Development
 
+Git hooks are installed from the repo root. `npm install` there runs Husky's `prepare` script and points this clone at `.husky/`.
+
+`pre-commit` runs Ruff on staged `backend/**/*.py` and ESLint on staged frontend JS/TS. `HUSKY=0 git commit` skips the hooks.
+
 Import performance and compatibility: [docs/import-performance.md](docs/import-performance.md).
 
 ```bash
