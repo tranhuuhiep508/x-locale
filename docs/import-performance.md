@@ -64,9 +64,11 @@ measured by a manual run on a known machine.
 `--check` (run in CI) gates on statement counts, which do not vary with runner
 speed: at most 100 for a fresh import, 10 unchanged, and 15 for 10% changed. A
 per-row query regression adds thousands of statements at 20k keys, so it fails
-the gate on any machine. Shared CI runners vary about 2x in speed, so `--check`
-only fails timing at twice the targets (12 s fresh, 4 s reimports) to catch
-large slowdowns without failing on runner noise.
+the gate on any machine. Recent CI medians are about 7.6 s fresh and 2.4 s for
+a 10% Excel reimport (an earlier run was 5.66 s and 1.80 s, only 6–10% under
+the 6 s / 2 s targets). `--check` fails timing at three times those targets
+(18 s fresh, 6 s reimports), about 2.5× the measured CI time. The pre-rewrite
+path took 20–45 s, so a real regression still fails.
 
 Observed local medians on PostgreSQL 16 (seconds):
 
