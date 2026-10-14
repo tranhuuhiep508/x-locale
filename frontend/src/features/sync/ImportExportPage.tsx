@@ -452,6 +452,8 @@ export function ImportExportPage() {
             {trackedJobId ? (
               <JobProgress
                 progress={importJob.data?.progress}
+                error={importJob.isError ? importJob.error : undefined}
+                onRetry={() => { void importJob.refetch() }}
                 label={importProgressLabel(importJob.data?.progress)}
               />
             ) : null}

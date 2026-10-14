@@ -126,3 +126,8 @@ send it, so they never mistake a 202 for a finished push. The UI and current CLI
 always send it. `loc push` polls the job (1 s backing off to 3 s, up to
 `X_LOCALE_JOB_TIMEOUT` seconds, default 1800) and updates its push index only when
 the job completes.
+
+Polling errors leave the job id saved in the tab. The UI offers **Retry status**
+and allows closing an import or undo dialog while the result is unknown. It
+clears the saved job only after a completed or failed job response; retrying
+status never submits the import or undo again.

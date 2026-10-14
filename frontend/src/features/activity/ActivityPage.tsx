@@ -377,6 +377,8 @@ export function ActivityPage() {
             {undoJobId ? (
               <JobProgress
                 progress={undoJob.data?.progress}
+                error={undoJob.isError ? undoJob.error : undefined}
+                onRetry={() => { void undoJob.refetch() }}
                 label={undoProgressLabel(undoJob.data?.progress)}
               />
             ) : null}
@@ -394,9 +396,9 @@ export function ActivityPage() {
         }
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
-        isLoading={undoBusy}
+        isLoading={undoBusy && !undoJob.isError}
         confirmDisabled={
-          undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
+          undoBusy || undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
         }
         contentClassName="sm:max-w-lg"
       />

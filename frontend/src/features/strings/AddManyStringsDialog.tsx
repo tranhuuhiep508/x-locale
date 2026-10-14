@@ -190,7 +190,7 @@ export function AddManyStringsDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && !busy) onClose()
+        if (!next && (!busy || importJob.isError)) onClose()
       }}
     >
       <ReviewDialogContent
@@ -342,6 +342,8 @@ export function AddManyStringsDialog({
             <JobProgress
               className="pt-4"
               progress={importJob.data?.progress}
+              error={importJob.isError ? importJob.error : undefined}
+              onRetry={() => { void importJob.refetch() }}
               label={importProgressLabel(importJob.data?.progress)}
             />
           ) : null}
@@ -350,7 +352,7 @@ export function AddManyStringsDialog({
         <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
-              <Button variant="outline" onClick={onClose} disabled={busy}>
+              <Button variant="outline" onClick={onClose} disabled={busy && !importJob.isError}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>

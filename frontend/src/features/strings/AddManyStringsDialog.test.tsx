@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { clearActiveJob } from '@/lib/active-job'
+import { clearActiveJob, getActiveJob } from '@/lib/active-job'
 import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
@@ -202,29 +202,62 @@ describe('AddManyStringsDialog', () => {
     expect(screen.queryByText('New strings')).toBeNull()
   })
 
-  it('re-enables the form when the job poll fails', async () => {
-    renderDialog()
+  it.each([404, 503])('keeps the job after a %s poll error and retries status', async (status) => {
+    const { onClose } = renderDialog()
     vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      job_id: 'job-404',
-      status: 'running',
-      kind: 'import',
+      job_id: 'job-retry', status: 'running', kind: 'import',
     })
-    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(404, 'Job not found'))
+    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(status, 'Could not check job'))
 
     fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
 
-    await waitFor(() => {
-      expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(
-        false,
-      )
-    })
-    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    )
+    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(getActiveJob()?.jobId).toBe('job-retry')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(getActiveJob()?.jobId).toBe('job-retry')
     const calls = vi.mocked(jobsApi.get).mock.calls.length
     await new Promise((resolve) => setTimeout(resolve, 1200))
     expect(vi.mocked(jobsApi.get).mock.calls.length).toBe(calls)
+
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'job-retry', kind: 'import', status: 'completed',
+      result: dryResult as unknown as Record<string, unknown>, error: null,
+      created_at: null, completed_at: null, progress: null,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    expect(getActiveJob()).toBeNull()
+    expect(syncApi.importFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('can close an applied import after a poll error without submitting it twice', async () => {
+    const { onSuccess, onClose } = renderDialog()
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce({
+      job_id: 'job-apply-retry', status: 'running', kind: 'import',
+    })
+    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(503, 'Could not check job'))
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Apply/ }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(getActiveJob()?.jobId).toBe('job-apply-retry')
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'job-apply-retry', kind: 'import', status: 'completed',
+      result: applyResult as unknown as Record<string, unknown>, error: null,
+      created_at: null, completed_at: null, progress: null,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(getActiveJob()).toBeNull()
+    expect(syncApi.importFile).toHaveBeenCalledTimes(2)
   })
 
   it('rejects invalid JSON without calling import', async () => {
@@ -250,7 +283,7 @@ describe('AddManyStringsDialog', () => {
     fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     expect(await screen.findByText('New strings')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /Apply/ }) as HTMLButtonElement).disabled).toBe(true)
     expect(syncApi.importFile).not.toHaveBeenCalled()
   })
 

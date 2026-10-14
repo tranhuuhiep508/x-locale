@@ -130,32 +130,37 @@ def launch_job(
         daemon=True,
     )
     holder.start()
-    deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
-    while time.monotonic() < deadline and not import_lock.import_lock_waiting(db, project_id):
-        time.sleep(0.01)
-    job = start_job(db, project_id, kind, meta)
-    if not held.wait(_HANDOFF_TIMEOUT_S):
-        logger.warning("Job %s session lock was not granted", job.id)
-    threading.Thread(
-        target=run_job,
-        args=(job.id, project_id, work),
-        name=f"job-{job.id}",
-        daemon=True,
-    ).start()
-    deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
-    worker_waiting = False
-    while time.monotonic() < deadline:
-        if import_lock.import_lock_waiting(db, project_id):
-            worker_waiting = True
-            break
-        time.sleep(0.01)
-    if not worker_waiting:
-        # shortcut: the overwrite gap returns if the worker never queues. A job
-        # queue should own this lock instead of a handoff thread.
-        logger.warning("Job %s did not reach the import lock; releasing the handoff", job.id)
-    release_holder.set()
-    holder.join(_HANDOFF_TIMEOUT_S)
-    return job
+    try:
+        deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
+        while time.monotonic() < deadline and not import_lock.import_lock_waiting(db, project_id):
+            time.sleep(0.01)
+        job = start_job(db, project_id, kind, meta)
+        if not held.wait(_HANDOFF_TIMEOUT_S):
+            logger.warning("Job %s session lock was not granted", job.id)
+        threading.Thread(
+            target=run_job,
+            args=(job.id, project_id, work),
+            name=f"job-{job.id}",
+            daemon=True,
+        ).start()
+        deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
+        worker_waiting = False
+        while time.monotonic() < deadline:
+            if import_lock.import_lock_waiting(db, project_id):
+                worker_waiting = True
+                break
+            time.sleep(0.01)
+        if not worker_waiting:
+            # shortcut: the overwrite gap returns if the worker never queues. A job
+            # queue should own this lock instead of a handoff thread.
+            logger.warning("Job %s did not reach the import lock; releasing the handoff", job.id)
+        return job
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        release_holder.set()
+        holder.join(_HANDOFF_TIMEOUT_S)
 
 
 def accepted_response(job: Job) -> JSONResponse:

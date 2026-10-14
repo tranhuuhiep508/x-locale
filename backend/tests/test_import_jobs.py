@@ -304,6 +304,44 @@ def test_second_import_during_handoff_is_rejected(
     assert source == "Imported"
 
 
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_job_start_failure_releases_handoff_lock(
+    client, project, small_threshold, monkeypatch, after_commit
+):
+    finished = Event()
+    captured = {}
+    original_hold = jobs._hold_session_lock
+    original_start = jobs.start_job
+
+    def hold(project_id, held, release):
+        captured["release"] = release
+        try:
+            original_hold(project_id, held, release)
+        finally:
+            finished.set()
+
+    def fail_start(*args, **kwargs):
+        if after_commit:
+            original_start(*args, **kwargs)
+        raise HTTPException(503, "Job creation failed")
+
+    monkeypatch.setattr(jobs, "_hold_session_lock", hold)
+    monkeypatch.setattr(jobs, "start_job", fail_start)
+    try:
+        path, kwargs = async_request(project, "cli")
+        response = client.post(path, **kwargs)
+        assert response.status_code == 503, response.text
+        assert finished.wait(2), "Failed startup left the handoff thread waiting"
+        path, kwargs = import_request(project, "cli")
+        response = client.post(path, **kwargs)
+        assert response.status_code == 200, response.text
+    finally:
+        # Also clean up when this regression test runs against the old code.
+        if "release" in captured:
+            captured["release"].set()
+        assert finished.wait(5)
+
+
 def test_undo_completion_failure_rolls_back(
     client, project, session_factory, small_threshold, monkeypatch
 ):
