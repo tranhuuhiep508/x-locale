@@ -15,7 +15,6 @@ from pydantic import ValidationError
 
 from app.ai import (
     BATCH_SIZE,
-    MAX_TOKENS,
     TOOL_NAME,
     TranslatedCell,
     TranslateItem,
@@ -142,7 +141,7 @@ def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
     assert kwargs["toolConfig"]["toolChoice"] == (
         {"tool": {"name": TOOL_NAME}} if tool_choice == "tool" else {"auto": {}}
     )
-    assert kwargs["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+    assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
     assert "outputConfig" not in kwargs
     assert "additionalModelRequestFields" not in kwargs
     prompt = kwargs["messages"][0]["content"][0]["text"]
@@ -160,6 +159,15 @@ def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
         "properties"
     ]
     assert "confidence" in cell_props
+
+
+def test_configured_max_tokens_reaches_bedrock_call(converse, monkeypatch):
+    monkeypatch.setattr(settings, "bedrock_max_tokens", 8000)
+    converse.return_value = fake_converse_body(
+        [{"id": "s1", "translations": [{"locale": "en", "text": "Save"}]}]
+    )
+    translate_batch("vi", [TranslateItem(id="s1", source_text="Lưu", locales=("en",))])
+    assert converse.call_args.kwargs["inferenceConfig"] == {"maxTokens": 8000}
 
 
 def test_translate_batch_prompt_treats_description_as_override(converse):
@@ -227,7 +235,7 @@ def test_json_schema_output_and_default_reasoning(converse, monkeypatch, model_i
     }
     kwargs = converse.call_args.kwargs
     assert kwargs["modelId"] == model_id
-    assert kwargs["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+    assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
     assert "toolConfig" not in kwargs
     assert kwargs.get("additionalModelRequestFields", {}) == (
         {"text": {"format": {"strict": True}}} if strict else {}
@@ -465,7 +473,7 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
         }
         assert len(sent_requests) == 1
         request_body = json.loads(sent_requests[0].body)
-        assert request_body["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+        assert request_body["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
         assert ("toolConfig" in request_body) == (mode == "tool")
         if mode == "tool":
             assert request_body["toolConfig"]["toolChoice"] == {"tool": {"name": TOOL_NAME}}
