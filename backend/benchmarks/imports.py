@@ -16,7 +16,7 @@ from tests.pg import disposable_database, load_dotenv_defaults, validate_test_da
 
 load_dotenv_defaults()
 
-from fastapi import UploadFile  # noqa: E402
+from fastapi import BackgroundTasks, UploadFile  # noqa: E402
 from openpyxl import Workbook  # noqa: E402
 from sqlalchemy import create_engine, event, func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -28,6 +28,13 @@ from app.schemas import ImportPayload  # noqa: E402
 
 FORMATS = ("json-flat", "json-modular", "cli-flat", "cli-modular", "xlsx-flat", "xlsx-modular")
 LIMITS = {"fresh": 6.0, "unchanged": 2.0, "changed_10_percent": 2.0}
+# Statement counts do not vary with runner speed, so --check gates on them.
+# Today: 86 flat / 88 modular fresh, 6 unchanged, 10 changed. A per-row query
+# regression adds thousands of statements at 20k keys.
+STATEMENT_BUDGETS = {"fresh": 100, "unchanged": 10, "changed_10_percent": 15}
+# Shared CI runners vary about 2x, so the time gate only catches large slowdowns.
+# LIMITS stay the targets for manual runs on a known machine.
+CI_TIME_FACTOR = 2.0
 
 
 def payload(kind: str, size: int, changed: bool):
@@ -102,12 +109,18 @@ def run_case(kind: str, *, size: int = 20000, trials: int = 3) -> dict:
                         try:
                             start = perf_counter()
                             if kind.startswith("cli"):
-                                result = import_strings_compat(data, project, db)
+                                result = import_strings_compat(
+                                    payload=data,
+                                    project=project,
+                                    db=db,
+                                    background_tasks=BackgroundTasks(),
+                                )
                             else:
                                 result = import_project(
-                                    project,
-                                    db,
-                                    UploadFile(
+                                    project=project,
+                                    db=db,
+                                    background_tasks=BackgroundTasks(),
+                                    file=UploadFile(
                                         file=io.BytesIO(data),
                                         filename="import.xlsx"
                                         if kind.startswith("xlsx")
@@ -158,8 +171,19 @@ def main():
         result = run_case(kind, size=args.size, trials=args.trials)
         print(json.dumps(result), flush=True)
         if args.check:
-            for name, limit in LIMITS.items():
-                assert result["scenarios"][name]["median_seconds"] < limit, (kind, name, result)
+            check(kind, result)
+
+
+def check(kind: str, result: dict) -> None:
+    failures = []
+    for name, scenario in result["scenarios"].items():
+        worst = max(scenario["sql_statements"])
+        if worst > STATEMENT_BUDGETS[name]:
+            failures.append(f"{name}: {worst} statements > budget {STATEMENT_BUDGETS[name]}")
+        ceiling = LIMITS[name] * CI_TIME_FACTOR
+        if scenario["median_seconds"] >= ceiling:
+            failures.append(f"{name}: median {scenario['median_seconds']:.2f}s >= {ceiling:.1f}s")
+    assert not failures, (kind, failures)
 
 
 if __name__ == "__main__":

@@ -340,6 +340,18 @@ export interface Job {
   progress: TranslateJobProgress | null
 }
 
+export interface BatchRevertResult {
+  reverted: number
+  batch_id: string
+}
+
+/** 202 body when a large import or undo runs as a background job. */
+export interface JobAccepted {
+  job_id: string
+  status: JobStatus
+  kind: string
+}
+
 // ── Activities ─────────────────────────────────────────────────────────
 export type ActivityChangeScope = 'draft' | 'published'
 export type ActivityChangeKind = 'field' | 'translation' | 'tags'

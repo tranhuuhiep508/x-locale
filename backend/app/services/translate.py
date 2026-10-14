@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.orm.attributes import flag_modified
 
 from app.ai import (
     BATCH_SIZE,
@@ -24,10 +22,10 @@ from app.helpers import require_locale_code
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest
 from app.services.catalog import owned_module
+from app.services.job_progress import write_job_progress
 from app.services.strings import _missing_locales_clause, filtered_string_query
 
 SYNC_THRESHOLD = 20
-_progress_lock = threading.Lock()
 
 
 def _entries_query(
@@ -337,31 +335,6 @@ def queued_progress(work: int) -> dict[str, int | str]:
         "chunks_done": 0,
         "chunks_total": chunk_count(work),
     }
-
-
-def write_job_progress(
-    job_id: uuid.UUID,
-    phase: ProgressPhase | str,
-    chunks_done: int,
-    chunks_total: int,
-) -> None:
-    with _progress_lock:
-        db = SessionLocal()
-        try:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job is None:
-                return
-            payload = dict(job.payload or {})
-            payload["progress"] = {
-                "phase": phase,
-                "chunks_done": chunks_done,
-                "chunks_total": chunks_total,
-            }
-            job.payload = payload
-            flag_modified(job, "payload")
-            db.commit()
-        finally:
-            db.close()
 
 
 def propose_translations(
