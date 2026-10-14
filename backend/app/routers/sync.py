@@ -27,9 +27,8 @@ from app.services.imports import (
 from app.services.jobs import (
     JobWork,
     accepted_response,
-    run_job,
+    launch_job,
     runs_async,
-    start_job,
     wants_async,
 )
 from app.services.sync import (
@@ -200,16 +199,11 @@ def import_project(
 
     excel = parsed.excel is not None
     if wants_async(prefer) and (excel or runs_async(prefer, import_size(parsed.data))):
-        job = start_job(
+        job = launch_job(
             db,
             project.id,
             "excel_import" if excel else "import",
             {"batch_id": str(batch_id), "dry_run": dry_run},
-        )
-        background_tasks.add_task(
-            run_job,
-            job.id,
-            project.id,
             _import_job_work(
                 batch_id,
                 dry_run,
@@ -255,11 +249,11 @@ def import_strings_compat(
         raise HTTPException(status_code=400, detail="strings required")
     batch_id = uuid.uuid4()
     if runs_async(prefer, payload_size(payload)):
-        job = start_job(db, project.id, "import", {"batch_id": str(batch_id), "dry_run": dry_run})
-        background_tasks.add_task(
-            run_job,
-            job.id,
+        job = launch_job(
+            db,
             project.id,
+            "import",
+            {"batch_id": str(batch_id), "dry_run": dry_run},
             _import_job_work(
                 batch_id,
                 dry_run,

@@ -1262,6 +1262,7 @@ def revert_batch(
     batch_id: uuid.UUID,
     *,
     force: bool = False,
+    commit: bool = True,
 ) -> dict[str, Any]:
     project_id = project.id
 
@@ -1295,7 +1296,8 @@ def revert_batch(
         report_progress(db, "planning", 0, len(activities))
         if all(activity.entity_type == EntityType.string for activity in activities):
             plan = _plan_batch_revert(db, activities, force=force, references=references)
-            report_progress(db, "writing", 0, len(activities))
+            # One write for the whole batch, so there is no step count to show.
+            report_progress(db, "writing")
             _persist_revert_plan(db, project_id, plan, existing=existing, batch_id=new_batch)
             db.expire_all()
             return {"reverted": len(activities), "batch_id": str(new_batch)}
@@ -1316,7 +1318,7 @@ def revert_batch(
             reverted += 1
         return {"reverted": reverted, "batch_id": str(new_batch)}
 
-    return run_write(db, project_id, "revert_batch", write, restore=True)
+    return run_write(db, project_id, "revert_batch", write, restore=True, commit=commit)
 
 
 @dataclass

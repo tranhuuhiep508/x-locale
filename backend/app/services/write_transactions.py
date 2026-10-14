@@ -58,8 +58,12 @@ def run_write[T](
     write: Callable[[], T],
     *,
     restore: bool = False,
+    commit: bool = True,
 ) -> T:
     """Own the commit; callbacks reload inputs and must never commit themselves.
+
+    ``commit=False`` leaves the successful write open so the caller can commit
+    it with another change (a background job's completed status).
 
     Only explicit Postgres errors proving a failed transaction are replayed.
     Response construction belongs to the caller, outside this retry boundary.
@@ -81,7 +85,8 @@ def run_write[T](
                     # Trusted internal service calls have no HTTP auth dependency.
                     raise HTTPException(status_code=404, detail="Project not found")
             result = write()
-            db.commit()
+            if commit:
+                db.commit()
         except DBAPIError as error:
             key = db.info.get("restore_key", "")
             db.rollback()

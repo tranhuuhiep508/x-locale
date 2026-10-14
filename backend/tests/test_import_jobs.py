@@ -1,5 +1,6 @@
 """Large imports and undos run as background jobs when the client opts in."""
 
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -10,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models import Activity, Job, JobStatus, Module, StringEntry
-from app.services import imports, jobs
+from app.services import import_lock, imports, jobs
 from app.services.jobs import wants_async
 from tests.helpers import make_project
 from tests.test_import_concurrency import (
@@ -41,11 +42,18 @@ def async_request(project, kind, **options):
     return path, kwargs
 
 
-def poll(client, project, kind, job_id):
+def poll(client, project, kind, job_id, *, until_done=True, timeout=10):
     headers = {"X-API-Key": project["api_key"]} if kind == "cli" else {}
-    response = client.get(f"/api/jobs/{job_id}", headers=headers)
-    assert response.status_code == 200, response.text
-    return response.json()
+    deadline = time.monotonic() + timeout
+    while True:
+        response = client.get(f"/api/jobs/{job_id}", headers=headers)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        if not until_done or body["status"] in ("completed", "failed"):
+            return body
+        if time.monotonic() >= deadline:
+            return body
+        time.sleep(0.02)
 
 
 @pytest.mark.parametrize(
@@ -131,6 +139,7 @@ def test_opted_in_excel_import_always_runs_as_job(client, project, monkeypatch):
     path, kwargs = async_request(project, "xlsx")
     response = client.post(path, **kwargs)
     assert response.status_code == 202, response.text
+    assert poll(client, project, "xlsx", response.json()["job_id"])["status"] == "completed"
     path, kwargs = import_request(project, "xlsx")
     assert client.post(path, **kwargs).status_code == 200
 
@@ -157,7 +166,7 @@ def test_running_job_is_visible_and_holds_import_lock(
                 job_id = db.scalar(
                     select(Job.id).where(Job.project_id == uuid.UUID(project["id"]))
                 )
-            job = poll(client, project, kind, job_id)
+            job = poll(client, project, kind, job_id, until_done=False)
             assert job["status"] == "running"
             assert job["progress"]["phase"] == "queued"
 
@@ -190,10 +199,11 @@ def test_failed_job_stores_error_and_rolls_back(
 
     path, kwargs = async_request(project, kind)
     with monkeypatch.context() as patch:
+        # The worker runs after the response, so the patch must outlive post().
         patch.setattr(imports, "import_json_data", fail_import)
         accepted = client.post(path, **kwargs)
-    assert accepted.status_code == 202, accepted.text
-    job = poll(client, project, kind, accepted.json()["job_id"])
+        assert accepted.status_code == 202, accepted.text
+        job = poll(client, project, kind, accepted.json()["job_id"])
     assert job["status"] == "failed"
     assert job["error"] == "Invalid import"
     assert job["result"] == {"error": {"status_code": 400, "detail": "Invalid import"}}
@@ -244,6 +254,81 @@ def test_job_polling_is_scoped_to_the_job_project(client, project, small_thresho
     outsider = _add_user("jobs-outsider@example.com")
     client.cookies.clear()
     assert client.get(f"/api/jobs/{job_id}", cookies=_as(outsider)).status_code == 404
+    assert poll(client, project, "cli", job_id)["status"] == "completed"
+
+
+def test_second_import_during_handoff_is_rejected(
+    client, project, session_factory, small_threshold, monkeypatch
+):
+    entered, release = Event(), Event()
+    original = import_lock.release_import_session_lock
+
+    def pause(db, project_id):
+        entered.set()
+        assert release.wait(10), "Handoff test did not release the session lock"
+        original(db, project_id)
+
+    monkeypatch.setattr(import_lock, "release_import_session_lock", pause)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        path, kwargs = async_request(project, "cli")
+        submitting = pool.submit(client.post, path, **kwargs)
+        try:
+            assert entered.wait(5), "Import did not reach the lock handoff"
+            with session_factory() as db:
+                source = db.scalar(
+                    select(StringEntry.source_text).where(
+                        StringEntry.project_id == uuid.UUID(project["id"]),
+                        StringEntry.key == "changed",
+                    )
+                )
+            assert source == "Before"
+            rejected = client.post(
+                f"/api/projects/{project['id']}/strings/import",
+                json={"modules": {"incoming": {"vi": {"changed": "Newer", "added": "Newer"}}}},
+                headers={"X-API-Key": project["api_key"]},
+            )
+            assert rejected.status_code == 409 and rejected.json() == BUSY
+        finally:
+            release.set()
+        accepted = submitting.result(timeout=15)
+    assert accepted.status_code == 202, accepted.text
+    job = poll(client, project, "cli", accepted.json()["job_id"])
+    assert job["status"] == "completed", job
+    with session_factory() as db:
+        source = db.scalar(
+            select(StringEntry.source_text).where(
+                StringEntry.project_id == uuid.UUID(project["id"]),
+                StringEntry.key == "changed",
+            )
+        )
+    assert source == "Imported"
+
+
+def test_undo_completion_failure_rolls_back(
+    client, project, session_factory, small_threshold, monkeypatch
+):
+    path, kwargs = import_request(project, "cli")
+    imported = client.post(path, **kwargs)
+    assert imported.status_code == 200, imported.text
+    saved = catalog_state(session_factory, project)
+    batch = imported.json()["batch_id"]
+    original = jobs._finish
+
+    def fail_completion(job, status, *, phase):
+        if phase == "done":
+            raise RuntimeError("completion failed")
+        original(job, status, phase=phase)
+
+    monkeypatch.setattr(jobs, "_finish", fail_completion)
+    accepted = client.post(
+        f"/api/projects/{project['id']}/activities/batch/{batch}/revert",
+        headers=ASYNC,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = poll(client, project, "session", accepted.json()["job_id"])
+    assert job["status"] == "failed", job
+    assert job["result"]["error"]["status_code"] == 500
+    assert catalog_state(session_factory, project) == saved
 
 
 def test_large_undo_runs_as_job(client, project, session_factory, monkeypatch):

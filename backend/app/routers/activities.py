@@ -36,7 +36,7 @@ from app.services.activities import (
     serialize_activity,
 )
 from app.services.import_lock import acquire_import_lock
-from app.services.jobs import accepted_response, run_job, runs_async, start_job
+from app.services.jobs import accepted_response, launch_job, runs_async
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["activities"])
 
@@ -177,12 +177,14 @@ def revert_batch_endpoint(
 ):
     if runs_async(prefer, count_revertible_batch(db, project.id, batch_id)):
         acquire_import_lock(db, project.id)
-        job = start_job(db, project.id, "revert", {"batch_id": str(batch_id), "force": force})
-        background_tasks.add_task(
-            run_job,
-            job.id,
+        job = launch_job(
+            db,
             project.id,
-            lambda job_db, job_project: revert_batch(job_db, job_project, batch_id, force=force),
+            "revert",
+            {"batch_id": str(batch_id), "force": force},
+            lambda job_db, job_project: revert_batch(
+                job_db, job_project, batch_id, force=force, commit=False
+            ),
         )
         return accepted_response(job)
     return revert_batch(db, project, batch_id, force=force)

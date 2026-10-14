@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -15,9 +17,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.auth import membership_for
 from app.config import settings
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models import Job, JobStatus, Project, User
 from app.schemas import JobAcceptedOut
+from app.services import import_lock
 from app.services.import_lock import wait_for_import_lock
 from app.services.job_progress import JOB_ID_KEY
 
@@ -53,11 +56,14 @@ def runs_async(prefer: str | None, size: int) -> bool:
     return wants_async(prefer) and size > settings.import_async_threshold
 
 
+_HANDOFF_TIMEOUT_S = 5
+
+
 def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any]) -> Job:
     """Create the job as ``running`` and commit, so the first poll already sees it.
 
-    Committing also ends the request transaction and its import lock; the
-    worker takes the lock again before it writes.
+    Committing ends the request's transaction lock. ``launch_job`` holds a
+    session lock across that commit until the worker is waiting.
     """
     actor = {
         key: value
@@ -81,6 +87,74 @@ def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any
     db.add(job)
     db.commit()
     db.refresh(job)
+    return job
+
+
+def _hold_session_lock(
+    project_id: uuid.UUID, held: threading.Event, release: threading.Event
+) -> None:
+    """Hold the session lock on a connection this function keeps open.
+
+    ``Session.commit`` returns the request connection to the pool, so the lock
+    cannot live there: a later unlock may check out a different connection.
+    """
+    conn = engine.connect()
+    try:
+        import_lock.acquire_import_session_lock(conn, project_id)
+        held.set()
+        release.wait()
+        import_lock.release_import_session_lock(conn, project_id)
+    finally:
+        held.set()
+        conn.close()
+
+
+def launch_job(
+    db: Session,
+    project_id: uuid.UUID,
+    kind: str,
+    meta: dict[str, Any],
+    work: JobWork,
+) -> Job:
+    """Commit the job, then keep the project locked until the worker is queued.
+
+    The request already holds the transaction lock. A second connection waits
+    for the session lock, the commit hands that lock to it, and it unlocks
+    only once the worker is blocked on the same key.
+    """
+    held, release_holder = threading.Event(), threading.Event()
+    holder = threading.Thread(
+        target=_hold_session_lock,
+        args=(project_id, held, release_holder),
+        name="import-lock-handoff",
+        daemon=True,
+    )
+    holder.start()
+    deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
+    while time.monotonic() < deadline and not import_lock.import_lock_waiting(db, project_id):
+        time.sleep(0.01)
+    job = start_job(db, project_id, kind, meta)
+    if not held.wait(_HANDOFF_TIMEOUT_S):
+        logger.warning("Job %s session lock was not granted", job.id)
+    threading.Thread(
+        target=run_job,
+        args=(job.id, project_id, work),
+        name=f"job-{job.id}",
+        daemon=True,
+    ).start()
+    deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
+    worker_waiting = False
+    while time.monotonic() < deadline:
+        if import_lock.import_lock_waiting(db, project_id):
+            worker_waiting = True
+            break
+        time.sleep(0.01)
+    if not worker_waiting:
+        # shortcut: the overwrite gap returns if the worker never queues. A job
+        # queue should own this lock instead of a handoff thread.
+        logger.warning("Job %s did not reach the import lock; releasing the handoff", job.id)
+    release_holder.set()
+    holder.join(_HANDOFF_TIMEOUT_S)
     return job
 
 
@@ -130,9 +204,9 @@ def _record_failure(job_id: uuid.UUID, exc: Exception) -> None:
 def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
     """Run ``work`` in its own session while holding the project's import lock.
 
-    ``work`` must not commit content itself unless it owns a complete write
-    (batch revert's ``run_write``). The completed status is written in the
-    same transaction as the import, so a committed import never reads as running.
+    ``work`` must leave its writes uncommitted. Completed status is written in
+    that same transaction, so a saved import or undo never reads as running
+    and a failure rolls the write back.
     """
     db = SessionLocal()
     try:

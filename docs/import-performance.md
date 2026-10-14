@@ -111,12 +111,15 @@ The job row is committed as `running` before the response, so the first
 `planning` and `writing`.
 
 The import advisory lock stays the only one-import-per-project guard. The request
-takes it to reject a busy project with 409, then releases it when it commits the
-job row; the worker waits for the same lock and holds it until its single import
-transaction ends. Completion is written in that transaction, so a committed import
-never reads as running. A failure rolls everything back and records `failed`
-with the error. If the worker process dies, Postgres releases the lock, so the
-project is not blocked; the job row just stays `running`.
+takes it to reject a busy project with 409. Committing the job row would drop
+that transaction lock before the worker runs, so the request also holds a
+session lock until the worker is waiting on the same key, then unlocks. The
+worker holds the transaction lock until its one write ends. That write includes
+the completed status, for both import and undo, so a saved change never reads
+as running and a failure rolls the change back before the job is marked
+`failed`. If the worker process dies, Postgres releases the lock and the job
+row stays `running`. String-batch undo does not report a step count; its bar
+stays indeterminate.
 
 Requests without the header keep the synchronous 200 response. Older CLIs do not
 send it, so they never mistake a 202 for a finished push. The UI and current CLI
