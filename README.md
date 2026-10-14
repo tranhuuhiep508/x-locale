@@ -259,5 +259,5 @@ See [.env.example](.env.example). Notable vars:
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend auto-mints a short-term Bedrock API key before each request. |
-| `AWS_BEARER_TOKEN_BEDROCK` | Optional static long-term Bedrock API key if IAM is not available. Leave unset when using IAM so an expired key cannot shadow credentials. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
+| `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |

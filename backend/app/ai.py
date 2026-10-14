@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import random
 import threading
 import time
@@ -11,16 +10,16 @@ from dataclasses import dataclass
 from typing import Literal
 
 import boto3
-from aws_bedrock_token_generator import provide_token
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from app.config import settings
 
 _AUTH_ERROR = (
-    "AWS Bedrock auth is not configured. Set AWS_ACCESS_KEY_ID and "
-    "AWS_SECRET_ACCESS_KEY, or AWS_BEARER_TOKEN_BEDROCK in your environment."
+    "AWS Bedrock auth is not configured. Configure an IAM role (such as EKS Pod Identity), "
+    "an AWS profile, or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
+    "with AWS_SESSION_TOKEN for temporary credentials."
 )
-_token_lock = threading.Lock()
 
 BATCH_SIZE = 20
 MAX_CHUNK_WORKERS = 5
@@ -124,22 +123,6 @@ def as_translated_cell(value: object) -> TranslatedCell | None:
     return None
 
 
-def _refresh_bedrock_token() -> None:
-    """Mint or reuse a cached short-term Bedrock API key before a request.
-
-    IAM credentials take precedence: provide_token() returns a cached token if
-    still valid, otherwise it generates a new one. A static
-    AWS_BEARER_TOKEN_BEDROCK is used only when no IAM credentials are present.
-    """
-    with _token_lock:
-        if boto3.Session().get_credentials() is not None:
-            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = provide_token(region=settings.aws_region)
-            return
-        if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
-            return
-        raise ValueError(_AUTH_ERROR)
-
-
 def _item_payload(item: TranslateItem) -> dict:
     payload: dict[str, object] = {
         "id": item.id,
@@ -204,9 +187,13 @@ def _is_throttle_error(exc: BaseException) -> bool:
 
 
 def _converse_once(prompt: str) -> dict:
-    _refresh_bedrock_token()
-    client = boto3.Session().client("bedrock-runtime", region_name=settings.aws_region)
     try:
+        client = boto3.Session().client(
+            "bedrock-runtime",
+            region_name=settings.aws_region,
+            # Require AWS credentials even if a Bedrock bearer token is in the environment.
+            config=Config(signature_version="v4"),
+        )
         return client.converse(
             modelId=settings.bedrock_model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
@@ -395,8 +382,6 @@ def translate_batch(
         return _stub_translate_batch(items, on_progress=on_progress)
     if not settings.bedrock_model_id:
         raise ValueError("BEDROCK_MODEL_ID is not configured")
-
-    _refresh_bedrock_token()
 
     chunks = [items[index : index + BATCH_SIZE] for index in range(0, len(items), BATCH_SIZE)]
     chunks_total = len(chunks)
