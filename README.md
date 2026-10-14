@@ -260,23 +260,27 @@ See [.env.example](.env.example). Notable vars:
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate; must support Converse and the selected output mode |
 | `BEDROCK_OUTPUT_MODE` | `tool` (default) or `json_schema`; choose based on the model/profile's documented support |
+| `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
 | `BEDROCK_JSON_SCHEMA_STRICT` | Default `false`; in `json_schema` mode, set `true` when the provider requires `additionalModelRequestFields.text.format.strict` (e.g. OpenAI GPT-6 Luna) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
 | `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |
 
 AI translate uses Bedrock Converse with the model's default sampling parameters.
-The default `tool` mode sends the `submit_translations` tool with `toolChoice: auto`
-and reads translations from `toolUse.input`. Opt into `json_schema` for models and
+The default `tool` mode requires the `submit_translations` tool and reads
+translations from `toolUse.input`, preserving Nova's mandatory tool-call behavior.
+Set `BEDROCK_TOOL_CHOICE=auto` for models or thinking modes that reject forced tool
+selection. Automatic choice permits free-text responses, which the translator
+rejects because it requires tool input. Opt into `json_schema` for models and
 inference profiles that support structured outputs: the request includes
 `outputConfig.textFormat`, and the backend reads the resulting JSON text. Both
 modes use the same translation schema and normalize into the same results.
 
-| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_JSON_SCHEMA_STRICT` |
-|---|---|---|
-| Nova 2 Lite | `tool` | `false` |
-| Claude Sonnet 5.5 | `tool` | `false` |
-| Claude Sonnet 4.6 | `json_schema` | `false` |
-| GPT-6 Luna | `json_schema` | `true` |
+| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_TOOL_CHOICE` | `BEDROCK_JSON_SCHEMA_STRICT` |
+|---|---|---|---|
+| Nova 2 Lite | `tool` | `tool` | `false` |
+| Claude Sonnet 5.5 | `tool` | `auto` | `false` |
+| Claude Sonnet 4.6 | `json_schema` | ignored | `false` |
+| GPT-6 Luna | `json_schema` | ignored | `true` |
 
 Output mode is configured explicitly rather than inferred from a model name, so
 opaque application inference profile ARNs work with the same settings. Check the

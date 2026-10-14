@@ -75,6 +75,7 @@ def complete_tool_response(prompt: str) -> dict:
 def default_model(monkeypatch):
     monkeypatch.setattr(settings, "bedrock_model_id", "us.amazon.nova-2-lite-v1:0")
     monkeypatch.setattr(settings, "bedrock_output_mode", "tool")
+    monkeypatch.setattr(settings, "bedrock_tool_choice", "tool")
     monkeypatch.setattr(settings, "bedrock_json_schema_strict", False)
 
 
@@ -95,21 +96,25 @@ def test_translate_batch_empty_list_does_not_call_bedrock(converse):
 
 
 @pytest.mark.parametrize(
-    "model_id",
+    ("model_id", "tool_choice"),
     [
-        "us.amazon.nova-2-lite-v1:0",
-        "us.anthropic.claude-sonnet-5-5",
-        "openai.gpt-oss-120b-1:0",
-        "us.openai.gpt-6-luna",
-        "global.openai.gpt-6-sol",
-        "us.openai.gpt-6-astra",
-        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom",
+        ("us.amazon.nova-2-lite-v1:0", "tool"),
+        ("us.anthropic.claude-sonnet-5-5", "auto"),
+        ("openai.gpt-oss-120b-1:0", "auto"),
+        ("us.openai.gpt-6-luna", "auto"),
+        ("global.openai.gpt-6-sol", "auto"),
+        ("us.openai.gpt-6-astra", "auto"),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom",
+            "auto",
+        ),
     ],
 )
-def test_translate_batch_uses_default_sampling_and_auto_tool_choice(
-    converse, monkeypatch, model_id
+def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
+    converse, monkeypatch, model_id, tool_choice
 ):
     monkeypatch.setattr(settings, "bedrock_model_id", model_id)
+    monkeypatch.setattr(settings, "bedrock_tool_choice", tool_choice)
     converse.return_value = fake_converse_body(
         [
             {
@@ -134,7 +139,9 @@ def test_translate_batch_uses_default_sampling_and_auto_tool_choice(
     converse.assert_called_once()
     kwargs = converse.call_args.kwargs
     assert kwargs["modelId"] == model_id
-    assert kwargs["toolConfig"]["toolChoice"] == {"auto": {}}
+    assert kwargs["toolConfig"]["toolChoice"] == (
+        {"tool": {"name": TOOL_NAME}} if tool_choice == "tool" else {"auto": {}}
+    )
     assert kwargs["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
     assert "outputConfig" not in kwargs
     assert "additionalModelRequestFields" not in kwargs
@@ -263,14 +270,24 @@ def test_invalid_json_output_is_rejected(converse, monkeypatch, text):
         translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))])
 
 
-def test_output_mode_env_is_validated(monkeypatch):
+def test_output_settings_env_are_validated(monkeypatch):
+    monkeypatch.delenv("BEDROCK_TOOL_CHOICE", raising=False)
+    assert Settings(_env_file=None).bedrock_tool_choice == "tool"
     monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "json_schema")
     monkeypatch.setenv("BEDROCK_JSON_SCHEMA_STRICT", "true")
+    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "auto")
     config = Settings(_env_file=None)
     assert config.bedrock_output_mode == "json_schema"
     assert config.bedrock_json_schema_strict is True
+    assert config.bedrock_tool_choice == "auto"
     monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "unsupported")
     with pytest.raises(ValidationError, match="bedrock_output_mode"):
+        Settings(_env_file=None)
+
+
+def test_invalid_tool_choice_env_is_rejected(monkeypatch):
+    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "unsupported")
+    with pytest.raises(ValidationError, match="bedrock_tool_choice"):
         Settings(_env_file=None)
 
 
@@ -450,6 +467,8 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
         request_body = json.loads(sent_requests[0].body)
         assert request_body["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
         assert ("toolConfig" in request_body) == (mode == "tool")
+        if mode == "tool":
+            assert request_body["toolConfig"]["toolChoice"] == {"tool": {"name": TOOL_NAME}}
         assert ("outputConfig" in request_body) == (mode == "json_schema")
         assert request_body.get("additionalModelRequestFields", {}) == (
             {"text": {"format": {"strict": True}}} if strict else {}

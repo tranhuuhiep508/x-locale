@@ -217,7 +217,11 @@ def _converse_once(prompt: str) -> dict:
         output_options = {
             "toolConfig": {
                 "tools": [SUBMIT_TRANSLATIONS_TOOL],
-                "toolChoice": {"auto": {}},
+                "toolChoice": (
+                    {"tool": {"name": TOOL_NAME}}
+                    if settings.bedrock_tool_choice == "tool"
+                    else {"auto": {}}
+                ),
             }
         }
     try:
@@ -231,7 +235,7 @@ def _converse_once(prompt: str) -> dict:
         return client.converse(
             modelId=settings.bedrock_model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
-            # Newer models reject sampling overrides and forced tool selection.
+            # Leave sampling and reasoning settings at the model's defaults.
             inferenceConfig={"maxTokens": MAX_TOKENS},
             **output_options,
         )
