@@ -28,8 +28,11 @@ from app.models import (
 from app.schemas import ImportDiff, ImportDiffItem, ImportResult
 from app.services.activity_bulk import insert_rows, update_rows
 from app.services.activity_events import classify_event
+from app.services.job_progress import report_progress
 
 IMPORT_DIFF_SAMPLE = 100
+# Strings and translations, tag links, activities.
+WRITE_STEPS = 3
 
 
 @dataclass(slots=True)
@@ -273,6 +276,7 @@ def import_rows(
     catalog = _load_catalog(
         db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
     )
+    report_progress(db, "validating")
     _validate(catalog, rows, reject_deleted=reject_deleted)
     modules = _create_references(db, project, catalog, rows, groups, dry_run)
     tag_names = {row["name"]: tid for tid, row in catalog.tags.items()}
@@ -476,6 +480,7 @@ def import_rows(
         ]
 
     if not dry_run:
+        report_progress(db, "writing", 0, WRITE_STEPS)
         insert_rows(
             db, StringEntry.__table__, [catalog.entries[sid] for sid in changed_ids & new_ids]
         )
@@ -515,6 +520,7 @@ def import_rows(
             ],
         )
         update_rows(db, Translation.__table__, list(published_translations.values()))
+        report_progress(db, "writing", 1, WRITE_STEPS)
         replaced = [
             sid for sid in changed_ids if not original_links[sid] <= catalog.links.get(sid, set())
         ]
@@ -534,6 +540,7 @@ def import_rows(
             - (set() if sid in replaced else original_links[sid])
         ]
         insert_rows(db, StringTag.__table__, inserted_links, ignore_conflicts=True)
+        report_progress(db, "writing", 2, WRITE_STEPS)
         audit = []
         for sid in changed_ids:
             after = _snapshot(catalog, catalog.entries[sid])
@@ -565,6 +572,7 @@ def import_rows(
                 }
             )
         insert_rows(db, Activity.__table__, audit)
+        report_progress(db, "writing", WRITE_STEPS, WRITE_STEPS)
     return ImportResult(
         created=0 if dry_run else creates,
         updated=0 if dry_run else updates,

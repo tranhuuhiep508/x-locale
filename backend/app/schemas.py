@@ -432,6 +432,14 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobAcceptedOut(BaseModel):
+    """202 body when a large import or undo runs as a background job."""
+
+    job_id: UUID
+    status: str
+    kind: str
+
+
 # ── Import / Export ───────────────────────────────────────────────────
 
 

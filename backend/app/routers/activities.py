@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Header, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
@@ -15,11 +15,13 @@ from app.schemas import (
     ActivityFeedOut,
     ActivityListOut,
     ActivityOut,
+    JobAcceptedOut,
     RestorePreviewOut,
     RestoreVersionOut,
     RevertPreviewOut,
 )
 from app.services.activities import (
+    count_revertible_batch,
     get_activity_detail,
     list_activities,
     list_activity_feed,
@@ -33,6 +35,8 @@ from app.services.activities import (
     revert_batch,
     serialize_activity,
 )
+from app.services.import_lock import acquire_import_lock
+from app.services.jobs import accepted_response, launch_job, runs_async
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["activities"])
 
@@ -158,13 +162,31 @@ def revert_activity_preview_endpoint(
     return preview_revert_activity(db, project, activity_id)
 
 
-@router.post("/activities/batch/{batch_id}/revert", response_model=dict)
+@router.post(
+    "/activities/batch/{batch_id}/revert",
+    response_model=dict,
+    responses={202: {"model": JobAcceptedOut, "description": "Undo runs as a background job"}},
+)
 def revert_batch_endpoint(
     batch_id: uuid.UUID,
     project: ProjectAccess,
     db: DbSession,
+    background_tasks: BackgroundTasks,
     force: Annotated[bool, Query()] = False,
-) -> dict:
+    prefer: Annotated[str | None, Header()] = None,
+):
+    if runs_async(prefer, count_revertible_batch(db, project.id, batch_id)):
+        acquire_import_lock(db, project.id)
+        job = launch_job(
+            db,
+            project.id,
+            "revert",
+            {"batch_id": str(batch_id), "force": force},
+            lambda job_db, job_project: revert_batch(
+                job_db, job_project, batch_id, force=force, commit=False
+            ),
+        )
+        return accepted_response(job)
     return revert_batch(db, project, batch_id, force=force)
 
 

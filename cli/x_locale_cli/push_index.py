@@ -13,6 +13,7 @@ import httpx
 
 from x_locale_cli.config import CONFIG_DIR
 from x_locale_cli.console import console
+from x_locale_cli.errors import JobFailedError
 from x_locale_cli.io import pull_will_touch_base_locale, scoped_key
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport, Stage
 
@@ -298,6 +299,10 @@ def maybe_clear_push_pending_after_failure(
 ) -> None:
     """Clear the marker only when this run created it and the server rejected before commit."""
     if marker_existed_before or not created_marker_this_run:
+        return
+    if isinstance(exc, JobFailedError):
+        if exc.status_code in ALLOWLISTED_PUSH_REJECT_STATUSES:
+            clear_push_pending()
         return
     cause = exc.__cause__ if isinstance(exc, BaseException) else None
     if isinstance(cause, httpx.HTTPStatusError):

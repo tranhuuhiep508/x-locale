@@ -18,7 +18,7 @@ from app.auth import SESSION_COOKIE, create_session_token
 from app.main import app
 from app.models import Activity, Module, StringEntry, Tag, User
 from app.routers import sync as sync_router
-from app.services import activities, write_transactions
+from app.services import activities, imports, write_transactions
 from app.services.import_lock import acquire_import_lock
 from tests.helpers import json_upload, make_project, publish_strings
 from tests.test_project_members import _add_user
@@ -35,6 +35,10 @@ KINDS = ("json", "xlsx", "cli")
 
 @pytest.fixture()
 def project(client, session_factory):
+    return seed_import_project(client, session_factory)
+
+
+def seed_import_project(client, session_factory):
     project = make_project(client, "Import locking")
     with session_factory() as db:
         admin = db.scalar(select(User).where(User.oidc_issuer == "x-locale-dev"))
@@ -258,7 +262,7 @@ def test_failed_import_rolls_back_partial_writes_and_releases_lock(
 
     path, kwargs = import_request(project, kind)
     with monkeypatch.context() as patch:
-        patch.setattr(sync_router, "import_json_data", fail_import)
+        patch.setattr(imports, "import_json_data", fail_import)
         assert client.post(path, **kwargs).status_code == 400
     assert catalog_state(session_factory, project) == before
     assert client.post(path, **kwargs).status_code == 200

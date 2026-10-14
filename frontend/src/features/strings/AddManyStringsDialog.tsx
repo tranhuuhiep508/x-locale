@@ -4,9 +4,14 @@ import {
   ReviewDialogFooter,
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { claimFinish, jobSuccessMessage, rememberJob, useActiveJobId } from '@/lib/active-job'
+import { isJobAccepted } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
+import { useJob } from '@/hooks/use-job'
+import { JobProgress } from '@/components/job-progress'
+import { importProgressLabel } from '@/lib/job-progress'
 import type { ImportResult, Module, Project, Tag } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -77,6 +82,9 @@ export function AddManyStringsDialog({
   const [step, setStep] = useState<'paste' | 'preview'>('paste')
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [pendingMap, setPendingMap] = useState<Record<string, string> | null>(null)
+  const [importJobId, setImportJobId] = useState<string | null>(null)
+  const storedJobId = useActiveJobId(projectId, 'add')
+  const trackedJobId = importJobId ?? storedJobId
 
   const moduleOptions = [
     ...modules,
@@ -85,8 +93,7 @@ export function AddManyStringsDialog({
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
-  useEffect(() => {
-    if (!open) return
+  function resetForm() {
     setText('')
     setParseError(null)
     setModuleId('')
@@ -96,7 +103,13 @@ export function AddManyStringsDialog({
     setStep('paste')
     setPreview(null)
     setPendingMap(null)
-  }, [open])
+  }
+
+  function closeDialog() {
+    if (busy && !importJob.isError) return
+    if (!trackedJobId) resetForm()
+    onClose()
+  }
 
   const importMut = useMutation({
     mutationFn: async ({ map, dry }: { map: Record<string, string>; dry: boolean }) => {
@@ -112,8 +125,46 @@ export function AddManyStringsDialog({
         })
       )
     },
+    onSuccess: (result, { dry }) => {
+      if (isJobAccepted(result)) {
+        rememberJob({ jobId: result.job_id, projectId, kind: 'add', dryRun: dry })
+        setImportJobId(result.job_id)
+      } else showResult(result)
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
+
+  const importJob = useJob(trackedJobId, {
+    onCompleted: (job) => {
+      setImportJobId(null)
+      const result = job.result as unknown as ImportResult
+      if (result.dry_run) {
+        claimFinish(job.id)
+        setPreview(result)
+        setStep('preview')
+        return
+      }
+      if (claimFinish(job.id)) toast.success(jobSuccessMessage('add', job.result))
+      resetForm()
+      onSuccess()
+    },
+    onFailed: (error) => {
+      setImportJobId(null)
+      if (!trackedJobId || !claimFinish(trackedJobId)) return
+      toast.error(error.message)
+    },
+  })
+
+  function showResult(result: ImportResult) {
+    if (result.dry_run) {
+      setPreview(result)
+      setStep('preview')
+      return
+    }
+    toast.success(jobSuccessMessage('add', { created: result.created, updated: result.updated }))
+    resetForm()
+    onSuccess()
+  }
 
   function handlePreview() {
     const parsed = parseFlatI18nJson(text)
@@ -131,38 +182,22 @@ export function AddManyStringsDialog({
       setStep('preview')
       return
     }
-    importMut.mutate(
-      { map: parsed.map, dry: true },
-      {
-        onSuccess: (result) => {
-          setPreview(result)
-          setStep('preview')
-        },
-      }
-    )
+    importMut.mutate({ map: parsed.map, dry: true })
   }
 
   function handleApply() {
     if (!pendingMap || !hasImportWrites(preview)) return
-    importMut.mutate(
-      { map: pendingMap, dry: false },
-      {
-        onSuccess: (result) => {
-          toast.success(`Added ${result.created} · updated ${result.updated}`)
-          onSuccess()
-        },
-      }
-    )
+    importMut.mutate({ map: pendingMap, dry: false })
   }
 
-  const busy = importMut.isPending
-  const applyDisabled = !hasImportWrites(preview)
+  const busy = importMut.isPending || trackedJobId !== null
+  const applyDisabled = pendingMap === null || !hasImportWrites(preview)
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && !busy) onClose()
+        if (!next) closeDialog()
       }}
     >
       <ReviewDialogContent
@@ -308,14 +343,30 @@ export function AddManyStringsDialog({
               </FieldGroup>
             </FieldGroup>
           ) : (
-            <ImportPreviewSummary result={preview} />
+            <>
+              <ImportPreviewSummary result={preview} />
+              {pendingMap === null ? (
+                <FieldDescription>
+                  Go back and paste the JSON again to run a fresh preview before applying.
+                </FieldDescription>
+              ) : null}
+            </>
           )}
+          {trackedJobId ? (
+            <JobProgress
+              className="pt-4"
+              progress={importJob.data?.progress}
+              error={importJob.isError ? importJob.error : undefined}
+              onRetry={() => { void importJob.refetch() }}
+              label={importProgressLabel(importJob.data?.progress)}
+            />
+          ) : null}
         </ReviewDialogBody>
 
         <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
-              <Button variant="outline" onClick={onClose} disabled={busy}>
+              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>
