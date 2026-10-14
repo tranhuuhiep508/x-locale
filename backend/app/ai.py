@@ -225,7 +225,8 @@ def _converse_once(prompt: str) -> dict:
             "bedrock-runtime",
             region_name=settings.aws_region,
             # Require AWS credentials even if a Bedrock bearer token is in the environment.
-            config=Config(signature_version="v4"),
+            # First-time JSON Schema compilation can take several minutes.
+            config=Config(signature_version="v4", read_timeout=300),
         )
         return client.converse(
             modelId=settings.bedrock_model_id,

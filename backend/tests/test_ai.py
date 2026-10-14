@@ -431,6 +431,10 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
             SimpleNamespace(stream=lambda: iter([body])),
         )
 
+    def check_client_config(context, **kwargs):
+        assert context["client_config"].read_timeout == 300
+
+    session.events.register("before-call.bedrock-runtime.Converse", check_client_config)
     session.events.register("before-send.bedrock-runtime.Converse", respond)
     monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
     items = [TranslateItem(id="s1", source_text="Lưu", locales=("en",))]
