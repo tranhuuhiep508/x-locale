@@ -131,3 +131,8 @@ Polling errors leave the job id saved in the tab. The UI offers **Retry status**
 and allows closing an import or undo dialog while the result is unknown. It
 clears the saved job only after a completed or failed job response; retrying
 status never submits the import or undo again.
+
+Add many preserves its submitted JSON, module, and tags when a pending preview
+is closed and reopened. A preview recovered after a reload has no original
+input, so Apply stays disabled until the user pastes it again and runs a new
+preview.

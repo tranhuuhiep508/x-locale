@@ -4,7 +4,7 @@ import {
   ReviewDialogFooter,
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { claimFinish, jobSuccessMessage, rememberJob, useActiveJobId } from '@/lib/active-job'
 import { isJobAccepted } from '@/lib/api/jobs'
@@ -93,8 +93,7 @@ export function AddManyStringsDialog({
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
-  useEffect(() => {
-    if (!open) return
+  function resetForm() {
     setText('')
     setParseError(null)
     setModuleId('')
@@ -104,7 +103,13 @@ export function AddManyStringsDialog({
     setStep('paste')
     setPreview(null)
     setPendingMap(null)
-  }, [open])
+  }
+
+  function closeDialog() {
+    if (busy && !importJob.isError) return
+    if (!trackedJobId) resetForm()
+    onClose()
+  }
 
   const importMut = useMutation({
     mutationFn: async ({ map, dry }: { map: Record<string, string>; dry: boolean }) => {
@@ -140,6 +145,7 @@ export function AddManyStringsDialog({
         return
       }
       if (claimFinish(job.id)) toast.success(jobSuccessMessage('add', job.result))
+      resetForm()
       onSuccess()
     },
     onFailed: (error) => {
@@ -156,6 +162,7 @@ export function AddManyStringsDialog({
       return
     }
     toast.success(jobSuccessMessage('add', { created: result.created, updated: result.updated }))
+    resetForm()
     onSuccess()
   }
 
@@ -184,13 +191,13 @@ export function AddManyStringsDialog({
   }
 
   const busy = importMut.isPending || trackedJobId !== null
-  const applyDisabled = !hasImportWrites(preview)
+  const applyDisabled = pendingMap === null || !hasImportWrites(preview)
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && (!busy || importJob.isError)) onClose()
+        if (!next) closeDialog()
       }}
     >
       <ReviewDialogContent
@@ -336,7 +343,14 @@ export function AddManyStringsDialog({
               </FieldGroup>
             </FieldGroup>
           ) : (
-            <ImportPreviewSummary result={preview} />
+            <>
+              <ImportPreviewSummary result={preview} />
+              {pendingMap === null ? (
+                <FieldDescription>
+                  Go back and paste the JSON again to run a fresh preview before applying.
+                </FieldDescription>
+              ) : null}
+            </>
           )}
           {trackedJobId ? (
             <JobProgress
@@ -352,7 +366,7 @@ export function AddManyStringsDialog({
         <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
-              <Button variant="outline" onClick={onClose} disabled={busy && !importJob.isError}>
+              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>

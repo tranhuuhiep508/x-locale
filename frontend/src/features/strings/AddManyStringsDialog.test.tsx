@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { clearActiveJob, getActiveJob } from '@/lib/active-job'
+import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
 import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
@@ -110,7 +110,7 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
       <TooltipProvider>{children}</TooltipProvider>
     </QueryClientProvider>
   )
-  render(
+  const view = render(
     <AddManyStringsDialog
       open
       projectId="proj-1"
@@ -122,7 +122,7 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
     />,
     { wrapper },
   )
-  return { onSuccess, onClose }
+  return { ...view, client, onSuccess, onClose }
 }
 
 describe('AddManyStringsDialog', () => {
@@ -232,6 +232,82 @@ describe('AddManyStringsDialog', () => {
     expect(await screen.findByText('New strings')).toBeTruthy()
     expect(getActiveJob()).toBeNull()
     expect(syncApi.importFile).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([false, true])('keeps pending preview input across close and reopen (finishes while closed: %s)', async (finishesWhileClosed) => {
+    const { rerender, client, onClose, onSuccess } = renderDialog()
+    const dialog = (open: boolean) => (
+      <AddManyStringsDialog open={open} projectId="proj-1" project={project} modules={modules}
+        tags={tags} onClose={onClose} onSuccess={onSuccess} />
+    )
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
+      job_id: 'reopen-preview', status: 'running', kind: 'import',
+    })
+    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(503, 'Poll unavailable'))
+    fireEvent.change(screen.getByLabelText('JSON'), {
+      target: { value: '{"save":"Lưu lại","e2e_new":"Mới"}' },
+    })
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Module' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'Common' }))
+    fireEvent.click(screen.getByRole('button', { name: 'ios' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    rerender(dialog(false))
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'reopen-preview', kind: 'import', status: 'completed',
+      result: dryResult as unknown as Record<string, unknown>, error: null,
+      created_at: null, completed_at: null, progress: null,
+    })
+    if (finishesWhileClosed) {
+      await act(async () => { await client.refetchQueries({ queryKey: ['jobs', 'reopen-preview'] }) })
+    }
+    rerender(dialog(true))
+    if (!finishesWhileClosed) {
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
+    }
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement
+    expect(apply.disabled).toBe(false)
+    vi.mocked(syncApi.importFile).mockResolvedValue(applyResult)
+    fireEvent.click(apply)
+    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
+    const [, form, params] = vi.mocked(syncApi.importFile).mock.calls[1]
+    expect(params).toMatchObject({ dry_run: 'false', module_id: 'mod-common', tag_ids: ['tag-ios'] })
+    const payload = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.readAsText(form.get('file') as File)
+    })
+    expect(JSON.parse(payload)).toEqual({ save: 'Lưu lại', e2e_new: 'Mới' })
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    rerender(dialog(false))
+    rerender(dialog(true))
+    expect((screen.getByLabelText('JSON') as HTMLTextAreaElement).value).toBe('')
+    expect(screen.getByRole('button', { name: 'ios' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('requires a fresh preview when a resumed job has no original input', async () => {
+    rememberJob({ jobId: 'reloaded-preview', projectId: 'proj-1', kind: 'add', dryRun: true })
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'reloaded-preview', kind: 'import', status: 'completed',
+      result: dryResult as unknown as Record<string, unknown>, error: null,
+      created_at: null, completed_at: null, progress: null,
+    })
+    renderDialog()
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/Go back and paste the JSON again/)).toBeTruthy()
+    expect(syncApi.importFile).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce(applyResult)
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save":"Lưu lại"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
   })
 
   it('can close an applied import after a poll error without submitting it twice', async () => {
