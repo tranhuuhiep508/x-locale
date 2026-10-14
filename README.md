@@ -258,7 +258,7 @@ See [.env.example](.env.example). Notable vars:
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
-| `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate; must support Converse and the selected output mode |
+| `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate (default `global.openai.gpt-6-luna`); must support Converse and the selected output mode |
 | `BEDROCK_OUTPUT_MODE` | `json_schema` (default) or `tool` (opt in); choose based on the model/profile's documented support |
 | `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
 | `BEDROCK_JSON_SCHEMA_STRICT` | Default `true`. In `json_schema` mode, sends `additionalModelRequestFields.text.format.strict`. Set `false` for models that reject that field (e.g. Claude Sonnet 4.6). GPT-6 Luna needs `true`. |

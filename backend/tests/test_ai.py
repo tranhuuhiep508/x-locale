@@ -284,9 +284,15 @@ def test_invalid_json_output_is_rejected(converse, monkeypatch, text):
 
 
 def test_output_settings_env_are_validated(monkeypatch):
-    for name in ("BEDROCK_OUTPUT_MODE", "BEDROCK_JSON_SCHEMA_STRICT", "BEDROCK_TOOL_CHOICE"):
+    for name in (
+        "BEDROCK_MODEL_ID",
+        "BEDROCK_OUTPUT_MODE",
+        "BEDROCK_JSON_SCHEMA_STRICT",
+        "BEDROCK_TOOL_CHOICE",
+    ):
         monkeypatch.delenv(name, raising=False)
     defaults = Settings(_env_file=None)
+    assert defaults.bedrock_model_id == "global.openai.gpt-6-luna"
     assert defaults.bedrock_output_mode == "json_schema"
     assert defaults.bedrock_json_schema_strict is True
     assert defaults.bedrock_tool_choice == "tool"
