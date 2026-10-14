@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
+import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob } from '@/lib/active-job'
 import { isJobAccepted } from '@/lib/api/jobs'
 import type {
   ActivityChange,
@@ -189,8 +190,10 @@ export function ActivityPage() {
     mutationFn: ({ batchId, force }: { batchId: string; force: boolean }) =>
       activitiesApi.revertBatch(projectId, batchId, force),
     onSuccess: (result) => {
-      if (isJobAccepted(result)) setUndoJobId(result.job_id)
-      else undoSucceeded(result)
+      if (isJobAccepted(result)) {
+        rememberJob({ jobId: result.job_id, projectId, kind: 'revert' })
+        setUndoJobId(result.job_id)
+      } else undoSucceeded(result)
     },
     onError: undoFailed,
   })
@@ -198,11 +201,18 @@ export function ActivityPage() {
   const undoJob = useJob(undoJobId, {
     onCompleted: (job) => {
       setUndoJobId(null)
-      undoSucceeded(job.result as unknown as BatchRevertResult)
+      if (claimFinish(job.id)) {
+        const result = job.result as unknown as BatchRevertResult
+        toast.success(jobSuccessMessage('revert', { reverted: result.reverted }))
+        refreshProjectContent(qc, projectId)
+      }
+      closeUndo()
     },
     onFailed: (error) => {
       setUndoJobId(null)
-      undoFailed(error)
+      if (error.status === 409) void undoPreviewQuery.refetch()
+      if (undoJobId && !claimFinish(undoJobId)) return
+      toast.error(error instanceof Error ? error.message : 'Undo failed')
     },
   })
   const undoBusy = undoMut.isPending || undoJobId !== null

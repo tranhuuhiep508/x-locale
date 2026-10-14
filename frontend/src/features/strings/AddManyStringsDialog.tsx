@@ -6,6 +6,7 @@ import {
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { claimFinish, jobSuccessMessage, rememberJob, useActiveJobId } from '@/lib/active-job'
 import { isJobAccepted } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
 import { useJob } from '@/hooks/use-job'
@@ -82,6 +83,8 @@ export function AddManyStringsDialog({
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [pendingMap, setPendingMap] = useState<Record<string, string> | null>(null)
   const [importJobId, setImportJobId] = useState<string | null>(null)
+  const storedJobId = useActiveJobId(projectId, 'add')
+  const trackedJobId = importJobId ?? storedJobId
 
   const moduleOptions = [
     ...modules,
@@ -117,20 +120,31 @@ export function AddManyStringsDialog({
         })
       )
     },
-    onSuccess: (result) => {
-      if (isJobAccepted(result)) setImportJobId(result.job_id)
-      else showResult(result)
+    onSuccess: (result, { dry }) => {
+      if (isJobAccepted(result)) {
+        rememberJob({ jobId: result.job_id, projectId, kind: 'add', dryRun: dry })
+        setImportJobId(result.job_id)
+      } else showResult(result)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
 
-  const importJob = useJob(importJobId, {
+  const importJob = useJob(trackedJobId, {
     onCompleted: (job) => {
       setImportJobId(null)
-      showResult(job.result as unknown as ImportResult)
+      const result = job.result as unknown as ImportResult
+      if (result.dry_run) {
+        claimFinish(job.id)
+        setPreview(result)
+        setStep('preview')
+        return
+      }
+      if (claimFinish(job.id)) toast.success(jobSuccessMessage('add', job.result))
+      onSuccess()
     },
     onFailed: (error) => {
       setImportJobId(null)
+      if (!trackedJobId || !claimFinish(trackedJobId)) return
       toast.error(error.message)
     },
   })
@@ -141,7 +155,7 @@ export function AddManyStringsDialog({
       setStep('preview')
       return
     }
-    toast.success(`Added ${result.created} · updated ${result.updated}`)
+    toast.success(jobSuccessMessage('add', { created: result.created, updated: result.updated }))
     onSuccess()
   }
 
@@ -169,7 +183,7 @@ export function AddManyStringsDialog({
     importMut.mutate({ map: pendingMap, dry: false })
   }
 
-  const busy = importMut.isPending || importJobId !== null
+  const busy = importMut.isPending || trackedJobId !== null
   const applyDisabled = !hasImportWrites(preview)
 
   return (
@@ -324,7 +338,7 @@ export function AddManyStringsDialog({
           ) : (
             <ImportPreviewSummary result={preview} />
           )}
-          {importJobId ? (
+          {trackedJobId ? (
             <JobProgress
               className="pt-4"
               progress={importJob.data?.progress}

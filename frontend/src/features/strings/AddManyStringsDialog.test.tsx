@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { clearActiveJob } from '@/lib/active-job'
+import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, Job, Module, Project, Tag } from '@/lib/api/types'
@@ -126,6 +128,7 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
 describe('AddManyStringsDialog', () => {
   beforeEach(() => {
     polyfillPointer()
+    clearActiveJob()
     vi.mocked(syncApi.importFile).mockReset()
     vi.mocked(jobsApi.get).mockReset()
   })
@@ -197,6 +200,31 @@ describe('AddManyStringsDialog', () => {
     )
     expect(jobsApi.get).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('New strings')).toBeNull()
+  })
+
+  it('re-enables the form when the job poll fails', async () => {
+    renderDialog()
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
+      job_id: 'job-404',
+      status: 'running',
+      kind: 'import',
+    })
+    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(404, 'Job not found'))
+
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      )
+    })
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    const calls = vi.mocked(jobsApi.get).mock.calls.length
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(vi.mocked(jobsApi.get).mock.calls.length).toBe(calls)
   })
 
   it('rejects invalid JSON without calling import', async () => {

@@ -7,6 +7,7 @@ import {
   FileText,
   Upload,
 } from 'lucide-react'
+import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob, useActiveJobId } from '@/lib/active-job'
 import { isJobAccepted } from '@/lib/api/jobs'
 import { syncApi } from '@/lib/api/sync'
 import type { ImportResult, ProjectLayout } from '@/lib/api/types'
@@ -14,7 +15,6 @@ import { useJob } from '@/hooks/use-job'
 import { JobProgress } from '@/components/job-progress'
 import { importProgressLabel } from '@/lib/job-progress'
 import { modulesQuery, projectQuery } from '@/lib/queries'
-import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -89,6 +89,8 @@ export function ImportExportPage() {
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [importJobId, setImportJobId] = useState<string | null>(null)
+  const storedJobId = useActiveJobId(projectId, 'import')
+  const trackedJobId = importJobId ?? storedJobId
 
   const layout = exportLayout ?? project?.layout ?? 'flat'
   const targetLocale = importLocale ?? project?.base_language ?? 'en'
@@ -110,13 +112,10 @@ export function ImportExportPage() {
       setShowPreview(true)
       return
     }
-    toast.success(`Import complete: ${res.created} created, ${res.updated} updated`)
+    toast.success(jobSuccessMessage('import', { created: res.created, updated: res.updated }))
     setPreviewResult(null)
     pendingFileRef.current = null
-    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectId) })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectId) })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.modules(projectId) })
+    refreshProjectContent(queryClient, projectId)
   }
 
   const importMut = useMutation({
@@ -125,24 +124,38 @@ export function ImportExportPage() {
       fd.append('file', file)
       return syncApi.importFile(projectId, fd, importParams(file, dry))
     },
-    onSuccess: (res) => {
-      if (isJobAccepted(res)) setImportJobId(res.job_id)
-      else showImportResult(res)
+    onSuccess: (res, { dry }) => {
+      if (isJobAccepted(res)) {
+        rememberJob({ jobId: res.job_id, projectId, kind: 'import', dryRun: dry })
+        setImportJobId(res.job_id)
+      } else showImportResult(res)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
   })
 
-  const importJob = useJob(importJobId, {
+  const importJob = useJob(trackedJobId, {
     onCompleted: (job) => {
       setImportJobId(null)
-      showImportResult(job.result as unknown as ImportResult)
+      const result = job.result as unknown as ImportResult
+      const won = claimFinish(job.id)
+      if (result.dry_run) {
+        setPreviewResult(result)
+        setShowPreview(true)
+        return
+      }
+      setPreviewResult(null)
+      pendingFileRef.current = null
+      if (!won) return
+      toast.success(jobSuccessMessage('import', job.result))
+      refreshProjectContent(queryClient, projectId)
     },
     onFailed: (error) => {
       setImportJobId(null)
+      if (!trackedJobId || !claimFinish(trackedJobId)) return
       toast.error(error.message)
     },
   })
-  const importBusy = importMut.isPending || importJobId !== null
+  const importBusy = importMut.isPending || trackedJobId !== null
 
   const exportMut = useMutation({
     mutationFn: () =>
@@ -436,7 +449,7 @@ export function ImportExportPage() {
                 Maximum file size: 10 MB. Dotted keys are preserved.
               </span>
             </button>
-            {importJobId ? (
+            {trackedJobId ? (
               <JobProgress
                 progress={importJob.data?.progress}
                 label={importProgressLabel(importJob.data?.progress)}
