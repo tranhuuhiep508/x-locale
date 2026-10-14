@@ -24,7 +24,6 @@ _AUTH_ERROR = (
 BATCH_SIZE = 20
 MAX_CHUNK_WORKERS = 5
 MAX_TOKENS = 4096
-TEMPERATURE = 0.2
 TOOL_NAME = "submit_translations"
 MAX_CONVERSE_ATTEMPTS = 3
 THROTTLE_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
@@ -46,26 +45,27 @@ SUBMIT_TRANSLATIONS_TOOL = {
         "inputSchema": {
             "json": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "items": {
                         "type": "array",
                         "items": {
                             "type": "object",
+                            "additionalProperties": False,
                             "properties": {
                                 "id": {"type": "string"},
                                 "translations": {
                                     "type": "array",
                                     "items": {
                                         "type": "object",
+                                        "additionalProperties": False,
                                         "properties": {
                                             "locale": {"type": "string"},
                                             "text": {"type": "string"},
                                             "confidence": {
                                                 "type": "integer",
-                                                "minimum": 0,
-                                                "maximum": 100,
                                                 "description": (
-                                                    "Self-evaluated confidence that this "
+                                                    "Confidence from 0 to 100 that this "
                                                     "translation is correct for UI use."
                                                 ),
                                             },
@@ -148,6 +148,13 @@ def _instruction_notes(items: list[TranslateItem]) -> str:
 
 def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
     payload = json.dumps([_item_payload(item) for item in items], ensure_ascii=False)
+    output_instruction = (
+        "- Return only a JSON object matching the supplied schema, with every item "
+        "and every requested locale. Do not use Markdown.\n\n"
+        if settings.bedrock_output_mode == "json_schema"
+        else f"- Call {TOOL_NAME} with every item and every requested locale. "
+        "Do not reply with free text.\n\n"
+    )
     return (
         "You are a professional UI translator.\n"
         f"Translate each source string from {source_locale} into the locales "
@@ -159,6 +166,8 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
         "- Instructions may be written in any language; interpret the intent.\n"
         "- Preserve placeholders exactly: {name}, {count}, %s, %d, HTML tags, ICU plural/select.\n"
         "- Keep UI tone: concise, natural, same intent, unless instructions say otherwise.\n"
+        "- Prefer standard UI wording; use the same terminology for the same concept. "
+        "Do not embellish or add information absent from the source.\n"
         "- Do not translate brand names, product names, or code identifiers, "
         "unless instructions require it.\n"
         '- Copy each item "id" exactly.\n'
@@ -167,8 +176,7 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
         "  70-89: good, but more than one valid wording or slight tone ambiguity.\n"
         "  50-69: missing context, idiom, or UI length is uncertain — human should review.\n"
         "  0-49: guess; insufficient context or conflicting instructions.\n"
-        f"- Call {TOOL_NAME} with every item and every requested locale. "
-        "Do not reply with free text.\n\n"
+        f"{output_instruction}"
         f"{_instruction_notes(items)}"
         f"Items:\n{payload}"
     )
@@ -187,6 +195,31 @@ def _is_throttle_error(exc: BaseException) -> bool:
 
 
 def _converse_once(prompt: str) -> dict:
+    if settings.bedrock_output_mode == "json_schema":
+        output_options = {
+            "outputConfig": {
+                "textFormat": {
+                    "type": "json_schema",
+                    "structure": {
+                        "jsonSchema": {
+                            "name": TOOL_NAME,
+                            "schema": json.dumps(
+                                SUBMIT_TRANSLATIONS_TOOL["toolSpec"]["inputSchema"]["json"]
+                            ),
+                        }
+                    },
+                }
+            }
+        }
+        if settings.bedrock_json_schema_strict:
+            output_options["additionalModelRequestFields"] = {"text": {"format": {"strict": True}}}
+    else:
+        output_options = {
+            "toolConfig": {
+                "tools": [SUBMIT_TRANSLATIONS_TOOL],
+                "toolChoice": {"auto": {}},
+            }
+        }
     try:
         client = boto3.Session().client(
             "bedrock-runtime",
@@ -197,11 +230,9 @@ def _converse_once(prompt: str) -> dict:
         return client.converse(
             modelId=settings.bedrock_model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"temperature": TEMPERATURE, "maxTokens": MAX_TOKENS},
-            toolConfig={
-                "tools": [SUBMIT_TRANSLATIONS_TOOL],
-                "toolChoice": {"tool": {"name": TOOL_NAME}},
-            },
+            # Newer models reject sampling overrides and forced tool selection.
+            inferenceConfig={"maxTokens": MAX_TOKENS},
+            **output_options,
         )
     except NoCredentialsError as exc:
         raise ValueError(_AUTH_ERROR) from exc
@@ -213,7 +244,7 @@ def _converse_once(prompt: str) -> dict:
         raise RuntimeError(f"Bedrock request failed: {exc}") from exc
 
 
-def _converse_tool(prompt: str, on_retry: Callable[[], None] | None = None) -> dict:
+def _converse(prompt: str, on_retry: Callable[[], None] | None = None) -> dict:
     last_error: BaseException | None = None
     for attempt in range(MAX_CONVERSE_ATTEMPTS):
         try:
@@ -229,32 +260,42 @@ def _converse_tool(prompt: str, on_retry: Callable[[], None] | None = None) -> d
     raise RuntimeError(f"Bedrock request failed: {last_error}") from last_error
 
 
-def _parse_tool_input(response: dict) -> dict[str, dict[str, TranslatedCell]]:
+def _parse_response(response: dict) -> dict[str, dict[str, TranslatedCell]]:
     content = response.get("output", {}).get("message", {}).get("content") or []
-    tool_use = None
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        candidate = block.get("toolUse")
-        if isinstance(candidate, dict) and candidate.get("name") == TOOL_NAME:
-            tool_use = candidate
-            break
+    if response.get("stopReason") not in {"end_turn", "tool_use"}:
+        raise RuntimeError(
+            f"Bedrock did not complete translations: {response.get('stopReason')}"
+        )
+    if settings.bedrock_output_mode == "json_schema":
+        raw_input = "".join(
+            block["text"]
+            for block in content
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        )
+    else:
+        tool_use = None
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            candidate = block.get("toolUse")
+            if isinstance(candidate, dict) and candidate.get("name") == TOOL_NAME:
+                tool_use = candidate
+                break
 
-    if tool_use is None:
-        raise RuntimeError("Bedrock did not call submit_translations")
-
-    raw_input = tool_use.get("input")
+        if tool_use is None:
+            raise RuntimeError("Bedrock did not call submit_translations")
+        raw_input = tool_use.get("input")
     if isinstance(raw_input, str):
         try:
             raw_input = json.loads(raw_input)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("Bedrock tool input is not valid JSON") from exc
+            raise RuntimeError("Bedrock translations are not valid JSON") from exc
     if not isinstance(raw_input, dict):
-        raise RuntimeError("Bedrock tool input is missing items")
+        raise RuntimeError("Bedrock translations are missing items")
 
     rows = raw_input.get("items")
     if not isinstance(rows, list):
-        raise RuntimeError("Bedrock tool input is missing items")
+        raise RuntimeError("Bedrock translations are missing items")
 
     result: dict[str, dict[str, TranslatedCell]] = {}
     for row in rows:
@@ -303,13 +344,13 @@ def _translate_chunk(
     on_filling: Callable[[], None] | None = None,
 ) -> dict[str, dict[str, TranslatedCell]]:
     prompt = _build_prompt(source_locale, items)
-    parsed = _filter_chunk_result(items, _parse_tool_input(_converse_tool(prompt, on_retry)))
+    parsed = _filter_chunk_result(items, _parse_response(_converse(prompt, on_retry)))
     missing = _missing_items(items, parsed)
     if missing:
         if on_filling is not None:
             on_filling()
         retry_prompt = _build_prompt(source_locale, missing)
-        retry_parsed = _parse_tool_input(_converse_tool(retry_prompt, on_retry))
+        retry_parsed = _parse_response(_converse(retry_prompt, on_retry))
         _merge_results(parsed, _filter_chunk_result(missing, retry_parsed))
     return parsed
 

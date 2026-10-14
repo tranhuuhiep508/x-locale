@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +17,9 @@ class Settings(BaseSettings):
     env: str = ""
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
+    bedrock_output_mode: Literal["tool", "json_schema"] = "tool"
+    # OpenAI requires text.format.strict in addition to Converse outputConfig.
+    bedrock_json_schema_strict: bool = False
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
