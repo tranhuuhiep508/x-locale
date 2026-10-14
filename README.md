@@ -258,6 +258,54 @@ See [.env.example](.env.example). Notable vars:
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
-| `BEDROCK_MODEL_ID` | Inference profile ID for AI translate |
+| `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate; must support Converse and the selected output mode |
+| `BEDROCK_OUTPUT_MODE` | `tool` (default) or `json_schema`; choose based on the model/profile's documented support |
+| `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
+| `BEDROCK_JSON_SCHEMA_STRICT` | Default `false`; in `json_schema` mode, set `true` when the provider requires `additionalModelRequestFields.text.format.strict` (e.g. OpenAI GPT-6 Luna) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
 | `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |
+
+AI translate uses Bedrock Converse with the model's default sampling parameters.
+The default `tool` mode requires the `submit_translations` tool and reads
+translations from `toolUse.input`, preserving Nova's mandatory tool-call behavior.
+Set `BEDROCK_TOOL_CHOICE=auto` for models or thinking modes that reject forced tool
+selection. Automatic choice permits free-text responses, which the translator
+rejects because it requires tool input. Opt into `json_schema` for models and
+inference profiles that support structured outputs: the request includes
+`outputConfig.textFormat`, and the backend reads the resulting JSON text. Both
+modes use the same translation schema and normalize into the same results.
+
+| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_TOOL_CHOICE` | `BEDROCK_JSON_SCHEMA_STRICT` |
+|---|---|---|---|
+| Nova 2 Lite | `tool` | `tool` | `false` |
+| Claude Sonnet 5.5 | `tool` | `auto` | `false` |
+| Claude Sonnet 4.6 | `json_schema` | ignored | `false` |
+| GPT-6 Luna | `json_schema` | ignored | `true` |
+
+Output mode is configured explicitly rather than inferred from a model name, so
+opaque application inference profile ARNs work with the same settings. Check the
+model card and geographic profile restrictions before enabling JSON Schema.
+Unsupported mode errors are reported; there is no automatic mode fallback.
+
+Translation instructions guide terminology, tone, and placeholder preservation;
+missing locales are retried once. Temperature, top-p, and top-k are omitted;
+reasoning effort and thinking settings are also omitted, retaining each model's
+defaults. Refused, truncated, malformed, or missing output fails without applying
+translations. Confidence scores are clamped to 0–100 in the backend; the shared
+schema omits numeric constraints because Bedrock structured outputs exclude them.
+
+Set `BEDROCK_MODEL_ID` to a model or inference profile available in `AWS_REGION`
+and restart the backend. Examples for `us-east-1`:
+
+- Claude Sonnet 5.5: `us.anthropic.claude-sonnet-5-5`
+- OpenAI GPT-6 Luna: `us.openai.gpt-6-luna` (or `global.openai.gpt-6-luna`)
+- OpenAI GPT-OSS 120B: `openai.gpt-oss-120b-1:0`
+
+Availability and AWS permissions depend on your account and region. See the
+[Claude Sonnet 5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html),
+[Claude sampling migration guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html),
+[Claude tool choice restrictions](https://platform.claude.com/docs/en/api/errors#forced-tool-use-not-supported),
+[GPT-6 Luna model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html),
+[Bedrock client-side tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-client-side.html),
+[Bedrock tool choice](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html),
+and [Bedrock structured output rules](https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html).

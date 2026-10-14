@@ -1,4 +1,4 @@
-"""AI translate: one Bedrock tool call per string chunk, all requested locales."""
+"""AI translate: one Bedrock request per string chunk, all requested locales."""
 
 from __future__ import annotations
 

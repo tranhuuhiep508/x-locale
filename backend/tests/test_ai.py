@@ -1,4 +1,4 @@
-"""Unit tests for Bedrock tool-based batch translation."""
+"""Unit tests for Bedrock tool and JSON Schema batch translation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import boto3
 import pytest
 from botocore.awsrequest import AWSResponse
 from botocore.exceptions import ClientError, NoCredentialsError
+from pydantic import ValidationError
 
 from app.ai import (
     BATCH_SIZE,
@@ -21,7 +22,7 @@ from app.ai import (
     clamp_confidence,
     translate_batch,
 )
-from app.config import settings
+from app.config import Settings, settings
 
 
 def fake_converse_body(items: list[dict], stop_reason: str = "tool_use") -> dict:
@@ -40,6 +41,13 @@ def fake_converse_body(items: list[dict], stop_reason: str = "tool_use") -> dict
                 ]
             }
         },
+    }
+
+
+def fake_json_body(items: list[dict], stop_reason: str = "end_turn") -> dict:
+    return {
+        "stopReason": stop_reason,
+        "output": {"message": {"content": [{"text": json.dumps({"items": items})}]}},
     }
 
 
@@ -63,6 +71,14 @@ def complete_tool_response(prompt: str) -> dict:
     )
 
 
+@pytest.fixture(autouse=True)
+def default_model(monkeypatch):
+    monkeypatch.setattr(settings, "bedrock_model_id", "us.amazon.nova-2-lite-v1:0")
+    monkeypatch.setattr(settings, "bedrock_output_mode", "tool")
+    monkeypatch.setattr(settings, "bedrock_tool_choice", "tool")
+    monkeypatch.setattr(settings, "bedrock_json_schema_strict", False)
+
+
 @pytest.fixture
 def converse(monkeypatch) -> MagicMock:
     mock_converse = MagicMock()
@@ -79,7 +95,26 @@ def test_translate_batch_empty_list_does_not_call_bedrock(converse):
     converse.assert_not_called()
 
 
-def test_translate_batch_single_item_uses_tool_choice(converse):
+@pytest.mark.parametrize(
+    ("model_id", "tool_choice"),
+    [
+        ("us.amazon.nova-2-lite-v1:0", "tool"),
+        ("us.anthropic.claude-sonnet-5-5", "auto"),
+        ("openai.gpt-oss-120b-1:0", "auto"),
+        ("us.openai.gpt-6-luna", "auto"),
+        ("global.openai.gpt-6-sol", "auto"),
+        ("us.openai.gpt-6-astra", "auto"),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom",
+            "auto",
+        ),
+    ],
+)
+def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
+    converse, monkeypatch, model_id, tool_choice
+):
+    monkeypatch.setattr(settings, "bedrock_model_id", model_id)
+    monkeypatch.setattr(settings, "bedrock_tool_choice", tool_choice)
     converse.return_value = fake_converse_body(
         [
             {
@@ -103,8 +138,13 @@ def test_translate_batch_single_item_uses_tool_choice(converse):
     }
     converse.assert_called_once()
     kwargs = converse.call_args.kwargs
-    assert kwargs["toolConfig"]["toolChoice"]["tool"]["name"] == TOOL_NAME
-    assert kwargs["inferenceConfig"]["maxTokens"] == MAX_TOKENS
+    assert kwargs["modelId"] == model_id
+    assert kwargs["toolConfig"]["toolChoice"] == (
+        {"tool": {"name": TOOL_NAME}} if tool_choice == "tool" else {"auto": {}}
+    )
+    assert kwargs["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+    assert "outputConfig" not in kwargs
+    assert "additionalModelRequestFields" not in kwargs
     prompt = kwargs["messages"][0]["content"][0]["text"]
     assert "Lưu" in prompt
     assert "en" in prompt
@@ -113,6 +153,8 @@ def test_translate_batch_single_item_uses_tool_choice(converse):
     assert "instructions" in prompt
     assert "mandatory" in prompt.lower()
     assert "confidence" in prompt.lower()
+    assert "same terminology" in prompt
+    assert "Do not embellish" in prompt
     tool_schema = kwargs["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"]
     cell_props = tool_schema["properties"]["items"]["items"]["properties"]["translations"]["items"][
         "properties"
@@ -143,6 +185,112 @@ def test_translate_batch_prompt_treats_description_as_override(converse):
     assert payload[0]["instructions"] == notes
 
 
+def test_translate_batch_reads_tool_input_after_reasoning(converse, monkeypatch):
+    monkeypatch.setattr(settings, "bedrock_model_id", "us.openai.gpt-6-luna")
+    response = fake_converse_body(
+        [{"id": "s1", "translations": [{"locale": "en", "text": "Save", "confidence": 88}]}]
+    )
+    response["output"]["message"]["content"].insert(
+        0, {"reasoningContent": {"reasoningText": {"text": "reasoning"}}}
+    )
+    converse.return_value = response
+    assert translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))]) == {
+        "s1": {"en": TranslatedCell("Save", 88)}
+    }
+
+
+@pytest.mark.parametrize(
+    ("model_id", "strict"),
+    [
+        ("us.anthropic.claude-sonnet-4-6", False),
+        ("openai.gpt-oss-120b-1:0", False),
+        ("us.openai.gpt-6-luna", True),
+        ("arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom", True),
+    ],
+)
+def test_json_schema_output_and_default_reasoning(converse, monkeypatch, model_id, strict):
+    monkeypatch.setattr(settings, "bedrock_model_id", model_id)
+    monkeypatch.setattr(settings, "bedrock_output_mode", "json_schema")
+    monkeypatch.setattr(settings, "bedrock_json_schema_strict", strict)
+    response = fake_json_body(
+        [{"id": "s1", "translations": [{"locale": "en", "text": "Save", "confidence": 88}]}]
+    )
+    text = response["output"]["message"]["content"][0]["text"]
+    response["output"]["message"]["content"] = [
+        {"reasoningContent": {"reasoningText": {"text": "reasoning"}}},
+        {"text": text[:20]},
+        {"text": text[20:]},
+    ]
+    converse.return_value = response
+    assert translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))]) == {
+        "s1": {"en": TranslatedCell("Save", 88)}
+    }
+    kwargs = converse.call_args.kwargs
+    assert kwargs["modelId"] == model_id
+    assert kwargs["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+    assert "toolConfig" not in kwargs
+    assert kwargs.get("additionalModelRequestFields", {}) == (
+        {"text": {"format": {"strict": True}}} if strict else {}
+    )
+    output_format = kwargs["outputConfig"]["textFormat"]
+    assert output_format["type"] == "json_schema"
+    schema = json.loads(output_format["structure"]["jsonSchema"]["schema"])
+    row_schema = schema["properties"]["items"]["items"]
+    cell_schema = row_schema["properties"]["translations"]["items"]
+    for object_schema in (schema, row_schema, cell_schema):
+        assert object_schema["additionalProperties"] is False
+        assert set(object_schema["required"]) == set(object_schema["properties"])
+    assert "minimum" not in cell_schema["properties"]["confidence"]
+    assert "maximum" not in cell_schema["properties"]["confidence"]
+    prompt = kwargs["messages"][0]["content"][0]["text"]
+    assert "Return only a JSON object" in prompt
+    assert "Call submit_translations" not in prompt
+
+
+@pytest.mark.parametrize("mode", ["tool", "json_schema"])
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "content_filtered", "guardrail_intervened"])
+def test_incomplete_responses_are_rejected(converse, monkeypatch, mode, stop_reason):
+    monkeypatch.setattr(settings, "bedrock_output_mode", mode)
+    rows = [{"id": "s1", "translations": [{"locale": "en", "text": "Save"}]}]
+    converse.return_value = (
+        fake_converse_body(rows, stop_reason) if mode == "tool" else fake_json_body(rows, stop_reason)
+    )
+    with pytest.raises(RuntimeError, match=stop_reason):
+        translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))])
+
+
+@pytest.mark.parametrize("text", ["not json", "[]", "{}", '{"items": null}'])
+def test_invalid_json_output_is_rejected(converse, monkeypatch, text):
+    monkeypatch.setattr(settings, "bedrock_output_mode", "json_schema")
+    converse.return_value = {
+        "stopReason": "end_turn",
+        "output": {"message": {"content": [{"text": text}]}},
+    }
+    with pytest.raises(RuntimeError, match="Bedrock translations"):
+        translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))])
+
+
+def test_output_settings_env_are_validated(monkeypatch):
+    monkeypatch.delenv("BEDROCK_TOOL_CHOICE", raising=False)
+    assert Settings(_env_file=None).bedrock_tool_choice == "tool"
+    monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "json_schema")
+    monkeypatch.setenv("BEDROCK_JSON_SCHEMA_STRICT", "true")
+    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "auto")
+    config = Settings(_env_file=None)
+    assert config.bedrock_output_mode == "json_schema"
+    assert config.bedrock_json_schema_strict is True
+    assert config.bedrock_tool_choice == "auto"
+    monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "unsupported")
+    with pytest.raises(ValidationError, match="bedrock_output_mode"):
+        Settings(_env_file=None)
+
+
+def test_invalid_tool_choice_env_is_rejected(monkeypatch):
+    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "unsupported")
+    with pytest.raises(ValidationError, match="bedrock_tool_choice"):
+        Settings(_env_file=None)
+
+
 def test_translate_batch_raises_when_tool_not_used(converse):
     converse.return_value = {
         "stopReason": "end_turn",
@@ -169,14 +317,17 @@ def test_translate_batch_chunks_over_batch_size(converse):
     )
 
 
-def test_translate_batch_retries_missing_locale_once(converse):
+@pytest.mark.parametrize("mode", ["tool", "json_schema"])
+def test_translate_batch_retries_missing_locale_once(converse, monkeypatch, mode):
+    monkeypatch.setattr(settings, "bedrock_output_mode", mode)
+    make_response = fake_converse_body if mode == "tool" else fake_json_body
     calls: list[list[dict]] = []
 
     def fake_converse(**kwargs):
         prompt_items = items_from_prompt(kwargs["messages"][0]["content"][0]["text"])
         calls.append(prompt_items)
         if len(calls) == 1:
-            return fake_converse_body(
+            return make_response(
                 [
                     {
                         "id": item["id"],
@@ -185,7 +336,7 @@ def test_translate_batch_retries_missing_locale_once(converse):
                     for item in prompt_items
                 ]
             )
-        return fake_converse_body(
+        return make_response(
             [
                 {
                     "id": item["id"],
@@ -241,9 +392,20 @@ def test_translate_batch_wraps_client_error(converse):
 
 
 @pytest.mark.parametrize("credential_type", ["permanent", "temporary", None])
+@pytest.mark.parametrize(
+    ("model_id", "mode", "strict"),
+    [
+        ("us.amazon.nova-2-lite-v1:0", "tool", False),
+        ("us.anthropic.claude-sonnet-4-6", "json_schema", False),
+        ("us.openai.gpt-6-luna", "json_schema", True),
+    ],
+)
 def test_translate_batch_requires_sigv4_even_with_bearer_token(
-    monkeypatch, tmp_path, credential_type
+    monkeypatch, tmp_path, credential_type, model_id, mode, strict
 ):
+    monkeypatch.setattr(settings, "bedrock_model_id", model_id)
+    monkeypatch.setattr(settings, "bedrock_output_mode", mode)
+    monkeypatch.setattr(settings, "bedrock_json_schema_strict", strict)
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "unsupported-token")
     monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
     monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "credentials"))
@@ -272,7 +434,7 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
     session = boto3.Session()
     sent_requests = []
     body = json.dumps(
-        fake_converse_body(
+        (fake_converse_body if mode == "tool" else fake_json_body)(
             [{"id": "s1", "translations": [{"locale": "en", "text": "Save"}]}]
         )
     ).encode()
@@ -286,6 +448,10 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
             SimpleNamespace(stream=lambda: iter([body])),
         )
 
+    def check_client_config(context, **kwargs):
+        assert context["client_config"].read_timeout == 300
+
+    session.events.register("before-call.bedrock-runtime.Converse", check_client_config)
     session.events.register("before-send.bedrock-runtime.Converse", respond)
     monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
     items = [TranslateItem(id="s1", source_text="Lưu", locales=("en",))]
@@ -298,6 +464,15 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
             "s1": {"en": TranslatedCell(text="Save", confidence=None)}
         }
         assert len(sent_requests) == 1
+        request_body = json.loads(sent_requests[0].body)
+        assert request_body["inferenceConfig"] == {"maxTokens": MAX_TOKENS}
+        assert ("toolConfig" in request_body) == (mode == "tool")
+        if mode == "tool":
+            assert request_body["toolConfig"]["toolChoice"] == {"tool": {"name": TOOL_NAME}}
+        assert ("outputConfig" in request_body) == (mode == "json_schema")
+        assert request_body.get("additionalModelRequestFields", {}) == (
+            {"text": {"format": {"strict": True}}} if strict else {}
+        )
         headers = sent_requests[0].headers
         assert headers["Authorization"].startswith(b"AWS4-HMAC-SHA256 ")
         if credential_type == "temporary":
