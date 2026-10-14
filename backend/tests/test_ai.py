@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import boto3
 import pytest
-from botocore.exceptions import ClientError
+from botocore.awsrequest import AWSResponse
+from botocore.exceptions import ClientError, NoCredentialsError
 
 from app.ai import (
     BATCH_SIZE,
@@ -16,7 +18,6 @@ from app.ai import (
     TOOL_NAME,
     TranslatedCell,
     TranslateItem,
-    _refresh_bedrock_token,
     clamp_confidence,
     translate_batch,
 )
@@ -70,7 +71,6 @@ def converse(monkeypatch) -> MagicMock:
     session = MagicMock()
     session.client.return_value = client
     monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-    monkeypatch.setattr("app.ai._refresh_bedrock_token", lambda: None)
     return mock_converse
 
 
@@ -240,77 +240,78 @@ def test_translate_batch_wraps_client_error(converse):
         translate_batch("vi", [TranslateItem(id="s1", source_text="Lưu", locales=("en",))])
 
 
-def test_translate_batch_refreshes_token_before_each_converse(monkeypatch):
-    refresh = MagicMock()
-    monkeypatch.setattr("app.ai._refresh_bedrock_token", refresh)
-    mock_converse = MagicMock()
-    client = MagicMock()
-    client.converse = mock_converse
-    session = MagicMock()
-    session.client.return_value = client
+@pytest.mark.parametrize("credential_type", ["permanent", "temporary", None])
+def test_translate_batch_requires_sigv4_even_with_bearer_token(
+    monkeypatch, tmp_path, credential_type
+):
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "unsupported-token")
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "credentials"))
+    monkeypatch.setenv("BOTO_CONFIG", str(tmp_path / "boto"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    for name in (
+        "AWS_PROFILE",
+        "AWS_DEFAULT_PROFILE",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_SECURITY_TOKEN",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+        "AWS_ROLE_ARN",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    if credential_type is not None:
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+    if credential_type == "temporary":
+        monkeypatch.setenv("AWS_SESSION_TOKEN", "test-session-token")
+
+    session = boto3.Session()
+    sent_requests = []
+    body = json.dumps(
+        fake_converse_body(
+            [{"id": "s1", "translations": [{"locale": "en", "text": "Save"}]}]
+        )
+    ).encode()
+
+    def respond(request, **kwargs):
+        sent_requests.append(request)
+        return AWSResponse(
+            request.url,
+            200,
+            {"content-type": "application/json"},
+            SimpleNamespace(stream=lambda: iter([body])),
+        )
+
+    session.events.register("before-send.bedrock-runtime.Converse", respond)
     monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-    mock_converse.side_effect = lambda **kwargs: complete_tool_response(
-        kwargs["messages"][0]["content"][0]["text"]
-    )
-    items = [
-        TranslateItem(id=str(index), source_text=f"s{index}", locales=("en",))
-        for index in range(BATCH_SIZE + 1)
-    ]
-    translate_batch("vi", items)
-    assert mock_converse.call_count == 2
-    assert refresh.call_count == 3
+    items = [TranslateItem(id="s1", source_text="Lưu", locales=("en",))]
+    if credential_type is None:
+        with pytest.raises(ValueError, match="AWS Bedrock auth is not configured"):
+            translate_batch("vi", items)
+        assert sent_requests == []
+    else:
+        assert translate_batch("vi", items) == {
+            "s1": {"en": TranslatedCell(text="Save", confidence=None)}
+        }
+        assert len(sent_requests) == 1
+        headers = sent_requests[0].headers
+        assert headers["Authorization"].startswith(b"AWS4-HMAC-SHA256 ")
+        if credential_type == "temporary":
+            assert headers["X-Amz-Security-Token"] == b"test-session-token"
+        else:
+            assert "X-Amz-Security-Token" not in headers
 
 
-def test_refresh_writes_provide_token_result(monkeypatch):
-    seen: dict[str, str | None] = {}
-
-    def fake_provide(region=None):
-        seen["region"] = region
-        return "minted-token"
-
-    monkeypatch.setattr("app.ai.provide_token", fake_provide)
+def test_translate_batch_reports_missing_credentials_during_client_creation(monkeypatch):
     session = MagicMock()
-    session.get_credentials.return_value = object()
+    session.client.side_effect = NoCredentialsError()
     monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
-
-    _refresh_bedrock_token()
-    assert seen["region"] == settings.aws_region
-    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "minted-token"
-
-
-def test_refresh_overwrites_static_token_when_iam_present(monkeypatch):
-    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "expired-key")
-    monkeypatch.setattr("app.ai.provide_token", lambda region=None: "fresh-token")
-    session = MagicMock()
-    session.get_credentials.return_value = object()
-    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-
-    _refresh_bedrock_token()
-    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "fresh-token"
-
-
-def test_refresh_keeps_static_token_without_iam(monkeypatch):
-    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "static-key")
-    provide = MagicMock()
-    monkeypatch.setattr("app.ai.provide_token", provide)
-    session = MagicMock()
-    session.get_credentials.return_value = None
-    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-
-    _refresh_bedrock_token()
-    provide.assert_not_called()
-    assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "static-key"
-
-
-def test_refresh_raises_when_no_auth(monkeypatch):
-    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
-    session = MagicMock()
-    session.get_credentials.return_value = None
-    monkeypatch.setattr("app.ai.boto3.Session", lambda: session)
-
     with pytest.raises(ValueError, match="AWS Bedrock auth is not configured"):
-        _refresh_bedrock_token()
+        translate_batch("vi", [TranslateItem(id="s1", source_text="Lưu", locales=("en",))])
 
 
 def test_clamp_confidence_bounds_and_rejects_junk():
