@@ -32,9 +32,11 @@ LIMITS = {"fresh": 6.0, "unchanged": 2.0, "changed_10_percent": 2.0}
 # Today: 86 flat / 88 modular fresh, 6 unchanged, 10 changed. A per-row query
 # regression adds thousands of statements at 20k keys.
 STATEMENT_BUDGETS = {"fresh": 100, "unchanged": 10, "changed_10_percent": 15}
-# Shared CI runners vary about 2x, so the time gate only catches large slowdowns.
+# Recent CI medians: xlsx-modular fresh ~7.6s, 10% reimport ~2.4s (an earlier
+# run was 5.66s and 1.80s). 3x the manual targets is ~2.5x those medians.
+# The pre-rewrite path took 20–45s, so a real regression still fails.
 # LIMITS stay the targets for manual runs on a known machine.
-CI_TIME_FACTOR = 2.0
+CI_TIME_FACTOR = 3.0
 
 
 def payload(kind: str, size: int, changed: bool):
