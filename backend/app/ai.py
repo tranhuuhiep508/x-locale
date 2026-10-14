@@ -80,6 +80,7 @@ SUBMIT_TRANSLATIONS_TOOL = {
                 "required": ["items"],
             }
         },
+        "strict": True,
     }
 }
 

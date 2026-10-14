@@ -142,6 +142,9 @@ def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
         {"tool": {"name": TOOL_NAME}} if tool_choice == "tool" else {"auto": {}}
     )
     assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
+    assert "temperature" not in kwargs
+    assert "temperature" not in kwargs["inferenceConfig"]
+    assert kwargs["toolConfig"]["tools"][0]["toolSpec"]["strict"] is True
     assert "outputConfig" not in kwargs
     assert "additionalModelRequestFields" not in kwargs
     prompt = kwargs["messages"][0]["content"][0]["text"]
@@ -236,6 +239,8 @@ def test_json_schema_output_and_default_reasoning(converse, monkeypatch, model_i
     kwargs = converse.call_args.kwargs
     assert kwargs["modelId"] == model_id
     assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
+    assert "temperature" not in kwargs
+    assert "temperature" not in kwargs["inferenceConfig"]
     assert "toolConfig" not in kwargs
     assert kwargs.get("additionalModelRequestFields", {}) == (
         {"text": {"format": {"strict": True}}} if strict else {}
@@ -279,18 +284,44 @@ def test_invalid_json_output_is_rejected(converse, monkeypatch, text):
 
 
 def test_output_settings_env_are_validated(monkeypatch):
-    monkeypatch.delenv("BEDROCK_TOOL_CHOICE", raising=False)
-    assert Settings(_env_file=None).bedrock_tool_choice == "tool"
-    monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "json_schema")
-    monkeypatch.setenv("BEDROCK_JSON_SCHEMA_STRICT", "true")
+    for name in ("BEDROCK_OUTPUT_MODE", "BEDROCK_JSON_SCHEMA_STRICT", "BEDROCK_TOOL_CHOICE"):
+        monkeypatch.delenv(name, raising=False)
+    defaults = Settings(_env_file=None)
+    assert defaults.bedrock_output_mode == "json_schema"
+    assert defaults.bedrock_json_schema_strict is True
+    assert defaults.bedrock_tool_choice == "tool"
+    monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "tool")
+    monkeypatch.setenv("BEDROCK_JSON_SCHEMA_STRICT", "false")
     monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "auto")
     config = Settings(_env_file=None)
-    assert config.bedrock_output_mode == "json_schema"
-    assert config.bedrock_json_schema_strict is True
+    assert config.bedrock_output_mode == "tool"
+    assert config.bedrock_json_schema_strict is False
     assert config.bedrock_tool_choice == "auto"
     monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "unsupported")
     with pytest.raises(ValidationError, match="bedrock_output_mode"):
         Settings(_env_file=None)
+
+
+def test_default_request_is_strict_json_schema(converse, monkeypatch):
+    for name in ("BEDROCK_OUTPUT_MODE", "BEDROCK_JSON_SCHEMA_STRICT", "BEDROCK_TOOL_CHOICE"):
+        monkeypatch.delenv(name, raising=False)
+    defaults = Settings(_env_file=None)
+    monkeypatch.setattr(settings, "bedrock_output_mode", defaults.bedrock_output_mode)
+    monkeypatch.setattr(settings, "bedrock_json_schema_strict", defaults.bedrock_json_schema_strict)
+    monkeypatch.setattr(settings, "bedrock_tool_choice", defaults.bedrock_tool_choice)
+    converse.return_value = fake_json_body(
+        [{"id": "s1", "translations": [{"locale": "en", "text": "Save", "confidence": 88}]}]
+    )
+    assert translate_batch("vi", [TranslateItem("s1", "Lưu", ("en",))]) == {
+        "s1": {"en": TranslatedCell("Save", 88)}
+    }
+    kwargs = converse.call_args.kwargs
+    assert kwargs["outputConfig"]["textFormat"]["type"] == "json_schema"
+    assert kwargs["additionalModelRequestFields"] == {"text": {"format": {"strict": True}}}
+    assert "toolConfig" not in kwargs
+    assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
+    assert "temperature" not in kwargs
+    assert "temperature" not in kwargs["inferenceConfig"]
 
 
 def test_invalid_tool_choice_env_is_rejected(monkeypatch):
@@ -474,9 +505,12 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
         assert len(sent_requests) == 1
         request_body = json.loads(sent_requests[0].body)
         assert request_body["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
+        assert "temperature" not in request_body
+        assert "temperature" not in request_body["inferenceConfig"]
         assert ("toolConfig" in request_body) == (mode == "tool")
         if mode == "tool":
             assert request_body["toolConfig"]["toolChoice"] == {"tool": {"name": TOOL_NAME}}
+            assert request_body["toolConfig"]["tools"][0]["toolSpec"]["strict"] is True
         assert ("outputConfig" in request_body) == (mode == "json_schema")
         assert request_body.get("additionalModelRequestFields", {}) == (
             {"text": {"format": {"strict": True}}} if strict else {}

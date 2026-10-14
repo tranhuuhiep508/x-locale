@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
     bedrock_max_tokens: int = 16000
-    bedrock_output_mode: Literal["tool", "json_schema"] = "tool"
+    bedrock_output_mode: Literal["tool", "json_schema"] = "json_schema"
     bedrock_tool_choice: Literal["tool", "auto"] = "tool"
-    # OpenAI requires text.format.strict in addition to Converse outputConfig.
-    bedrock_json_schema_strict: bool = False
+    # Model-specific text.format.strict. Set false when a model rejects the field.
+    bedrock_json_schema_strict: bool = True
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0

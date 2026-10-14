@@ -259,22 +259,24 @@ See [.env.example](.env.example). Notable vars:
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate; must support Converse and the selected output mode |
-| `BEDROCK_OUTPUT_MODE` | `tool` (default) or `json_schema`; choose based on the model/profile's documented support |
+| `BEDROCK_OUTPUT_MODE` | `json_schema` (default) or `tool` (opt in); choose based on the model/profile's documented support |
 | `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
-| `BEDROCK_JSON_SCHEMA_STRICT` | Default `false`; in `json_schema` mode, set `true` when the provider requires `additionalModelRequestFields.text.format.strict` (e.g. OpenAI GPT-6 Luna) |
+| `BEDROCK_JSON_SCHEMA_STRICT` | Default `true`. In `json_schema` mode, sends `additionalModelRequestFields.text.format.strict`. Set `false` for models that reject that field (e.g. Claude Sonnet 4.6). GPT-6 Luna needs `true`. |
 | `BEDROCK_MAX_TOKENS` | Maximum output tokens for a Bedrock translate request (default 16000). Models with a smaller output cap must lower it, or Bedrock rejects the request. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
 | `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |
 
 AI translate uses Bedrock Converse with the model's default sampling parameters.
-The default `tool` mode requires the `submit_translations` tool and reads
-translations from `toolUse.input`, preserving Nova's mandatory tool-call behavior.
-Set `BEDROCK_TOOL_CHOICE=auto` for models or thinking modes that reject forced tool
-selection. Automatic choice permits free-text responses, which the translator
-rejects because it requires tool input. Opt into `json_schema` for models and
-inference profiles that support structured outputs: the request includes
-`outputConfig.textFormat`, and the backend reads the resulting JSON text. Both
-modes use the same translation schema and normalize into the same results.
+The default `json_schema` mode includes `outputConfig.textFormat`, and the backend
+reads the resulting JSON text. `BEDROCK_JSON_SCHEMA_STRICT` defaults to true and
+sends the model-specific `text.format.strict` field; set it false for models that
+reject that field. Opt into `tool` to require the `submit_translations` tool and
+read translations from `toolUse.input`. The tool spec sets `strict` so the model
+must follow the schema. `BEDROCK_TOOL_CHOICE` stays `tool` unless you set `auto`
+for models or thinking modes that reject forced tool selection. Automatic choice
+permits free-text responses, which the translator rejects because it requires tool
+input. Both modes use the same translation schema and normalize into the same
+results.
 
 | Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_TOOL_CHOICE` | `BEDROCK_JSON_SCHEMA_STRICT` |
 |---|---|---|---|
@@ -285,11 +287,11 @@ modes use the same translation schema and normalize into the same results.
 
 Output mode is configured explicitly rather than inferred from a model name, so
 opaque application inference profile ARNs work with the same settings. Check the
-model card and geographic profile restrictions before enabling JSON Schema.
+model card and geographic profile restrictions for the selected output mode.
 Unsupported mode errors are reported; there is no automatic mode fallback.
 
 Translation instructions guide terminology, tone, and placeholder preservation;
-missing locales are retried once. Temperature, top-p, and top-k are omitted;
+missing locales are retried once. Top-p and top-k are omitted;
 reasoning effort and thinking settings are also omitted, retaining each model's
 defaults. Refused, truncated, malformed, or missing output fails without applying
 translations. Confidence scores are clamped to 0–100 in the backend; the shared
