@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     bedrock_model_id: str = "global.openai.gpt-6-luna"
     bedrock_max_tokens: int = 16000
     bedrock_output_mode: Literal["tool", "json_schema"] = "json_schema"
-    bedrock_tool_choice: Literal["tool", "auto"] = "tool"
     # Model-specific text.format.strict. Set false when a model rejects the field.
     bedrock_json_schema_strict: bool = True
     # Deterministic AI translations for E2E / local dev (no Bedrock calls).

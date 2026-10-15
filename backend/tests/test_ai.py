@@ -74,7 +74,6 @@ def complete_tool_response(prompt: str) -> dict:
 def default_model(monkeypatch):
     monkeypatch.setattr(settings, "bedrock_model_id", "us.amazon.nova-2-lite-v1:0")
     monkeypatch.setattr(settings, "bedrock_output_mode", "tool")
-    monkeypatch.setattr(settings, "bedrock_tool_choice", "tool")
     monkeypatch.setattr(settings, "bedrock_json_schema_strict", False)
 
 
@@ -95,25 +94,19 @@ def test_translate_batch_empty_list_does_not_call_bedrock(converse):
 
 
 @pytest.mark.parametrize(
-    ("model_id", "tool_choice"),
+    "model_id",
     [
-        ("us.amazon.nova-2-lite-v1:0", "tool"),
-        ("us.anthropic.claude-sonnet-5-5", "auto"),
-        ("openai.gpt-oss-120b-1:0", "auto"),
-        ("us.openai.gpt-6-luna", "auto"),
-        ("global.openai.gpt-6-sol", "auto"),
-        ("us.openai.gpt-6-astra", "auto"),
-        (
-            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom",
-            "auto",
-        ),
+        "us.amazon.nova-2-lite-v1:0",  # pragma: allowlist secret
+        "us.anthropic.claude-sonnet-5-5",
+        "openai.gpt-oss-120b-1:0",
+        "us.openai.gpt-6-luna",
+        "global.openai.gpt-6-sol",
+        "us.openai.gpt-6-astra",
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/custom",  # pragma: allowlist secret
     ],
 )
-def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
-    converse, monkeypatch, model_id, tool_choice
-):
+def test_translate_batch_uses_default_sampling(converse, monkeypatch, model_id):
     monkeypatch.setattr(settings, "bedrock_model_id", model_id)
-    monkeypatch.setattr(settings, "bedrock_tool_choice", tool_choice)
     converse.return_value = fake_converse_body(
         [
             {
@@ -138,9 +131,7 @@ def test_translate_batch_uses_default_sampling_and_configured_tool_choice(
     converse.assert_called_once()
     kwargs = converse.call_args.kwargs
     assert kwargs["modelId"] == model_id
-    assert kwargs["toolConfig"]["toolChoice"] == (
-        {"tool": {"name": TOOL_NAME}} if tool_choice == "tool" else {"auto": {}}
-    )
+    assert kwargs["toolConfig"]["toolChoice"] == {"auto": {}}
     assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
     assert "temperature" not in kwargs
     assert "temperature" not in kwargs["inferenceConfig"]
@@ -288,33 +279,29 @@ def test_output_settings_env_are_validated(monkeypatch):
         "BEDROCK_MODEL_ID",
         "BEDROCK_OUTPUT_MODE",
         "BEDROCK_JSON_SCHEMA_STRICT",
-        "BEDROCK_TOOL_CHOICE",
     ):
         monkeypatch.delenv(name, raising=False)
     defaults = Settings(_env_file=None)
     assert defaults.bedrock_model_id == "global.openai.gpt-6-luna"
     assert defaults.bedrock_output_mode == "json_schema"
     assert defaults.bedrock_json_schema_strict is True
-    assert defaults.bedrock_tool_choice == "tool"
+    assert not hasattr(defaults, "bedrock_tool_choice")
     monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "tool")
     monkeypatch.setenv("BEDROCK_JSON_SCHEMA_STRICT", "false")
-    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "auto")
     config = Settings(_env_file=None)
     assert config.bedrock_output_mode == "tool"
     assert config.bedrock_json_schema_strict is False
-    assert config.bedrock_tool_choice == "auto"
     monkeypatch.setenv("BEDROCK_OUTPUT_MODE", "unsupported")
     with pytest.raises(ValidationError, match="bedrock_output_mode"):
         Settings(_env_file=None)
 
 
 def test_default_request_is_strict_json_schema(converse, monkeypatch):
-    for name in ("BEDROCK_OUTPUT_MODE", "BEDROCK_JSON_SCHEMA_STRICT", "BEDROCK_TOOL_CHOICE"):
+    for name in ("BEDROCK_OUTPUT_MODE", "BEDROCK_JSON_SCHEMA_STRICT"):
         monkeypatch.delenv(name, raising=False)
     defaults = Settings(_env_file=None)
     monkeypatch.setattr(settings, "bedrock_output_mode", defaults.bedrock_output_mode)
     monkeypatch.setattr(settings, "bedrock_json_schema_strict", defaults.bedrock_json_schema_strict)
-    monkeypatch.setattr(settings, "bedrock_tool_choice", defaults.bedrock_tool_choice)
     converse.return_value = fake_json_body(
         [{"id": "s1", "translations": [{"locale": "en", "text": "Save", "confidence": 88}]}]
     )
@@ -328,12 +315,6 @@ def test_default_request_is_strict_json_schema(converse, monkeypatch):
     assert kwargs["inferenceConfig"] == {"maxTokens": settings.bedrock_max_tokens}
     assert "temperature" not in kwargs
     assert "temperature" not in kwargs["inferenceConfig"]
-
-
-def test_invalid_tool_choice_env_is_rejected(monkeypatch):
-    monkeypatch.setenv("BEDROCK_TOOL_CHOICE", "unsupported")
-    with pytest.raises(ValidationError, match="bedrock_tool_choice"):
-        Settings(_env_file=None)
 
 
 def test_translate_batch_raises_when_tool_not_used(converse):
@@ -515,7 +496,7 @@ def test_translate_batch_requires_sigv4_even_with_bearer_token(
         assert "temperature" not in request_body["inferenceConfig"]
         assert ("toolConfig" in request_body) == (mode == "tool")
         if mode == "tool":
-            assert request_body["toolConfig"]["toolChoice"] == {"tool": {"name": TOOL_NAME}}
+            assert request_body["toolConfig"]["toolChoice"] == {"auto": {}}
             assert request_body["toolConfig"]["tools"][0]["toolSpec"]["strict"] is True
         assert ("outputConfig" in request_body) == (mode == "json_schema")
         assert request_body.get("additionalModelRequestFields", {}) == (

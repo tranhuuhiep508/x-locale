@@ -260,7 +260,6 @@ See [.env.example](.env.example). Notable vars:
 | `AWS_REGION` | Bedrock region (default `us-east-1`) |
 | `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate (default `global.openai.gpt-6-luna`); must support Converse and the selected output mode |
 | `BEDROCK_OUTPUT_MODE` | `json_schema` (default) or `tool` (opt in); choose based on the model/profile's documented support |
-| `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
 | `BEDROCK_JSON_SCHEMA_STRICT` | Default `true`. In `json_schema` mode, sends `additionalModelRequestFields.text.format.strict`. Set `false` for models that reject that field (e.g. Claude Sonnet 4.6). GPT-6 Luna needs `true`. |
 | `BEDROCK_MAX_TOKENS` | Maximum output tokens for a Bedrock translate request (default 16000). Models with a smaller output cap must lower it, or Bedrock rejects the request. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
@@ -270,20 +269,19 @@ AI translate uses Bedrock Converse with the model's default sampling parameters.
 The default `json_schema` mode includes `outputConfig.textFormat`, and the backend
 reads the resulting JSON text. `BEDROCK_JSON_SCHEMA_STRICT` defaults to true and
 sends the model-specific `text.format.strict` field; set it false for models that
-reject that field. Opt into `tool` to require the `submit_translations` tool and
-read translations from `toolUse.input`. The tool spec sets `strict` so the model
-must follow the schema. `BEDROCK_TOOL_CHOICE` stays `tool` unless you set `auto`
-for models or thinking modes that reject forced tool selection. Automatic choice
-permits free-text responses, which the translator rejects because it requires tool
-input. Both modes use the same translation schema and normalize into the same
-results.
+reject that field. Opt into `tool` to send the `submit_translations` tool and
+read translations from `toolUse.input`. Tool mode always sends `toolChoice` auto,
+and the tool spec sets `strict` so the model must follow the schema. Automatic
+choice permits free-text responses, which the translator rejects because it
+requires tool input. Both modes use the same translation schema and normalize
+into the same results.
 
-| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_TOOL_CHOICE` | `BEDROCK_JSON_SCHEMA_STRICT` |
-|---|---|---|---|
-| Nova 2 Lite | `tool` | `tool` | `false` |
-| Claude Sonnet 5.5 | `tool` | `auto` | `false` |
-| Claude Sonnet 4.6 | `json_schema` | ignored | `false` |
-| GPT-6 Luna | `json_schema` | ignored | `true` |
+| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_JSON_SCHEMA_STRICT` |
+|---|---|---|
+| Nova 2 Lite | `tool` | `false` |
+| Claude Sonnet 5.5 | `tool` | `false` |
+| Claude Sonnet 4.6 | `json_schema` | `false` |
+| GPT-6 Luna | `json_schema` | `true` |
 
 Output mode is configured explicitly rather than inferred from a model name, so
 opaque application inference profile ARNs work with the same settings. Check the
@@ -307,7 +305,6 @@ and restart the backend. Examples for `us-east-1`:
 Availability and AWS permissions depend on your account and region. See the
 [Claude Sonnet 5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html),
 [Claude sampling migration guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html),
-[Claude tool choice restrictions](https://platform.claude.com/docs/en/api/errors#forced-tool-use-not-supported),
 [GPT-6 Luna model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html),
 [Bedrock client-side tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-client-side.html),
 [Bedrock tool choice](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html),
