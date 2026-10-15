@@ -37,7 +37,7 @@ describe('project creation translation context', () => {
     navigate.mockReset()
     vi.mocked(projectsApi.create).mockReset().mockResolvedValue({
       id: 'p1', slug: 'new-catalog', name: 'New catalog', base_language: 'en',
-      target_languages: ['vi'], layout: 'flat', string_count: 0, created_at: null, updated_at: null,
+      target_languages: ['vi'], layout: 'flat', allow_duplicate_keys: false, string_count: 0, created_at: null, updated_at: null,
     })
   })
 

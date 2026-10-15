@@ -29,6 +29,7 @@ from app.schemas import ImportDiff, ImportDiffItem, ImportResult
 from app.services.activity_bulk import insert_rows, update_rows
 from app.services.activity_events import classify_event
 from app.services.job_progress import report_progress
+from app.services.key_policy import ambiguous_key
 
 IMPORT_DIFF_SAMPLE = 100
 # Strings and translations, tag links, activities.
@@ -56,9 +57,11 @@ class _Catalog:
     links: dict[uuid.UUID, set[uuid.UUID]]
     modules: dict[uuid.UUID, dict]
     tags: dict[uuid.UUID, dict]
-    live: dict[str, dict] = field(default_factory=dict)
+    live: dict[tuple[uuid.UUID | None, str], dict] = field(default_factory=dict)
+    live_keys: dict[str, list[dict]] = field(default_factory=dict)
     tombs: dict[tuple[uuid.UUID | None, str], dict] = field(default_factory=dict)
     tomb_keys: dict[str, dict] = field(default_factory=dict)
+    tomb_candidates: dict[str, list[dict]] = field(default_factory=dict)
 
 
 def _load_catalog(db: Session, project_id: uuid.UUID, keys: list[str] | None) -> _Catalog:
@@ -88,21 +91,31 @@ def _load_catalog(db: Session, project_id: uuid.UUID, keys: list[str] | None) ->
     catalog = _Catalog(entries, translations, links, modules, tags)
     for entry in entries.values():
         if entry["deleted_at"] is None:
-            catalog.live[entry["key"]] = entry
+            catalog.live[(entry["module_id"], entry["key"])] = entry
+            catalog.live_keys.setdefault(entry["key"], []).append(entry)
         else:
             catalog.tombs.setdefault((entry["module_id"], entry["key"]), entry)
+            catalog.tomb_candidates.setdefault(entry["key"], []).append(entry)
             if entry["key"] not in catalog.tomb_keys or entry["module_id"] is None:
                 catalog.tomb_keys[entry["key"]] = entry
     return catalog
 
 
-def _lookup(catalog: _Catalog, key: str, module_id: uuid.UUID | None) -> dict | None:
-    live = catalog.live.get(key)
-    if module_id is None:
-        return live or catalog.tombs.get((None, key)) or catalog.tomb_keys.get(key)
-    if live is not None and live["module_id"] == module_id:
-        return live
-    return catalog.tombs.get((module_id, key))
+def _lookup(
+    catalog: _Catalog, key: str, module_id, *, scoped: bool = False, allow_duplicates: bool = False
+) -> dict | None:
+    if scoped:
+        return catalog.live.get((module_id, key)) or catalog.tombs.get((module_id, key))
+    live = catalog.live_keys.get(key, [])
+    if len(live) > 1:
+        raise ambiguous_key(key)
+    if live:
+        return live[0]
+    tombs = catalog.tomb_candidates.get(key, [])
+    tomb_modules = {entry["module_id"] for entry in tombs}
+    if allow_duplicates and len(tomb_modules) > 1:
+        raise ambiguous_key(key)
+    return catalog.tombs.get((None, key)) or catalog.tomb_keys.get(key)
 
 
 def _module_label(catalog: _Catalog, module_id: uuid.UUID | None) -> str:
@@ -113,7 +126,9 @@ def _module_ids(catalog: _Catalog) -> dict[str, uuid.UUID]:
     return {row["slug"]: mid for mid, row in catalog.modules.items()}
 
 
-def _validate(catalog: _Catalog, rows: list[ImportRow], *, reject_deleted: bool) -> None:
+def _validate(
+    catalog: _Catalog, rows: list[ImportRow], *, reject_deleted: bool, allow_duplicates: bool
+) -> None:
     modules = _module_ids(catalog)
     owners: dict[str, uuid.UUID | str | None] = {}
     pending, tombstones = set(), set()
@@ -137,16 +152,35 @@ def _validate(catalog: _Catalog, rows: list[ImportRow], *, reject_deleted: bool)
             raise HTTPException(400, "Unknown tag")
     if reject_deleted:
         wanted = {row.key for row in rows}
+        scopes = {
+            (modules.get(row.module) if isinstance(row.module, str) else row.module, row.key)
+            for row in rows
+            if row.scoped and (not isinstance(row.module, str) or row.module in modules)
+        }
+        if allow_duplicates:
+            for row in rows:
+                if not row.scoped:
+                    match = _lookup(catalog, row.key, None, allow_duplicates=True)
+                    if match is not None:
+                        scopes.add((match["module_id"], row.key))
         modular = any(row.scoped for row in rows)
         for entry in catalog.entries.values():
-            if entry["key"] not in wanted:
+            identity = (entry["module_id"], entry["key"])
+            if entry["key"] not in wanted or (
+                allow_duplicates and identity not in scopes
+            ):
                 continue
             label = (
                 entry["key"]
                 if not modular
                 else f"{_module_label(catalog, entry['module_id']) if entry['module_id'] else '_unassigned'}/{entry['key']}"
             )
-            if entry["deleted_at"] is not None and entry["key"] not in catalog.live:
+            live = (
+                catalog.live.get(identity)
+                if allow_duplicates
+                else catalog.live_keys.get(entry["key"])
+            )
+            if entry["deleted_at"] is not None and not live:
                 tombstones.add(label)
             elif entry["deleted_at"] is None and entry["pending_delete"]:
                 pending.add(label)
@@ -162,8 +196,10 @@ def _validate(catalog: _Catalog, rows: list[ImportRow], *, reject_deleted: bool)
             )
     for row in rows:
         mid = modules.get(row.module) if isinstance(row.module, str) else row.module
-        live = catalog.live.get(row.key)
-        if row.scoped:
+        live = next(iter(catalog.live_keys.get(row.key, [])), None)
+        if not row.scoped:
+            _lookup(catalog, row.key, mid, allow_duplicates=allow_duplicates)
+        if row.scoped and not allow_duplicates:
             owner = mid if mid is not None else row.module
             if row.key in owners and owners[row.key] != owner:
                 raise HTTPException(409, f"String '{row.key}' appears in more than one module")
@@ -182,11 +218,11 @@ def _create_references(
     project: Project,
     catalog: _Catalog,
     rows: list[ImportRow],
-    groups: list[tuple[uuid.UUID | str | None, str | None]],
+    groups: list[tuple[uuid.UUID | str | None, str | None, bool]],
     dry_run: bool,
 ) -> dict[str, uuid.UUID]:
     modules = _module_ids(catalog)
-    slugs = {ref for ref, _ in groups if isinstance(ref, str)} | {
+    slugs = {ref for ref, _, _scoped in groups if isinstance(ref, str)} | {
         row.module for row in rows if isinstance(row.module, str)
     }
     new_modules = [
@@ -266,7 +302,7 @@ def import_rows(
     project: Project,
     rows: list[ImportRow],
     *,
-    groups: list[tuple[uuid.UUID | str | None, str | None]],
+    groups: list[tuple[uuid.UUID | str | None, str | None, bool]],
     dry_run: bool,
     status: TranslationStatus = TranslationStatus.draft,
     partial: bool = False,
@@ -277,7 +313,9 @@ def import_rows(
         db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
     )
     report_progress(db, "validating")
-    _validate(catalog, rows, reject_deleted=reject_deleted)
+    _validate(
+        catalog, rows, reject_deleted=reject_deleted, allow_duplicates=project.allow_duplicate_keys
+    )
     modules = _create_references(db, project, catalog, rows, groups, dry_run)
     tag_names = {row["name"]: tid for tid, row in catalog.tags.items()}
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(db)
@@ -297,9 +335,15 @@ def import_rows(
     for row in rows:
         seen.setdefault(row.module, set()).add(row.key)
         mid = modules[row.module] if isinstance(row.module, str) else row.module
-        entry = _lookup(catalog, row.key, mid)
-        live = catalog.live.get(row.key)
-        if live is not None and (entry is None or entry["id"] != live["id"]):
+        entry = _lookup(
+            catalog, row.key, mid, scoped=row.scoped, allow_duplicates=project.allow_duplicate_keys
+        )
+        live = next(iter(catalog.live_keys.get(row.key, [])), None)
+        if (
+            not project.allow_duplicate_keys
+            and live is not None
+            and (entry is None or entry["id"] != live["id"])
+        ):
             raise HTTPException(409, f"String '{row.key}' already exists")
         source = row.values.get(project.base_language, entry["source_text"] if entry else row.key)
         old_trans = catalog.translations.get(entry["id"], {}) if entry else {}
@@ -350,6 +394,7 @@ def import_rows(
             entry = {
                 "id": sid,
                 "project_id": project.id,
+                "key_policy_allows_duplicates": project.allow_duplicate_keys,
                 "module_id": mid,
                 "key": row.key,
                 "source_text": source,
@@ -366,7 +411,8 @@ def import_rows(
                 "created_by_label": actor_label,
             }
             catalog.entries[sid] = entry
-            catalog.live[row.key] = entry
+            catalog.live[(mid, row.key)] = entry
+            catalog.live_keys.setdefault(row.key, []).append(entry)
             new_ids.add(sid)
             before[sid] = None
             original_links[sid] = set()
@@ -399,6 +445,9 @@ def import_rows(
             if entry["pending_delete"] or entry["deleted_at"] is not None:
                 mutated = True
             entry["pending_delete"] = False
+            if entry["deleted_at"] is not None:
+                catalog.live[(entry["module_id"], row.key)] = entry
+                catalog.live_keys.setdefault(row.key, []).append(entry)
             entry["deleted_at"] = None
         if tids:
             catalog.links[sid] = tids if row.excel else old_links | tids
@@ -466,11 +515,11 @@ def import_rows(
     orphan_count = 0
     if report_orphans and not partial:
         orphans = []
-        for ref, label in groups:
+        for ref, label, scoped in groups:
             mid = modules[ref] if isinstance(ref, str) else ref
             wanted = seen.get(ref, set())
             for entry in catalog.live.values():
-                if entry["key"] not in wanted and (mid is None or entry["module_id"] == mid):
+                if entry["key"] not in wanted and (not scoped or entry["module_id"] == mid):
                     key = f"{label}/{entry['key']}" if label is not None else entry["key"]
                     orphans.append((key, entry["source_text"]))
         orphan_count = len(orphans)

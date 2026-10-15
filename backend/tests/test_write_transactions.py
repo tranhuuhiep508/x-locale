@@ -167,6 +167,32 @@ def test_nonretryable_errors_keep_existing_behavior(
         assert len(calls) == 1 and no_retry_delay == []
 
 
+@pytest.mark.parametrize("restore", [False, True])
+def test_policy_conflict_rolls_back_without_retry(client, session_factory, no_retry_delay, restore):
+    pid = uuid.UUID(make_project(client)["id"])
+    calls = []
+    with session_factory() as db:
+
+        def write():
+            calls.append(True)
+            db.get(Project, pid).name = "Must roll back"
+            db.flush()
+            raise database_error("23503", "fk_strings_key_policy", integrity=True)
+
+        with pytest.raises(HTTPException) as caught:
+            transactions.run_write(db, pid, "test", write, restore=restore)
+        assert caught.value.status_code == 409
+        assert caught.value.detail == {
+            "code": "concurrent_modification",
+            "message": "The project key setting changed. Please retry.",
+            "retryable": True,
+        }
+        assert calls == [True] and no_retry_delay == []
+        assert not db.in_transaction()
+    with session_factory() as db:
+        assert db.get(Project, pid).name == "Test Project"
+
+
 def test_success_is_not_replayed_after_response_failure(client, session_factory, no_retry_delay):
     pid = uuid.UUID(make_project(client)["id"])
     calls = []

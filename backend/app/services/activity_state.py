@@ -16,8 +16,9 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Module, StringEntry, Tag
+from app.models import Module, Tag
 from app.services.catalog import is_module_project_fk_error, require_module_in_project
+from app.services.key_policy import KEY_CONSTRAINTS, key_owner
 
 
 def translation_map(raw: Any, *, published: bool = False) -> dict:
@@ -266,16 +267,7 @@ def check_key_available(
 ) -> None:
     if target.get("deleted_at") or "key" not in target:
         return
-    owner = (
-        db.query(StringEntry.id)
-        .filter(
-            StringEntry.project_id == project_id,
-            StringEntry.key == target["key"],
-            StringEntry.deleted_at.is_(None),
-            StringEntry.id != string_id,
-        )
-        .first()
-    )
+    owner = key_owner(db, project_id, target["key"], target.get("module_id"), exclude=string_id)
     if owner:
         raise key_conflict(target["key"])
 
@@ -290,7 +282,7 @@ def is_key_integrity_error(error: IntegrityError) -> bool:
     if getattr(orig, "sqlstate", None) != UNIQUE_VIOLATION:
         return False
     diagnostic = getattr(orig, "diag", None)
-    return getattr(diagnostic, "constraint_name", None) == PROJECT_KEY_CONSTRAINT
+    return getattr(diagnostic, "constraint_name", None) in KEY_CONSTRAINTS
 
 
 @contextmanager

@@ -23,6 +23,7 @@ from app.schemas import JobAcceptedOut
 from app.services import import_lock
 from app.services.import_lock import wait_for_import_lock
 from app.services.job_progress import JOB_ID_KEY
+from app.services.key_policy import is_key_policy_error, key_policy_conflict
 
 NOT_FOUND = "Job not found"
 RESPOND_ASYNC = "respond-async"
@@ -224,6 +225,7 @@ def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
         wait_for_import_lock(db, project_id)
+        db.refresh(project)
         result = work(db, project)
         job = db.get(Job, job_id)
         if job is None:
@@ -235,6 +237,8 @@ def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
+        if is_key_policy_error(exc):
+            exc = key_policy_conflict()
         if not isinstance(exc, HTTPException):
             logger.exception("Job %s failed", job_id)
         _record_failure(job_id, exc)

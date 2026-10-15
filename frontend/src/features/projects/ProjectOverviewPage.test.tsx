@@ -55,7 +55,7 @@ const project: Project = {
   base_language: 'vi',
   target_languages: ['en', 'ja'],
   layout: 'modular',
-  string_count: 10,
+  allow_duplicate_keys: false, string_count: 10,
   created_at: null,
   updated_at: null,
   translation_context: null,

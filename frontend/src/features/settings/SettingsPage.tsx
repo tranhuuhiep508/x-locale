@@ -23,6 +23,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { languagesQuery, meQuery, projectApiKeysQuery, projectQuery } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Select,
@@ -79,6 +80,7 @@ export function SettingsPage() {
     base_language: project?.base_language ?? 'en',
     target_languages: project?.target_languages ?? [],
     layout: project?.layout ?? 'flat',
+    allow_duplicate_keys: project?.allow_duplicate_keys ?? false,
     translation_context: project?.translation_context ?? '',
   }
 
@@ -260,6 +262,23 @@ export function SettingsPage() {
                   </Select>
                 </Field>
               </FieldGroup>
+              <Field orientation="horizontal" data-disabled={!isAdmin || undefined}>
+                <div className="flex flex-1 flex-col gap-1">
+                  <FieldLabel htmlFor="allow_duplicate_keys">Allow duplicate keys across modules</FieldLabel>
+                  <FieldDescription id="allow_duplicate_keys_description">
+                    Allow the same key in different modules. Keys must still be unique within each module.
+                  </FieldDescription>
+                </div>
+                <Switch
+                  id="allow_duplicate_keys"
+                  aria-describedby="allow_duplicate_keys_description"
+                  checked={form.allow_duplicate_keys}
+                  disabled={!isAdmin}
+                  onCheckedChange={(allow_duplicate_keys) =>
+                    setSaveForm((f) => ({ ...(f ?? form), allow_duplicate_keys }))
+                  }
+                />
+              </Field>
             </FieldGroup>
           </CardContent>
         </Card>

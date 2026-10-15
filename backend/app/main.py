@@ -24,7 +24,9 @@ from app.routers import (
     tags,
     translate,
 )
+from app.services.activity_state import is_key_integrity_error
 from app.services.catalog import is_module_project_fk_error
+from app.services.key_policy import is_key_policy_error, key_policy_conflict
 
 require_postgres_database_url(settings.database_url)
 
@@ -83,12 +85,21 @@ app.include_router(sync.router, prefix="/api")
 
 
 @app.exception_handler(IntegrityError)
-async def module_project_fk_handler(_request: Request, exc: IntegrityError) -> JSONResponse:
-    """Deferred composite module FKs are checked at commit, not at flush.
-
-    An explicit project check should already have returned 400. This is the
-    safety net so a missed call site cannot surface as a database 500.
-    """
+async def integrity_error_handler(_request: Request, exc: IntegrityError) -> JSONResponse:
+    """Map database-enforced key and module races to actionable client errors."""
+    if is_key_integrity_error(exc):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "key_conflict",
+                    "message": "A string with this key already exists in the required scope.",
+                }
+            },
+        )
+    if is_key_policy_error(exc):
+        conflict = key_policy_conflict()
+        return JSONResponse(status_code=conflict.status_code, content={"detail": conflict.detail})
     if is_module_project_fk_error(exc):
         return JSONResponse(status_code=400, content={"detail": "Unknown module"})
     raise exc

@@ -106,6 +106,10 @@ def run_write[T](
                     time.sleep(random.uniform(0.05, 0.15))
                     continue
                 raise retryable_write_conflict(code) from error
+            from app.services.key_policy import is_key_policy_error, key_policy_conflict
+
+            if is_key_policy_error(error):
+                raise key_policy_conflict() from error
             if restore and isinstance(error, IntegrityError):
                 from app.services.activity_state import is_key_integrity_error, key_conflict
                 from app.services.catalog import is_module_project_fk_error

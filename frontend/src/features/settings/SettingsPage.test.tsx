@@ -32,7 +32,7 @@ vi.mock('@/lib/api/auth', () => ({
 
 const project: Project = {
   id: 'p1', slug: 'demo', name: 'Demo', base_language: 'vi',
-  target_languages: ['en'], layout: 'modular', string_count: 0,
+  target_languages: ['en'], layout: 'modular', allow_duplicate_keys: false, string_count: 0,
   created_at: null, updated_at: null, translation_context: 'Friendly tone',
   role: 'admin',
 }
@@ -74,6 +74,16 @@ describe('project translation context settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(projectsApi.update).toHaveBeenLastCalledWith('demo', expect.objectContaining({ translation_context: null })))
     await waitFor(() => expect(input.value).toBe(''))
+  })
+
+  it('saves duplicate key policy through the existing form', async () => {
+    renderSettings()
+    const toggle = await screen.findByRole('switch', { name: 'Allow duplicate keys across modules' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(projectsApi.update).toHaveBeenCalledWith('demo', expect.objectContaining({ allow_duplicate_keys: true })))
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'))
   })
 
   it('renders null context as an empty optional field', async () => {
@@ -124,6 +134,7 @@ describe('project settings and members by role', () => {
     expect(screen.queryByRole('button', { name: 'Add member' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Remove ed@example.com' })).toBeNull()
     expect((screen.getByLabelText('Project name') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('switch', { name: 'Allow duplicate keys across modules' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows settings save and member management to an admin', async () => {

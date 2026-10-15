@@ -291,6 +291,28 @@ def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
         )
         if module is None:
             raise HTTPException(status_code=404, detail="Module not found")
+        # Strict mode already guarantees that unassigning cannot collide.
+        if project.allow_duplicate_keys:
+            module_keys = db.query(StringEntry.key).filter(
+                StringEntry.project_id == project_id,
+                StringEntry.module_id == module.id,
+                StringEntry.deleted_at.is_(None),
+            )
+            collision = (
+                db.query(StringEntry.key)
+                .filter(
+                    StringEntry.project_id == project_id,
+                    StringEntry.module_id.is_(None),
+                    StringEntry.deleted_at.is_(None),
+                    StringEntry.key.in_(module_keys),
+                )
+                .first()
+            )
+            if collision:
+                raise HTTPException(
+                    409,
+                    detail=f"Key '{collision.key}' already exists in Unassigned. Move or rename it before deleting this module.",
+                )
         _clear_module_refs(db, project_id, module.id)
         db.delete(module)
 

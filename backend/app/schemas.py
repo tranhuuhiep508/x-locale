@@ -54,6 +54,7 @@ class ProjectCreate(TranslationContextInput):
     base_language: str | None = None
     target_languages: list[str] = Field(default_factory=list)
     layout: ProjectLayout = ProjectLayout.flat
+    allow_duplicate_keys: bool = False
 
 
 class ProjectUpdate(TranslationContextInput):
@@ -61,6 +62,7 @@ class ProjectUpdate(TranslationContextInput):
     base_language: str | None = None
     target_languages: list[str] | None = None
     layout: ProjectLayout | None = None
+    allow_duplicate_keys: bool | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -72,6 +74,7 @@ class ProjectSummaryOut(BaseModel):
     base_language: str
     target_languages: list[str]
     layout: ProjectLayout
+    allow_duplicate_keys: bool
     string_count: int = 0
     created_at: UtcDateTime | None = None
     updated_at: UtcDateTime | None = None

@@ -16,7 +16,7 @@ users ──< api_keys >── projects ──< modules
 
 ## Key constraints
 
-- String uniqueness is one live row per `(project_id, key)`. A tombstone (`deleted_at` set) does not hold the key, so the same key can be created again. A `pending_delete` row is still live and keeps the key. The same key cannot exist in two modules.
+- String uniqueness defaults to one live row per `(project_id, key)`. With `allow_duplicate_keys` enabled it is one live row per `(project_id, module_id, key)`, including null modules. A tombstone (`deleted_at` set) does not hold the key, so the same key can be created again. A `pending_delete` row is still live and keeps the key. The same key can exist in two modules only when the project enables that setting.
 - `module_id` is nullable (`ON DELETE SET NULL`). Unassigned strings export under `_unassigned` (Excel) or at the top level (JSON modular).
 - Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `translations.confidence` is an optional 0–100 AI self-score written by translate; manual edits, import, and CLI push clear it. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column. A key is a project-scoped catalog credential, not a membership role: it cannot delete a project or call member APIs. An Editor can revoke a key only when `api_keys.created_by` is that Editor. An Admin can revoke any key on the project. A non-member gets 404.
@@ -111,3 +111,29 @@ Inverse operations use descending UTC creation time, then activity ID, in both p
 Restoration confirmation shows both sides of changes, including clearing (`FR “Bonjour” → “—”`). Undo's title, warning, button, and submitted force flag derive from the same successful preview. An execution 409 shows its message and refreshes the preview; confirmation remains disabled until a valid refreshed preview permits another confirmation. No automatic forced retry occurs.
 
 The client validates required preview capability/warning fields and consumed collections. Missing or invalid fields show an incompatible-preview error with Retry preview; they never enable confirmation. Deploy backend and frontend together, or backend first for a sequential rollout. Existing audit entries remain unchanged; no schema migration is required. See [Undo performance measurements](undo-performance.md) for the reproducible benchmark and query budgets.
+
+### Optional module-scoped string keys
+
+Project Settings → **Allow duplicate keys across modules** defaults to off for
+existing and new projects. Admins can enable it, or use `allow_duplicate_keys`
+in project create/update APIs. The setting is included in project responses and
+API-key bootstrap responses. It is independent of the project's export layout.
+
+When enabled, `auth/title`, `home/title`, and `_unassigned/title` may coexist.
+Each module, including Unassigned, still permits only one live row for a key.
+Pending deletes retain their identity; soft tombstones release it. Switching the
+setting off returns `409 duplicate_keys_exist` with conflicting keys/modules
+until the live duplicates have been renamed, moved, or deleted. No rows are
+merged or renamed automatically. Deleting a module also returns 409 if moving
+its live strings to Unassigned would collide there.
+
+Postgres enforces both policies. `uq_project_module_key_alive` treats null
+module IDs as equal; `uq_project_key_alive` additionally enforces project-wide
+uniqueness when the setting is off. Policy updates use the import/undo advisory
+guard and return `409 import_in_progress` while one of those operations is active;
+retry the update after it finishes. The project row lock still waits for other
+in-flight string inserts. An internal string policy column is linked
+to `(projects.id, projects.allow_duplicate_keys)` by an `ON UPDATE CASCADE`
+foreign key, so toggles and concurrent writes cannot bypass the selected policy.
+The internal column is not part of string content, history, or public schemas.
+A migration downgrade is refused while live duplicate keys exist.

@@ -118,6 +118,7 @@ class User(Base):
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("id", "allow_duplicate_keys", name="uq_project_key_policy"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(PROJECT_NAME_MAX_LENGTH), nullable=False)
@@ -132,6 +133,9 @@ class Project(Base):
     layout: Mapped[ProjectLayout] = mapped_column(
         Enum(ProjectLayout, native_enum=False), nullable=False, default=ProjectLayout.flat
     )
+    allow_duplicate_keys: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -141,7 +145,9 @@ class Project(Base):
     )
 
     strings: Mapped[list["StringEntry"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
+        back_populates="project",
+        cascade="all, delete-orphan",
+        foreign_keys="StringEntry.project_id",
     )
     modules: Mapped[list["Module"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -279,7 +285,23 @@ class StringEntry(Base):
             "project_id",
             "key",
             unique=True,
+            postgresql_where=text("deleted_at IS NULL AND NOT key_policy_allows_duplicates"),
+        ),
+        Index(
+            "uq_project_module_key_alive",
+            "project_id",
+            "module_id",
+            "key",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
             postgresql_where=text("deleted_at IS NULL"),
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "key_policy_allows_duplicates"],
+            ["projects.id", "projects.allow_duplicate_keys"],
+            name="fk_strings_key_policy",
+            onupdate="CASCADE",
+            ondelete="CASCADE",
         ),
         Index(
             "ix_strings_project_updated_at_alive",
@@ -316,6 +338,9 @@ class StringEntry(Base):
     )
     module_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("modules.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    key_policy_allows_duplicates: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     key: Mapped[str] = mapped_column(String(KEY_MAX_LENGTH), nullable=False, index=True)
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -357,7 +382,7 @@ class StringEntry(Base):
         String(ACTOR_LABEL_MAX_LENGTH), nullable=True
     )
 
-    project: Mapped["Project"] = relationship(back_populates="strings")
+    project: Mapped["Project"] = relationship(back_populates="strings", foreign_keys=[project_id])
     module: Mapped["Module | None"] = relationship(
         back_populates="strings", foreign_keys=[module_id]
     )
