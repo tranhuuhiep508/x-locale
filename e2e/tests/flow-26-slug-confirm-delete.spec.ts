@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures'
 
 test('admin deletes a project only after typing its slug', async ({ page }) => {
   const name = `Delete ${Date.now()}`

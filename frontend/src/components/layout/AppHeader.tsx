@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { Layers } from 'lucide-react'
+import { HelpMenu } from '@/components/layout/HelpMenu'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { UserMenu } from '@/components/layout/UserMenu'
 import { cn } from '@/lib/utils'
@@ -43,6 +44,7 @@ export function AppHeader({
         ) : null}
         <div className="flex-1" />
         <div className="flex items-center gap-3">
+          <HelpMenu />
           <ThemeToggle />
           <UserMenu />
         </div>

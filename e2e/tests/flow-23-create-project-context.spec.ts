@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures'
 
 test('create project with translation context saved before opening settings', async ({ page }) => {
   let creationRequests = 0

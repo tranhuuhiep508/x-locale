@@ -226,7 +226,10 @@ export function ImportExportPage() {
   const locales = project ? [project.base_language, ...project.target_languages] : []
 
   return (
-    <PageBody className="mx-auto w-full max-w-6xl pb-16">
+    <PageBody
+      data-tour-ready={project ? 'import' : undefined}
+      className="mx-auto w-full max-w-6xl pb-16"
+    >
       <PageHeader
         eyebrow="Project"
         title="Import / Export"
@@ -342,7 +345,7 @@ export function ImportExportPage() {
         </Card>
 
         {/* Import Card */}
-        <Card className="shadow-xs flex flex-col justify-between">
+        <Card data-tour="import-lock" className="shadow-xs flex flex-col justify-between">
           <CardHeader className="border-b border-border/50 pb-4">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -377,7 +380,7 @@ export function ImportExportPage() {
                 </Select>
               </Field>
 
-              <Field>
+              <Field data-tour="import-conflicts">
                 <FieldLabel htmlFor="import_mode">Mode</FieldLabel>
                 <Select
                   value={dryRun ? 'dry' : 'apply'}
@@ -435,6 +438,7 @@ export function ImportExportPage() {
             {/* Visual File Picker Zone */}
             <button
               type="button"
+              data-tour="import-file"
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleFileDrop}
@@ -461,6 +465,7 @@ export function ImportExportPage() {
           <CardFooter className="border-t border-border/50 bg-muted/20 pt-4">
             <Button
               variant="outline"
+              data-tour="import-submit"
               onClick={() => fileRef.current?.click()}
               disabled={importBusy}
               className="w-full sm:w-auto"
@@ -477,7 +482,7 @@ export function ImportExportPage() {
       </div>
 
       {/* Format Documentation & Template Card */}
-      <Card className="shadow-xs">
+      <Card data-tour="import-format" className="shadow-xs">
         <CardHeader className="border-b border-border/50 pb-4">
           <p className="eyebrow">Format</p>
           <CardTitle>Import template & Schema</CardTitle>

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
 import { openDemoStrings, searchStrings } from '../helpers/strings'
 

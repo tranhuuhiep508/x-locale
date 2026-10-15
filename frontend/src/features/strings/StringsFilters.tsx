@@ -433,7 +433,7 @@ export function StringsFilters({
       className="flex min-w-0 flex-col gap-3.5 rounded-xl border border-border/80 bg-card p-3.5 shadow-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="min-w-0 flex-1 md:basis-56">
+        <InputGroup data-tour="search" className="min-w-0 flex-1 md:basis-56">
           <InputGroupInput
             placeholder="Search keys or text…"
             value={searchInput}
@@ -486,6 +486,7 @@ export function StringsFilters({
             ))}
           </FilterSelect>
           {modules.length > 0 || search.module || search.unassigned_module ? (
+            <span data-tour="modules" className="inline-flex max-w-full">
             <FilterSearchSelect
               label="Module"
               value={search.unassigned_module ? UNASSIGNED_MODULE : (search.module ?? 'all')}
@@ -493,6 +494,7 @@ export function StringsFilters({
               searchPlaceholder="Search modules…"
               onValueChange={applyModule}
             />
+            </span>
           ) : null}
           {tags.length > 0 || search.tag || search.untagged ? (
             <FilterSearchSelect
@@ -537,6 +539,7 @@ export function StringsFilters({
             ))}
           </FilterSelect>
         ) : null}
+        <span data-tour="time-filter" className="inline-flex max-w-full">
         <TimeRangePicker
           className="max-w-full w-auto"
           value={{
@@ -547,6 +550,7 @@ export function StringsFilters({
           }}
           onChange={(updates) => onFilter(updates)}
         />
+        </span>
         <FilterSelect label="AI" value={confidence} onValueChange={applyConfidence}>
           <SelectItem value={CONFIDENCE_ALL}>Any</SelectItem>
           <SelectItem value="review">Needs review</SelectItem>

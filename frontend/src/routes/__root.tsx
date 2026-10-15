@@ -5,6 +5,7 @@ import { THEME_STORAGE_KEY } from '@/lib/theme'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api/client'
+import { TourHost } from '@/lib/tours/TourHost'
 import { meQuery } from '@/lib/queries'
 
 interface RouterContext {
@@ -41,7 +42,9 @@ function Root() {
       storageKey={THEME_STORAGE_KEY}
     >
       <TooltipProvider>
-        <Outlet />
+        <TourHost>
+          <Outlet />
+        </TourHost>
         <Toaster />
       </TooltipProvider>
     </ThemeProvider>

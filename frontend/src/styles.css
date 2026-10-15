@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "driver.js/dist/driver.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -406,4 +407,125 @@
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
+}
+
+/* In-app tours. driver.js draws the overlay; these rules match the app chrome. */
+.driver-popover.xl-tour {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  color: var(--popover-foreground);
+  background-color: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+}
+
+.driver-popover.xl-tour .driver-popover-title {
+  padding-right: 28px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.driver-popover.xl-tour .driver-popover-description {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.driver-popover.xl-tour .driver-popover-footer {
+  align-items: center;
+  gap: 8px;
+}
+
+.driver-popover.xl-tour .driver-popover-progress-text {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.driver-popover.xl-tour .xl-tour-skip {
+  all: unset;
+  box-sizing: border-box;
+  margin-right: auto;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.driver-popover.xl-tour .driver-popover-footer-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.driver-popover.xl-tour .driver-popover-prev-btn {
+  border-color: transparent;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.driver-popover.xl-tour .driver-popover-prev-btn:hover,
+.driver-popover.xl-tour .driver-popover-prev-btn:focus-visible {
+  background: var(--muted);
+}
+
+.driver-popover.xl-tour .driver-popover-prev-btn.driver-popover-btn-disabled {
+  display: none;
+}
+
+.driver-popover.xl-tour .driver-popover-next-btn {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.driver-popover.xl-tour .driver-popover-next-btn:hover,
+.driver-popover.xl-tour .driver-popover-next-btn:focus-visible {
+  background: color-mix(in oklch, var(--primary), black 10%);
+}
+
+.driver-popover.xl-tour .driver-popover-close-btn {
+  color: var(--muted-foreground);
+}
+
+.driver-popover.xl-tour .driver-popover-close-btn:hover,
+.driver-popover.xl-tour .driver-popover-close-btn:focus-visible {
+  color: var(--foreground);
+}
+
+.driver-popover.xl-tour :is(button, .xl-tour-skip):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.driver-popover.xl-tour .driver-popover-arrow-side-left {
+  border-left-color: var(--popover);
+}
+
+.driver-popover.xl-tour .driver-popover-arrow-side-right {
+  border-right-color: var(--popover);
+}
+
+.driver-popover.xl-tour .driver-popover-arrow-side-top {
+  border-top-color: var(--popover);
+}
+
+.driver-popover.xl-tour .driver-popover-arrow-side-bottom {
+  border-bottom-color: var(--popover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driver-popover.xl-tour,
+  .driver-overlay,
+  .driver-active-element {
+    transition: none !important;
+    animation: none !important;
+  }
 }

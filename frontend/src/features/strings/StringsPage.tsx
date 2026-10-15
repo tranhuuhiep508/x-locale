@@ -205,7 +205,8 @@ export function StringsPage() {
       })
     })
   }, [stringsResult.isError, stringsResult.error, rawSearch.sort, rawSearch.order, navigate, toast])
-  const { data: modules = [] } = useQuery(modulesQuery(projectId))
+  const modulesResult = useQuery(modulesQuery(projectId))
+  const modules = modulesResult.data ?? []
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
   const { data: project } = useQuery(projectQuery(projectId))
   const locales = useMemo(() => project?.target_languages ?? [], [project?.target_languages])
@@ -427,6 +428,12 @@ export function StringsPage() {
     data.length === 0 &&
     !search.batch_id
 
+  const tourReady =
+    modulesResult.isFetched &&
+    !stringsResult.isLoading &&
+    !catalogSortListError &&
+    !catalogRefetchingEmpty
+
   const table = useReactTable({
     data,
     columns,
@@ -540,7 +547,10 @@ export function StringsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      data-tour-ready={tourReady ? 'strings' : undefined}
+    >
       <div className="flex shrink-0 flex-col gap-5 border-b px-4 py-5 sm:px-6">
         <PageHeader
           eyebrow="Catalog"
@@ -607,7 +617,7 @@ export function StringsPage() {
         />
       </div>
 
-      <div className="min-h-0 flex-1 bg-card">
+      <div className="min-h-0 flex-1 bg-card" data-tour={data.length > 0 ? 'grid' : undefined}>
         {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
           <div className="flex h-48 items-center justify-center">
             <Spinner />

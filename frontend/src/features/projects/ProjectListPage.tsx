@@ -90,7 +90,7 @@ export function ProjectListPage() {
 
   return (
     <AppShell>
-      <PageBody contained className="flex flex-col gap-8 pb-16">
+      <PageBody contained data-tour-ready="projects" className="flex flex-col gap-8 pb-16">
         {/* Workspace Page Header */}
         <PageHeader
           eyebrow="Workspace"
@@ -101,7 +101,7 @@ export function ProjectListPage() {
               <Badge variant="secondary" className="font-mono text-xs">
                 {projects.length} project{projects.length !== 1 ? 's' : ''}
               </Badge>
-              <Link to="/projects/new">
+              <Link to="/projects/new" data-tour="new-project">
                 <Button className="shadow-xs">
                   <Plus data-icon="inline-start" />
                   New project
@@ -147,7 +147,10 @@ export function ProjectListPage() {
               <p className="text-[11px] text-muted-foreground">Source & target languages</p>
             </div>
 
-            <div className="sky-panel flex flex-col justify-between rounded-xl border border-border/70 bg-primary/5 p-4">
+            <div
+              data-tour="cli-sync-hint"
+              className="sky-panel flex flex-col justify-between rounded-xl border border-border/70 bg-primary/5 p-4"
+            >
               <div className="flex items-center justify-between">
                 <span className="eyebrow flex items-center gap-1.5 text-primary">
                   <Terminal className="size-3.5" />
@@ -215,7 +218,7 @@ export function ProjectListPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div data-tour="project-list" className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filteredProjects.map((p) => (
               <Card
                 key={p.id}
