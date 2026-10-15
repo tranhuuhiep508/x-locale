@@ -80,6 +80,7 @@ SUBMIT_TRANSLATIONS_TOOL = {
                 "required": ["items"],
             }
         },
+        "strict": True,
     }
 }
 
@@ -216,11 +217,7 @@ def _converse_once(prompt: str) -> dict:
         output_options = {
             "toolConfig": {
                 "tools": [SUBMIT_TRANSLATIONS_TOOL],
-                "toolChoice": (
-                    {"tool": {"name": TOOL_NAME}}
-                    if settings.bedrock_tool_choice == "tool"
-                    else {"auto": {}}
-                ),
+                "toolChoice": {"auto": {}},
             }
         }
     try:
