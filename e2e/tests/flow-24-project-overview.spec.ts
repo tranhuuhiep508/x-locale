@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures";
 
 test("overview coverage and pending edits open the matching catalog results", async ({
   page,
