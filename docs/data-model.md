@@ -125,14 +125,18 @@ Pending deletes retain their identity; soft tombstones release it. Switching the
 setting off returns `409 duplicate_keys_exist` with conflicting keys/modules
 until the live duplicates have been renamed, moved, or deleted. No rows are
 merged or renamed automatically. Deleting a module also returns 409 if moving
-its live strings to Unassigned would collide there.
+its live strings or public snapshots to Unassigned would collide there. Published
+key checks include pending deletes and use the last published module/key rather
+than the working copy; unpublished rows and tombstones are excluded.
 
 Postgres enforces both policies. `uq_project_module_key_alive` treats null
 module IDs as equal; `uq_project_key_alive` additionally enforces project-wide
 uniqueness when the setting is off. Policy updates use the import/undo advisory
-guard and return `409 import_in_progress` while one of those operations is active;
-retry the update after it finishes. The project row lock still waits for other
-in-flight string inserts. An internal string policy column is linked
+guard when the policy actually changes and return `409 import_in_progress` while
+one of those operations is active; retry the policy change after it finishes.
+Settings saves with an unchanged policy remain available during imports and undo.
+The project row lock still waits for other in-flight string inserts. An internal
+string policy column is linked
 to `(projects.id, projects.allow_duplicate_keys)` by an `ON UPDATE CASCADE`
 foreign key, so toggles and concurrent writes cannot bypass the selected policy.
 The internal column is not part of string content, history, or public schemas.

@@ -134,6 +134,70 @@ def test_move_rename_and_module_delete_validate_final_scope(client):
     assert any(m["id"] == auth for m in client.get(f"{root}/modules").json())
 
 
+@pytest.mark.parametrize("allow_duplicates", [False, True])
+@pytest.mark.parametrize("pending_delete", [False, True])
+def test_module_delete_rejects_published_unassigned_collision(
+    client, allow_duplicates, pending_delete
+):
+    project = make_project(client)
+    root = f"/api/projects/{project['id']}"
+    assert client.patch(root, json={"allow_duplicate_keys": allow_duplicates}).status_code == 200
+    auth, home = module(client, root, "auth"), module(client, root, "home")
+    first = create(client, root, mid=auth, value="Auth title").json()
+    publish_strings(client, project["id"], [first["id"]])
+    # Only the published snapshot still belongs to the module being deleted.
+    assert client.patch(
+        f"{root}/strings/{first['id']}", json={"key": "renamed", "module_id": home}
+    ).status_code == 200
+    if pending_delete:
+        assert client.delete(f"{root}/strings/{first['id']}").status_code == 204
+    second = create(client, root, value="Unassigned title").json()
+    publish_strings(client, project["id"], [second["id"]])
+    before = [client.get(f"{root}/strings/{sid}").json() for sid in (first["id"], second["id"])]
+    for fmt in ("json", "xlsx"):
+        assert client.get(
+            f"{root}/export", params={"stage": "public", "format": fmt}
+        ).status_code == 200
+
+    response = client.delete(f"{root}/modules/{auth}")
+    assert response.status_code == 409, response.text
+    assert "Published key 'title'" in response.json()["detail"]
+    assert any(m["id"] == auth for m in client.get(f"{root}/modules").json())
+    after = [client.get(f"{root}/strings/{sid}").json() for sid in (first["id"], second["id"])]
+    assert after == before
+    for fmt in ("json", "xlsx"):
+        assert client.get(
+            f"{root}/export", params={"stage": "public", "format": fmt}
+        ).status_code == 200
+
+    publish_strings(client, project["id"], [first["id"]])
+    assert client.delete(f"{root}/modules/{auth}").status_code == 204
+    assert client.get(f"{root}/export", params={"stage": "public"}).status_code == 200
+
+
+@pytest.mark.parametrize("excluded_state", ["unpublished", "tombstone"])
+def test_module_delete_ignores_nonexported_published_snapshots(client, excluded_state):
+    project, root = enabled_project(client)
+    auth = module(client, root, "auth")
+    first = create(client, root, mid=auth).json()
+    publish_strings(client, project["id"], [first["id"]])
+    assert client.patch(f"{root}/strings/{first['id']}", json={"key": "renamed"}).status_code == 200
+    second = create(client, root).json()
+    publish_strings(client, project["id"], [second["id"]])
+    if excluded_state == "unpublished":
+        response = client.post(
+            f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [second["id"]]}
+        )
+        assert response.status_code == 200, response.text
+    else:
+        assert client.delete(f"{root}/strings/{second['id']}").status_code == 204
+        publish_strings(client, project["id"], [second["id"]])
+
+    response = client.delete(f"{root}/modules/{auth}")
+    assert response.status_code == 204, response.text
+    assert client.get(f"{root}/export", params={"stage": "public"}).status_code == 200
+
+
 @pytest.mark.parametrize("kind", ["cli", "json", "excel"])
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_modular_import_preserves_each_module(client, kind, dry_run):
@@ -658,10 +722,21 @@ def test_policy_toggle_does_not_deadlock_with_existing_string_import(
             unchanged = client.get(root).json()
             assert unchanged["allow_duplicate_keys"] is initial_policy
             assert unchanged["name"] == project["name"]
-            assert (
-                client.patch(root, json={"translation_context": "Saved during import"}).status_code
-                == 200
+            saved = client.patch(
+                root,
+                json={
+                    "name": "Saved during import",
+                    "base_language": project["base_language"],
+                    "target_languages": project["target_languages"],
+                    "layout": project["layout"],
+                    "allow_duplicate_keys": initial_policy,
+                    "translation_context": "Saved during import",
+                },
             )
+            assert saved.status_code == 200, saved.text
+            assert saved.json()["name"] == "Saved during import"
+            assert saved.json()["translation_context"] == "Saved during import"
+            assert saved.json()["allow_duplicate_keys"] is initial_policy
         finally:
             release.set()
         response = importing.result(timeout=5)
@@ -707,6 +782,11 @@ def test_policy_toggle_rejects_while_batch_undo_is_active(client, monkeypatch):
             assert entered.wait(5)
             rejected = client.patch(root, json={"allow_duplicate_keys": True})
             assert rejected.status_code == 409 and rejected.json() == BUSY
+            saved = client.patch(
+                root, json={"allow_duplicate_keys": False, "name": "Saved during undo"}
+            )
+            assert saved.status_code == 200, saved.text
+            assert saved.json()["name"] == "Saved during undo"
         finally:
             release.set()
         response = undoing.result(timeout=5)

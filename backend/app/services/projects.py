@@ -145,17 +145,20 @@ def update_project(
     payload: ProjectUpdate,
     role: str | None = None,
 ) -> ProjectOut:
-    if payload.allow_duplicate_keys is not None:
-        # Fail fast before upgrading the project lock: imports lock strings before audit FKs.
-        acquire_import_lock(db, project_id)
-        (
-            db.query(Project)
-            .filter(Project.id == project_id)
-            .with_for_update()
-            .populate_existing()
-            .first()
-        )
     project = get_project(db, project_id)
+    if payload.allow_duplicate_keys is not None:
+        # Authorization may have waited for another settings update after loading the project.
+        db.refresh(project)
+        if payload.allow_duplicate_keys != project.allow_duplicate_keys:
+            # Fail fast before upgrading the project lock: imports lock strings before audit FKs.
+            acquire_import_lock(db, project_id)
+            (
+                db.query(Project)
+                .filter(Project.id == project_id)
+                .with_for_update()
+                .populate_existing()
+                .first()
+            )
     if payload.allow_duplicate_keys is False and project.allow_duplicate_keys:
         conflicts = duplicate_key_details(db, project_id)
         if conflicts:
