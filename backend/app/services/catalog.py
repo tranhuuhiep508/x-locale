@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Module, Project, StringEntry, StringTag, Tag
+from app.models import Module, Project, StringEntry, StringTag, Tag, TranslationStatus
 from app.schemas import ModuleCreate, ModuleOut, ModuleUpdate, TagCreate, TagOut, TagUpdate
 from app.services.write_transactions import run_write
 
@@ -291,6 +291,52 @@ def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
         )
         if module is None:
             raise HTTPException(status_code=404, detail="Module not found")
+        # Strict mode already guarantees that unassigning cannot collide.
+        if project.allow_duplicate_keys:
+            module_keys = db.query(StringEntry.key).filter(
+                StringEntry.project_id == project_id,
+                StringEntry.module_id == module.id,
+                StringEntry.deleted_at.is_(None),
+            )
+            collision = (
+                db.query(StringEntry.key)
+                .filter(
+                    StringEntry.project_id == project_id,
+                    StringEntry.module_id.is_(None),
+                    StringEntry.deleted_at.is_(None),
+                    StringEntry.key.in_(module_keys),
+                )
+                .first()
+            )
+            if collision:
+                raise HTTPException(
+                    409,
+                    detail=f"Key '{collision.key}' already exists in Unassigned. Move or rename it before deleting this module.",
+                )
+        # Published snapshots (including pending deletes) also move to Unassigned.
+        published_key = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
+        published_keys = db.query(published_key).filter(
+            StringEntry.project_id == project_id,
+            StringEntry.published_module_id == module.id,
+            StringEntry.deleted_at.is_(None),
+            StringEntry.status == TranslationStatus.public,
+        )
+        published_collision = (
+            db.query(published_key)
+            .filter(
+                StringEntry.project_id == project_id,
+                StringEntry.published_module_id.is_(None),
+                StringEntry.deleted_at.is_(None),
+                StringEntry.status == TranslationStatus.public,
+                published_key.in_(published_keys),
+            )
+            .first()
+        )
+        if published_collision:
+            raise HTTPException(
+                409,
+                detail=f"Published key '{published_collision[0]}' already exists in Unassigned. Publish a different key or module before deleting this module.",
+            )
         _clear_module_refs(db, project_id, module.id)
         db.delete(module)
 

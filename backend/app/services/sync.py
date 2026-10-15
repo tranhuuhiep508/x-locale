@@ -15,6 +15,7 @@ from app.models import Module, Project, StringEntry, Tag, Translation, Translati
 from app.schemas import ImportResult, SyncStateOut
 from app.services.catalog import owned_module, require_module_in_project
 from app.services.import_bulk import ImportRow, import_rows
+from app.services.key_policy import ambiguous_key
 
 CLI_UNASSIGNED = "_unassigned"
 
@@ -194,12 +195,33 @@ def normalize_export_stage(stage: str) -> str:
     return "draft" if stage == "all" else stage
 
 
+def check_export_keys(project: Project, entries, stage: str, *, modular: bool) -> None:
+    seen = set()
+    for entry in entries:
+        if entry.deleted_at is not None:
+            continue
+        if stage == "public":
+            if entry.status != TranslationStatus.public:
+                continue
+            module = entry.published_module
+        else:
+            if entry.pending_delete:
+                continue
+            module = entry.module
+        module = _scoped_export_module(project.id, module) if modular else None
+        identity = (module.slug if module else None, export_key(entry, published=stage == "public"))
+        if identity in seen:
+            raise ambiguous_key(identity[1], export=True)
+        seen.add(identity)
+
+
 def build_flat_export(
     project: Project,
     entries: list[StringEntry],
     stage: str,
     locale: str | None = None,
 ) -> dict[str, dict[str, str]]:
+    check_export_keys(project, entries, stage, modular=False)
     locales = resolve_export_locales(project, locale)
     result: dict[str, dict[str, str]] = {loc: {} for loc in locales}
     for entry in entries:
@@ -242,6 +264,7 @@ def build_modular_export(
     stage: str,
     locale: str | None = None,
 ) -> dict[str, Any]:
+    check_export_keys(project, entries, stage, modular=True)
     locales = resolve_export_locales(project, locale)
     modules: dict[str, dict[str, dict[str, str]]] = {}
     unassigned: dict[str, dict[str, str]] = {loc: {} for loc in locales}
@@ -310,15 +333,29 @@ def build_sync_state(
     layout: str,
     stage: str,
 ) -> SyncStateOut:
+    if layout == "flat":
+        # Working identities are also needed for pending deletes and tombstones.
+        seen_live = set()
+        for entry in entries:
+            if entry.deleted_at is None:
+                if entry.key in seen_live:
+                    raise ambiguous_key(entry.key, export=True)
+                seen_live.add(entry.key)
+        check_export_keys(project, entries, stage, modular=False)
     pending_remove: list[str] = []
     tombstones: list[str] = []
     seen_pending: set[str] = set()
     seen_tombstones: set[str] = set()
-    live_keys = {entry.key for entry in entries if entry.deleted_at is None}
+    scoped_keys = project.allow_duplicate_keys and layout == "modular"
+    live_keys = {
+        _cli_identity(entry, layout) if scoped_keys else entry.key
+        for entry in entries if entry.deleted_at is None
+    }
     for entry in entries:
         label = _cli_identity(entry, layout, published=False)
         if entry.deleted_at is not None:
-            if entry.key not in live_keys and label not in seen_tombstones:
+            identity = label if scoped_keys else entry.key
+            if identity not in live_keys and label not in seen_tombstones:
                 tombstones.append(label)
                 seen_tombstones.add(label)
         elif entry.pending_delete:
@@ -475,7 +512,7 @@ def import_locale_payload(
         _json_rows(
             project, locale_maps, module=module_id, scoped=module_id is not None, tags=tags or ()
         ),
-        groups=[(module_id, None)],
+        groups=[(module_id, None, module_id is not None)],
         dry_run=dry_run,
         status=status,
         report_orphans=report_orphans,
@@ -504,12 +541,12 @@ def import_modular_payload(
             module = validate_module_slug(slug)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        groups.append((module, slug))
+        groups.append((module, slug, True))
         rows.extend(
             _json_rows(project, maps, module=module, scoped=True, label=slug, tags=tags or ())
         )
     if unassigned is not None:
-        groups.append((None, None))
+        groups.append((None, None, True))
         rows.extend(_json_rows(project, unassigned, scoped=True, tags=tags or ()))
     return import_rows(
         db,
@@ -545,7 +582,7 @@ def import_json_data(
     tags = resolve_json_import_tags(db, project, tag_ids)
 
     modules = data.get("modules")
-    if isinstance(modules, dict) and modules:
+    if isinstance(modules, dict) and (modules or "unassigned" in data):
         # Modular export: { modules: { slug: { locale: { key: value } } }, unassigned: {...} }
         orphans = False if partial else True if report_orphans is None else report_orphans
         return import_modular_payload(

@@ -118,6 +118,7 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
         for module_slug, key, source_text, description in DEMO_STRINGS:
             entry = StringEntry(
                 project_id=project.id,
+                key_policy_allows_duplicates=project.allow_duplicate_keys,
                 module_id=modules[module_slug].id,
                 key=key,
                 source_text=source_text,

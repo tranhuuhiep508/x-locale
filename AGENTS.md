@@ -36,6 +36,7 @@ Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
 - Translation inputs save on **blur**.
 - Imports above `IMPORT_ASYNC_THRESHOLD` values (default 5000), every Excel import, and undo batches above the same count return `202 {job_id}` only when the client sends `Prefer: respond-async` (UI and CLI do). Poll `GET /api/jobs/{id}` (session or `X-API-Key` of the job's project). The import advisory lock is still the one-import-per-project guard: the request holds a session lock until the worker is waiting, then the worker holds it until the import or undo and its completed status commit together. See `docs/import-performance.md`.
 - Content writes are audited via `before_flush` → `activities`. Batch/import/translate set `batch_id` for grouped revert.
+- `allow_duplicate_keys` defaults to false on projects. When enabled, live keys are unique per module (Unassigned included). The internal `strings.key_policy_allows_duplicates` mirrors the project flag via a cascading composite FK; populate it in every insert path. Flat import/export rejects ambiguous keys. Disabling the setting or deleting a module must not merge colliding strings.
 - Modules are always stored; project `layout` only affects export/CLI pull shape.
 - Flat export uses the stored key as-is (public export uses `published_key`). Modular export groups by module slug; keys inside each file are never prefixed.
 

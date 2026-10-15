@@ -67,6 +67,7 @@ def snapshot(db, pid, batch):
             result = {
                 key: "<time>" if key.endswith("_at") and item is not None else normalize(item)
                 for key, item in value.items()
+                if key != "key_policy_allows_duplicates"  # Storage policy is not import content.
             }
             if "tag_ids" in result:
                 pairs = sorted(zip(result["tag_ids"], result["tag_names"], strict=True))

@@ -25,6 +25,7 @@ from app.models import (
 from app.schemas import ImportResult
 from app.services.catalog import owned_module
 from app.services.import_bulk import ImportRow, import_rows
+from app.services.sync import check_export_keys
 
 UNASSIGNED_SHEET = "_unassigned"
 FLAT_SHEET = "strings"
@@ -65,6 +66,7 @@ def build_workbook(
     wb.remove(default)
 
     locales = _export_locales(project, locale)
+    check_export_keys(project, entries, stage, modular=_is_modular(project))
     if _is_modular(project):
         by_module: dict[str | None, list[StringEntry]] = {}
         for e in entries:
@@ -253,7 +255,7 @@ def import_workbook(
                     module = validate_module_slug(sheet_name)
                 except ValueError as exc:
                     raise ValueError(f"Invalid sheet name {sheet_name!r}: {exc}") from exc
-            groups.append((module, None))
+            groups.append((module, None, modular))
             locales = {}
             for index, header in enumerate(headers):
                 if not header or header in {"key", "description", "tags"}:

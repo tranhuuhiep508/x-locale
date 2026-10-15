@@ -361,3 +361,22 @@ This release does not repair text previously altered by the old JSON parser or
 empty-source fallback. Review affected source text against source control or
 backups before pushing. General UI JSON uploads continue to support restoring
 strings; CLI push requires restoring deleted strings in x-locale first.
+
+### Existing projects with repeated keys
+
+An admin can enable **Allow duplicate keys across modules** in the project's
+Settings (API field: `allow_duplicate_keys`). It defaults to off. With it on,
+`auth/title` and `home/title` are independent strings; `title` must still be
+unique inside each module, including Unassigned.
+
+Use the existing modular layout to push/pull these projects. No additional CLI
+flag is needed. Module-scoped JSON and modular Excel imports match each module
+separately. An unscoped flat import updates an existing key only when its module
+can be identified unambiguously; otherwise it returns `409 ambiguous_key`.
+Flat exports and flat sync-state requests also return 409 when keys collide.
+Use modular export/layout to preserve every module's values. Published exports
+check the published keys/modules rather than unpublished edits. Export collisions
+within one published module must be resolved and published before exporting.
+
+Disabling the setting requires resolving duplicate live keys first. Pending
+deletes still reserve keys until published; tombstones do not reserve them.

@@ -47,7 +47,7 @@ const project: Project = {
   base_language: 'vi',
   target_languages: ['en'],
   layout: 'flat',
-  string_count: 1,
+  allow_duplicate_keys: false, string_count: 1,
   created_at: null,
   updated_at: null,
   translation_context: null,

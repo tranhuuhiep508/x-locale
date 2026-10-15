@@ -37,6 +37,7 @@ export interface ProjectSummary {
   base_language: string
   target_languages: string[]
   layout: ProjectLayout
+  allow_duplicate_keys: boolean
   string_count: number
   created_at: string | null
   updated_at: string | null
@@ -57,6 +58,7 @@ export interface Project extends ProjectSummary {
 }
 
 export interface ProjectCreate {
+  allow_duplicate_keys?: boolean
   name: string
   translation_context?: string | null
   slug?: string
@@ -66,6 +68,7 @@ export interface ProjectCreate {
 }
 
 export interface ProjectUpdate {
+  allow_duplicate_keys?: boolean
   name?: string
   base_language?: string
   target_languages?: string[]

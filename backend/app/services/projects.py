@@ -20,6 +20,8 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
 )
+from app.services.import_lock import acquire_import_lock
+from app.services.key_policy import duplicate_key_details
 from app.services.members import lock_project, role_name
 
 
@@ -32,6 +34,7 @@ def project_out(project: Project, string_count: int, role: str | None = None) ->
         base_language=project.base_language,
         target_languages=project.target_languages or [],
         layout=project.layout,
+        allow_duplicate_keys=project.allow_duplicate_keys,
         string_count=string_count,
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -125,6 +128,7 @@ def create_project(db: Session, payload: ProjectCreate, user: User) -> ProjectOu
         base_language=base_lang,
         target_languages=target_langs,
         layout=payload.layout,
+        allow_duplicate_keys=payload.allow_duplicate_keys,
         created_by=user.id,
     )
     db.add(project)
@@ -142,6 +146,32 @@ def update_project(
     role: str | None = None,
 ) -> ProjectOut:
     project = get_project(db, project_id)
+    if payload.allow_duplicate_keys is not None:
+        # Authorization may have waited for another settings update after loading the project.
+        db.refresh(project)
+        if payload.allow_duplicate_keys != project.allow_duplicate_keys:
+            # Fail fast before upgrading the project lock: imports lock strings before audit FKs.
+            acquire_import_lock(db, project_id)
+            (
+                db.query(Project)
+                .filter(Project.id == project_id)
+                .with_for_update()
+                .populate_existing()
+                .first()
+            )
+    if payload.allow_duplicate_keys is False and project.allow_duplicate_keys:
+        conflicts = duplicate_key_details(db, project_id)
+        if conflicts:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "duplicate_keys_exist",
+                    "message": "Resolve duplicate keys across modules before disabling this setting.",
+                    "conflicts": conflicts,
+                },
+            )
+    if payload.allow_duplicate_keys is not None:
+        project.allow_duplicate_keys = payload.allow_duplicate_keys
     if payload.name is not None:
         project.name = payload.name
     if payload.base_language is not None or payload.target_languages is not None:

@@ -73,6 +73,7 @@ export const projectCreateSchema = z.object({
   base_language: z.string().default('en'),
   target_languages: z.array(z.string()).min(1, 'Select at least one target language'),
   layout: z.enum(['flat', 'modular']).default('flat'),
+  allow_duplicate_keys: z.boolean().optional(),
   translation_context: translationContextSchema,
 })
 
@@ -83,6 +84,7 @@ export const projectSettingsSchema = z.object({
   base_language: z.string(),
   target_languages: z.array(z.string()),
   layout: z.enum(['flat', 'modular']),
+  allow_duplicate_keys: z.boolean().default(false),
   translation_context: translationContextSchema,
 })
 

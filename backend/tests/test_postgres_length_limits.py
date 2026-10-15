@@ -54,8 +54,11 @@ def test_create_all_pk_rename_is_guarded_both_ways(throwaway_database, monkeypat
     assert _string_tags_pk(url) == "string_tags_pkey"
 
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    # Bring the current create_all schema back to the migration under test.
+    command.stamp(cfg, "head")
+    command.downgrade(cfg, "r7d05b6c8901")
     command.stamp(cfg, "q6c94f5a6789")
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "r7d05b6c8901")
     assert _string_tags_pk(url) == "string_tags_pkey"
 
     command.downgrade(cfg, "q6c94f5a6789")

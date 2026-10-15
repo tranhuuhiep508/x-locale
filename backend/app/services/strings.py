@@ -40,6 +40,7 @@ from app.schemas import (
     TranslationUpdate,
 )
 from app.services.catalog import owned_module, require_module_in_project
+from app.services.key_policy import key_owner
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
@@ -785,15 +786,7 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
-    existing = (
-        db.query(StringEntry)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.key == payload.key,
-            StringEntry.deleted_at.is_(None),
-        )
-        .first()
-    )
+    existing = key_owner(db, project.id, payload.key, payload.module_id)
     if existing:
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
 
@@ -803,6 +796,7 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
     entry = StringEntry(
         id=uuid.uuid4(),
         project_id=project.id,
+        key_policy_allows_duplicates=project.allow_duplicate_keys,
         module_id=module_id,
         key=payload.key,
         source_text=payload.source_text,
@@ -833,29 +827,22 @@ def update_string(
     payload: StringUpdate,
 ) -> StringOut:
     entry = get_string(db, project.id, string_id)
-    if payload.key is not None:
-        if payload.key != entry.key:
-            conflict = (
-                db.query(StringEntry.id)
-                .filter(
-                    StringEntry.project_id == project.id,
-                    StringEntry.key == payload.key,
-                    StringEntry.deleted_at.is_(None),
-                    StringEntry.id != entry.id,
-                )
-                .first()
-            )
-            if conflict:
-                raise HTTPException(
-                    status_code=409, detail=f"String '{payload.key}' already exists"
-                )
-        entry.key = payload.key
+    target_key = payload.key if payload.key is not None else entry.key
+    target_module = (
+        require_module_in_project(db, project.id, payload.module_id)
+        if "module_id" in payload.model_fields_set
+        else entry.module_id
+    )
+    if (target_key, target_module) != (entry.key, entry.module_id):
+        if key_owner(db, project.id, target_key, target_module, exclude=entry.id):
+            raise HTTPException(status_code=409, detail=f"String '{target_key}' already exists")
+    entry.key = target_key
     if payload.source_text is not None:
         entry.source_text = payload.source_text
     if "description" in payload.model_fields_set:
         entry.description = payload.description or None
     if "module_id" in payload.model_fields_set:
-        entry.module_id = require_module_in_project(db, project.id, payload.module_id)
+        entry.module_id = target_module
     if payload.tag_ids is not None:
         tags = (
             db.query(Tag)

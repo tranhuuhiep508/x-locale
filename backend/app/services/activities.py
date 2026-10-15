@@ -12,8 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy import String, and_, any_, bindparam, case, cast, delete, func, or_, update
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import String, and_, case, cast, delete, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer, selectinload
 
@@ -79,6 +78,7 @@ from app.services.activity_state import (
 from app.services.catalog import require_module_in_project
 from app.services.import_lock import acquire_import_lock
 from app.services.job_progress import report_progress
+from app.services.key_policy import key_identity, load_key_owners, project_key_policy
 from app.services.write_transactions import retryable_write_conflict, run_write
 
 FEED_CHILD_LIMIT = 50
@@ -1156,6 +1156,7 @@ def apply_revert(
             entry = StringEntry(
                 id=string_id,
                 project_id=activity.project_id,
+                key_policy_allows_duplicates=project_key_policy(db, activity.project_id),
                 key=target["key"],
                 source_text=target["source_text"],
                 status=TranslationStatus.draft,
@@ -1389,20 +1390,8 @@ def _plan_batch_revert(
         for snapshot in (activity.before, activity.after)
         if snapshot is not None and isinstance(snapshot.get("key"), str)
     )
-    owners = (
-        dict(
-            db.query(StringEntry.key, StringEntry.id)
-            .filter(
-                StringEntry.project_id == references.project_id,
-                StringEntry.deleted_at.is_(None),
-                StringEntry.key
-                == any_(bindparam("undo_keys", sorted(candidate_keys), type_=ARRAY(String))),
-            )
-            .all()
-        )
-        if candidate_keys
-        else {}
-    )
+    allow_duplicates = project_key_policy(db, references.project_id)
+    owners = load_key_owners(db, references.project_id, keys=candidate_keys)
     plan = _BatchRevertPlan(
         entries,
         original_versions,
@@ -1419,7 +1408,7 @@ def _plan_batch_revert(
         target = _revert_target(db, activity, before, references=references)
         if target is None:
             raise HTTPException(status_code=404, detail="String no longer exists")
-        owner = owners.get(target["key"])
+        owner = owners.get(key_identity(allow_duplicates, target["key"], target.get("module_id")))
         if not target.get("deleted_at") and owner is not None and owner != sid:
             raise key_conflict(target["key"])
         if not force and not snapshots_match(before, activity.after):
@@ -1439,10 +1428,15 @@ def _plan_batch_revert(
                 or published[locale] != after["published_translations"][locale]
             ):
                 plan.changed_translations.add((sid, locale))
-        if before and not before.get("deleted_at") and owners.get(before["key"]) == sid:
-            owners.pop(before["key"])
+        if (
+            before
+            and not before.get("deleted_at")
+            and owners.get(key_identity(allow_duplicates, before["key"], before.get("module_id")))
+            == sid
+        ):
+            owners.pop(key_identity(allow_duplicates, before["key"], before.get("module_id")))
         if not after.get("deleted_at"):
-            owners[after["key"]] = sid
+            owners[key_identity(allow_duplicates, after["key"], after.get("module_id"))] = sid
         states[sid] = after
         plan.updated_at[sid] = datetime.now(UTC)
         plan.inverses.append((activity, before, after))
@@ -1468,6 +1462,7 @@ def _write_revert_content(db: Session, project_id: uuid.UUID, plan: _BatchRevert
     from app.activity import _actor_from_session
 
     actor_type, actor_id, actor_label, _, _ = _actor_from_session(db)
+    allow_duplicates = project_key_policy(db, project_id)
     existing_rows, new_rows, released, changed_tags = [], [], [], []
     translation_updates, translation_inserts, tag_inserts = [], [], []
     for sid, now in plan.updated_at.items():
@@ -1486,7 +1481,9 @@ def _write_revert_content(db: Session, project_id: uuid.UUID, plan: _BatchRevert
         if entry is not None:
             existing_rows.append(row)
             if entry.deleted_at is None and (
-                entry.key != row["key"] or row["deleted_at"] is not None
+                entry.key != row["key"]
+                or entry.module_id != row["module_id"]
+                or row["deleted_at"] is not None
             ):
                 released.append(sid)
         else:
@@ -1494,6 +1491,7 @@ def _write_revert_content(db: Session, project_id: uuid.UUID, plan: _BatchRevert
                 {
                     **row,
                     "project_id": project_id,
+                    "key_policy_allows_duplicates": allow_duplicates,
                     "created_by_type": actor_type,
                     "created_by_id": actor_id,
                     "created_by_label": actor_label,
@@ -1592,27 +1590,30 @@ def _persist_revert_plan(
         # The unique index is still authoritative when another writer wins after planning.
         db.rollback()
         db.expire_all()
+        allow_duplicates = project_key_policy(db, project_id)
         targets = {
-            sid: state["key"] for sid, state in plan.states.items() if not state["deleted_at"]
+            sid: key_identity(allow_duplicates, state["key"], state.get("module_id"))
+            for sid, state in plan.states.items()
+            if not state["deleted_at"]
         }
-        owners = dict(
-            db.query(StringEntry.key, StringEntry.id)
-            .filter(
-                StringEntry.project_id == project_id,
-                StringEntry.deleted_at.is_(None),
-                StringEntry.key.in_(set(targets.values())),
-            )
-            .all()
+        owners = load_key_owners(
+            db, project_id, keys={identity[1] for identity in targets.values()}
         )
-        for sid, key in targets.items():
-            owner = owners.get(key)
-            if owner is not None and owner != sid and targets.get(owner) == key:
-                raise key_conflict(key) from error
-            if owner is not None and owner != sid and owner not in plan.states:
-                raise key_conflict(key) from error
-        # A competing owner may have disappeared again before the diagnostic read.
+        for sid, identity in targets.items():
+            owner = owners.get(identity)
+            if (
+                owner is not None
+                and owner != sid
+                and (owner not in plan.states or targets.get(owner) == identity)
+            ):
+                raise key_conflict(identity[1]) from error
+        # A competing owner may have disappeared before the diagnostic read.
         detail = getattr(getattr(error.orig, "diag", None), "message_detail", "") or ""
-        key = next((key for key in targets.values() if f"=({project_id}, {key})" in detail), "")
+        key = next(
+            (identity[1] for identity in targets.values()
+             if str(project_id) in detail and f", {identity[1]})" in detail),
+            "",
+        )
         raise key_conflict(key) from error
 
 
@@ -1726,8 +1727,9 @@ def _revert_preview_item(
     activity: Activity,
     module_names: dict[str, str],
     states: dict[uuid.UUID, dict | None],
-    owners: dict[str, uuid.UUID],
+    owners: dict[tuple[str | None, str], uuid.UUID],
     references: SnapshotReferences,
+    allow_duplicates: bool,
 ) -> RevertPreviewItemOut:
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     etype = (
@@ -1783,7 +1785,9 @@ def _revert_preview_item(
             elif action == "delete" and current_snap is None:
                 outcome = "recreate"
             sid = uuid.UUID(activity.entity_id)
-            owner = owners.get(target["key"])
+            owner = owners.get(
+                key_identity(allow_duplicates, target["key"], target.get("module_id"))
+            )
             if not target.get("deleted_at") and owner is not None and owner != sid:
                 blocked_reason = key_conflict_message(target["key"])
             published_target = {
@@ -1804,11 +1808,23 @@ def _revert_preview_item(
                 if (
                     current_snap
                     and not current_snap.get("deleted_at")
-                    and owners.get(current_snap["key"]) == sid
+                    and owners.get(
+                        key_identity(
+                            allow_duplicates, current_snap["key"], current_snap.get("module_id")
+                        )
+                    )
+                    == sid
                 ):
-                    owners.pop(current_snap["key"], None)
+                    owners.pop(
+                        key_identity(
+                            allow_duplicates, current_snap["key"], current_snap.get("module_id")
+                        ),
+                        None,
+                    )
                 if not target.get("deleted_at"):
-                    owners[target["key"]] = sid
+                    owners[
+                        key_identity(allow_duplicates, target["key"], target.get("module_id"))
+                    ] = sid
                 states[sid] = target
     elif action == "create":
         outcome = "move_to_deleted"
@@ -1842,21 +1858,15 @@ def build_revert_preview(
     names = module_name_map(db, project.id)
     entries = _load_string_entries(db, _string_ids_for_activities(activities))
     states = {sid: _live_snapshot(entry) for sid, entry in entries.items()}
-    owners = dict(
-        db.query(StringEntry.key, StringEntry.id)
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.deleted_at.is_(None),
-        )
-        .all()
-    )
+    allow_duplicates = project_key_policy(db, project.id)
+    owners = load_key_owners(db, project.id)
     references = SnapshotReferences(
         db,
         project.id,
         [*states.values(), *[snapshot for a in activities for snapshot in (a.before, a.after)]],
     )
     all_items = [
-        _revert_preview_item(db, activity, names, states, owners, references)
+        _revert_preview_item(db, activity, names, states, owners, references, allow_duplicates)
         for activity in _sort_feed_rows(activities)
     ]
     blocked_reason = next((item.blocked_reason for item in all_items if item.blocked_reason), None)
