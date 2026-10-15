@@ -4,6 +4,11 @@ export function toursSeenKey(userId: string): string {
   return `xl:tours-seen:${userId}`
 }
 
+/** True only when Playwright set the flag before the app loaded. Replay does not read this. */
+export function e2eToursOff(): boolean {
+  return window.__XL_E2E_TOURS_OFF__ === true
+}
+
 type SeenMap = Record<string, string | number>
 
 function readSeenMap(raw: string | null): SeenMap {

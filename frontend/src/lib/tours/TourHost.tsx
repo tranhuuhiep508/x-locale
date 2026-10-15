@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectQuery, meQuery } from '@/lib/queries'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
-import { isTourSeen, markTourSeen } from '@/lib/tours/storage'
+import { e2eToursOff, isTourSeen, markTourSeen } from '@/lib/tours/storage'
 import { isTourTargetVisible, selectTourSteps } from '@/lib/tours/steps'
 import { TourContext } from '@/lib/tours/tour-context'
 import { loadTourDriver, startTour } from '@/lib/tours/run-tour'
@@ -75,7 +75,8 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       role,
       isTargetAvailable: isTourTargetVisible,
     })
-    if (mode === 'off' || (mode === 'auto' && isTourSeen(userId, screen)) || activeSteps.length === 0) {
+    const skipAuto = mode === 'auto' && (e2eToursOff() || isTourSeen(userId, screen))
+    if (mode === 'off' || skipAuto || activeSteps.length === 0) {
       setTourStatus('idle')
       return
     }

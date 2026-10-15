@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TOUR_IDS } from '@/lib/tours/ids'
-import { isTourSeen, markTourSeen, toursSeenKey } from '@/lib/tours/storage'
+import { e2eToursOff, isTourSeen, markTourSeen, toursSeenKey } from '@/lib/tours/storage'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -92,5 +92,17 @@ describe('tour seen storage', () => {
     }
     expect(() => markTourSeen('user-a', 'projects', broken)).not.toThrow()
     expect(isTourSeen('user-a', 'projects', broken)).toBe(false)
+  })
+})
+
+describe('e2e tours flag', () => {
+  afterEach(() => {
+    delete window.__XL_E2E_TOURS_OFF__
+  })
+
+  it('blocks auto-start only when the flag is exactly true', () => {
+    expect(e2eToursOff()).toBe(false)
+    window.__XL_E2E_TOURS_OFF__ = true
+    expect(e2eToursOff()).toBe(true)
   })
 })
