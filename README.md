@@ -278,8 +278,6 @@ into the same results.
 
 | Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_JSON_SCHEMA_STRICT` |
 |---|---|---|
-| Nova 2 Lite | `tool` | `false` |
-| Claude Sonnet 5.5 | `tool` | `false` |
 | Claude Sonnet 4.6 | `json_schema` | `false` |
 | GPT-6 Luna | `json_schema` | `true` |
 
@@ -298,12 +296,10 @@ schema omits numeric constraints because Bedrock structured outputs exclude them
 Set `BEDROCK_MODEL_ID` to a model or inference profile available in `AWS_REGION`
 and restart the backend. Examples for `us-east-1`:
 
-- Claude Sonnet 5.5: `us.anthropic.claude-sonnet-5-5`
 - OpenAI GPT-6 Luna: `us.openai.gpt-6-luna` (or `global.openai.gpt-6-luna`)
 - OpenAI GPT-OSS 120B: `openai.gpt-oss-120b-1:0`
 
 Availability and AWS permissions depend on your account and region. See the
-[Claude Sonnet 5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html),
 [Claude sampling migration guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html),
 [GPT-6 Luna model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html),
 [Bedrock client-side tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-client-side.html),

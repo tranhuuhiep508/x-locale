@@ -131,6 +131,10 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
     assert "seed-demo" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
+    for text in (dev, prod):
+        assert "BEDROCK_OUTPUT_MODE: ${BEDROCK_OUTPUT_MODE:-json_schema}" in text
+        assert "BEDROCK_JSON_SCHEMA_STRICT: ${BEDROCK_JSON_SCHEMA_STRICT:-true}" in text
+        assert "BEDROCK_MAX_TOKENS: ${BEDROCK_MAX_TOKENS:-16000}" in text
 
 
 def test_env_example_scopes_parse_and_dotenv_ignores_inline_comments(monkeypatch):
