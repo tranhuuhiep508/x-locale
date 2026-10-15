@@ -23,7 +23,6 @@ _AUTH_ERROR = (
 
 BATCH_SIZE = 20
 MAX_CHUNK_WORKERS = 5
-MAX_TOKENS = 4096
 TOOL_NAME = "submit_translations"
 MAX_CONVERSE_ATTEMPTS = 3
 THROTTLE_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
@@ -236,7 +235,7 @@ def _converse_once(prompt: str) -> dict:
             modelId=settings.bedrock_model_id,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             # Leave sampling and reasoning settings at the model's defaults.
-            inferenceConfig={"maxTokens": MAX_TOKENS},
+            inferenceConfig={"maxTokens": settings.bedrock_max_tokens},
             **output_options,
         )
     except NoCredentialsError as exc:

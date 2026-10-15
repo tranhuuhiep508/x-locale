@@ -262,6 +262,7 @@ See [.env.example](.env.example). Notable vars:
 | `BEDROCK_OUTPUT_MODE` | `tool` (default) or `json_schema`; choose based on the model/profile's documented support |
 | `BEDROCK_TOOL_CHOICE` | `tool` (default) requires `submit_translations`; use `auto` for models that do not support forced tool selection. Ignored in `json_schema` mode |
 | `BEDROCK_JSON_SCHEMA_STRICT` | Default `false`; in `json_schema` mode, set `true` when the provider requires `additionalModelRequestFields.text.format.strict` (e.g. OpenAI GPT-6 Luna) |
+| `BEDROCK_MAX_TOKENS` | Maximum output tokens for a Bedrock translate request (default 16000). Models with a smaller output cap must lower it, or Bedrock rejects the request. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
 | `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |
 

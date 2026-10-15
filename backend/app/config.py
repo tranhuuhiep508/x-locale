@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     env: str = ""
     aws_region: str = "us-east-1"
     bedrock_model_id: str = "us.amazon.nova-2-lite-v1:0"
+    bedrock_max_tokens: int = 16000
     bedrock_output_mode: Literal["tool", "json_schema"] = "tool"
     bedrock_tool_choice: Literal["tool", "auto"] = "tool"
     # OpenAI requires text.format.strict in addition to Converse outputConfig.
