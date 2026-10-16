@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
-import { isTourSeen, markTourSeen } from '@/lib/tours/storage'
-import { selectTourSteps, shouldStartTour, tourCoversRoleSteps, type TourStep } from '@/lib/tours/steps'
+import { isTourSeen, markStepsSeen } from '@/lib/tours/storage'
+import { roleAllowsStep, selectTourSteps, stepsToStart, tourCoversRoleSteps, type TourStep } from '@/lib/tours/steps'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -247,40 +247,20 @@ describe('screen tours', () => {
       })
     expect(covers('editor', hints)).toBe(false)
     expect(covers('editor', activityTargets)).toBe(true)
-    expect(
-      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: hints, current: activityTargets }),
-    ).toBe(true)
-    expect(
-      shouldStartTour({
-        mode: 'off',
-        seen: true,
-        toursOff: false,
-        shown: activityTargets,
-        current: ['string-history', 'restore-limits'],
-      }),
-    ).toBe(false)
   })
 
-  it('does not mark a partial tour seen, and marks it once every role step was shown', () => {
+  it('stores partial steps without marking the screen fully seen', () => {
     const storage = memoryStorage()
     const strings = TOUR_STEPS.filter((step) => step.tourId === 'strings')
-    const finish = (present: string[], role = 'editor', extra: TourStep[] = []) => {
-      const available = new Set(present)
-      if (
-        tourCoversRoleSteps([...strings, ...extra], {
-          tourId: 'strings',
-          role,
-          isTargetAvailable: (target) => available.has(target),
-        })
-      ) {
-        markTourSeen('user-a', 'strings', storage)
-      }
-    }
+    const roleTargets = (role: string, extra: TourStep[] = []) =>
+      [...strings, ...extra]
+        .filter((step) => roleAllowsStep(step, role))
+        .map((step) => step.target)
 
-    finish(['search', 'time-filter'])
+    markStepsSeen('user-a', 'strings', ['search', 'time-filter'], storage, roleTargets('editor'))
     expect(isTourSeen('user-a', 'strings', storage)).toBe(false)
 
-    finish(strings.map((step) => step.target))
+    markStepsSeen('user-a', 'strings', strings.map((step) => step.target), storage, roleTargets('editor'))
     expect(isTourSeen('user-a', 'strings', storage)).toBe(true)
 
     const adminOnly: TourStep = {
@@ -290,61 +270,57 @@ describe('screen tours', () => {
       body: 'Admin only.',
       roles: ['admin'],
     }
-    const populated = strings.map((step) => step.target)
     const roleStorage = memoryStorage()
-    const finishRole = (role: string) => {
-      const available = new Set(populated)
-      if (
-        tourCoversRoleSteps([...strings, adminOnly], {
-          tourId: 'strings',
-          role,
-          isTargetAvailable: (target) => available.has(target),
-        })
-      ) {
-        markTourSeen(role, 'strings', roleStorage)
-      }
-    }
-    finishRole('editor')
+    const populated = strings.map((step) => step.target)
+    markStepsSeen('editor', 'strings', populated, roleStorage, roleTargets('editor', [adminOnly]))
     expect(isTourSeen('editor', 'strings', roleStorage)).toBe(true)
-    finishRole('admin')
+    markStepsSeen('admin', 'strings', populated, roleStorage, roleTargets('admin', [adminOnly]))
     expect(isTourSeen('admin', 'strings', roleStorage)).toBe(false)
   })
 })
 
-describe('shouldStartTour', () => {
-  const full = ['grid', 'search', 'time-filter']
-  const filtered = ['search', 'time-filter']
+describe('stepsToStart', () => {
+  const hints = ['batch-undo', 'string-history', 'restore-limits']
+  const roleTargets = ['activity-list', ...hints]
+  const base = {
+    toursOff: false,
+    running: false,
+    roleTargets,
+  }
 
-  it('does not restart a seen screen when the visible targets change', () => {
-    expect(
-      shouldStartTour({ mode: 'off', seen: true, toursOff: false, shown: full, current: filtered }),
-    ).toBe(false)
-    expect(
-      shouldStartTour({ mode: 'off', seen: true, toursOff: false, shown: filtered, current: full }),
-    ).toBe(false)
-    expect(
-      shouldStartTour({ mode: 'auto', seen: true, toursOff: false, shown: [], current: full }),
-    ).toBe(false)
+  it('plays only the new steps when an empty page becomes populated', () => {
+    expect(stepsToStart({ ...base, mode: 'auto', seen: [], available: hints })).toEqual(hints)
+    expect(stepsToStart({ ...base, mode: 'off', seen: hints, available: roleTargets })).toEqual(['activity-list'])
   })
 
-  it('restarts a partial tour only when a new target appears', () => {
-    expect(
-      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: full, current: filtered }),
-    ).toBe(false)
-    expect(
-      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: filtered, current: full }),
-    ).toBe(true)
+  it('shows nothing new when an empty page is reloaded', () => {
+    expect(stepsToStart({ ...base, mode: 'auto', seen: hints, available: hints })).toEqual([])
   })
 
-  it('runs replay once and does not repeat it after the tour is dismissed', () => {
+  it('does nothing when targets shrink', () => {
+    expect(stepsToStart({ ...base, mode: 'off', seen: roleTargets, available: hints })).toEqual([])
+    expect(stepsToStart({ ...base, mode: 'off', seen: 'all', available: roleTargets })).toEqual([])
+  })
+
+  it('replay plays every available step and ignores the e2e flag', () => {
     expect(
-      shouldStartTour({ mode: 'replay', seen: true, toursOff: true, shown: full, current: full }),
-    ).toBe(true)
-    expect(
-      shouldStartTour({ mode: 'off', seen: true, toursOff: true, shown: full, current: filtered }),
-    ).toBe(false)
-    expect(
-      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: filtered, current: filtered }),
-    ).toBe(false)
+      stepsToStart({
+        mode: 'replay',
+        toursOff: true,
+        running: true,
+        seen: 'all',
+        roleTargets,
+        available: roleTargets,
+      }),
+    ).toEqual(roleTargets)
+  })
+
+  it('respects a legacy full-screen entry', () => {
+    expect(stepsToStart({ ...base, mode: 'auto', seen: 'all', available: roleTargets })).toEqual([])
+  })
+
+  it('auto-starts a step that appears during the visit, and waits while a tour is running', () => {
+    expect(stepsToStart({ ...base, mode: 'off', running: true, seen: hints, available: roleTargets })).toEqual([])
+    expect(stepsToStart({ ...base, mode: 'off', seen: hints, available: roleTargets })).toEqual(['activity-list'])
   })
 })

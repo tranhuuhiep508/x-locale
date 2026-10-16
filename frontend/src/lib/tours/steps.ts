@@ -48,24 +48,25 @@ export function selectTourSteps(
 }
 
 /**
- * Auto-start skips a seen screen and the e2e flag. Replay ignores both.
- * A dismissed partial tour starts again only when a target appears that was not shown.
+ * Targets to play now. Replay returns every available step and ignores seen state,
+ * the e2e flag, and a tour that is already running. Auto-start plays role steps
+ * that are on the page and not yet stored. A legacy `'all'` entry plays nothing.
  */
-export function shouldStartTour(options: {
+export function stepsToStart(options: {
   mode: 'auto' | 'replay' | 'off'
-  seen: boolean
   toursOff: boolean
-  shown: readonly string[]
-  current: readonly string[]
-}): boolean {
-  if (options.current.length === 0) return false
-  if (options.mode === 'replay') return true
-  if (options.toursOff || options.seen) return false
-  if (options.mode === 'off') {
-    const shown = new Set(options.shown)
-    return options.current.some((target) => !shown.has(target))
+  running: boolean
+  seen: 'all' | readonly string[]
+  roleTargets: readonly string[]
+  available: readonly string[]
+}): readonly string[] {
+  if (options.mode === 'replay') return [...options.available]
+  if (options.running || options.toursOff || options.seen === 'all') return []
+  const seen = new Set(options.seen)
+  if (options.roleTargets.length > 0 && options.roleTargets.every((target) => seen.has(target))) {
+    return []
   }
-  return true
+  return options.available.filter((target) => !seen.has(target))
 }
 
 export function isTourTargetVisible(target: string): boolean {

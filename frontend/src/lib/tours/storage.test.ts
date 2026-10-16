@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TOUR_IDS } from '@/lib/tours/ids'
-import { e2eToursOff, isTourSeen, markTourSeen, toursSeenKey } from '@/lib/tours/storage'
+import { stepsToStart } from '@/lib/tours/steps'
+import {
+  dismissTourSteps,
+  e2eToursOff,
+  isTourSeen,
+  markStepsSeen,
+  markTourSeen,
+  mergeSeenProgress,
+  tourSeenProgress,
+  toursSeenKey,
+} from '@/lib/tours/storage'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -43,7 +53,31 @@ describe('tour seen storage', () => {
 
   it('accepts a numeric timestamp already stored for a tour', () => {
     storage.setItem(toursSeenKey('user-a'), JSON.stringify({ strings: 1_710_000_000_000 }))
+    expect(tourSeenProgress('user-a', 'strings', storage)).toBe('all')
     expect(isTourSeen('user-a', 'strings', storage)).toBe(true)
+  })
+
+  it('stores step targets until every role step is seen, and does not downgrade a full entry', () => {
+    markStepsSeen('user-a', 'activity', ['batch-undo', 'string-history'], storage, [
+      'activity-list',
+      'batch-undo',
+      'string-history',
+      'restore-limits',
+    ])
+    expect(isTourSeen('user-a', 'activity', storage)).toBe(false)
+    expect(tourSeenProgress('user-a', 'activity', storage)).toEqual(['batch-undo', 'string-history'])
+
+    markStepsSeen('user-a', 'activity', ['restore-limits', 'activity-list'], storage, [
+      'activity-list',
+      'batch-undo',
+      'string-history',
+      'restore-limits',
+    ])
+    expect(isTourSeen('user-a', 'activity', storage)).toBe(true)
+
+    markStepsSeen('user-a', 'activity', ['activity-list'], storage, ['activity-list'])
+    expect(tourSeenProgress('user-a', 'activity', storage)).toBe('all')
+    expect(JSON.parse(storage.getItem(toursSeenKey('user-a')) ?? '{}').activity).toEqual(expect.any(String))
   })
 
   it('ignores unknown tour ids on read and write', () => {
@@ -74,6 +108,56 @@ describe('tour seen storage', () => {
     )
     for (const tourId of TOUR_IDS) {
       expect(isTourSeen('user-a', tourId, storage)).toBe(false)
+    }
+  })
+
+  it('does not restart a closed tour when setItem and the localStorage getter throw', () => {
+    const targets = ['project-list', 'cli-sync-hint', 'new-project']
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
+    const full: Storage = {
+      length: 0,
+      clear: () => {},
+      getItem: () => null,
+      key: () => null,
+      removeItem: () => {},
+      setItem: () => {
+        throw new Error('full')
+      },
+    }
+    const decide = (session: Partial<Record<string, readonly string[]>>) =>
+      stepsToStart({
+        mode: 'off',
+        toursOff: false,
+        running: false,
+        seen: mergeSeenProgress(tourSeenProgress('user-a', 'projects'), session.projects ?? []),
+        roleTargets: targets,
+        available: targets,
+      })
+
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get: () => full,
+    })
+    let session: Partial<Record<string, readonly string[]>> = {}
+    try {
+      expect(() => {
+        session = dismissTourSteps(session, 'user-a', 'projects', targets, targets)
+      }).not.toThrow()
+      expect(decide(session)).toEqual([])
+
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get() {
+          throw new Error('blocked')
+        },
+      })
+      expect(() => {
+        session = dismissTourSteps(session, 'user-a', 'projects', targets, targets)
+      }).not.toThrow()
+      expect(tourSeenProgress('user-a', 'projects')).toEqual([])
+      expect(decide(session)).toEqual([])
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'localStorage', descriptor)
     }
   })
 
