@@ -49,3 +49,33 @@ test('CLI hints connect to the current server and API Docs is absent from the he
     await expect(page.locator('header').getByRole('link', { name: 'API Docs' })).toHaveCount(0)
   }
 })
+
+test('project header keeps Help and the user menu usable at 320px', async ({ page }) => {
+  await page.goto('/projects/demo-app/settings')
+  const header = page.locator('header')
+  const help = header.getByRole('button', { name: 'Help', exact: true })
+  const userMenu = header.getByRole('button').filter({ has: page.locator('[data-slot="avatar"]') })
+
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 720 })
+    for (const control of [help, userMenu]) {
+      await expect(control).toBeVisible()
+      const bounds = await control.boundingBox()
+      expect(bounds).not.toBeNull()
+      expect(bounds!.x).toBeGreaterThanOrEqual(0)
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
+    }
+    expect(await header.evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(width)
+    if (width >= 640) {
+      await expect(header.getByText('x-locale', { exact: true })).toBeVisible()
+      await expect(header.getByText('Demo App', { exact: true })).toBeVisible()
+    }
+
+    await help.click()
+    await expect(page.getByRole('menuitem', { name: 'Tour this page' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await userMenu.click()
+    await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible()
+    await page.keyboard.press('Escape')
+  }
+})
