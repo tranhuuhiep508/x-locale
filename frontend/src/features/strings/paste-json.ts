@@ -1,9 +1,10 @@
+import JSON5 from 'json5'
 import type { ImportResult } from '@/lib/api/types'
 
 export type PasteRow = { key: string; source_text: string }
 
 export type ParseFlatJsonResult =
-  | { ok: true; rows: PasteRow[]; map: Record<string, string> }
+  | { ok: true; rows: PasteRow[]; map: Record<string, string>; warning?: string }
   | { ok: false; error: string }
 
 export const PASTE_JSON_PLACEHOLDER = `{
@@ -25,11 +26,11 @@ export function parseFlatI18nJson(text: string): ParseFlatJsonResult {
 
   let parsed: unknown
   try {
-    parsed = JSON.parse(trimmed)
+    parsed = JSON5.parse(trimmed)
   } catch {
     return {
       ok: false,
-      error: 'Invalid JSON. Check for missing commas, quotes, or trailing commas.',
+      error: 'Invalid JSON/JSON5. Check for missing commas or quotes.',
     }
   }
 
@@ -56,9 +57,54 @@ export function parseFlatI18nJson(text: string): ParseFlatJsonResult {
       }
     }
     rows.push({ key: rawKey, source_text: value })
-    map[rawKey] = value
+    // Own property so a "__proto__" key stays data and does not change the prototype.
+    Object.defineProperty(map, rawKey, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    })
   }
-  return { ok: true, rows, map }
+  const warning = duplicateKeyWarning(trimmed)
+  return warning ? { ok: true, rows, map, warning } : { ok: true, rows, map }
+}
+
+// shortcut: unquoted keys are ASCII identifiers; upgrade if files use unicode unquoted names.
+function duplicateKeyWarning(text: string): string | undefined {
+  const seen = new Set<string>()
+  const dupes: string[] = []
+  const re =
+    /\/\/[^\n]*|\/\*[\s\S]*?\*\/|("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')|([A-Za-z_$][\w$]*)|[\s\S]/y
+  let pending: string | null = null
+  for (;;) {
+    const match = re.exec(text)
+    if (!match) break
+    const [token, quoted, ident] = match
+    if (quoted) {
+      try {
+        pending = JSON5.parse(quoted) as string
+      } catch {
+        pending = null
+      }
+      continue
+    }
+    if (ident) {
+      pending = ident
+      continue
+    }
+    if (token.startsWith('/') || token.trim() === '') continue
+    if (token === ':' && pending !== null) {
+      if (seen.has(pending)) {
+        if (!dupes.includes(pending)) dupes.push(pending)
+      } else {
+        seen.add(pending)
+      }
+    }
+    pending = null
+  }
+  if (dupes.length === 0) return
+  const listed = dupes.map((key) => JSON.stringify(key)).join(', ')
+  return `Duplicate keys (${listed}): the later value is used.`
 }
 
 export function emptyImportPreview(): ImportResult {

@@ -75,6 +75,7 @@ export function AddManyStringsDialog({
 
   const [text, setText] = useState('')
   const [parseError, setParseError] = useState<string | null>(null)
+  const [parseWarning, setParseWarning] = useState<string | null>(null)
   const [moduleId, setModuleId] = useState('')
   const [tagIds, setTagIds] = useState<string[]>([])
   const [createdModules, setCreatedModules] = useState<Module[]>([])
@@ -96,6 +97,7 @@ export function AddManyStringsDialog({
   function resetForm() {
     setText('')
     setParseError(null)
+    setParseWarning(null)
     setModuleId('')
     setTagIds([])
     setCreatedModules([])
@@ -170,12 +172,14 @@ export function AddManyStringsDialog({
     const parsed = parseFlatI18nJson(text)
     if (!parsed.ok) {
       setParseError(parsed.error)
+      setParseWarning(null)
       setStep('paste')
       setPreview(null)
       setPendingMap(null)
       return
     }
     setParseError(null)
+    setParseWarning(parsed.warning ?? null)
     setPendingMap(parsed.map)
     if (parsed.rows.length === 0) {
       setPreview(emptyImportPreview())
@@ -225,6 +229,11 @@ export function AddManyStringsDialog({
         </ReviewDialogHeader>
 
         <ReviewDialogBody>
+          {parseWarning ? (
+            <p role="status" className="mb-3 text-sm font-medium text-amber-600 dark:text-amber-400">
+              {parseWarning}
+            </p>
+          ) : null}
           {step === 'paste' ? (
             <FieldGroup className="grid gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
               <Field data-invalid={parseError ? true : undefined}>
@@ -236,6 +245,7 @@ export function AddManyStringsDialog({
                   onChange={(e) => {
                     setText(e.target.value)
                     if (parseError) setParseError(null)
+                    if (parseWarning) setParseWarning(null)
                   }}
                   spellCheck={false}
                   autoComplete="off"

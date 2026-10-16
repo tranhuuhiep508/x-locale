@@ -336,6 +336,19 @@ describe('AddManyStringsDialog', () => {
     expect(syncApi.importFile).toHaveBeenCalledTimes(2)
   })
 
+  it('warns on duplicate keys and still previews the later values', async () => {
+    renderDialog()
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult)
+    fireEvent.change(screen.getByLabelText('JSON'), {
+      target: { value: '{ "save": "one", "save": "two" }' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText(/Duplicate keys \("save"\)/)).toBeTruthy()
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(syncApi.importFile).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects invalid JSON without calling import', async () => {
     renderDialog()
     fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{not json' } })
