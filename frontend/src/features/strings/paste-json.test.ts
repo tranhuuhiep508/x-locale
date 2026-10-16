@@ -3,15 +3,15 @@ import { parseFlatI18nJson, pasteImportParams } from './paste-json'
 
 describe('parseFlatI18nJson', () => {
   it('parses a flat key to source map', () => {
-    const result = parseFlatI18nJson('{"welcome.title": "Welcome", "cta": "Go"}')
+    const text = '{"welcome.title": "Welcome", "cta": "Go", "quote": "say \\"hi\\""}'
+    const result = parseFlatI18nJson(text)
+    const parsed = JSON.parse(text) as Record<string, string>
     expect(result).toEqual({
       ok: true,
-      rows: [
-        { key: 'welcome.title', source_text: 'Welcome' },
-        { key: 'cta', source_text: 'Go' },
-      ],
-      map: { 'welcome.title': 'Welcome', cta: 'Go' },
+      rows: Object.entries(parsed).map(([key, source_text]) => ({ key, source_text })),
+      map: parsed,
     })
+    expect(result).not.toHaveProperty('warning')
   })
 
   it('treats an empty object as a no-op', () => {
@@ -21,7 +21,84 @@ describe('parseFlatI18nJson', () => {
   it('rejects invalid JSON', () => {
     const result = parseFlatI18nJson('{not json')
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toMatch(/Invalid JSON/)
+    if (!result.ok) {
+      expect(result.error).toMatch(/Invalid JSON/)
+      expect(result.error).toMatch(/JSON5/)
+    }
+  })
+
+  it('accepts trailing commas, comments, single quotes, and unquoted keys', () => {
+    const result = parseFlatI18nJson(`{
+      // line comment
+      "welcome.title": "Welcome",
+      /* block comment */
+      'cta': 'Go',
+      unquoted: "Yes",
+      'it\\'s': 'fine',
+    }`)
+    expect(result).toEqual({
+      ok: true,
+      rows: [
+        { key: 'welcome.title', source_text: 'Welcome' },
+        { key: 'cta', source_text: 'Go' },
+        { key: 'unquoted', source_text: 'Yes' },
+        { key: "it's", source_text: 'fine' },
+      ],
+      map: { 'welcome.title': 'Welcome', cta: 'Go', unquoted: 'Yes', "it's": 'fine' },
+    })
+  })
+
+  it('does not let a __proto__ key pollute prototypes', () => {
+    const protoNames = Object.getOwnPropertyNames(Object.prototype)
+    const nested = parseFlatI18nJson('{ "__proto__": { "polluted": true }, "ok": "yes" }')
+    expect(nested.ok).toBe(false)
+    if (!nested.ok) expect(nested.error).toMatch(/object/)
+    expect(Object.getOwnPropertyNames(Object.prototype)).toEqual(protoNames)
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+
+    const flat = parseFlatI18nJson('{ "__proto__": "safe", "title": "Hi" }')
+    expect(Object.getOwnPropertyNames(Object.prototype)).toEqual(protoNames)
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+    expect(flat.ok).toBe(true)
+    if (!flat.ok) return
+    expect(flat.rows).toEqual([
+      { key: '__proto__', source_text: 'safe' },
+      { key: 'title', source_text: 'Hi' },
+    ])
+    expect(Object.getOwnPropertyDescriptor(flat.map, '__proto__')?.value).toBe('safe')
+    expect(flat.map.title).toBe('Hi')
+    expect(Object.getPrototypeOf(flat.map)).toBe(Object.prototype)
+    const copy: { polluted?: boolean } = {}
+    Object.assign(copy, flat.map)
+    expect(copy.polluted).toBeUndefined()
+    expect(JSON.parse(JSON.stringify(flat.map))).toEqual(
+      JSON.parse('{"__proto__":"safe","title":"Hi"}'),
+    )
+  })
+
+  it('warns on duplicate keys without dropping the later value', () => {
+    const result = parseFlatI18nJson(`{
+      "a": "1",
+      a: "2",
+      'a': "3",
+      "b": "ok",
+      "b": "later",
+      "note": "say \\"a\\": inside",
+      // "a": "hidden"
+      /* "b": "hidden" */
+    }`)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.rows).toEqual([
+      { key: 'a', source_text: '3' },
+      { key: 'b', source_text: 'later' },
+      { key: 'note', source_text: 'say "a": inside' },
+    ])
+    expect(result.map).toEqual({ a: '3', b: 'later', note: 'say "a": inside' })
+    expect(JSON.stringify(result.map)).toBe(
+      '{"a":"3","b":"later","note":"say \\"a\\": inside"}',
+    )
+    expect(result.warning).toBe('Duplicate keys ("a", "b"): the later value is used.')
   })
 
   it('rejects arrays and primitives', () => {
