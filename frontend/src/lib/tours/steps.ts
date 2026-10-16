@@ -47,6 +47,27 @@ export function selectTourSteps(
   })
 }
 
+/**
+ * Auto-start skips a seen screen and the e2e flag. Replay ignores both.
+ * A dismissed partial tour starts again only when a target appears that was not shown.
+ */
+export function shouldStartTour(options: {
+  mode: 'auto' | 'replay' | 'off'
+  seen: boolean
+  toursOff: boolean
+  shown: readonly string[]
+  current: readonly string[]
+}): boolean {
+  if (options.current.length === 0) return false
+  if (options.mode === 'replay') return true
+  if (options.toursOff || options.seen) return false
+  if (options.mode === 'off') {
+    const shown = new Set(options.shown)
+    return options.current.some((target) => !shown.has(target))
+  }
+  return true
+}
+
 export function isTourTargetVisible(target: string): boolean {
   if (typeof document === 'undefined') return false
   const element = document.querySelector(`[data-tour="${CSS.escape(target)}"]`)

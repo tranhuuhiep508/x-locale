@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
 import { isTourSeen, markTourSeen } from '@/lib/tours/storage'
-import { selectTourSteps, tourCoversRoleSteps, type TourStep } from '@/lib/tours/steps'
+import { selectTourSteps, shouldStartTour, tourCoversRoleSteps, type TourStep } from '@/lib/tours/steps'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -213,5 +213,43 @@ describe('screen tours', () => {
     expect(isTourSeen('editor', 'strings', roleStorage)).toBe(true)
     finishRole('admin')
     expect(isTourSeen('admin', 'strings', roleStorage)).toBe(false)
+  })
+})
+
+describe('shouldStartTour', () => {
+  const full = ['grid', 'search', 'time-filter']
+  const filtered = ['search', 'time-filter']
+
+  it('does not restart a seen screen when the visible targets change', () => {
+    expect(
+      shouldStartTour({ mode: 'off', seen: true, toursOff: false, shown: full, current: filtered }),
+    ).toBe(false)
+    expect(
+      shouldStartTour({ mode: 'off', seen: true, toursOff: false, shown: filtered, current: full }),
+    ).toBe(false)
+    expect(
+      shouldStartTour({ mode: 'auto', seen: true, toursOff: false, shown: [], current: full }),
+    ).toBe(false)
+  })
+
+  it('restarts a partial tour only when a new target appears', () => {
+    expect(
+      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: full, current: filtered }),
+    ).toBe(false)
+    expect(
+      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: filtered, current: full }),
+    ).toBe(true)
+  })
+
+  it('runs replay once and does not repeat it after the tour is dismissed', () => {
+    expect(
+      shouldStartTour({ mode: 'replay', seen: true, toursOff: true, shown: full, current: full }),
+    ).toBe(true)
+    expect(
+      shouldStartTour({ mode: 'off', seen: true, toursOff: true, shown: full, current: filtered }),
+    ).toBe(false)
+    expect(
+      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: filtered, current: filtered }),
+    ).toBe(false)
   })
 })
