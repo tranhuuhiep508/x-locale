@@ -17,6 +17,21 @@ export function roleAllowsStep(step: TourStep, role: string | null): boolean {
   return step.roles.includes(role)
 }
 
+/** True when every step this role can see is available. Other roles' steps do not count. */
+export function tourCoversRoleSteps(
+  steps: readonly TourStep[],
+  options: {
+    tourId: string
+    role: string | null
+    isTargetAvailable: (target: string) => boolean
+  },
+): boolean {
+  const forRole = steps.filter(
+    (step) => step.tourId === options.tourId && roleAllowsStep(step, options.role),
+  )
+  return forRole.length > 0 && forRole.every((step) => options.isTargetAvailable(step.target))
+}
+
 export function selectTourSteps(
   steps: readonly TourStep[],
   options: {

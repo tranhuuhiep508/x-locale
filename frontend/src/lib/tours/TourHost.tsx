@@ -5,14 +5,16 @@ import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectQuery, meQuery } from '@/lib/queries'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
 import { e2eToursOff, isTourSeen, markTourSeen } from '@/lib/tours/storage'
-import { isTourTargetVisible, selectTourSteps } from '@/lib/tours/steps'
+import { isTourTargetVisible, selectTourSteps, tourCoversRoleSteps } from '@/lib/tours/steps'
 import { TourContext } from '@/lib/tours/tour-context'
 import { loadTourDriver, startTour } from '@/lib/tours/run-tour'
 import type { TourId } from '@/lib/tours/ids'
 
-type Play =
-  | { screen: TourId; mode: 'replay' | 'off' }
-  | null
+type Play = {
+  screen: TourId
+  mode: 'replay' | 'off'
+  shownKey: string
+} | null
 
 function setTourStatus(status: 'pending' | 'idle' | 'running') {
   document.documentElement.dataset.tourStatus = status
@@ -64,6 +66,7 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       : []
   const canReplay = Boolean(userId && screen && steps.length > 0)
   const stepKey = steps.map((step) => step.target).join('|')
+  const dismissed = play?.screen === screen && play.mode === 'off' && play.shownKey === stepKey
 
   useEffect(() => {
     if (!screen || !userId || !domReady || !roleReady) {
@@ -76,19 +79,24 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       isTargetAvailable: isTourTargetVisible,
     })
     const skipAuto = mode === 'auto' && (e2eToursOff() || isTourSeen(userId, screen))
-    if (mode === 'off' || skipAuto || activeSteps.length === 0) {
+    if (dismissed || skipAuto || activeSteps.length === 0) {
       setTourStatus('idle')
       return
     }
 
     let cancelled = false
     let handle: { destroy: () => void } | null = null
+    const markSeen = tourCoversRoleSteps(TOUR_STEPS, {
+      tourId: screen,
+      role,
+      isTargetAvailable: isTourTargetVisible,
+    })
     setTourStatus('running')
     void loadTourDriver().then((driver) => {
       if (cancelled) return
       handle = startTour(driver, activeSteps, () => {
-        markTourSeen(userId, screen)
-        setPlay({ screen, mode: 'off' })
+        if (markSeen) markTourSeen(userId, screen)
+        setPlay({ screen, mode: 'off', shownKey: stepKey })
       })
     })
 
@@ -96,7 +104,7 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       cancelled = true
       handle?.destroy()
     }
-  }, [screen, userId, domReady, roleReady, role, mode, stepKey])
+  }, [screen, userId, domReady, roleReady, role, mode, stepKey, dismissed])
 
   return (
     <TourContext.Provider
@@ -104,7 +112,7 @@ export function TourHost({ children }: { children: React.ReactNode }) {
         canReplay,
         replay: () => {
           if (!screen || !canReplay) return
-          setPlay({ screen, mode: 'replay' })
+          setPlay({ screen, mode: 'replay', shownKey: stepKey })
         },
       }}
     >

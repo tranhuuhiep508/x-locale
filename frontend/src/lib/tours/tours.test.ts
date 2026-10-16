@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
-import { selectTourSteps, type TourStep } from '@/lib/tours/steps'
+import { isTourSeen, markTourSeen } from '@/lib/tours/storage'
+import { selectTourSteps, tourCoversRoleSteps, type TourStep } from '@/lib/tours/steps'
+
+function memoryStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() {
+      return values.size
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => {
+      values.delete(key)
+    },
+    setItem: (key, value) => {
+      values.set(key, String(value))
+    },
+  }
+}
 
 const gated: TourStep[] = [
   { tourId: 'strings', target: 'grid', title: 'Keys', body: 'Each row is a string key.' },
@@ -145,5 +164,54 @@ describe('screen tours', () => {
       role: null,
       isTargetAvailable: () => true,
     })).toHaveLength(0)
+  })
+
+  it('does not mark a partial tour seen, and marks it once every role step was shown', () => {
+    const storage = memoryStorage()
+    const strings = TOUR_STEPS.filter((step) => step.tourId === 'strings')
+    const finish = (present: string[], role = 'editor', extra: TourStep[] = []) => {
+      const available = new Set(present)
+      if (
+        tourCoversRoleSteps([...strings, ...extra], {
+          tourId: 'strings',
+          role,
+          isTargetAvailable: (target) => available.has(target),
+        })
+      ) {
+        markTourSeen('user-a', 'strings', storage)
+      }
+    }
+
+    finish(['search', 'time-filter'])
+    expect(isTourSeen('user-a', 'strings', storage)).toBe(false)
+
+    finish(strings.map((step) => step.target))
+    expect(isTourSeen('user-a', 'strings', storage)).toBe(true)
+
+    const adminOnly: TourStep = {
+      tourId: 'strings',
+      target: 'admin-only',
+      title: 'Admin',
+      body: 'Admin only.',
+      roles: ['admin'],
+    }
+    const populated = strings.map((step) => step.target)
+    const roleStorage = memoryStorage()
+    const finishRole = (role: string) => {
+      const available = new Set(populated)
+      if (
+        tourCoversRoleSteps([...strings, adminOnly], {
+          tourId: 'strings',
+          role,
+          isTargetAvailable: (target) => available.has(target),
+        })
+      ) {
+        markTourSeen(role, 'strings', roleStorage)
+      }
+    }
+    finishRole('editor')
+    expect(isTourSeen('editor', 'strings', roleStorage)).toBe(true)
+    finishRole('admin')
+    expect(isTourSeen('admin', 'strings', roleStorage)).toBe(false)
   })
 })
