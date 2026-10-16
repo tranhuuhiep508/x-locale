@@ -144,7 +144,7 @@ export function ActivityPage() {
   const [undoJobId, setUndoJobId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
-  const { data, isLoading, isError, refetch } = useQuery(
+  const { data, isLoading, isError, isSuccess, refetch } = useQuery(
     activityFeedQuery(projectId, {
       page: search.page,
       page_size: search.page_size,
@@ -250,7 +250,7 @@ export function ActivityPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-tour-ready={isSuccess ? 'activity' : undefined}>
       <div className="shrink-0 border-b px-4 py-5 sm:px-6">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
           <PageHeader
@@ -265,6 +265,11 @@ export function ActivityPage() {
               ) : null
             }
           />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
+            <span data-tour="string-history">Restore one string from its History.</span>{' '}
+            <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
+          </p>
           <ActivityFilters
             search={search}
             locales={locales}
@@ -311,7 +316,8 @@ export function ActivityPage() {
               }
             />
           ) : (
-            grouped.map((group) => (
+            <div data-tour="activity-list" className="flex flex-col gap-6">
+            {grouped.map((group) => (
               <section key={group.key} className="flex min-w-0 flex-col gap-3">
                 <div className="flex items-center gap-2">
                   <span className="eyebrow text-xs">{group.heading || 'Unknown date'}</span>
@@ -329,7 +335,8 @@ export function ActivityPage() {
                   ))}
                 </div>
               </section>
-            ))
+            ))}
+            </div>
           )}
         </div>
       </div>

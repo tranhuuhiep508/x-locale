@@ -8,6 +8,8 @@ export function screenForPath(pathname: string): TourId | null {
   if (!match || match[1] === 'new') return null
   if (match[2] === 'strings') return 'strings'
   if (match[2] === 'import-export') return 'import'
+  if (match[2] === 'settings') return 'settings'
+  if (match[2] === 'activity') return 'activity'
   return null
 }
 

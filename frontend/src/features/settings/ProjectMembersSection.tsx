@@ -150,7 +150,7 @@ export function ProjectMembersSection({
           <p className="text-sm text-muted-foreground">No members yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {members.map((member) => {
+            {members.map((member, index) => {
               const soleAdmin = member.role === 'admin' && adminCount < 2
               const isSelf = me?.id === member.user_id
               return (
@@ -190,6 +190,7 @@ export function ProjectMembersSection({
                         variant="outline"
                         size="sm"
                         disabled={soleAdmin || removeMut.isPending}
+                        data-tour={index === 0 ? 'member-remove' : undefined}
                         aria-label={isSelf ? `Leave ${member.email}` : `Remove ${member.email}`}
                         onClick={() => setPendingRemoval(member)}
                       >

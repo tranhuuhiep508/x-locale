@@ -89,7 +89,7 @@ describe('selectTourSteps', () => {
   it('returns nothing for an unknown tour id', () => {
     expect(
       selectTourSteps(TOUR_STEPS, {
-        tourId: 'activity',
+        tourId: 'cms',
         role: 'admin',
         isTargetAvailable: () => true,
       }),
@@ -103,7 +103,8 @@ describe('screen tours', () => {
     expect(screenForPath('/projects/new')).toBe('project-new')
     expect(screenForPath('/projects/demo-app/strings')).toBe('strings')
     expect(screenForPath('/projects/demo-app/import-export')).toBe('import')
-    expect(screenForPath('/projects/demo-app/settings')).toBeNull()
+    expect(screenForPath('/projects/demo-app/settings')).toBe('settings')
+    expect(screenForPath('/projects/demo-app/activity')).toBe('activity')
     expect(screenForPath('/login')).toBeNull()
     expect(projectRefFromPath('/projects/demo-app/strings')).toBe('demo-app')
     expect(projectRefFromPath('/projects/new')).toBeNull()
@@ -164,6 +165,100 @@ describe('screen tours', () => {
       role: null,
       isTargetAvailable: () => true,
     })).toHaveLength(0)
+  })
+
+  it('filters settings and activity steps by role, and keeps an empty activity list unseen', () => {
+    const body = (target: string) => TOUR_STEPS.find((step) => step.target === target)?.body
+    expect(body('settings-general')).toBe('Name, base language, layout, and target languages.')
+    expect(body('dup-keys')).toBe(
+      "Allow duplicate keys across modules. You can't turn this off while duplicates exist.",
+    )
+    expect(body('settings-context')).toBe('Translation context for AI translation.')
+    expect(body('members')).toBe(
+      'Add or remove members and change roles. Admins manage members and settings. Editors do all string work.',
+    )
+    expect(body('member-remove')).toBe(
+      "Removing a member isn't logged and can't be undone. A project always needs at least one Admin.",
+    )
+    expect(body('api-keys')).toBe('Generate a personal API key here. Generating a new one revokes your old key.')
+    expect(body('loc-init')).toBe('Run <code>loc init -k &lt;your key&gt;</code> in your repo.')
+    expect(body('loc-push')).toBe(
+      '<code>loc push</code> sends base-language strings that changed since your last push (<code>--full</code> sends all of them). It creates and updates keys but never deletes them.',
+    )
+    expect(body('push-limits')).toBe(
+      "A push is rejected if a key is queued for deletion or already deleted, or if the base language doesn't match. Pushes of more than 5,000 keys run in the background.",
+    )
+    expect(body('activity-list')).toBe('Every string and translation change is listed here.')
+    expect(body('batch-undo')).toBe(
+      "Imports, AI translations, and batch actions can each be undone as a whole batch. An undo can't itself be undone.",
+    )
+    expect(body('string-history')).toBe(
+      'To revert a single string, open its History and restore an earlier version.',
+    )
+    expect(body('restore-limits')).toBe(
+      "History can't restore publish or unpublish actions or deletes. To bring back a deleted string, use the Deleted filter and choose Restore.",
+    )
+
+    const present = () => true
+    const settings = (role: string | null) =>
+      selectTourSteps(TOUR_STEPS, { tourId: 'settings', role, isTargetAvailable: present }).map(
+        (step) => step.target,
+      )
+    const editorSettings = [
+      'settings-general',
+      'dup-keys',
+      'settings-context',
+      'api-keys',
+      'loc-init',
+      'loc-push',
+      'push-limits',
+    ]
+    expect(settings('editor')).toEqual(editorSettings)
+    expect(settings(null)).toEqual(editorSettings)
+    expect(settings('admin')).toEqual([
+      'settings-general',
+      'dup-keys',
+      'settings-context',
+      'members',
+      'member-remove',
+      'api-keys',
+      'loc-init',
+      'loc-push',
+      'push-limits',
+    ])
+
+    const activityTargets = ['activity-list', 'batch-undo', 'string-history', 'restore-limits']
+    const activity = (role: string | null, targets: string[]) =>
+      selectTourSteps(TOUR_STEPS, {
+        tourId: 'activity',
+        role,
+        isTargetAvailable: (target) => targets.includes(target),
+      }).map((step) => step.target)
+    expect(activity('editor', activityTargets)).toEqual(activityTargets)
+    expect(activity('admin', activityTargets)).toEqual(activityTargets)
+    expect(activity(null, activityTargets)).toEqual(['activity-list', 'string-history', 'restore-limits'])
+
+    const hints = ['batch-undo', 'string-history', 'restore-limits']
+    const covers = (role: string, targets: string[]) =>
+      tourCoversRoleSteps(TOUR_STEPS, {
+        tourId: 'activity',
+        role,
+        isTargetAvailable: (target) => targets.includes(target),
+      })
+    expect(covers('editor', hints)).toBe(false)
+    expect(covers('editor', activityTargets)).toBe(true)
+    expect(
+      shouldStartTour({ mode: 'off', seen: false, toursOff: false, shown: hints, current: activityTargets }),
+    ).toBe(true)
+    expect(
+      shouldStartTour({
+        mode: 'off',
+        seen: true,
+        toursOff: false,
+        shown: activityTargets,
+        current: ['string-history', 'restore-limits'],
+      }),
+    ).toBe(false)
   })
 
   it('does not mark a partial tour seen, and marks it once every role step was shown', () => {
