@@ -20,7 +20,7 @@ import { TranslationContextField } from '@/features/catalog/TranslationContextFi
 import { TargetLanguagePicker } from '@/features/catalog/TargetLanguagePicker'
 import type { ApiKey, ApiKeyCreated } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
-import { languagesQuery, meQuery, projectApiKeysQuery, projectQuery } from '@/lib/queries'
+import { languagesQuery, meQuery, projectApiKeysQuery, projectMembersQuery, projectQuery } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -60,6 +60,7 @@ export function SettingsPage() {
 
   const { data: project } = useQuery(projectQuery(projectId))
   const { data: me } = useQuery(meQuery())
+  const membersQuery = useQuery(projectMembersQuery(projectId))
 
   const { data: languages = [] } = useQuery(languagesQuery())
   const defaultKeyName = me?.email || 'Default'
@@ -167,7 +168,10 @@ export function SettingsPage() {
   const isDirty = saveForm !== null
 
   return (
-    <PageBody className="mx-auto w-full max-w-5xl gap-8">
+    <PageBody
+      className="mx-auto w-full max-w-5xl gap-8"
+      data-tour-ready={membersQuery.isFetched ? 'settings' : undefined}
+    >
       <PageHeader
         eyebrow="Project"
         title="Settings"
@@ -184,6 +188,7 @@ export function SettingsPage() {
         }
       />
 
+      <div data-tour="settings-general" className="flex flex-col gap-8">
       <PageSection
         title="Project details"
         description="Choose the name, source language, and file layout for your catalog."
@@ -262,7 +267,7 @@ export function SettingsPage() {
                   </Select>
                 </Field>
               </FieldGroup>
-              <Field orientation="horizontal" data-disabled={!isAdmin || undefined}>
+              <Field data-tour="dup-keys" orientation="horizontal" data-disabled={!isAdmin || undefined}>
                 <div className="flex flex-1 flex-col gap-1">
                   <FieldLabel htmlFor="allow_duplicate_keys">Allow duplicate keys across modules</FieldLabel>
                   <FieldDescription id="allow_duplicate_keys_description">
@@ -301,7 +306,9 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </PageSection>
+      </div>
 
+      <div data-tour="settings-context">
       <PageSection
         title="Translation context"
         description="Give translators and AI shared guidance on tone and terminology."
@@ -322,6 +329,7 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </PageSection>
+      </div>
 
       {isAdmin ? (
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -339,29 +347,39 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">Only project admins can change these settings.</p>
       )}
 
+      <div data-tour="members">
       <PageSection
         title="Members"
         description="Admins add people who have already signed in. Editors can work in the catalog but cannot change settings or membership."
       >
         <ProjectMembersSection projectId={projectId} isAdmin={isAdmin} />
       </PageSection>
+      </div>
 
       {/* API Keys */}
       <PageSection
         title="API keys"
         description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project. Editors can revoke only keys they created."
       >
-        <div className="flex flex-col gap-4">
+        <div data-tour="api-keys" className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/40 p-4 shadow-2xs">
-            <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2.5 text-xs text-muted-foreground">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-card text-foreground">
                 <Terminal className="size-3.5" />
               </div>
-              <span className="leading-relaxed">
-                Connect your repository: Run{' '}
-                <code className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere">{cliInitCommand()}</code>,
-                then <code>loc pull</code> to download translations.
-              </span>
+              <div className="flex flex-col gap-1 leading-relaxed">
+                <span>
+                  Connect your repository: Run{' '}
+                  <code data-tour="loc-init" className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere">{cliInitCommand()}</code>,
+                  then <code>loc pull</code> to download translations.
+                </span>
+                <span data-tour="loc-push">
+                  <code>loc push</code> sends base-language strings that changed since the last push.
+                </span>
+                <span data-tour="push-limits">
+                  A deleted key or a different base language rejects the push. Large pushes run in the background.
+                </span>
+              </div>
             </div>
             <Button size="sm" onClick={openGenerateKey} className="shrink-0 self-start sm:self-auto">
               <Plus data-icon="inline-start" />

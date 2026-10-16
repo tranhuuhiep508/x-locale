@@ -1,5 +1,5 @@
-/** Screen tours shipped in this pass. `project-new` is the create-project screen of the projects guide. */
-export const TOUR_IDS = ['projects', 'project-new', 'strings', 'import'] as const
+/** Screen tours. `project-new` is the create-project screen of the projects guide. CLI steps live on Settings. */
+export const TOUR_IDS = ['projects', 'project-new', 'strings', 'import', 'settings', 'activity'] as const
 
 export type TourId = (typeof TOUR_IDS)[number]
 
