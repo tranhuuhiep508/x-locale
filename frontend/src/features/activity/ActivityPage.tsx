@@ -144,7 +144,7 @@ export function ActivityPage() {
   const [undoJobId, setUndoJobId] = useState<string | null>(null)
 
   const { data: project } = useQuery(projectQuery(projectId))
-  const { data, isLoading, isError, refetch } = useQuery(
+  const { data, isLoading, isError, isSuccess, refetch } = useQuery(
     activityFeedQuery(projectId, {
       page: search.page,
       page_size: search.page_size,
@@ -250,7 +250,7 @@ export function ActivityPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-tour-ready={isLoading ? undefined : 'activity'}>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-tour-ready={isSuccess ? 'activity' : undefined}>
       <div className="shrink-0 border-b px-4 py-5 sm:px-6">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
           <PageHeader

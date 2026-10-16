@@ -157,13 +157,13 @@ export const TOUR_STEPS: readonly TourStep[] = [
     tourId: 'settings',
     target: 'loc-init',
     title: 'loc init',
-    body: 'Run `loc init -k <key>` in your repo.',
+    body: 'Run <code>loc init -k &lt;your key&gt;</code> in your repo.',
   },
   {
     tourId: 'settings',
     target: 'loc-push',
     title: 'loc push',
-    body: '`loc push` sends base-language strings that changed since your last push (`--full` sends all of them). It creates and updates keys but never deletes them.',
+    body: '<code>loc push</code> sends base-language strings that changed since your last push (<code>--full</code> sends all of them). It creates and updates keys but never deletes them.',
   },
   {
     tourId: 'settings',

@@ -170,7 +170,7 @@ export function SettingsPage() {
   return (
     <PageBody
       className="mx-auto w-full max-w-5xl gap-8"
-      data-tour-ready={membersQuery.isFetched ? 'settings' : undefined}
+      data-tour-ready={membersQuery.isSuccess ? 'settings' : undefined}
     >
       <PageHeader
         eyebrow="Project"

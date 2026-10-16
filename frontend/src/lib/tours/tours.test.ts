@@ -181,9 +181,9 @@ describe('screen tours', () => {
       "Removing a member isn't logged and can't be undone. A project always needs at least one Admin.",
     )
     expect(body('api-keys')).toBe('Generate a personal API key here. Generating a new one revokes your old key.')
-    expect(body('loc-init')).toBe('Run `loc init -k <key>` in your repo.')
+    expect(body('loc-init')).toBe('Run <code>loc init -k &lt;your key&gt;</code> in your repo.')
     expect(body('loc-push')).toBe(
-      '`loc push` sends base-language strings that changed since your last push (`--full` sends all of them). It creates and updates keys but never deletes them.',
+      '<code>loc push</code> sends base-language strings that changed since your last push (<code>--full</code> sends all of them). It creates and updates keys but never deletes them.',
     )
     expect(body('push-limits')).toBe(
       "A push is rejected if a key is queued for deletion or already deleted, or if the base language doesn't match. Pushes of more than 5,000 keys run in the background.",
