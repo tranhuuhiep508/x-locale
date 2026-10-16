@@ -69,12 +69,11 @@ export function parseFlatI18nJson(text: string): ParseFlatJsonResult {
   return warning ? { ok: true, rows, map, warning } : { ok: true, rows, map }
 }
 
-// shortcut: unquoted keys are ASCII identifiers; upgrade if files use unicode unquoted names.
 function duplicateKeyWarning(text: string): string | undefined {
   const seen = new Set<string>()
   const dupes: string[] = []
   const re =
-    /\/\/[^\n]*|\/\*[\s\S]*?\*\/|("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')|([A-Za-z_$][\w$]*)|[\s\S]/y
+    /\/\/[^\n\r\u2028\u2029]*|\/\*[\s\S]*?\*\/|("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')|([$_\p{ID_Start}][$\u200C\u200D\p{ID_Continue}]*)|[\s\S]/uy
   let pending: string | null = null
   for (;;) {
     const match = re.exec(text)

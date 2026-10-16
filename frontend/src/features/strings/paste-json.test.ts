@@ -101,6 +101,47 @@ describe('parseFlatI18nJson', () => {
     expect(result.warning).toBe('Duplicate keys ("a", "b"): the later value is used.')
   })
 
+  it.each([
+    ['LF', '\n'],
+    ['CR', '\r'],
+    ['CRLF', '\r\n'],
+    ['U+2028', '\u2028'],
+    ['U+2029', '\u2029'],
+  ])('warns on duplicates after a line comment ended by %s', (_, terminator) => {
+    const result = parseFlatI18nJson(`{a:'one',// note${terminator}a:'two'}`)
+    expect(result).toEqual({
+      ok: true,
+      rows: [{ key: 'a', source_text: 'two' }],
+      map: { a: 'two' },
+      warning: 'Duplicate keys ("a"): the later value is used.',
+    })
+  })
+
+  it.each([
+    ['中文', '中文', '中文'],
+    ['café', '"café"', 'café'],
+    ['e\u0301', 'e\u0301', 'e\u0301'],
+  ])('warns on duplicate Unicode key %s', (key, first, second) => {
+    const result = parseFlatI18nJson(`{${first}:'one',${second}:'two'}`)
+    expect(result).toEqual({
+      ok: true,
+      rows: [{ key, source_text: 'two' }],
+      map: { [key]: 'two' },
+      warning: `Duplicate keys (${JSON.stringify(key)}): the later value is used.`,
+    })
+  })
+
+  it('does not warn on distinct Unicode keys sharing an ASCII suffix', () => {
+    expect(parseFlatI18nJson("{éname:'one',中name:'two'}")).toEqual({
+      ok: true,
+      rows: [
+        { key: 'éname', source_text: 'one' },
+        { key: '中name', source_text: 'two' },
+      ],
+      map: { éname: 'one', 中name: 'two' },
+    })
+  })
+
   it('rejects arrays and primitives', () => {
     const arrayResult = parseFlatI18nJson('["a"]')
     expect(arrayResult.ok).toBe(false)
