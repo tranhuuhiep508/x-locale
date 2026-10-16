@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../fixtures'
 import { openStringEditor } from '../helpers/strings'
 
 test.describe.configure({ mode: 'serial' })

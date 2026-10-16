@@ -103,7 +103,7 @@ export function NewProjectPage() {
 
   return (
     <AppShell>
-      <PageBody contained className="flex flex-col gap-6 pb-16">
+      <PageBody contained data-tour-ready="project-new" className="flex flex-col gap-6 pb-16">
         <div>
           <Link
             to="/"
@@ -168,6 +168,7 @@ export function NewProjectPage() {
                     </div>
 
                     {/* Base Language & Layout Fields */}
+                    <div data-tour="project-locales" className="flex flex-col gap-6">
                     <FieldGroup className="grid gap-4 sm:grid-cols-2">
                       <Field>
                         <FieldLabel htmlFor="base_language">Base language</FieldLabel>
@@ -237,8 +238,10 @@ export function NewProjectPage() {
                         onChange={(target_languages) => setForm((f) => ({ ...f, target_languages }))}
                       />
                     </Field>
+                    </div>
 
                     {/* AI Context Field */}
+                    <div data-tour="project-context">
                     <TranslationContextField
                       id="project_translation_context"
                       value={form.translation_context ?? ''}
@@ -247,6 +250,7 @@ export function NewProjectPage() {
                         setForm((f) => ({ ...f, translation_context }))
                       }
                     />
+                    </div>
 
                     {/* Action Buttons */}
                     <div className="flex items-center justify-end gap-3 border-t border-border/50 pt-5">

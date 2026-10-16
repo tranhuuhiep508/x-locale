@@ -81,6 +81,7 @@ function CatalogSortableHeader({
         isActive && 'text-foreground',
       )}
       aria-sort={ariaSort}
+      data-tour={columnId === 'key' ? 'sort' : undefined}
       onClick={() => meta.onCatalogSortToggle(columnId)}
     >
       <span>{label}</span>
@@ -410,7 +411,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
           released,
         )
         return (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1" data-tour={row.index === 0 ? 'string-open' : undefined}>
             <div className="flex items-start gap-1.5">
               <span
                 className={cn(
@@ -481,12 +482,14 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (
-          <PublishSwitch
-            entry={row.original}
-            projectId={meta.projectId}
-            onRefresh={meta.onRefresh}
-            onPublishPreview={meta.onPublishPreview}
-          />
+          <div data-tour={row.index === 0 ? 'publish-toggle' : undefined}>
+            <PublishSwitch
+              entry={row.original}
+              projectId={meta.projectId}
+              onRefresh={meta.onRefresh}
+              onPublishPreview={meta.onPublishPreview}
+            />
+          </div>
         )
       },
     },

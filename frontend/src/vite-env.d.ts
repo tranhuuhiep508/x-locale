@@ -10,3 +10,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  /** Playwright sets this before app scripts so auto-start cannot race. */
+  __XL_E2E_TOURS_OFF__?: boolean
+}

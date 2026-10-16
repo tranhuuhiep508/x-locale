@@ -61,10 +61,9 @@ export function PageBody({
   children,
   contained = false,
   className,
-}: {
-  children: React.ReactNode
+  ...props
+}: React.ComponentProps<'div'> & {
   contained?: boolean
-  className?: string
 }) {
   return (
     <div
@@ -72,6 +71,7 @@ export function PageBody({
         contained ? 'container py-8 sm:py-10' : 'flex flex-col gap-7 px-4 py-6 sm:px-6 sm:py-8',
         className
       )}
+      {...props}
     >
       {children}
     </div>

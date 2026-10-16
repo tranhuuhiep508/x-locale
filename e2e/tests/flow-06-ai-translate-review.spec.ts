@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
 import { importStringsViaApi, projectIdFromUrl } from '../helpers/api'
 import { openDemoStrings } from '../helpers/strings'

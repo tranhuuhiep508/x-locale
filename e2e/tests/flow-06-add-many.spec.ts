@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
 import { openAddManyDialog, openDemoStrings, searchStrings } from '../helpers/strings'
 
