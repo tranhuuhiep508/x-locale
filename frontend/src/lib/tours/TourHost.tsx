@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { TOUR_STEPS } from '@/lib/tours/definitions'
 import { projectQuery, meQuery } from '@/lib/queries'
 import { projectRefFromPath, screenForPath } from '@/lib/tours/screen'
-import { e2eToursOff, markStepsSeen, tourSeenProgress } from '@/lib/tours/storage'
+import { dismissTourSteps, e2eToursOff, mergeSeenProgress, tourSeenProgress } from '@/lib/tours/storage'
 import { isTourTargetVisible, roleAllowsStep, selectTourSteps, stepsToStart } from '@/lib/tours/steps'
 import { TourContext } from '@/lib/tours/tour-context'
 import { loadTourDriver, startTour } from '@/lib/tours/run-tour'
@@ -42,6 +42,7 @@ export function TourHost({ children }: { children: React.ReactNode }) {
   const [play, setPlay] = useState<Play>(null)
   const runningRef = useRef(false)
   const runId = useRef(0)
+  const sessionSeen = useRef<Partial<Record<string, readonly string[]>>>({})
   const anchored = play?.screen === screen ? play : null
   const mode = anchored?.mode ?? 'auto'
 
@@ -96,7 +97,7 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       mode,
       toursOff: e2eToursOff(),
       running: false,
-      seen: tourSeenProgress(userId, screen),
+      seen: mergeSeenProgress(tourSeenProgress(userId, screen), sessionSeen.current[screen] ?? []),
       roleTargets,
       available: available.map((step) => step.target),
     })
@@ -114,7 +115,13 @@ export function TourHost({ children }: { children: React.ReactNode }) {
       if (runId.current !== id) return
       handle = startTour(driver, nextSteps, () => {
         if (runId.current !== id) return
-        markStepsSeen(userId, screen, nextTargets, localStorage, roleTargets)
+        sessionSeen.current = dismissTourSteps(
+          sessionSeen.current,
+          userId,
+          screen,
+          nextTargets,
+          roleTargets,
+        )
         runningRef.current = false
         setPlay({ screen, mode: 'off' })
         setTargetTick((tick) => tick + 1)
