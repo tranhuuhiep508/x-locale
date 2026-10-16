@@ -87,5 +87,7 @@ test('page tours start once, replay from Help, and skip steps the role cannot se
   await tour.getByRole('button', { name: 'Skip tour' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-tour-status', 'idle')
   await page.reload()
-  await expect(tour).toContainText('1 of 3')
+  await expect(page.getByText('No activity yet')).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('data-tour-status', 'idle')
+  await expect(tour).toHaveCount(0)
 })

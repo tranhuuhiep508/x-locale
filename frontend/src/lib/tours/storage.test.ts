@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TOUR_IDS } from '@/lib/tours/ids'
-import { e2eToursOff, isTourSeen, markTourSeen, toursSeenKey } from '@/lib/tours/storage'
+import { e2eToursOff, isTourSeen, markStepsSeen, markTourSeen, tourSeenProgress, toursSeenKey } from '@/lib/tours/storage'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -43,7 +43,31 @@ describe('tour seen storage', () => {
 
   it('accepts a numeric timestamp already stored for a tour', () => {
     storage.setItem(toursSeenKey('user-a'), JSON.stringify({ strings: 1_710_000_000_000 }))
+    expect(tourSeenProgress('user-a', 'strings', storage)).toBe('all')
     expect(isTourSeen('user-a', 'strings', storage)).toBe(true)
+  })
+
+  it('stores step targets until every role step is seen, and does not downgrade a full entry', () => {
+    markStepsSeen('user-a', 'activity', ['batch-undo', 'string-history'], storage, [
+      'activity-list',
+      'batch-undo',
+      'string-history',
+      'restore-limits',
+    ])
+    expect(isTourSeen('user-a', 'activity', storage)).toBe(false)
+    expect(tourSeenProgress('user-a', 'activity', storage)).toEqual(['batch-undo', 'string-history'])
+
+    markStepsSeen('user-a', 'activity', ['restore-limits', 'activity-list'], storage, [
+      'activity-list',
+      'batch-undo',
+      'string-history',
+      'restore-limits',
+    ])
+    expect(isTourSeen('user-a', 'activity', storage)).toBe(true)
+
+    markStepsSeen('user-a', 'activity', ['activity-list'], storage, ['activity-list'])
+    expect(tourSeenProgress('user-a', 'activity', storage)).toBe('all')
+    expect(JSON.parse(storage.getItem(toursSeenKey('user-a')) ?? '{}').activity).toEqual(expect.any(String))
   })
 
   it('ignores unknown tour ids on read and write', () => {
