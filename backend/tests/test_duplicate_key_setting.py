@@ -346,12 +346,26 @@ def test_public_export_checks_snapshot_identity(client):
     publish_strings(client, project["id"], [first["id"]])
     assert client.patch(f"{root}/strings/{first['id']}", json={"key": "renamed"}).status_code == 200
     second = create(client, root, mid=auth).json()
-    publish_strings(client, project["id"], [second["id"]])
+    preview = client.post(
+        f"{root}/strings/publish-preview", json={"string_ids": [second["id"]]}
+    ).json()
+    rejected = client.post(
+        f"{root}/strings/batch",
+        json={
+            "action": "publish",
+            "string_ids": [second["id"]],
+            "fingerprint": preview["fingerprint"],
+        },
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "published_key_conflict"
     assert client.get(f"{root}/export", params={"stage": "draft"}).status_code == 200
-    assert client.get(f"{root}/export", params={"stage": "public"}).status_code == 409
+    public = client.get(f"{root}/export", params={"stage": "public"})
+    assert public.status_code == 200, public.text
+    assert public.json()["modules"]["auth"]["vi"]["title"] == "Title"
     assert (
         client.get(f"{root}/export", params={"stage": "public", "format": "xlsx"}).status_code
-        == 409
+        == 200
     )
 
 
