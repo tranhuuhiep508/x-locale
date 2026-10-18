@@ -309,6 +309,10 @@ def import_rows(
     report_orphans: bool = True,
     reject_deleted: bool = False,
 ) -> ImportResult:
+    if status == TranslationStatus.public:
+        from app.services.strings import lock_publication
+
+        lock_publication(db, project.id)
     catalog = _load_catalog(
         db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
     )
@@ -387,7 +391,11 @@ def import_rows(
             updates += 1
             if len(update_items) < IMPORT_DIFF_SAMPLE:
                 update_items.append(item)
-        if dry_run or not row.excel and entry is not None and not diff_changed:
+        # Public dry runs still build the in-memory result so the publication
+        # check can reject a collision before any row is written.
+        if (dry_run and status != TranslationStatus.public) or (
+            not row.excel and entry is not None and not diff_changed
+        ):
             continue
         if entry is None:
             sid = uuid.uuid4()
@@ -479,6 +487,7 @@ def import_rows(
             changed_ids.add(sid)
 
     # Publish the final working copy after all repeated rows have been applied.
+    published_ids: list[uuid.UUID] = []
     if status == TranslationStatus.public:
         for sid in before:
             entry = catalog.entries[sid]
@@ -492,6 +501,7 @@ def import_rows(
                 status=TranslationStatus.public,
                 pending_delete=False,
             )
+            published_ids.append(sid)
             for translation in catalog.translations.get(sid, {}).values():
                 value = translation["value"] or ""
                 if translation["published_value"] != value:
@@ -502,6 +512,25 @@ def import_rows(
                             "published_value": value,
                         }
             changed_ids.add(sid)
+
+    if published_ids:
+        from app.services.strings import guard_published_keys
+
+        def _published_slug(module_id: uuid.UUID | None) -> str | None:
+            module = catalog.modules.get(module_id) if module_id is not None else None
+            return module["slug"] if module else None
+
+        guard_published_keys(
+            db,
+            project,
+            {
+                sid: (
+                    catalog.entries[sid]["published_key"] or catalog.entries[sid]["key"],
+                    _published_slug(catalog.entries[sid]["published_module_id"]),
+                )
+                for sid in published_ids
+            },
+        )
 
     for sid in changed_ids:
         catalog.entries[sid].update(

@@ -21,6 +21,7 @@ from sqlalchemy import (
     nulls_last,
     or_,
     select,
+    text,
 )
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -44,6 +45,9 @@ from app.services.key_policy import key_owner
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
+PUBLISHED_KEY_CONFLICT = "published_key_conflict"
+# Distinct from the import lock so a publication waits instead of failing busy.
+_PUBLISH_LOCK_NAMESPACE = 0x584C5042
 
 STRING_LIST_SORT_FIELDS = frozenset(
     {
@@ -234,6 +238,88 @@ def promote_string(entry: StringEntry) -> None:
     entry.pending_delete = False
     for translation in entry.translations or []:
         translation.published_value = translation.value or ""
+
+
+def published_key_conflict(key: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": PUBLISHED_KEY_CONFLICT,
+            "message": (
+                f"Key '{key}' is already in the public export. "
+                "Rename it, or publish the other string's removal, before publishing."
+            ),
+            "key": key,
+        },
+    )
+
+
+def _modular_layout(project: Project) -> bool:
+    layout = project.layout
+    return (layout.value if hasattr(layout, "value") else str(layout)) == "modular"
+
+
+def lock_publication(db: Session, project_id: uuid.UUID) -> None:
+    """Hold this project's publication lock until the transaction ends.
+
+    Call this before flushing published rows. A second call in the same
+    transaction returns immediately.
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:project_uuid))"),
+        {"namespace": _PUBLISH_LOCK_NAMESPACE, "project_uuid": str(project_id)},
+    )
+
+
+# shortcut: undo and revert copy published snapshots directly, so they can still
+# collide; call this guard from those paths if that must be rejected too.
+def guard_published_keys(
+    db: Session,
+    project: Project,
+    overlay: dict[uuid.UUID, tuple[str, str | None]] | None = None,
+) -> None:
+    """Reject a publication that would make this project's public export ambiguous.
+
+    ``overlay`` replaces rows not yet written: ``(published key, module slug or None)``.
+    Callers that have already flushed the final public rows omit it. The advisory
+    lock is held until commit so a concurrent publication cannot pass the same check.
+    """
+    lock_publication(db, project.id)
+    modular = _modular_layout(project)
+    published_key = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
+    rows = db.execute(
+        select(
+            StringEntry.id,
+            published_key,
+            StringEntry.published_module_id,
+            Module.slug,
+        )
+        .outerjoin(
+            Module,
+            (Module.id == StringEntry.published_module_id) & (Module.project_id == project.id),
+        )
+        .where(
+            StringEntry.project_id == project.id,
+            StringEntry.deleted_at.is_(None),
+            StringEntry.status == TranslationStatus.public,
+        )
+    ).all()
+    replacements = overlay or {}
+    seen: dict[tuple[str | None, str], uuid.UUID] = {}
+
+    def claim(string_id: uuid.UUID, key: str, slug: str | None) -> None:
+        identity = (slug if modular else None, key)
+        previous = seen.get(identity)
+        if previous is not None and previous != string_id:
+            raise published_key_conflict(key)
+        seen[identity] = string_id
+
+    for string_id, key, module_id, slug in rows:
+        if string_id in replacements:
+            continue
+        claim(string_id, key, slug if module_id is not None else None)
+    for string_id, (key, slug) in replacements.items():
+        claim(string_id, key, slug)
 
 
 def unpublish_string(entry: StringEntry) -> None:
@@ -786,6 +872,8 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    if payload.status == TranslationStatus.public:
+        lock_publication(db, project.id)
     existing = key_owner(db, project.id, payload.key, payload.module_id)
     if existing:
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
@@ -816,6 +904,8 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
         promote_string(entry)
+        db.flush()
+        guard_published_keys(db, project)
     db.commit()
     return serialize_string(get_string(db, project.id, entry.id))
 
@@ -826,6 +916,8 @@ def update_string(
     string_id: uuid.UUID,
     payload: StringUpdate,
 ) -> StringOut:
+    if payload.status == TranslationStatus.public:
+        lock_publication(db, project.id)
     entry = get_string(db, project.id, string_id)
     target_key = payload.key if payload.key is not None else entry.key
     target_module = (
@@ -856,6 +948,8 @@ def update_string(
         apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
         promote_string(entry)
+        db.flush()
+        guard_published_keys(db, project)
     elif payload.status == TranslationStatus.draft:
         unpublish_string(entry)
     db.commit()
@@ -922,6 +1016,8 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             status_code=400,
             detail={"code": PUBLISH_FINGERPRINT_REQUIRED},
         )
+    if action == "publish":
+        lock_publication(db, project.id)
 
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
     entries = load_string_entries(db, project.id, ids)
@@ -952,6 +1048,9 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             else:
                 promote_string(entry)
                 affected += 1
+        if affected:
+            db.flush()
+            guard_published_keys(db, project)
     elif action == "unpublish":
         for entry in entries:
             if entry.deleted_at is not None:
