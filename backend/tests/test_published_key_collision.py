@@ -465,11 +465,18 @@ def test_public_import_does_not_deadlock_with_a_publish(
             return
         entries = strings_service.load_string_entries(db, project_row.id, [string_id])
         fingerprint = strings_service.compute_publish_fingerprint(entries)
-        strings_service.apply_batch(
-            db,
-            project_row,
-            BatchRequest(action="publish", string_ids=[string_id], fingerprint=fingerprint),
-        )
+        try:
+            strings_service.apply_batch(
+                db,
+                project_row,
+                BatchRequest(action="publish", string_ids=[string_id], fingerprint=fingerprint),
+            )
+        except HTTPException as exc:
+            # The import commits a new source while this publish waits on the lock.
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if exc.status_code == 409 and detail.get("code") == "publish_fingerprint_mismatch":
+                return
+            raise
 
     _import_while_publish_blocks(session_factory, monkeypatch, project["id"], publish)
 

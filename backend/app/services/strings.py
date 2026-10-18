@@ -1016,6 +1016,8 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             status_code=400,
             detail={"code": PUBLISH_FINGERPRINT_REQUIRED},
         )
+    if action == "publish":
+        lock_publication(db, project.id)
 
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
     entries = load_string_entries(db, project.id, ids)
@@ -1037,7 +1039,6 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
     affected = 0
 
     if action == "publish":
-        lock_publication(db, project.id)
         for entry in entries:
             if entry.deleted_at is not None:
                 continue
