@@ -1210,10 +1210,7 @@ def _guard_restored_publication(
     project: Project,
     pairs: list[tuple[dict | None, dict | None]],
 ) -> None:
-    """Reject a public key this restore newly claims when another public string holds it.
-
-    shortcut: identity rules are copied from guard_published_keys, fold them together if another caller needs this scope.
-    """
+    """Reject a public key this restore newly claims when another public string holds it."""
     changed: set[uuid.UUID] = set()
     for before, after in pairs:
         if _public_hold(before) == _public_hold(after) or _public_hold(after) is None:
@@ -1224,32 +1221,12 @@ def _guard_restored_publication(
     if not changed:
         return
 
-    from app.services.strings import _modular_layout, published_key_conflict
+    from app.services.strings import load_public_export_identities, published_key_conflict
 
-    modular = _modular_layout(project)
-    key_expr = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
-    restored_keys = [
-        key for (key,) in db.query(key_expr).filter(StringEntry.id.in_(changed)).all() if key
-    ]
-    if not restored_keys:
-        return
-    rows = (
-        db.query(StringEntry.id, key_expr, StringEntry.published_module_id, Module.slug)
-        .outerjoin(
-            Module,
-            (Module.id == StringEntry.published_module_id) & (Module.project_id == project.id),
-        )
-        .filter(
-            StringEntry.project_id == project.id,
-            StringEntry.deleted_at.is_(None),
-            StringEntry.status == TranslationStatus.public,
-            key_expr.in_(restored_keys),
-        )
-        .all()
-    )
-    holders: dict[tuple[str | None, str], list[uuid.UUID]] = {}
-    for string_id, key, module_id, slug in rows:
-        bucket = slug if modular and module_id is not None else None
+    holders: dict[tuple[str | None, str | None], list[uuid.UUID]] = {}
+    for string_id, bucket, key in load_public_export_identities(db, project, changed):
+        if not key:
+            continue
         holders.setdefault((bucket, key), []).append(string_id)
     for (_, key), ids in holders.items():
         if len(set(ids)) > 1 and changed.intersection(ids):
