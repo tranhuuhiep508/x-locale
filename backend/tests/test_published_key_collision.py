@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
+from sqlalchemy import select, text
 
+from app.models import Activity, StringEntry, Translation
 from app.services import strings as strings_service
 from tests.helpers import json_upload, make_project, preview_publish
 
@@ -117,19 +120,89 @@ def test_create_and_update_with_public_status_reject_collision(client):
     assert _export(client, root).json()["vi"] == {"save": "Lưu"}
 
 
-def test_public_import_rejects_collision_and_accepts_a_combined_rename(client):
+def _stored_rows(session_factory, project_id):
+    """Committed strings, their translations, and activity (history and audit) rows."""
+    pid = uuid.UUID(project_id)
+    with session_factory() as db:
+        strings = db.execute(
+            select(StringEntry.__table__)
+            .where(StringEntry.project_id == pid)
+            .order_by(StringEntry.id)
+        ).mappings()
+        translations = db.execute(
+            select(Translation.__table__)
+            .join(StringEntry, Translation.string_id == StringEntry.id)
+            .where(StringEntry.project_id == pid)
+            .order_by(Translation.id)
+        ).mappings()
+        activities = db.execute(
+            select(Activity.__table__)
+            .where(Activity.project_id == pid)
+            .order_by(Activity.created_at, Activity.id)
+        ).mappings()
+        return {
+            "strings": [dict(row) for row in strings],
+            "translations": [dict(row) for row in translations],
+            "activities": [dict(row) for row in activities],
+        }
+
+
+def _held_publish_locks(session_factory, project_id) -> int:
+    """Transaction advisory locks disappear when the import session closes."""
+    with session_factory() as db:
+        return int(
+            db.scalar(
+                text(
+                    """
+                    SELECT count(*) FROM pg_locks
+                    WHERE locktype = 'advisory'
+                      AND classid = CAST(:namespace AS oid)
+                      AND objid = hashtext(:project_uuid)::oid
+                    """
+                ),
+                {
+                    "namespace": strings_service._PUBLISH_LOCK_NAMESPACE,
+                    "project_uuid": project_id,
+                },
+            )
+            or 0
+        )
+
+
+def test_public_import_rejects_collision_and_accepts_a_combined_rename(client, session_factory):
     project, root = _project(client, "Import public")
     _occupy_save(client, root)
+    before = _stored_rows(session_factory, project["id"])
+    assert before["strings"] and before["activities"]
     collided = json_upload({"save": "Khác"})
-    for dry_run in (True, False):
-        rejected = client.post(
-            f"{root}/import",
-            params={"status": "public", "dry_run": dry_run},
-            files=collided,
-        )
-        _assert_conflict(rejected)
+    dry_run = client.post(
+        f"{root}/import",
+        params={"status": "public", "dry_run": True},
+        files=collided,
+    )
+    _assert_conflict(dry_run)
+    assert _stored_rows(session_factory, project["id"]) == before
+    assert _held_publish_locks(session_factory, project["id"]) == 0
+    # A dry run that passes the publication check still must not persist.
+    preview = client.post(
+        f"{root}/import",
+        params={"status": "public", "dry_run": True},
+        files=json_upload({"save_new": "Lưu lại"}),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["dry_run"] is True
+    assert preview.json()["updated"] == 0
+    assert _stored_rows(session_factory, project["id"]) == before
+    assert _held_publish_locks(session_factory, project["id"]) == 0
+    rejected = client.post(
+        f"{root}/import",
+        params={"status": "public"},
+        files=collided,
+    )
+    _assert_conflict(rejected)
     assert _export(client, root).json()["vi"] == {"save": "Lưu"}
-    assert len(client.get(f"{root}/strings").json()["items"]) == 1
+    assert _stored_rows(session_factory, project["id"]) == before
+    assert _held_publish_locks(session_factory, project["id"]) == 0
 
     accepted = client.post(
         f"{root}/import",
