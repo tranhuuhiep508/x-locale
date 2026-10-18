@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Thread
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select, text
 
 from app.models import Activity, Project, StringEntry, Translation
@@ -471,3 +472,95 @@ def test_public_import_does_not_deadlock_with_a_publish(
         )
 
     _import_while_publish_blocks(session_factory, monkeypatch, project["id"], publish)
+
+
+def test_batch_publish_keeps_a_commit_that_lands_while_it_waits(client, session_factory):
+    """A publish that commits while batch publish waits must not be overwritten."""
+    project, root = _project(client, "Stale batch publish")
+    created = _create(client, root, "save", source="Lưu")
+    assert created.status_code == 201, created.text
+    string_id = uuid.UUID(created.json()["id"])
+    project_id = uuid.UUID(project["id"])
+    with session_factory() as db:
+        entries = strings_service.load_string_entries(db, project_id, [string_id])
+        fingerprint = strings_service.compute_publish_fingerprint(entries)
+
+    winner_holding = Event()
+    release_winner = Event()
+    errors: dict[str, BaseException] = {}
+
+    def run_winner() -> None:
+        try:
+            with session_factory() as db:
+                _limit_lock_wait(db)
+                project_row = db.get(Project, project_id)
+                assert project_row is not None
+                strings_service.lock_publication(db, project_row.id)
+                winner_holding.set()
+                if not release_winner.wait(5):
+                    raise TimeoutError("winner stayed paused on the publication lock")
+                strings_service.update_string(
+                    db,
+                    project_row,
+                    string_id,
+                    StringUpdate(
+                        source_text="Fresh",
+                        status=strings_service.TranslationStatus.public,
+                    ),
+                )
+        except BaseException as exc:
+            errors["winner"] = exc
+
+    def run_batch() -> None:
+        try:
+            with session_factory() as db:
+                _limit_lock_wait(db)
+                project_row = db.get(Project, project_id)
+                assert project_row is not None
+                strings_service.apply_batch(
+                    db,
+                    project_row,
+                    BatchRequest(
+                        action="publish",
+                        string_ids=[string_id],
+                        fingerprint=fingerprint,
+                    ),
+                )
+        except BaseException as exc:
+            errors["batch"] = exc
+
+    winner = Thread(target=run_winner, name="fresh-publish")
+    batch = Thread(target=run_batch, name="stale-batch")
+    winner.start()
+    try:
+        assert winner_holding.wait(5), "winner did not acquire the publication lock"
+        batch.start()
+        _wait_until_publication_blocks(session_factory, project["id"])
+        release_winner.set()
+        winner.join(15)
+        batch.join(15)
+    finally:
+        release_winner.set()
+        winner.join(15)
+        batch.join(15)
+    assert not winner.is_alive()
+    assert not batch.is_alive()
+    if errors.get("winner"):
+        exc = errors["winner"]
+        raise AssertionError(
+            f"winning publish failed: {type(exc).__module__}.{type(exc).__name__}: {exc}"
+        )
+    with session_factory() as db:
+        row = db.get(StringEntry, string_id)
+    assert row is not None
+    assert row.source_text == "Fresh"
+    assert row.published_source_text == "Fresh", (
+        f"batch publish wrote the stale snapshot {row.published_source_text!r} "
+        f"over the commit; source_text={row.source_text!r}; "
+        f"batch_error={errors.get('batch')!r}"
+    )
+    assert row.status == strings_service.TranslationStatus.public
+    mismatch = errors.get("batch")
+    assert isinstance(mismatch, HTTPException)
+    assert mismatch.status_code == 409
+    assert mismatch.detail["code"] == "publish_fingerprint_mismatch"
