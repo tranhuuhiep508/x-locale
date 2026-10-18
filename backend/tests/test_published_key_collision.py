@@ -481,6 +481,106 @@ def test_public_import_does_not_deadlock_with_a_publish(
     _import_while_publish_blocks(session_factory, monkeypatch, project["id"], publish)
 
 
+def _module_pair(client, root, modules):
+    if modules in ("none", "unassigned"):
+        return None, None
+    if modules == "same":
+        module_id = _module(client, root, "auth")
+        return module_id, module_id
+    return _module(client, root, "auth"), _module(client, root, "home")
+
+
+def _publish_rename_and_unpublish(client, root, *, module_id):
+    """Publish `save`, rename it without republishing, then unpublish.
+
+    The rename leaves `published_key` as `save`, so a second `save` cannot be
+    published yet. Unpublish is what frees that public key.
+    """
+    created = _create(client, root, "save", module_id=module_id, source="Lưu", status="public")
+    assert created.status_code == 201, created.text
+    string_id = created.json()["id"]
+    renamed = client.patch(f"{root}/strings/{string_id}", json={"key": "save_new"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["published_key"] == "save"
+    unpublished = client.post(
+        f"{root}/strings/batch",
+        json={"action": "unpublish", "string_ids": [string_id]},
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    history = client.get(f"{root}/strings/{string_id}/activities")
+    assert history.status_code == 200, history.text
+    activity = next(
+        item for item in history.json()["items"] if item["event_type"] == "string.unpublished"
+    )
+    return string_id, unpublished.json()["batch_id"], activity["id"]
+
+
+def _restore_published_snapshot(client, root, operation, batch_id, activity_id):
+    if operation == "undo":
+        return client.post(f"{root}/activities/batch/{batch_id}/revert")
+    return client.post(f"{root}/activities/{activity_id}/revert")
+
+
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize(
+    ("layout", "modules", "collides"),
+    [
+        ("modular", "same", True),
+        ("modular", "unassigned", True),
+        ("modular", "different", False),
+        ("flat", "none", True),
+        ("flat", "different", True),
+    ],
+)
+def test_undo_and_revert_published_snapshot_collisions(
+    client, session_factory, operation, layout, modules, collides
+):
+    """Restoring a published snapshot must not make the public export ambiguous.
+
+    Undo is the batch revert. Revert is the single activity. Both copy
+    `published_key` back onto the string. Same published module (and the
+    unassigned bucket) collide; two modules do not, on a modular project.
+    A flat project collides across modules.
+    """
+    project, root = _project(client, f"{operation}-{layout}-{modules}", layout=layout)
+    first_module, second_module = _module_pair(client, root, modules)
+    string_id, batch_id, activity_id = _publish_rename_and_unpublish(
+        client, root, module_id=first_module
+    )
+    replacement = _create(
+        client, root, "save", module_id=second_module, source="Khác", status="public"
+    )
+    assert replacement.status_code == 201, replacement.text
+    before_export = _export(client, root)
+    assert before_export.status_code == 200, before_export.text
+    assert _save_count(before_export.json()) == 1
+    before_rows = _stored_rows(session_factory, project["id"])
+
+    restored = _restore_published_snapshot(client, root, operation, batch_id, activity_id)
+    exported = _export(client, root)
+    if collides:
+        assert restored.status_code == 409, (
+            f"{operation} returned {restored.status_code}: {restored.text}; "
+            f"public export then {exported.status_code}: {exported.text}"
+        )
+        _assert_conflict(restored)
+        assert exported.status_code == 200, exported.text
+        assert exported.json() == before_export.json()
+        assert _stored_rows(session_factory, project["id"]) == before_rows
+        live = client.get(f"{root}/strings/{string_id}").json()
+        assert live["status"] == "draft"
+        assert live["key"] == "save_new"
+        assert live["published_key"] == "save"
+        return
+
+    assert restored.status_code == 200, restored.text
+    assert exported.status_code == 200, exported.text
+    assert _save_count(exported.json()) == 2
+    live = client.get(f"{root}/strings/{string_id}").json()
+    assert live["status"] == "public"
+    assert live["published_key"] == "save"
+
+
 def test_batch_publish_keeps_a_commit_that_lands_while_it_waits(client, session_factory):
     """A publish that commits while batch publish waits must not be overwritten."""
     project, root = _project(client, "Stale batch publish")
