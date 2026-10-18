@@ -11,8 +11,10 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
+from app.config import settings
 from app.models import Activity, Project, StringEntry, Translation
 from app.schemas import BatchRequest, StringUpdate
+from app.services import activities as activities_service
 from app.services import strings as strings_service
 from app.services.sync import import_flat_strings
 from tests.helpers import json_upload, make_project, preview_publish
@@ -61,10 +63,15 @@ def _export(client, root, *, stage="public", layout=None):
 
 
 def _save_count(body):
+    return len(_save_values(body))
+
+
+def _save_values(body):
     if "modules" not in body:
-        return int("save" in body.get("vi", {}))
-    count = int("save" in body.get("unassigned", {}).get("vi", {}))
-    return count + sum("save" in module.get("vi", {}) for module in body["modules"].values())
+        value = body.get("vi", {}).get("save")
+        return [] if value is None else [value]
+    buckets = [body.get("unassigned", {}), *body["modules"].values()]
+    return [bucket["vi"]["save"] for bucket in buckets if "save" in bucket.get("vi", {})]
 
 
 def _assert_conflict(response):
@@ -479,6 +486,403 @@ def test_public_import_does_not_deadlock_with_a_publish(
             raise
 
     _import_while_publish_blocks(session_factory, monkeypatch, project["id"], publish)
+
+
+def _module_pair(client, root, modules):
+    if modules in ("none", "unassigned"):
+        return None, None
+    if modules == "same":
+        module_id = _module(client, root, "auth")
+        return module_id, module_id
+    return _module(client, root, "auth"), _module(client, root, "home")
+
+
+def _publish_rename_and_unpublish(client, root, *, module_id):
+    """Publish `save`, rename it without republishing, then unpublish.
+
+    The rename leaves `published_key` as `save`, so a second `save` cannot be
+    published yet. Unpublish is what frees that public key.
+    """
+    created = _create(client, root, "save", module_id=module_id, source="Lưu", status="public")
+    assert created.status_code == 201, created.text
+    string_id = created.json()["id"]
+    renamed = client.patch(f"{root}/strings/{string_id}", json={"key": "save_new"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["published_key"] == "save"
+    unpublished = client.post(
+        f"{root}/strings/batch",
+        json={"action": "unpublish", "string_ids": [string_id]},
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    history = client.get(f"{root}/strings/{string_id}/activities")
+    assert history.status_code == 200, history.text
+    activity = next(
+        item for item in history.json()["items"] if item["event_type"] == "string.unpublished"
+    )
+    return string_id, unpublished.json()["batch_id"], activity["id"]
+
+
+def _restore_published_snapshot(client, root, operation, batch_id, activity_id):
+    if operation == "undo":
+        return client.post(f"{root}/activities/batch/{batch_id}/revert")
+    return client.post(f"{root}/activities/{activity_id}/revert")
+
+
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize(
+    ("layout", "modules", "collides"),
+    [
+        ("modular", "same", True),
+        ("modular", "unassigned", True),
+        ("modular", "different", False),
+        ("flat", "none", True),
+        ("flat", "different", True),
+    ],
+)
+def test_undo_and_revert_published_snapshot_collisions(
+    client, session_factory, operation, layout, modules, collides
+):
+    """Restoring a published snapshot must not make the public export ambiguous.
+
+    Undo is the batch revert. Revert is the single activity. Both copy
+    `published_key` back onto the string. Same published module (and the
+    unassigned bucket) collide; two modules do not, on a modular project.
+    A flat project collides across modules.
+    """
+    project, root = _project(client, f"{operation}-{layout}-{modules}", layout=layout)
+    first_module, second_module = _module_pair(client, root, modules)
+    string_id, batch_id, activity_id = _publish_rename_and_unpublish(
+        client, root, module_id=first_module
+    )
+    replacement = _create(
+        client, root, "save", module_id=second_module, source="Khác", status="public"
+    )
+    assert replacement.status_code == 201, replacement.text
+    before_export = _export(client, root)
+    assert before_export.status_code == 200, before_export.text
+    assert _save_count(before_export.json()) == 1
+    before_rows = _stored_rows(session_factory, project["id"])
+
+    restored = _restore_published_snapshot(client, root, operation, batch_id, activity_id)
+    exported = _export(client, root)
+    if collides:
+        assert restored.status_code == 409, (
+            f"{operation} returned {restored.status_code}: {restored.text}; "
+            f"public export then {exported.status_code}: {exported.text}"
+        )
+        _assert_conflict(restored)
+        assert exported.status_code == 200, exported.text
+        assert exported.json() == before_export.json()
+        assert _stored_rows(session_factory, project["id"]) == before_rows
+        live = client.get(f"{root}/strings/{string_id}").json()
+        assert live["status"] == "draft"
+        assert live["key"] == "save_new"
+        assert live["published_key"] == "save"
+        return
+
+    assert restored.status_code == 200, restored.text
+    assert exported.status_code == 200, exported.text
+    assert _save_count(exported.json()) == 2
+    live = client.get(f"{root}/strings/{string_id}").json()
+    assert live["status"] == "public"
+    assert live["published_key"] == "save"
+
+
+def _poll_job(client, job_id):
+    deadline = time.monotonic() + 10
+    body = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/jobs/{job_id}")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        if body["status"] in ("completed", "failed"):
+            return body
+        time.sleep(0.02)
+    return body
+
+
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_non_colliding_published_restore_succeeds(client, operation, layout):
+    _, root = _project(client, f"Free {operation} {layout}", layout=layout)
+    created = _create(client, root, "save", source="Lưu", status="public")
+    assert created.status_code == 201, created.text
+    string_id = created.json()["id"]
+    unpublished = client.post(
+        f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [string_id]}
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    history = client.get(f"{root}/strings/{string_id}/activities").json()["items"]
+    activity_id = next(
+        item["id"] for item in history if item["event_type"] == "string.unpublished"
+    )
+    restored = _restore_published_snapshot(
+        client, root, operation, unpublished.json()["batch_id"], activity_id
+    )
+    assert restored.status_code == 200, restored.text
+    exported = _export(client, root)
+    assert exported.status_code == 200, exported.text
+    assert _save_values(exported.json()) == ["Lưu"]
+    live = client.get(f"{root}/strings/{string_id}").json()
+    assert live["status"] == "public"
+    assert live["published_key"] == "save"
+
+
+def test_draft_undo_ignores_an_unrelated_published_collision(client, session_factory):
+    _, root = _project(client, "Legacy collision")
+    note = _create(client, root, "note", source="One")
+    assert note.status_code == 201, note.text
+    note_id = note.json()["id"]
+    assert client.patch(f"{root}/strings/{note_id}", json={"source_text": "Two"}).status_code == 200
+    edit_id = next(
+        item["id"]
+        for item in client.get(f"{root}/strings/{note_id}/activities").json()["items"]
+        if item["event_type"] != "string.created"
+    )
+    holders = [
+        _create(client, root, key, source="Held", status="public").json()["id"]
+        for key in ("left", "right")
+    ]
+    with session_factory() as db:
+        rows = db.query(StringEntry).filter(StringEntry.id.in_([uuid.UUID(sid) for sid in holders]))
+        for row in rows:
+            row.published_key = "save"
+        db.commit()
+
+    restored = client.post(f"{root}/activities/{edit_id}/revert")
+    assert restored.status_code == 200, restored.text
+    assert client.get(f"{root}/strings/{note_id}").json()["source_text"] == "One"
+    for sid in holders:
+        row = client.get(f"{root}/strings/{sid}").json()
+        assert row["status"] == "public"
+        assert row["published_key"] == "save"
+    exported = _export(client, root)
+    assert exported.status_code == 409, exported.text
+    assert exported.json()["detail"]["code"] == "ambiguous_key"
+
+
+def test_translation_revert_ignores_an_unrelated_published_collision(client, session_factory):
+    _, root = _project(client, "Legacy translation")
+    note = _create(client, root, "note", source="One")
+    note_id = note.json()["id"]
+    updated = client.patch(f"{root}/strings/{note_id}", json={"translations": {"en": "Hello"}})
+    assert updated.status_code == 200, updated.text
+    edit_id = next(
+        item["id"]
+        for item in client.get(f"{root}/strings/{note_id}/activities").json()["items"]
+        if item["event_type"] != "string.created"
+    )
+    holders = [
+        _create(client, root, key, source="Held", status="public").json()["id"]
+        for key in ("left", "right")
+    ]
+    with session_factory() as db:
+        translation = (
+            db.query(Translation)
+            .filter(Translation.string_id == uuid.UUID(note_id), Translation.locale == "en")
+            .one()
+        )
+        activity = db.get(Activity, uuid.UUID(edit_id))
+        activity.entity_type = "translation"
+        activity.entity_id = str(translation.id)
+        activity.locale = "en"
+        activity.before = {
+            "id": str(translation.id),
+            "string_id": note_id,
+            "locale": "en",
+            "value": "Restored",
+        }
+        activity.after = {
+            "id": str(translation.id),
+            "string_id": note_id,
+            "locale": "en",
+            "value": "Hello",
+        }
+        for row in db.query(StringEntry).filter(
+            StringEntry.id.in_([uuid.UUID(sid) for sid in holders])
+        ):
+            row.published_key = "save"
+        db.commit()
+
+    restored = client.post(f"{root}/activities/{edit_id}/revert")
+    assert restored.status_code == 200, restored.text
+    live = client.get(f"{root}/strings/{note_id}").json()
+    english = next(item for item in live["translations"] if item["locale"] == "en")
+    assert english["value"] == "Restored"
+    exported = _export(client, root)
+    assert exported.status_code == 409, exported.text
+    assert exported.json()["detail"]["code"] == "ambiguous_key"
+
+
+def test_colliding_batch_undo_rolls_back_every_string(client, session_factory):
+    project, root = _project(client, "Partial batch")
+    first = _create(client, root, "save", source="Lưu", status="public")
+    first_id = first.json()["id"]
+    assert client.patch(f"{root}/strings/{first_id}", json={"key": "save_new"}).status_code == 200
+    other = _create(client, root, "other", source="Giữ", status="public")
+    other_id = other.json()["id"]
+    unpublished = client.post(
+        f"{root}/strings/batch",
+        json={"action": "unpublish", "string_ids": [first_id, other_id]},
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    replacement = _create(client, root, "save", source="Mới", status="public")
+    assert replacement.status_code == 201, replacement.text
+    before_export = _export(client, root)
+    assert before_export.status_code == 200, before_export.text
+    assert _save_values(before_export.json()) == ["Mới"]
+    before_rows = _stored_rows(session_factory, project["id"])
+
+    undone = client.post(f"{root}/activities/batch/{unpublished.json()['batch_id']}/revert")
+    exported = _export(client, root)
+    assert undone.status_code == 409, (
+        f"undo returned {undone.status_code}: {undone.text}; "
+        f"public export then {exported.status_code}: {exported.text}"
+    )
+    _assert_conflict(undone)
+    assert exported.status_code == 200, exported.text
+    assert exported.json() == before_export.json()
+    assert _stored_rows(session_factory, project["id"]) == before_rows
+    assert client.get(f"{root}/strings/{first_id}").json()["status"] == "draft"
+    assert client.get(f"{root}/strings/{other_id}").json()["status"] == "draft"
+
+
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_published_restore_ignores_an_unrelated_collision(
+    client, session_factory, operation, layout
+):
+    """Restoring a free published key still works when some other key already collides."""
+    _, root = _project(client, f"Unrelated publish {operation} {layout}", layout=layout)
+    note = _create(client, root, "note", source="Ghi", status="public")
+    assert note.status_code == 201, note.text
+    note_id = note.json()["id"]
+    unpublished = client.post(
+        f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [note_id]}
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    activity_id = next(
+        item["id"]
+        for item in client.get(f"{root}/strings/{note_id}/activities").json()["items"]
+        if item["event_type"] == "string.unpublished"
+    )
+    holders = [
+        _create(client, root, key, source="Held", status="public").json()["id"]
+        for key in ("left", "right")
+    ]
+    with session_factory() as db:
+        for row in db.query(StringEntry).filter(
+            StringEntry.id.in_([uuid.UUID(sid) for sid in holders])
+        ):
+            row.published_key = "save"
+        db.commit()
+
+    restored = _restore_published_snapshot(
+        client, root, operation, unpublished.json()["batch_id"], activity_id
+    )
+    assert restored.status_code == 200, restored.text
+    live = client.get(f"{root}/strings/{note_id}").json()
+    assert live["status"] == "public"
+    assert live["published_key"] == "note"
+    for sid in holders:
+        row = client.get(f"{root}/strings/{sid}").json()
+        assert row["status"] == "public"
+        assert row["published_key"] == "save"
+    exported = _export(client, root)
+    assert exported.status_code == 409, exported.text
+    assert exported.json()["detail"]["code"] == "ambiguous_key"
+
+
+def test_async_revert_job_fails_with_published_key_conflict(client, session_factory, monkeypatch):
+    project, root = _project(client, "Async revert")
+    string_id, batch_id, _activity_id = _publish_rename_and_unpublish(client, root, module_id=None)
+    replacement = _create(client, root, "save", source="Khác", status="public")
+    assert replacement.status_code == 201, replacement.text
+    before_export = _export(client, root)
+    before_rows = _stored_rows(session_factory, project["id"])
+    monkeypatch.setattr(settings, "import_async_threshold", 0)
+
+    accepted = client.post(
+        f"{root}/activities/batch/{batch_id}/revert",
+        headers={"Prefer": "respond-async"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = _poll_job(client, accepted.json()["job_id"])
+    assert job["status"] == "failed", job
+    error = job["result"]["error"]
+    assert error["status_code"] == 409
+    assert error["detail"]["code"] == "published_key_conflict"
+    assert error["detail"]["key"] == "save"
+    assert _export(client, root).json() == before_export.json()
+    assert _stored_rows(session_factory, project["id"]) == before_rows
+    assert client.get(f"{root}/strings/{string_id}").json()["status"] == "draft"
+
+
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_concurrent_restores_one_claims_the_published_key(client, monkeypatch, operation, layout):
+    """Two restores of the same published key. The import try-lock is skipped so they meet on the publication lock."""
+    _, root = _project(client, f"Race {operation} {layout}", layout=layout)
+    first = _create(client, root, "save", source="Lưu", status="public")
+    first_id = first.json()["id"]
+    assert client.patch(f"{root}/strings/{first_id}", json={"key": "save_new"}).status_code == 200
+    first_unpublish = client.post(
+        f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [first_id]}
+    )
+    assert first_unpublish.status_code == 200, first_unpublish.text
+    second = _create(client, root, "save", source="Khác", status="public")
+    assert second.status_code == 201, second.text
+    second_id = second.json()["id"]
+    second_unpublish = client.post(
+        f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [second_id]}
+    )
+    assert second_unpublish.status_code == 200, second_unpublish.text
+    targets = []
+    for sid, unpublished in (
+        (first_id, first_unpublish),
+        (second_id, second_unpublish),
+    ):
+        activity_id = next(
+            item["id"]
+            for item in client.get(f"{root}/strings/{sid}/activities").json()["items"]
+            if item["event_type"] == "string.unpublished"
+        )
+        targets.append((unpublished.json()["batch_id"], activity_id))
+
+    barrier = Barrier(2)
+    real_lock = strings_service.lock_publication
+
+    def enter_together(db, project_id):
+        db.execute(text("SET LOCAL lock_timeout = '3s'"))
+        db.execute(text("SET LOCAL statement_timeout = '8s'"))
+        # A later lock_publication in this transaction must not wait again.
+        if db.info.get("publish_lock_entered"):
+            return real_lock(db, project_id)
+        db.info["publish_lock_entered"] = True
+        barrier.wait(5)
+        return real_lock(db, project_id)
+
+    monkeypatch.setattr(activities_service, "acquire_import_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(strings_service, "lock_publication", enter_together)
+
+    def restore(target):
+        batch_id, activity_id = target
+        return _restore_published_snapshot(client, root, operation, batch_id, activity_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(restore, item) for item in targets]
+        results = [future.result(timeout=15) for future in futures]
+
+    assert sorted(result.status_code for result in results) == [200, 409]
+    conflict = next(result for result in results if result.status_code == 409)
+    _assert_conflict(conflict)
+    exported = _export(client, root)
+    assert exported.status_code == 200, exported.text
+    assert _save_count(exported.json()) == 1
+    statuses = {
+        client.get(f"{root}/strings/{sid}").json()["status"] for sid in (first_id, second_id)
+    }
+    assert statuses == {"public", "draft"}
 
 
 def test_batch_publish_keeps_a_commit_that_lands_while_it_waits(client, session_factory):

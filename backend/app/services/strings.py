@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
@@ -259,35 +259,35 @@ def _modular_layout(project: Project) -> bool:
     return (layout.value if hasattr(layout, "value") else str(layout)) == "modular"
 
 
-def lock_publication(db: Session, project_id: uuid.UUID) -> None:
-    """Hold this project's publication lock until the transaction ends.
+def published_export_identity(
+    key: str | None,
+    slug: str | None,
+    *,
+    modular: bool,
+    assigned: bool,
+) -> tuple[str | None, str | None]:
+    """(module bucket, key) for one public row.
 
-    Call this before flushing published rows. A second call in the same
-    transaction returns immediately.
+    ``key`` is already normalized: an empty published key uses the live key.
+    Unassigned and deleted modules share one bucket. Flat projects ignore the module.
     """
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:project_uuid))"),
-        {"namespace": _PUBLISH_LOCK_NAMESPACE, "project_uuid": str(project_id)},
-    )
+    if not modular or not assigned:
+        slug = None
+    return (slug, key)
 
 
-# shortcut: undo and revert copy published snapshots directly, so they can still
-# collide; call this guard from those paths if that must be rejected too.
-def guard_published_keys(
+def load_public_export_identities(
     db: Session,
     project: Project,
-    overlay: dict[uuid.UUID, tuple[str, str | None]] | None = None,
-) -> None:
-    """Reject a publication that would make this project's public export ambiguous.
+    key_owner_ids: Collection[uuid.UUID] | None = None,
+) -> list[tuple[uuid.UUID, str | None, str | None]]:
+    """Public rows as (string id, module bucket, normalized key).
 
-    ``overlay`` replaces rows not yet written: ``(published key, module slug or None)``.
-    Callers that have already flushed the final public rows omit it. The advisory
-    lock is held until commit so a concurrent publication cannot pass the same check.
+    ``key_owner_ids`` limits the scan to normalized keys of those strings.
     """
-    lock_publication(db, project.id)
     modular = _modular_layout(project)
     published_key = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
-    rows = db.execute(
+    stmt = (
         select(
             StringEntry.id,
             published_key,
@@ -303,23 +303,72 @@ def guard_published_keys(
             StringEntry.deleted_at.is_(None),
             StringEntry.status == TranslationStatus.public,
         )
-    ).all()
-    replacements = overlay or {}
-    seen: dict[tuple[str | None, str], uuid.UUID] = {}
+    )
+    if key_owner_ids is not None:
+        owner_keys = [
+            key
+            for key in db.execute(
+                select(published_key).where(StringEntry.id.in_(key_owner_ids))
+            ).scalars()
+            if key
+        ]
+        if not owner_keys:
+            return []
+        stmt = stmt.where(published_key.in_(owner_keys))
+    return [
+        (
+            string_id,
+            *published_export_identity(
+                key, slug, modular=modular, assigned=module_id is not None
+            ),
+        )
+        for string_id, key, module_id, slug in db.execute(stmt).all()
+    ]
 
-    def claim(string_id: uuid.UUID, key: str, slug: str | None) -> None:
-        identity = (slug if modular else None, key)
+
+def lock_publication(db: Session, project_id: uuid.UUID) -> None:
+    """Hold this project's publication lock until the transaction ends.
+
+    Call this before flushing published rows. A second call in the same
+    transaction returns immediately.
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:project_uuid))"),
+        {"namespace": _PUBLISH_LOCK_NAMESPACE, "project_uuid": str(project_id)},
+    )
+
+
+def guard_published_keys(
+    db: Session,
+    project: Project,
+    overlay: dict[uuid.UUID, tuple[str, str | None]] | None = None,
+) -> None:
+    """Reject a publication that would make this project's public export ambiguous.
+
+    ``overlay`` replaces rows not yet written: ``(published key, module slug or None)``.
+    Callers that have already flushed the final public rows omit it. The advisory
+    lock is held until commit so a concurrent publication cannot pass the same check.
+    """
+    lock_publication(db, project.id)
+    modular = _modular_layout(project)
+    rows = load_public_export_identities(db, project)
+    replacements = overlay or {}
+    seen: dict[tuple[str | None, str | None], uuid.UUID] = {}
+
+    def claim(string_id: uuid.UUID, bucket: str | None, key: str | None) -> None:
+        identity = (bucket, key)
         previous = seen.get(identity)
         if previous is not None and previous != string_id:
             raise published_key_conflict(key)
         seen[identity] = string_id
 
-    for string_id, key, module_id, slug in rows:
+    for string_id, bucket, key in rows:
         if string_id in replacements:
             continue
-        claim(string_id, key, slug if module_id is not None else None)
+        claim(string_id, bucket, key)
     for string_id, (key, slug) in replacements.items():
-        claim(string_id, key, slug)
+        bucket, key = published_export_identity(key, slug, modular=modular, assigned=True)
+        claim(string_id, bucket, key)
 
 
 def unpublish_string(entry: StringEntry) -> None:
