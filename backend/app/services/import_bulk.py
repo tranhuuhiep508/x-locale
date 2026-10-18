@@ -309,6 +309,10 @@ def import_rows(
     report_orphans: bool = True,
     reject_deleted: bool = False,
 ) -> ImportResult:
+    if status == TranslationStatus.public:
+        from app.services.strings import lock_publication
+
+        lock_publication(db, project.id)
     catalog = _load_catalog(
         db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
     )

@@ -259,6 +259,18 @@ def _modular_layout(project: Project) -> bool:
     return (layout.value if hasattr(layout, "value") else str(layout)) == "modular"
 
 
+def lock_publication(db: Session, project_id: uuid.UUID) -> None:
+    """Hold this project's publication lock until the transaction ends.
+
+    Call this before flushing published rows. A second call in the same
+    transaction returns immediately.
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:project_uuid))"),
+        {"namespace": _PUBLISH_LOCK_NAMESPACE, "project_uuid": str(project_id)},
+    )
+
+
 # shortcut: undo and revert copy published snapshots directly, so they can still
 # collide; call this guard from those paths if that must be rejected too.
 def guard_published_keys(
@@ -272,10 +284,7 @@ def guard_published_keys(
     Callers that have already flushed the final public rows omit it. The advisory
     lock is held until commit so a concurrent publication cannot pass the same check.
     """
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(:namespace, hashtext(:project_uuid))"),
-        {"namespace": _PUBLISH_LOCK_NAMESPACE, "project_uuid": str(project.id)},
-    )
+    lock_publication(db, project.id)
     modular = _modular_layout(project)
     published_key = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
     rows = db.execute(
@@ -863,6 +872,8 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    if payload.status == TranslationStatus.public:
+        lock_publication(db, project.id)
     existing = key_owner(db, project.id, payload.key, payload.module_id)
     if existing:
         raise HTTPException(status_code=409, detail=f"String '{payload.key}' already exists")
@@ -905,6 +916,8 @@ def update_string(
     string_id: uuid.UUID,
     payload: StringUpdate,
 ) -> StringOut:
+    if payload.status == TranslationStatus.public:
+        lock_publication(db, project.id)
     entry = get_string(db, project.id, string_id)
     target_key = payload.key if payload.key is not None else entry.key
     target_module = (
@@ -1024,6 +1037,7 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
     affected = 0
 
     if action == "publish":
+        lock_publication(db, project.id)
         for entry in entries:
             if entry.deleted_at is not None:
                 continue

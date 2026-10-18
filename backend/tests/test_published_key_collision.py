@@ -304,13 +304,17 @@ def test_concurrent_publications_cannot_both_claim_one_public_key(client, monkey
     left = _create(client, root, "save", module_id=auth, source="Auth").json()
     right = _create(client, root, "save", module_id=home, source="Home").json()
     barrier = Barrier(2)
-    real = strings_service.guard_published_keys
+    real = strings_service.lock_publication
 
-    def enter_together(db, project, overlay=None):
+    def enter_together(db, project_id):
+        # The guard locks again after the flush. Only the first call waits.
+        if db.info.get("publish_lock_entered"):
+            return real(db, project_id)
+        db.info["publish_lock_entered"] = True
         barrier.wait(5)
-        return real(db, project, overlay)
+        return real(db, project_id)
 
-    monkeypatch.setattr(strings_service, "guard_published_keys", enter_together)
+    monkeypatch.setattr(strings_service, "lock_publication", enter_together)
 
     def publish(string_id):
         return _publish(client, project["id"], [string_id])
