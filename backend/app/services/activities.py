@@ -1193,6 +1193,44 @@ def apply_revert(
             db.add(t)
 
 
+_PUBLIC_SNAPSHOT_FIELDS = (
+    "published_key",
+    "published_module_id",
+    "published_source_text",
+    "published_at",
+)
+
+
+def _public_signature(snapshot: dict | None) -> tuple:
+    """Identity of one snapshot's public row. Draft and translation rows share one value."""
+    snap = snapshot or {}
+    published = snap.get("published_translations") or {}
+    translations = tuple(
+        sorted((locale, value) for locale, value in published.items() if value is not None)
+    )
+    return (
+        snap.get("status") == "public",
+        *(snap.get(name) for name in _PUBLIC_SNAPSHOT_FIELDS),
+        translations,
+    )
+
+
+def _changes_public_snapshot(before: dict | None, after: dict | None) -> bool:
+    return _public_signature(before) != _public_signature(after)
+
+
+def _guard_restored_publication(
+    db: Session,
+    project: Project,
+    pairs: list[tuple[dict | None, dict | None]],
+) -> None:
+    """Reject a restore that makes the public export ambiguous. Draft restores skip this."""
+    if any(_changes_public_snapshot(before, after) for before, after in pairs):
+        from app.services.strings import guard_published_keys
+
+        guard_published_keys(db, project)
+
+
 def revert_activity(
     db: Session,
     project: Project,
@@ -1203,7 +1241,10 @@ def revert_activity(
     project_id = project.id
 
     def write() -> Activity:
+        from app.services.strings import lock_publication
+
         acquire_import_lock(db, project_id)
+        lock_publication(db, project_id)
         activity = (
             db.query(Activity)
             .filter(Activity.id == activity_id, Activity.project_id == project_id)
@@ -1236,6 +1277,7 @@ def revert_activity(
         db.add(revert_marker)
         db.flush()
         activity.reverted_by_id = revert_marker.id
+        _guard_restored_publication(db, project, [(before, after)])
         return activity
 
     activity = run_write(db, project_id, "revert_activity", write, restore=True)
@@ -1268,7 +1310,10 @@ def revert_batch(
     project_id = project.id
 
     def write() -> dict[str, Any]:
+        from app.services.strings import lock_publication
+
         acquire_import_lock(db, project_id)
+        lock_publication(db, project_id)
         activities = (
             db.query(Activity)
             .filter(
@@ -1300,10 +1345,15 @@ def revert_batch(
             # One write for the whole batch, so there is no step count to show.
             report_progress(db, "writing")
             _persist_revert_plan(db, project_id, plan, existing=existing, batch_id=new_batch)
+            _guard_restored_publication(
+                db, project, [(before, after) for _, before, after in plan.inverses]
+            )
             db.expire_all()
             return {"reverted": len(activities), "batch_id": str(new_batch)}
+        restored: list[tuple[dict | None, dict | None]] = []
         for activity in activities:
             before, after = _execute_inverse(db, activity, force=force, references=references)
+            restored.append((before, after))
             marker = _make_revert_marker(
                 db,
                 project_id=project_id,
@@ -1317,6 +1367,7 @@ def revert_batch(
             db.flush()
             activity.reverted_by_id = marker.id
             reverted += 1
+        _guard_restored_publication(db, project, restored)
         return {"reverted": reverted, "batch_id": str(new_batch)}
 
     return run_write(db, project_id, "revert_batch", write, restore=True, commit=commit)

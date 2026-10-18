@@ -271,8 +271,6 @@ def lock_publication(db: Session, project_id: uuid.UUID) -> None:
     )
 
 
-# shortcut: undo and revert copy published snapshots directly, so they can still
-# collide; call this guard from those paths if that must be rejected too.
 def guard_published_keys(
     db: Session,
     project: Project,
