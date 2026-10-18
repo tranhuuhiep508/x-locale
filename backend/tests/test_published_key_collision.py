@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event, Thread
 
 import pytest
 from sqlalchemy import select, text
 
-from app.models import Activity, StringEntry, Translation
+from app.models import Activity, Project, StringEntry, Translation
+from app.schemas import BatchRequest, StringUpdate
 from app.services import strings as strings_service
+from app.services.sync import import_flat_strings
 from tests.helpers import json_upload, make_project, preview_publish
 
 
@@ -327,3 +330,140 @@ def test_concurrent_publications_cannot_both_claim_one_public_key(client, monkey
     exported = _export(client, root)
     assert exported.status_code == 200, exported.text
     assert list(exported.json()["vi"]) == ["save"]
+
+
+def _limit_lock_wait(db) -> None:
+    db.execute(text("SET LOCAL lock_timeout = '3s'"))
+    db.execute(text("SET LOCAL statement_timeout = '8s'"))
+
+
+def _publication_waiter(session_factory, project_id) -> bool:
+    params = {
+        "namespace": strings_service._PUBLISH_LOCK_NAMESPACE,
+        "project_uuid": project_id,
+    }
+    with session_factory() as db:
+        return bool(
+            db.scalar(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_locks
+                        WHERE locktype = 'advisory'
+                          AND classid = CAST(:namespace AS oid)
+                          AND objid = hashtext(:project_uuid)::oid
+                          AND NOT granted
+                    )
+                    """
+                ),
+                params,
+            )
+        )
+
+
+def _wait_until_publication_blocks(session_factory, project_id) -> None:
+    """Poll the lock manager until the publisher is waiting. A fixed sleep can miss it."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if _publication_waiter(session_factory, project_id):
+            return
+        time.sleep(0.01)
+    raise AssertionError("publisher never waited on the publication lock")
+
+
+def _import_while_publish_blocks(session_factory, monkeypatch, project_id, publish) -> None:
+    """Import holds the publication lock, publish blocks on it, then import updates the row."""
+    import_holding = Event()
+    release_import = Event()
+    real_guard = strings_service.guard_published_keys
+
+    def pause_after_import_lock(db, project, overlay=None):
+        real_guard(db, project, overlay)
+        if overlay is None:
+            return None
+        import_holding.set()
+        if not release_import.wait(5):
+            raise TimeoutError("import stayed paused after the publication lock")
+        return None
+
+    monkeypatch.setattr(strings_service, "guard_published_keys", pause_after_import_lock)
+    errors: dict[str, BaseException] = {}
+
+    def run_import() -> None:
+        try:
+            with session_factory() as db:
+                _limit_lock_wait(db)
+                project = db.get(Project, uuid.UUID(project_id))
+                assert project is not None
+                import_flat_strings(
+                    db,
+                    project,
+                    {"save": "Imported"},
+                    dry_run=False,
+                    status=strings_service.TranslationStatus.public,
+                )
+                db.commit()
+        except BaseException as exc:
+            errors["import"] = exc
+
+    def run_publish() -> None:
+        try:
+            with session_factory() as db:
+                _limit_lock_wait(db)
+                project = db.get(Project, uuid.UUID(project_id))
+                assert project is not None
+                publish(db, project)
+        except BaseException as exc:
+            errors["publish"] = exc
+
+    importer = Thread(target=run_import, name="public-import")
+    publisher = Thread(target=run_publish, name="public-publish")
+    importer.start()
+    try:
+        assert import_holding.wait(5), "import did not acquire the publication lock"
+        publisher.start()
+        _wait_until_publication_blocks(session_factory, project_id)
+        release_import.set()
+        importer.join(15)
+        publisher.join(15)
+    finally:
+        release_import.set()
+        importer.join(15)
+        publisher.join(15)
+    assert not importer.is_alive()
+    assert not publisher.is_alive()
+    if errors:
+        detail = "\n".join(
+            f"{name}: {type(exc).__module__}.{type(exc).__name__}: {exc}"
+            for name, exc in errors.items()
+        )
+        raise AssertionError(f"publication transactions did not both commit:\n{detail}")
+
+
+@pytest.mark.parametrize("writer", ["update", "batch"])
+def test_public_import_does_not_deadlock_with_a_publish(
+    client, session_factory, monkeypatch, writer
+):
+    project, root = _project(client, f"Lock order {writer}")
+    created = _create(client, root, "save", source="Lưu")
+    assert created.status_code == 201, created.text
+    string_id = uuid.UUID(created.json()["id"])
+
+    def publish(db, project_row):
+        if writer == "update":
+            strings_service.update_string(
+                db,
+                project_row,
+                string_id,
+                StringUpdate(status=strings_service.TranslationStatus.public),
+            )
+            return
+        entries = strings_service.load_string_entries(db, project_row.id, [string_id])
+        fingerprint = strings_service.compute_publish_fingerprint(entries)
+        strings_service.apply_batch(
+            db,
+            project_row,
+            BatchRequest(action="publish", string_ids=[string_id], fingerprint=fingerprint),
+        )
+
+    _import_while_publish_blocks(session_factory, monkeypatch, project["id"], publish)
