@@ -747,6 +747,52 @@ def test_colliding_batch_undo_rolls_back_every_string(client, session_factory):
     assert client.get(f"{root}/strings/{other_id}").json()["status"] == "draft"
 
 
+@pytest.mark.parametrize("operation", ["undo", "revert"])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_published_restore_ignores_an_unrelated_collision(
+    client, session_factory, operation, layout
+):
+    """Restoring a free published key still works when some other key already collides."""
+    _, root = _project(client, f"Unrelated publish {operation} {layout}", layout=layout)
+    note = _create(client, root, "note", source="Ghi", status="public")
+    assert note.status_code == 201, note.text
+    note_id = note.json()["id"]
+    unpublished = client.post(
+        f"{root}/strings/batch", json={"action": "unpublish", "string_ids": [note_id]}
+    )
+    assert unpublished.status_code == 200, unpublished.text
+    activity_id = next(
+        item["id"]
+        for item in client.get(f"{root}/strings/{note_id}/activities").json()["items"]
+        if item["event_type"] == "string.unpublished"
+    )
+    holders = [
+        _create(client, root, key, source="Held", status="public").json()["id"]
+        for key in ("left", "right")
+    ]
+    with session_factory() as db:
+        for row in db.query(StringEntry).filter(
+            StringEntry.id.in_([uuid.UUID(sid) for sid in holders])
+        ):
+            row.published_key = "save"
+        db.commit()
+
+    restored = _restore_published_snapshot(
+        client, root, operation, unpublished.json()["batch_id"], activity_id
+    )
+    assert restored.status_code == 200, restored.text
+    live = client.get(f"{root}/strings/{note_id}").json()
+    assert live["status"] == "public"
+    assert live["published_key"] == "note"
+    for sid in holders:
+        row = client.get(f"{root}/strings/{sid}").json()
+        assert row["status"] == "public"
+        assert row["published_key"] == "save"
+    exported = _export(client, root)
+    assert exported.status_code == 409, exported.text
+    assert exported.json()["detail"]["code"] == "ambiguous_key"
+
+
 def test_async_revert_job_fails_with_published_key_conflict(client, session_factory, monkeypatch):
     project, root = _project(client, "Async revert")
     string_id, batch_id, _activity_id = _publish_rename_and_unpublish(client, root, module_id=None)
@@ -809,7 +855,7 @@ def test_concurrent_restores_one_claims_the_published_key(client, monkeypatch, o
     def enter_together(db, project_id):
         db.execute(text("SET LOCAL lock_timeout = '3s'"))
         db.execute(text("SET LOCAL statement_timeout = '8s'"))
-        # guard_published_keys locks again after the flush. Only the first call waits.
+        # A later lock_publication in this transaction must not wait again.
         if db.info.get("publish_lock_entered"):
             return real_lock(db, project_id)
         db.info["publish_lock_entered"] = True

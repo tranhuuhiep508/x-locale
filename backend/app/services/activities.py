@@ -1193,30 +1193,16 @@ def apply_revert(
             db.add(t)
 
 
-_PUBLIC_SNAPSHOT_FIELDS = (
-    "published_key",
-    "published_module_id",
-    "published_source_text",
-    "published_at",
-)
-
-
-def _public_signature(snapshot: dict | None) -> tuple:
-    """Identity of one snapshot's public row. Draft and translation rows share one value."""
+def _public_hold(snapshot: dict | None) -> tuple[str, str | None] | None:
+    """Export key and published module id, or None when the snapshot is not public."""
     snap = snapshot or {}
-    published = snap.get("published_translations") or {}
-    translations = tuple(
-        sorted((locale, value) for locale, value in published.items() if value is not None)
-    )
-    return (
-        snap.get("status") == "public",
-        *(snap.get(name) for name in _PUBLIC_SNAPSHOT_FIELDS),
-        translations,
-    )
-
-
-def _changes_public_snapshot(before: dict | None, after: dict | None) -> bool:
-    return _public_signature(before) != _public_signature(after)
+    if snap.get("status") != "public" or snap.get("deleted_at"):
+        return None
+    key = snap.get("published_key") or snap.get("key")
+    if not key:
+        return None
+    module_id = snap.get("published_module_id")
+    return (key, str(module_id) if module_id else None)
 
 
 def _guard_restored_publication(
@@ -1224,11 +1210,50 @@ def _guard_restored_publication(
     project: Project,
     pairs: list[tuple[dict | None, dict | None]],
 ) -> None:
-    """Reject a restore that makes the public export ambiguous. Draft restores skip this."""
-    if any(_changes_public_snapshot(before, after) for before, after in pairs):
-        from app.services.strings import guard_published_keys
+    """Reject a public key this restore newly claims when another public string holds it.
 
-        guard_published_keys(db, project)
+    shortcut: identity rules are copied from guard_published_keys, fold them together if another caller needs this scope.
+    """
+    changed: set[uuid.UUID] = set()
+    for before, after in pairs:
+        if _public_hold(before) == _public_hold(after) or _public_hold(after) is None:
+            continue
+        raw_id = (after or {}).get("id")
+        if raw_id:
+            changed.add(uuid.UUID(str(raw_id)))
+    if not changed:
+        return
+
+    from app.services.strings import _modular_layout, published_key_conflict
+
+    modular = _modular_layout(project)
+    key_expr = func.coalesce(func.nullif(StringEntry.published_key, ""), StringEntry.key)
+    restored_keys = [
+        key for (key,) in db.query(key_expr).filter(StringEntry.id.in_(changed)).all() if key
+    ]
+    if not restored_keys:
+        return
+    rows = (
+        db.query(StringEntry.id, key_expr, StringEntry.published_module_id, Module.slug)
+        .outerjoin(
+            Module,
+            (Module.id == StringEntry.published_module_id) & (Module.project_id == project.id),
+        )
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.deleted_at.is_(None),
+            StringEntry.status == TranslationStatus.public,
+            key_expr.in_(restored_keys),
+        )
+        .all()
+    )
+    holders: dict[tuple[str | None, str], list[uuid.UUID]] = {}
+    for string_id, key, module_id, slug in rows:
+        bucket = slug if modular and module_id is not None else None
+        holders.setdefault((bucket, key), []).append(string_id)
+    for (_, key), ids in holders.items():
+        if len(set(ids)) > 1 and changed.intersection(ids):
+            raise published_key_conflict(key)
 
 
 def revert_activity(
