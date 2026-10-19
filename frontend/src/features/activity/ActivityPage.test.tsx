@@ -162,6 +162,19 @@ async function confirmUndo() {
   return dialog
 }
 
+function watchCatalog(client: QueryClient) {
+  const setData = vi.spyOn(client, 'setQueryData')
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
+  return () => {
+    const writes = [
+      ...setData.mock.calls.map((call) => call[0]),
+      ...invalidate.mock.calls.map((call) => call[0]),
+    ]
+    expect(JSON.stringify(writes)).not.toContain('strings')
+    expect(client.getQueryData(catalogKey)).toEqual(catalog)
+  }
+}
+
 describe('Activity undo published_key_conflict', () => {
   beforeEach(() => {
     polyfillPointer()
@@ -192,6 +205,7 @@ describe('Activity undo published_key_conflict', () => {
     )
     const { client } = renderPage()
     expect(await screen.findByText('Imported strings')).toBeTruthy()
+    const catalogUntouched = watchCatalog(client)
 
     const dialog = await confirmUndo()
 
@@ -202,7 +216,7 @@ describe('Activity undo published_key_conflict', () => {
     expect(activitiesApi.revertBatch).toHaveBeenCalledTimes(1)
     expect(within(dialog).getByRole('heading', { name: 'Undo this batch?' })).toBeTruthy()
     expect(screen.getByText('Imported strings')).toBeTruthy()
-    expect(client.getQueryData(catalogKey)).toEqual(catalog)
+    catalogUntouched()
   })
 
   it('shows the server message when the background revert job fails', async () => {
@@ -232,6 +246,7 @@ describe('Activity undo published_key_conflict', () => {
     })
     const { client } = renderPage()
     expect(await screen.findByText('Imported strings')).toBeTruthy()
+    const catalogUntouched = watchCatalog(client)
 
     const dialog = await confirmUndo()
 
@@ -242,6 +257,6 @@ describe('Activity undo published_key_conflict', () => {
     expect(jobsApi.get).toHaveBeenCalledWith('job-revert')
     expect(within(dialog).getByRole('heading', { name: 'Undo this batch?' })).toBeTruthy()
     expect(screen.getByText('Imported strings')).toBeTruthy()
-    expect(client.getQueryData(catalogKey)).toEqual(catalog)
+    catalogUntouched()
   })
 })
