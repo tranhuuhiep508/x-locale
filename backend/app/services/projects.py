@@ -146,10 +146,22 @@ def update_project(
     role: str | None = None,
 ) -> ProjectOut:
     project = get_project(db, project_id)
-    if payload.allow_duplicate_keys is not None:
+    base_language = None
+    if payload.base_language is not None:
+        try:
+            base_language = validate_locale_code(payload.base_language)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.allow_duplicate_keys is not None or payload.base_language is not None:
         # Authorization may have waited for another settings update after loading the project.
         db.refresh(project)
-        if payload.allow_duplicate_keys != project.allow_duplicate_keys:
+        if (
+            payload.allow_duplicate_keys is not None
+            and payload.allow_duplicate_keys != project.allow_duplicate_keys
+        ) or (
+            payload.base_language is not None
+            and base_language != project.base_language
+        ):
             # Fail fast before upgrading the project lock: imports lock strings before audit FKs.
             acquire_import_lock(db, project_id)
             (
@@ -158,6 +170,20 @@ def update_project(
                 .with_for_update()
                 .populate_existing()
                 .first()
+            )
+    if payload.base_language is not None and base_language != project.base_language:
+        # Include tombstones: restoring one must not relabel its source or snapshot.
+        if db.query(StringEntry.id).filter(StringEntry.project_id == project_id).first():
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "base_language_has_strings",
+                    "message": (
+                        "Base language cannot be changed after strings have been added "
+                        "(including deleted strings). Create a new project with the desired "
+                        "base language instead. Target languages can still be changed."
+                    ),
+                },
             )
     if payload.allow_duplicate_keys is False and project.allow_duplicate_keys:
         conflicts = duplicate_key_details(db, project_id)

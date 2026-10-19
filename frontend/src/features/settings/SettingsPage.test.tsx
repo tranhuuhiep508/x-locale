@@ -76,6 +76,20 @@ describe('project translation context settings', () => {
     await waitFor(() => expect(input.value).toBe(''))
   })
 
+  it.each([0, 1])('locks the base selector when the project has %i strings', async (stringCount) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, string_count: stringCount })
+    renderSettings()
+    const base = await screen.findByRole('combobox', { name: 'Base language' }) as HTMLButtonElement
+    expect(base.disabled).toBe(stringCount > 0)
+    expect(screen.getByText(/Base language can only be changed before any strings are added/)).toBeTruthy()
+    const name = screen.getByLabelText('Project name')
+    fireEvent.change(name, { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(projectsApi.update).toHaveBeenCalledWith('demo', expect.objectContaining({
+      name: 'Renamed', base_language: 'vi',
+    })))
+  })
+
   it('saves duplicate key policy through the existing form', async () => {
     renderSettings()
     const toggle = await screen.findByRole('switch', { name: 'Allow duplicate keys across modules' })

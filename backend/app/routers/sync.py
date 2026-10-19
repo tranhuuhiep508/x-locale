@@ -23,6 +23,7 @@ from app.services.imports import (
     import_size,
     parse_import_file,
     payload_size,
+    validate_import_base_language,
 )
 from app.services.jobs import (
     JobWork,
@@ -186,6 +187,7 @@ def import_project(
     prefer: Annotated[str | None, Header()] = None,
 ):
     acquire_import_lock(db, project.id)
+    db.refresh(project)
     batch_id = uuid.uuid4()
     options = FileImportOptions(
         dry_run=dry_run,
@@ -231,20 +233,10 @@ def import_strings_compat(
     prefer: Annotated[str | None, Header()] = None,
 ):
     """JSON-body import used by the CLI push command."""
-    if payload.base_language is not None and payload.base_language != project.base_language:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "base_language_mismatch",
-                "message": (
-                    f"Configured base language '{payload.base_language}' does not match "
-                    f"project base language '{project.base_language}'. Refresh config with loc init."
-                ),
-                "configured": payload.base_language,
-                "expected": project.base_language,
-            },
-        )
+    validate_import_base_language(project, payload)
     acquire_import_lock(db, project.id)
+    db.refresh(project)
+    validate_import_base_language(project, payload)
     if not payload.modules and payload.strings is None:
         raise HTTPException(status_code=400, detail="strings required")
     batch_id = uuid.uuid4()

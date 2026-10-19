@@ -213,7 +213,7 @@ export function SettingsPage() {
                   <FieldLabel htmlFor="base_language">Base language</FieldLabel>
                   <Select
                     value={form.base_language}
-                    disabled={!isAdmin}
+                    disabled={!isAdmin || (project?.string_count ?? 0) > 0}
                     onValueChange={(v) =>
                       setSaveForm((f) => ({
                         ...(f ?? form),
@@ -222,7 +222,7 @@ export function SettingsPage() {
                       }))
                     }
                   >
-                    <SelectTrigger id="base_language" className="w-full">
+                    <SelectTrigger id="base_language" className="w-full" aria-describedby="base_language_help">
                       <SelectValue placeholder="Base language" />
                     </SelectTrigger>
                     <SelectContent>
@@ -235,6 +235,10 @@ export function SettingsPage() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  <FieldDescription id="base_language_help">
+                    Base language can only be changed before any strings are added, including deleted strings.
+                    To use a different base language afterward, create a new project.
+                  </FieldDescription>
                 </Field>
 
                 <Field>

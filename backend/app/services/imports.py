@@ -117,3 +117,19 @@ def payload_size(payload: ImportPayload) -> int:
     if payload.modules:
         return import_size(payload.modules)
     return len(payload.strings or {})
+
+
+def validate_import_base_language(project: Project, payload: ImportPayload) -> None:
+    if payload.base_language is not None and payload.base_language != project.base_language:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "base_language_mismatch",
+                "message": (
+                    f"Configured base language '{payload.base_language}' does not match "
+                    f"project base language '{project.base_language}'. Refresh config with loc init."
+                ),
+                "configured": payload.base_language,
+                "expected": project.base_language,
+            },
+        )

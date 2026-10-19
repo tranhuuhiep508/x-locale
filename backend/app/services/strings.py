@@ -921,6 +921,17 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    base_language = project.base_language
+    # Block settings changes until creation commits, including before the first insert.
+    db.refresh(project, with_for_update={"read": True})
+    if project.base_language != base_language:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "base_language_changed",
+                "message": "The project base language changed. Refresh the project before adding strings.",
+            },
+        )
     if payload.status == TranslationStatus.public:
         lock_publication(db, project.id)
     existing = key_owner(db, project.id, payload.key, payload.module_id)
