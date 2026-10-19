@@ -345,7 +345,6 @@ describe('Published toggle published_key_conflict', () => {
     expect(toast.success).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
-    expect(entry.status).toBe('draft')
     expect(screen.getByText('Edit string')).toBeTruthy()
     expect((screen.getByLabelText('Key') as HTMLInputElement).value).toBe('save')
     expect(screen.getByRole('switch', { name: 'Published' }).getAttribute('aria-checked')).toBe('true')

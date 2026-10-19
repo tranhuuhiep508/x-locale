@@ -239,7 +239,7 @@ describe('Activity undo published_key_conflict', () => {
           },
         },
       },
-      error: PUBLISHED_KEY_CONFLICT,
+      error: 'revert failed',
       created_at: null,
       completed_at: null,
       progress: null,
