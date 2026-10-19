@@ -25,7 +25,13 @@ from app.services.key_policy import duplicate_key_details
 from app.services.members import lock_project, role_name
 
 
-def project_out(project: Project, string_count: int, role: str | None = None) -> ProjectOut:
+def project_out(
+    project: Project,
+    string_count: int,
+    role: str | None = None,
+    *,
+    can_change_base_language: bool = False,
+) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -36,6 +42,7 @@ def project_out(project: Project, string_count: int, role: str | None = None) ->
         layout=project.layout,
         allow_duplicate_keys=project.allow_duplicate_keys,
         string_count=string_count,
+        can_change_base_language=can_change_base_language,
         created_at=project.created_at,
         updated_at=project.updated_at,
         role=role,  # type: ignore[arg-type]
@@ -78,7 +85,11 @@ def to_project_out(
         n = counts.get(project.id, 0)
     else:
         n = count_strings(db, project.id)
-    return project_out(project, n, role)
+    # List responses omit this detail-only capability; avoid a query per project.
+    can_change_base_language = counts is None and n == 0 and (
+        db.query(StringEntry.id).filter(StringEntry.project_id == project.id).first() is None
+    )
+    return project_out(project, n, role, can_change_base_language=can_change_base_language)
 
 
 def get_project(db: Session, project_id: uuid.UUID) -> Project:
@@ -146,10 +157,22 @@ def update_project(
     role: str | None = None,
 ) -> ProjectOut:
     project = get_project(db, project_id)
-    if payload.allow_duplicate_keys is not None:
+    base_language = None
+    if payload.base_language is not None:
+        try:
+            base_language = validate_locale_code(payload.base_language)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.allow_duplicate_keys is not None or payload.base_language is not None:
         # Authorization may have waited for another settings update after loading the project.
         db.refresh(project)
-        if payload.allow_duplicate_keys != project.allow_duplicate_keys:
+        if (
+            payload.allow_duplicate_keys is not None
+            and payload.allow_duplicate_keys != project.allow_duplicate_keys
+        ) or (
+            payload.base_language is not None
+            and base_language != project.base_language
+        ):
             # Fail fast before upgrading the project lock: imports lock strings before audit FKs.
             acquire_import_lock(db, project_id)
             (
@@ -158,6 +181,20 @@ def update_project(
                 .with_for_update()
                 .populate_existing()
                 .first()
+            )
+    if payload.base_language is not None and base_language != project.base_language:
+        # Include tombstones: restoring one must not relabel its source or snapshot.
+        if db.query(StringEntry.id).filter(StringEntry.project_id == project_id).first():
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "base_language_has_strings",
+                    "message": (
+                        "Base language cannot be changed after strings have been added "
+                        "(including deleted strings). Create a new project with the desired "
+                        "base language instead. Target languages can still be changed."
+                    ),
+                },
             )
     if payload.allow_duplicate_keys is False and project.allow_duplicate_keys:
         conflicts = duplicate_key_details(db, project_id)

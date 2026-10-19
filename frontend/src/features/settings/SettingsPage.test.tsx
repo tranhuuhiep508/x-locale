@@ -34,7 +34,7 @@ const project: Project = {
   id: 'p1', slug: 'demo', name: 'Demo', base_language: 'vi',
   target_languages: ['en'], layout: 'modular', allow_duplicate_keys: false, string_count: 0,
   created_at: null, updated_at: null, translation_context: 'Friendly tone',
-  role: 'admin',
+  role: 'admin', can_change_base_language: true,
 }
 
 const editorMember = {
@@ -74,6 +74,26 @@ describe('project translation context settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(projectsApi.update).toHaveBeenLastCalledWith('demo', expect.objectContaining({ translation_context: null })))
     await waitFor(() => expect(input.value).toBe(''))
+  })
+
+  it.each([
+    { stringCount: 0, canChange: true, label: 'empty' },
+    { stringCount: 1, canChange: false, label: 'populated' },
+    { stringCount: 0, canChange: false, label: 'deleted strings only' },
+  ])('uses the base-language capability for a $label project', async ({ stringCount, canChange }) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({
+      ...project, string_count: stringCount, can_change_base_language: canChange,
+    })
+    renderSettings()
+    const base = await screen.findByRole('combobox', { name: 'Base language' }) as HTMLButtonElement
+    expect(base.disabled).toBe(!canChange)
+    expect(screen.getByText(/Base language can only be changed before any strings are added/)).toBeTruthy()
+    const name = screen.getByLabelText('Project name')
+    fireEvent.change(name, { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(projectsApi.update).toHaveBeenCalledWith('demo', expect.objectContaining({
+      name: 'Renamed', base_language: 'vi',
+    })))
   })
 
   it('saves duplicate key policy through the existing form', async () => {

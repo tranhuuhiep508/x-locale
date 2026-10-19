@@ -41,6 +41,7 @@ vi.mock('@/lib/toast', () => ({
 }))
 
 const project: Project = {
+  can_change_base_language: false,
   id: '550e8400-e29b-41d4-a716-446655440000',
   slug: 'demo-app',
   name: 'Demo App',

@@ -60,6 +60,7 @@ const PUBLISHED_KEY_CONFLICT =
   "Key 'save' is already in the public export. Rename it, or publish the other string's removal, before publishing."
 
 const project: Project = {
+  can_change_base_language: false,
   id: 'proj-1',
   name: 'Demo',
   slug: 'demo',
