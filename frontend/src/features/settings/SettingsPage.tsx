@@ -213,7 +213,7 @@ export function SettingsPage() {
                   <FieldLabel htmlFor="base_language">Base language</FieldLabel>
                   <Select
                     value={form.base_language}
-                    disabled={!isAdmin || (project?.string_count ?? 0) > 0}
+                    disabled={!isAdmin || !project?.can_change_base_language}
                     onValueChange={(v) =>
                       setSaveForm((f) => ({
                         ...(f ?? form),

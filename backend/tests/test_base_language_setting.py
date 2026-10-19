@@ -53,6 +53,7 @@ def test_empty_project_can_change_base_language(client):
     })
     assert response.status_code == 200, response.text
     assert response.json()["base_language"] == "en"
+    assert response.json()["can_change_base_language"] is True
     assert response.json()["target_languages"] == ["vi"]
 
 
@@ -67,6 +68,7 @@ def test_populated_project_can_update_targets_and_other_settings(client, base):
     response = client.patch(root, json=payload)
     assert response.status_code == 200, response.text
     assert response.json()["base_language"] == "vi"
+    assert response.json()["can_change_base_language"] is False
     assert response.json()["target_languages"] == ["en", "ja"]
     assert response.json()["name"] == "Renamed"
 
@@ -74,10 +76,18 @@ def test_populated_project_can_update_targets_and_other_settings(client, base):
 def test_deleted_strings_still_block_base_change(client):
     project = make_project(client)
     root = f"/api/projects/{project['id']}"
+    assert client.get(root).json()["can_change_base_language"] is True
     created = client.post(f"{root}/strings", json={"key": "save", "source_text": "Lưu"})
     assert created.status_code == 201
+    assert client.get(root).json()["can_change_base_language"] is False
     assert client.delete(f"{root}/strings/{created.json()['id']}").status_code == 204
-    assert client.get(root).json()["string_count"] == 0
+    detail = client.get(root).json()
+    assert detail["string_count"] == 0
+    assert detail["can_change_base_language"] is False
+    saved = client.patch(root, json={"base_language": "vi", "name": "Renamed"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["name"] == "Renamed"
+    assert saved.json()["can_change_base_language"] is False
     assert client.patch(root, json={"base_language": "en"}).status_code == 409
 
 

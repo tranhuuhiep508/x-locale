@@ -34,6 +34,7 @@ vi.mock('@/lib/api/jobs', async (importOriginal) => ({
 }))
 
 const project: Project = {
+  can_change_base_language: false,
   id: 'proj-1',
   name: 'Demo App',
   slug: 'demo-app',

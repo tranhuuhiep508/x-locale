@@ -54,6 +54,7 @@ export interface ProjectMember {
 }
 
 export interface Project extends ProjectSummary {
+  can_change_base_language: boolean
   translation_context: string | null
 }
 

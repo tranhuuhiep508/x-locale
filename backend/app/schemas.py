@@ -85,6 +85,7 @@ class ProjectSummaryOut(BaseModel):
 
 
 class ProjectOut(ProjectSummaryOut):
+    can_change_base_language: bool
     translation_context: str | None = Field(default=None, max_length=500)
 
 

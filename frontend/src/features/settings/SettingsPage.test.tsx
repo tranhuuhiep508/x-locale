@@ -34,7 +34,7 @@ const project: Project = {
   id: 'p1', slug: 'demo', name: 'Demo', base_language: 'vi',
   target_languages: ['en'], layout: 'modular', allow_duplicate_keys: false, string_count: 0,
   created_at: null, updated_at: null, translation_context: 'Friendly tone',
-  role: 'admin',
+  role: 'admin', can_change_base_language: true,
 }
 
 const editorMember = {
@@ -76,11 +76,17 @@ describe('project translation context settings', () => {
     await waitFor(() => expect(input.value).toBe(''))
   })
 
-  it.each([0, 1])('locks the base selector when the project has %i strings', async (stringCount) => {
-    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, string_count: stringCount })
+  it.each([
+    { stringCount: 0, canChange: true, label: 'empty' },
+    { stringCount: 1, canChange: false, label: 'populated' },
+    { stringCount: 0, canChange: false, label: 'deleted strings only' },
+  ])('uses the base-language capability for a $label project', async ({ stringCount, canChange }) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({
+      ...project, string_count: stringCount, can_change_base_language: canChange,
+    })
     renderSettings()
     const base = await screen.findByRole('combobox', { name: 'Base language' }) as HTMLButtonElement
-    expect(base.disabled).toBe(stringCount > 0)
+    expect(base.disabled).toBe(!canChange)
     expect(screen.getByText(/Base language can only be changed before any strings are added/)).toBeTruthy()
     const name = screen.getByLabelText('Project name')
     fireEvent.change(name, { target: { value: 'Renamed' } })
