@@ -18,14 +18,11 @@ start_postgres_cluster
 ensure_xlocale_role_and_databases
 
 echo "Applying migrations and seeding the Demo App..."
-(
-  cd "${REPO_ROOT}/backend"
-  uv run alembic upgrade head
-  uv run python -m app.cli seed-demo
-)
+"${REPO_ROOT}/.cursor/with-project-env.sh" bash -c "cd '${REPO_ROOT}/backend' && uv run alembic upgrade head && uv run python -m app.cli seed-demo"
 
 port_listening() {
-  ss -ltn "sport = :$1" | grep -q ":$1"
+  # iproute2 (ss) is not in the default image. Bash /dev/tcp needs no extra packages.
+  (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1
 }
 
 ensure_tmux() {
@@ -63,7 +60,7 @@ wait_http() {
 }
 
 ensure_tmux backend "${REPO_ROOT}/backend" 8000 \
-  "bash -lc 'uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/xlocale-backend.log 2>&1'"
+  "bash -lc '${REPO_ROOT}/.cursor/with-project-env.sh uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/xlocale-backend.log 2>&1'"
 wait_http "http://127.0.0.1:8000/healthcheck/readiness" /tmp/xlocale-backend.log
 
 ensure_tmux frontend "${REPO_ROOT}/frontend" 5173 \
