@@ -193,10 +193,14 @@ export interface StringUpdate {
   status?: TranslationStatus
   translations?: Record<string, string>
   translation_scores?: Record<string, number>
+  expected?: Omit<StringUpdate, 'expected' | 'translation_scores'> & {
+    translation_scores?: Record<string, number | null>
+  }
 }
 
 export interface TranslationUpdate {
   value: string
+  expected?: string
 }
 
 export interface StringListResponse {
