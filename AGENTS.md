@@ -6,8 +6,9 @@ and `docs/` for the data model and draft/public workflow.
 
 ## Cursor Cloud specific instructions
 
-`.cursor/install.sh` installs uv (symlinked onto `/usr/local/bin`), backend and CLI
-dependencies (`uv sync`), frontend dependencies (`npm ci`), and native PostgreSQL 16.
+`.cursor/install.sh` installs uv (symlinked onto `/usr/local/bin`), backend dependencies
+(`uv sync --all-extras`), CLI dependencies including the dev extra (`uv sync --extra dev`),
+frontend dependencies (`npm ci`), and native PostgreSQL 16.
 `.cursor/start.sh` runs on every boot: it starts that cluster, migrates, seeds the
 Demo App, and launches the backend and frontend in tmux. Docker is not installed;
 do not use `docker compose` for Postgres. Do not re-run installs unless a tool or

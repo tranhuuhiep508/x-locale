@@ -41,7 +41,7 @@ ensure_xlocale_role_and_databases
 
 echo "Installing backend + CLI Python dependencies..."
 uv sync --all-extras --project backend
-uv sync --project cli
+uv sync --extra dev --project cli
 
 echo "Installing frontend dependencies..."
 npm ci --prefix frontend
