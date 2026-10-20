@@ -136,16 +136,6 @@ def load_export_rows(db: Session, project_id, locales: list[str]) -> list[_Expor
     return rows
 
 
-def load_sync_state_entries(db: Session, project_id) -> list[StringEntry]:
-    """Pending-remove / tombstone labels only — skip translations and tags."""
-    return (
-        db.query(StringEntry)
-        .options(joinedload(StringEntry.module))
-        .filter(StringEntry.project_id == project_id)
-        .all()
-    )
-
-
 def translation_value(
     entry: StringEntry,
     locale: str,
