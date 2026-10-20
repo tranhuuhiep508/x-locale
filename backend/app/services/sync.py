@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.helpers import content_hash, export_key, reject_nul, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -63,64 +63,56 @@ class _ExportRow:
 
 
 def load_export_rows(db: Session, project_id, locales: list[str]) -> list[_ExportRow]:
-    """Load export columns with Core selects instead of hydrating ORM graphs.
+    """Load export content in one statement so concurrent publishes cannot mix snapshots.
 
     ``locales`` are the target locales whose translation rows are needed.
     Pass an empty list to skip translations (sync-state, base-locale export).
     """
-    module_rows = db.execute(
-        select(Module.id, Module.slug).where(Module.project_id == project_id)
-    ).all()
-    modules = {row.id: _ExportSlug(slug=row.slug) for row in module_rows}
-
-    string_rows = db.execute(
+    module = aliased(Module)
+    published_module = aliased(Module)
+    statement = (
         select(
             StringEntry.id,
             StringEntry.key,
             StringEntry.source_text,
             StringEntry.status,
-            StringEntry.module_id,
             StringEntry.published_key,
-            StringEntry.published_module_id,
             StringEntry.published_source_text,
             StringEntry.pending_delete,
             StringEntry.deleted_at,
+            module.slug.label("module_slug"),
+            published_module.slug.label("published_module_slug"),
+        )
+        .select_from(StringEntry)
+        .outerjoin(
+            module,
+            (module.id == StringEntry.module_id) & (module.project_id == project_id),
+        )
+        .outerjoin(
+            published_module,
+            (published_module.id == StringEntry.published_module_id)
+            & (published_module.project_id == project_id),
         )
         .where(StringEntry.project_id == project_id)
         .order_by(StringEntry.key)
-    ).all()
-
-    translations: dict[Any, list[_ExportTranslation]] = {}
+    )
     if locales:
-        translation_rows = db.execute(
-            select(
-                Translation.string_id,
-                Translation.locale,
-                Translation.value,
-                Translation.published_value,
-            )
-            .join(StringEntry, StringEntry.id == Translation.string_id)
-            .where(
-                StringEntry.project_id == project_id,
-                Translation.locale.in_(locales),
-            )
-        ).all()
-        for row in translation_rows:
-            translations.setdefault(row.string_id, []).append(
-                _ExportTranslation(
-                    locale=row.locale,
-                    value=row.value or "",
-                    published_value=row.published_value,
-                )
-            )
+        statement = statement.add_columns(
+            Translation.locale,
+            Translation.value,
+            Translation.published_value,
+        ).outerjoin(
+            Translation,
+            (Translation.string_id == StringEntry.id) & Translation.locale.in_(locales),
+        )
 
-    rows: list[_ExportRow] = []
-    for row in string_rows:
-        status = row.status
-        if not isinstance(status, TranslationStatus):
-            status = TranslationStatus(status)
-        rows.append(
-            _ExportRow(
+    rows: dict[Any, _ExportRow] = {}
+    for row in db.execute(statement):
+        if row.id not in rows:
+            status = row.status
+            if not isinstance(status, TranslationStatus):
+                status = TranslationStatus(status)
+            rows[row.id] = _ExportRow(
                 key=row.key,
                 source_text=row.source_text,
                 status=status,
@@ -128,12 +120,23 @@ def load_export_rows(db: Session, project_id, locales: list[str]) -> list[_Expor
                 published_source_text=row.published_source_text,
                 pending_delete=bool(row.pending_delete),
                 deleted_at=row.deleted_at,
-                module=modules.get(row.module_id),
-                published_module=modules.get(row.published_module_id),
-                translations=translations.get(row.id, []),
+                module=_ExportSlug(row.module_slug) if row.module_slug is not None else None,
+                published_module=(
+                    _ExportSlug(row.published_module_slug)
+                    if row.published_module_slug is not None
+                    else None
+                ),
+                translations=[],
             )
-        )
-    return rows
+        if locales and row.locale is not None:
+            rows[row.id].translations.append(
+                _ExportTranslation(
+                    locale=row.locale,
+                    value=row.value or "",
+                    published_value=row.published_value,
+                )
+            )
+    return list(rows.values())
 
 
 def translation_value(
