@@ -296,7 +296,6 @@ def import_workbook(
                 values = {
                     locale: _desanitize_cell_value(row[index]) for locale, index in locales.items()
                 }
-                values[project.base_language] = values.get(project.base_language) or key
                 label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
                 rows.append(
                     ImportRow(
