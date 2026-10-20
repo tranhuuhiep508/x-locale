@@ -79,6 +79,17 @@ def test_defaults_create_read_and_disable_without_duplicates(client, session_fac
     assert response.status_code == 201 and response.json()["allow_duplicate_keys"] is True
 
 
+@pytest.mark.parametrize("allow_duplicates", [False, True])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_sync_state_reports_current_key_policy(client, allow_duplicates, layout):
+    project = make_project(client)
+    root = f"/api/projects/{project['id']}"
+    assert client.patch(root, json={"allow_duplicate_keys": allow_duplicates}).status_code == 200
+    response = client.get(f"{root}/sync-state", params={"layout": layout})
+    assert response.status_code == 200, response.text
+    assert response.json()["allow_duplicate_keys"] is allow_duplicates
+
+
 def test_only_admin_can_change_policy(client):
     project = make_project(client)
     root = f"/api/projects/{project['id']}"

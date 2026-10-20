@@ -28,6 +28,8 @@ def validate_sync_state(data: Any, config: Config, *, stage: Stage | None = None
     ):
         if data.get(field) != expected:
             raise _invalid(f"sync-state.{field}", repr(expected))
+    if not isinstance(data.get("allow_duplicate_keys", False), bool):
+        raise _invalid("sync-state.allow_duplicate_keys", "a boolean")
     base = data.get("base_language")
     if not isinstance(base, str) or not _LOCALE.fullmatch(base):
         raise _invalid("sync-state.base_language", "a locale code")
@@ -65,12 +67,16 @@ def require_matching_base(config: Config, state: dict[str, Any]) -> None:
 
 
 def reject_deleted_local_keys(config: Config, local_keys: set[str], state: dict[str, Any]) -> None:
-    def stored_key(identity: str) -> str:
-        return identity.split("/", 1)[1] if config.layout is Layout.modular else identity
+    scoped = config.layout is Layout.modular and state.get("allow_duplicate_keys", False)
 
-    wanted = {stored_key(identity) for identity in local_keys}
+    def comparison_key(identity: str) -> str:
+        if config.layout is Layout.modular and not scoped:
+            return identity.split("/", 1)[1]
+        return identity
+
+    wanted = {comparison_key(identity) for identity in local_keys}
     blocked = {
-        field: sorted(identity for identity in state[field] if stored_key(identity) in wanted)
+        field: sorted(identity for identity in state[field] if comparison_key(identity) in wanted)
         for field in ("pending_remove", "tombstones")
     }
     if any(blocked.values()):
