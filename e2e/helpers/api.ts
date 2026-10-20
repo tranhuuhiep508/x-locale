@@ -85,13 +85,23 @@ export async function translateApplyBatchViaApi(
     { data: { scope: 'strings', string_ids: [stringId], locales } },
   )
   expect(proposalsResponse.ok()).toBeTruthy()
-  const proposals = (await proposalsResponse.json()) as { items: unknown[] }
+  const proposals = (await proposalsResponse.json()) as {
+    items: Array<{
+      string_id: string
+      translations: Record<string, string>
+      scores?: Record<string, number>
+    }>
+  }
   expect(proposals.items.length).toBeGreaterThan(0)
 
   const applyResponse = await page.request.post(`/api/projects/${projectId}/translate/apply`, {
-    data: { items: proposals.items },
+    data: {
+      items: proposals.items.map(({ string_id, translations, scores }) => ({
+        string_id, translations, scores,
+      })),
+    },
   })
-  expect(applyResponse.ok()).toBeTruthy()
+  expect(applyResponse.ok(), await applyResponse.text()).toBeTruthy()
   return applyResponse.json() as Promise<{ batch_id: string; translated_count: number }>
 }
 

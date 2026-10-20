@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.ai import (
@@ -406,6 +407,11 @@ def commit_proposals(
 
     allowed = set(project.target_languages)
     ids = [item.string_id for item in items]
+    # Lock parents separately: the eager translation join has a nullable side.
+    db.query(StringEntry.id).filter(
+        StringEntry.project_id == project.id,
+        StringEntry.id.in_(ids),
+    ).order_by(StringEntry.id).with_for_update().all()
     entries = (
         db.query(StringEntry)
         .options(joinedload(StringEntry.translations))
@@ -414,9 +420,33 @@ def commit_proposals(
             StringEntry.id.in_(ids),
             StringEntry.deleted_at.is_(None),
         )
+        .populate_existing()
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
+    conflicts = []
+    for item in items:
+        entry = by_id.get(item.string_id)
+        if entry is None or "description" not in item.model_fields_set:
+            continue
+        desired = (item.description or "").strip() or None
+        if entry.description not in (item.expected_description, desired):
+            conflicts.append(
+                {
+                    "string_id": str(entry.id),
+                    "key": entry.key,
+                    "description": entry.description,
+                }
+            )
+    if conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_description",
+                "message": "Descriptions changed. Resolve each conflict, then apply again.",
+                "conflicts": conflicts,
+            },
+        )
     translated = 0
     locales_written: list[str] = []
     seen_locales: set[str] = set()
@@ -424,8 +454,8 @@ def commit_proposals(
         entry = by_id.get(item.string_id)
         if entry is None:
             continue
-        if item.description is not None:
-            entry.description = item.description.strip() or None
+        if "description" in item.model_fields_set:
+            entry.description = (item.description or "").strip() or None
         for locale, value in item.translations.items():
             if locale not in allowed:
                 continue

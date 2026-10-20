@@ -1,5 +1,6 @@
 import type { TranslateProposalItem, TranslateRequest } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
+import { ApiError } from '@/lib/api/client'
 import { searchToBatchFilter } from '@/features/strings/publish-preview'
 
 export const TRANSLATE_MISSING_PAGE_SIZE = 50
@@ -166,14 +167,31 @@ export function reviewStatusDescription({
   return 'Empty locales only. Existing text was not changed.'
 }
 
-export function applyPayloadFromDrafts(items: TranslateProposalItem[]) {
+export type DescriptionConflict = { string_id: string; key: string; description: string | null }
+
+export function descriptionConflicts(error: unknown): DescriptionConflict[] {
+  if (!(error instanceof ApiError) || error.status !== 409) return []
+  const detail = (error.body as { detail?: { code?: string; conflicts?: unknown } } | null)?.detail
+  if (detail?.code !== 'stale_translation_description' || !Array.isArray(detail.conflicts)) return []
+  return detail.conflicts.filter((item): item is DescriptionConflict =>
+    item != null && typeof item.string_id === 'string' && typeof item.key === 'string'
+    && (item.description === null || typeof item.description === 'string'),
+  )
+}
+
+export function applyPayloadFromDrafts(
+  items: TranslateProposalItem[],
+  originals: Record<string, string | null>,
+) {
   return items.map((item) => ({
     string_id: item.string_id,
     translations: Object.fromEntries(
       Object.entries(item.translations).filter(([, value]) => value.trim()),
     ),
     scores: item.scores,
-    description: item.description ?? '',
+    ...((item.description?.trim() || null) !== (originals[item.string_id]?.trim() || null)
+      ? { description: item.description?.trim() || null, expected_description: originals[item.string_id] }
+      : {}),
   }))
 }
 

@@ -625,7 +625,9 @@ def test_translate_apply_persists_and_is_revertible(client, monkeypatch):
 
     r = client.post(
         f"/api/projects/{pid}/translate/apply",
-        json={"items": proposed},
+        json={
+            "items": [{k: v for k, v in item.items() if k != "description"} for item in proposed]
+        },
     )
     assert r.status_code == 200, r.text
     assert r.json()["translated_count"] == 2
@@ -696,6 +698,7 @@ def test_translate_apply_saves_description(client):
                 {
                     "string_id": string["id"],
                     "description": "Greeting on the home screen",
+                    "expected_description": None,
                     "translations": {"en": "Hello"},
                 }
             ]
@@ -792,7 +795,9 @@ def test_translate_preview_and_apply_include_scores(client, monkeypatch):
 
     applied = client.post(
         f"/api/projects/{pid}/translate/apply",
-        json={"items": proposed},
+        json={
+            "items": [{k: v for k, v in item.items() if k != "description"} for item in proposed]
+        },
     )
     assert applied.status_code == 200, applied.text
     stored = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
@@ -919,3 +924,228 @@ def test_load_entries_by_ids_preserves_request_order(client):
     finally:
         db.close()
 
+
+def test_translate_apply_untouched_description_preserves_concurrent_edit(client):
+    project = _make_project(client, "Apply untouched", targets=["en"])
+    root = f"/api/projects/{project['id']}"
+    string = client.post(
+        f"{root}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "description": "Original",
+        },
+    ).json()
+    review = client.post(f"{root}/translate/missing", json={"scope": "missing"}).json()
+    assert review["items"][0]["description"] == "Original"
+    edited = client.patch(f"{root}/strings/{string['id']}", json={"description": "New context"})
+    assert edited.status_code == 200, edited.text
+    applied = client.post(
+        f"{root}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "translations": {"en": "Hello"},
+                }
+            ]
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    stored = client.get(f"{root}/strings/{string['id']}").json()
+    assert stored["description"] == "New context"
+    assert next(t for t in stored["translations"] if t["locale"] == "en")["value"] == "Hello"
+
+
+@pytest.mark.parametrize("desired", ["Edited", "", None])
+def test_translate_apply_stale_description_rolls_back_entire_batch(client, desired):
+    project = _make_project(client, "Apply conflict", targets=["en"])
+    root = f"/api/projects/{project['id']}"
+    strings = [
+        client.post(
+            f"{root}/strings",
+            json={
+                "key": f"hi{i}",
+                "source_text": "Xin chào",
+                "description": "Original",
+            },
+        ).json()
+        for i in range(2)
+    ]
+    changed = client.patch(
+        f"{root}/strings/{strings[1]['id']}", json={"description": "New context"}
+    )
+    assert changed.status_code == 200, changed.text
+    before = client.get(f"{root}/activities").json()["total"]
+    applied = client.post(
+        f"{root}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "translations": {"en": "Hello"},
+                    "description": desired,
+                    "expected_description": "Original",
+                }
+                for string in strings
+            ]
+        },
+    )
+    assert applied.status_code == 409, applied.text
+    assert applied.json()["detail"]["code"] == "stale_translation_description"
+    assert applied.json()["detail"]["conflicts"] == [
+        {
+            "string_id": strings[1]["id"],
+            "key": "hi1",
+            "description": "New context",
+        }
+    ]
+    assert client.get(f"{root}/activities").json()["total"] == before
+    for string, description in zip(strings, ["Original", "New context"], strict=True):
+        saved = client.get(f"{root}/strings/{string['id']}").json()
+        assert saved["description"] == description
+        assert all(t["value"] == "" for t in saved["translations"])
+
+
+@pytest.mark.parametrize(
+    "original,desired,expected,saved",
+    [
+        (None, " New context ", None, "New context"),
+        ("Original", "", "Original", None),
+        ("Original", None, "Original", None),
+        ("New context", "New context", "Original", "New context"),
+    ],
+)
+def test_translate_apply_description_edits_and_clears(client, original, desired, expected, saved):
+    project = _make_project(client, "Apply edit", targets=["en"])
+    root = f"/api/projects/{project['id']}"
+    string = client.post(
+        f"{root}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "description": original,
+        },
+    ).json()
+    result = client.post(
+        f"{root}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "translations": {"en": "Hello"},
+                    "description": desired,
+                    "expected_description": expected,
+                }
+            ]
+        },
+    )
+    assert result.status_code == 200, result.text
+    assert client.get(f"{root}/strings/{string['id']}").json()["description"] == saved
+
+
+@pytest.mark.parametrize("description", ["Edited", "", None])
+def test_translate_apply_requires_original_for_description_write(client, description):
+    project = _make_project(client, "Apply baseline", targets=["en"])
+    root = f"/api/projects/{project['id']}"
+    string = client.post(f"{root}/strings", json={"key": "hi", "source_text": "Xin chào"}).json()
+    result = client.post(
+        f"{root}/translate/apply",
+        json={
+            "items": [
+                {
+                    "string_id": string["id"],
+                    "description": description,
+                    "translations": {"en": "Hello"},
+                }
+            ]
+        },
+    )
+    assert result.status_code == 422, result.text
+    saved = client.get(f"{root}/strings/{string['id']}").json()
+    assert saved["description"] is None
+    assert all(t["value"] == "" for t in saved["translations"])
+
+
+def test_competing_apply_descriptions_refresh_after_row_lock(client, session_factory):
+    from fastapi import HTTPException
+    from sqlalchemy import event
+
+    from app.models import Project, StringEntry
+    from app.schemas import TranslateApplyItem
+    from app.services.translate import commit_proposals
+
+    project = _make_project(client, "Competing descriptions", targets=["en"])
+    pid = uuid.UUID(project["id"])
+    string = client.post(
+        f"/api/projects/{pid}/strings",
+        json={
+            "key": "hi",
+            "source_text": "Xin chào",
+            "description": "Original",
+        },
+    ).json()
+    sid = uuid.UUID(string["id"])
+    loaded, start_competing, reading = Event(), Event(), Event()
+
+    def competing_apply():
+        with session_factory() as db:
+            project_row = db.get(Project, pid)
+            # Hold a stale ORM instance as well as a stale client baseline.
+            stale = db.get(StringEntry, sid)
+            assert stale.description == "Original"
+            loaded.set()
+            assert start_competing.wait(10)
+
+            def before_read(conn, cursor, statement, parameters, context, executemany):
+                if statement.lstrip().startswith("SELECT") and "strings" in statement:
+                    reading.set()
+
+            event.listen(db.connection(), "before_cursor_execute", before_read)
+            try:
+                commit_proposals(
+                    db,
+                    project_row,
+                    [
+                        TranslateApplyItem(
+                            string_id=sid,
+                            description="Second",
+                            expected_description="Original",
+                            translations={"en": "Second translation"},
+                        )
+                    ],
+                )
+                db.commit()
+                return 200
+            except HTTPException as error:
+                db.rollback()
+                return error.status_code
+
+    with session_factory() as first, ThreadPoolExecutor(max_workers=1) as pool:
+        first_project = first.get(Project, pid)
+        commit_proposals(
+            first,
+            first_project,
+            [
+                TranslateApplyItem(
+                    string_id=sid,
+                    description="First",
+                    expected_description="Original",
+                    translations={},
+                )
+            ],
+        )
+        future = pool.submit(competing_apply)
+        try:
+            assert loaded.wait(10)
+            start_competing.set()
+            assert reading.wait(10)
+            # The competing apply must wait until the first transaction commits.
+            with pytest.raises(TimeoutError):
+                future.result(timeout=0.2)
+        finally:
+            first.commit()
+        assert future.result(timeout=10) == 409
+    stored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert stored["description"] == "First"
+    assert all(t["value"] == "" for t in stored["translations"])

@@ -116,6 +116,38 @@ describe('updateDraftDescription', () => {
 })
 
 describe('applyPayloadFromDrafts', () => {
+  it('omits untouched, whitespace-only, and reverted description edits', () => {
+    for (const description of ['Original', ' Original ']) {
+      const payload = applyPayloadFromDrafts([item({ string_id: 'a', description })], { a: 'Original' })
+      expect(payload[0]).not.toHaveProperty('description')
+      expect(payload[0]).not.toHaveProperty('expected_description')
+    }
+    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: '  ' })], { a: null })[0])
+      .not.toHaveProperty('description')
+    let drafts = draftsFromItems([item({ string_id: 'a', description: 'Original' })])
+    drafts = updateDraftDescription(drafts, 'a', 'Edited')
+    drafts = updateDraftDescription(drafts, 'a', 'Original')
+    expect(applyPayloadFromDrafts(Object.values(drafts), { a: 'Original' })[0])
+      .not.toHaveProperty('description')
+  })
+
+  it('normalizes edits but sends the exact saved baseline, including null', () => {
+    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: ' ' })], { a: ' Original ' })[0])
+      .toMatchObject({ description: null, expected_description: ' Original ' })
+    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: ' New ' })], { a: null })[0])
+      .toMatchObject({ description: 'New', expected_description: null })
+  })
+
+  it('keeps the page baseline through repeated sync and job proposal merges', () => {
+    const originals = { a: 'Original' }
+    let items = [item({ string_id: 'a', description: 'Original' })]
+    for (const description of ['First context', 'Second context']) {
+      items = mergeProposalResults(items, [item({ string_id: 'a', description, translations: { en: 'Hello' } })])
+      expect(applyPayloadFromDrafts(items, originals)[0])
+        .toMatchObject({ description, expected_description: 'Original' })
+    }
+  })
+
   it('drops empty locales and keeps descriptions', () => {
     const payload = applyPayloadFromDrafts([
       item({
@@ -124,13 +156,14 @@ describe('applyPayloadFromDrafts', () => {
         translations: { en: 'Hello', ja: '  ' },
         scores: { en: 91 },
       }),
-    ])
+    ], { a: null })
     expect(payload).toEqual([
       {
         string_id: 'a',
         translations: { en: 'Hello' },
         scores: { en: 91 },
         description: 'ctx',
+        expected_description: null,
       },
     ])
   })
