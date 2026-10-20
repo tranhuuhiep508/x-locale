@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+
+import pytest
 
 from tests.helpers import _make_project
 
@@ -106,6 +110,219 @@ def test_translate_skips_filled_locale_unless_overwrite(client, monkeypatch):
     by_locale = {t["locale"]: t["value"] for t in refreshed["translations"]}
     assert by_locale["en"] == "Hello"
     assert by_locale["ja"] == "こんにちは"
+
+
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize("overwrite", [False, True])
+@pytest.mark.parametrize("existing_row", [False, True])
+def test_direct_translate_rechecks_human_edit_after_generation(
+    client, session_factory, monkeypatch, background, overwrite, existing_row
+):
+    from app.ai import TranslatedCell
+    from app.models import Activity, Project, Translation
+    from app.schemas import StringUpdate
+    from app.services.strings import update_string
+
+    project = _make_project(client, "Translation race", targets=["en", "ja"])
+    pid = uuid.UUID(project["id"])
+    root = f"/api/projects/{pid}"
+    created = client.post(
+        f"{root}/strings", json={"key": "hello", "source_text": "Xin chào"}
+    ).json()
+    sid = uuid.UUID(created["id"])
+    if not existing_row:
+        with session_factory() as db:
+            db.query(Translation).filter(
+                Translation.string_id == sid, Translation.locale == "en"
+            ).delete()
+            db.commit()
+
+    generating, release_ai = Event(), Event()
+
+    def fake_batch(source_locale, items, on_progress=None):
+        generating.set()
+        assert release_ai.wait(10), "AI generation was not released"
+        return {
+            items[0].id: {
+                "en": TranslatedCell(text="AI English", confidence=95),
+                "ja": TranslatedCell(text="AI Japanese", confidence=90),
+            }
+        }
+
+    def human_edit():
+        with session_factory() as db:
+            update_string(
+                db,
+                db.get(Project, pid),
+                sid,
+                StringUpdate(
+                    translations={"en": "Human edit"}, translation_scores={"en": 73}
+                ),
+            )
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+    monkeypatch.setattr("app.services.translate.SessionLocal", session_factory)
+    if background:
+        monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        translating = pool.submit(
+            client.post,
+            f"{root}/translate",
+            json={"locales": ["en", "ja"], "overwrite": overwrite},
+        )
+        try:
+            assert generating.wait(10), "AI generation did not start"
+            # This must commit before AI returns: generation must hold no row locks.
+            pool.submit(human_edit).result(timeout=5)
+        finally:
+            release_ai.set()
+        response = translating.result(timeout=10)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    if background:
+        job = client.get(f"/api/jobs/{result['job_id']}").json()
+        assert job["status"] == "completed"
+        result = job["result"]
+    assert result["translated_count"] == (2 if overwrite else 1)
+
+    entry = client.get(f"{root}/strings/{sid}").json()
+    translations = {t["locale"]: t for t in entry["translations"]}
+    assert translations["en"]["value"] == ("AI English" if overwrite else "Human edit")
+    assert translations["en"]["confidence"] == (95 if overwrite else 73)
+    assert translations["ja"]["value"] == "AI Japanese"
+    assert translations["ja"]["confidence"] == 90
+    with session_factory() as db:
+        audits = db.query(Activity).filter(
+            Activity.project_id == pid, Activity.batch_kind == "translate"
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].before["translations"]["en"] == "Human edit"
+        assert audits[0].after["translations"]["en"] == (
+            "AI English" if overwrite else "Human edit"
+        )
+
+
+def test_overlapping_direct_translations_only_write_empty_cells_once(
+    client, session_factory, monkeypatch
+):
+    from app.activity import attach_batch
+    from app.models import Activity, Project
+    from app.schemas import TranslateRequest
+    from app.services.translate import apply_translations, select_entries
+
+    project = _make_project(client, "Overlapping AI")
+    pid = uuid.UUID(project["id"])
+    client.post(
+        f"/api/projects/{pid}/strings", json={"key": "hello", "source_text": "Xin chào"}
+    )
+    both_generating = Barrier(2)
+    written, release_commit = Event(), Event()
+
+    def fake_batch(source_locale, items, on_progress=None):
+        both_generating.wait(timeout=10)
+        return {items[0].id: {"en": "AI output"}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+
+    def translate():
+        with session_factory() as db:
+            project_row = db.get(Project, pid)
+            entries = select_entries(db, project_row, TranslateRequest(locales=["en"]))
+            attach_batch(db, uuid.uuid4(), "translate")
+            count = apply_translations(db, project_row, entries, ["en"], False)
+            if count:
+                written.set()
+                assert release_commit.wait(10), "translation commit was not released"
+            db.commit()
+            return count
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(translate) for _ in range(2)]
+        try:
+            assert written.wait(10), "neither translation reached the save step"
+        finally:
+            release_commit.set()
+        assert sorted(f.result(timeout=10) for f in futures) == [0, 1]
+    with session_factory() as db:
+        assert db.query(Activity).filter(
+            Activity.project_id == pid, Activity.batch_kind == "translate"
+        ).count() == 1
+
+
+@pytest.mark.parametrize("existing_row", [False, True])
+@pytest.mark.parametrize("output", ["AI output", " \t "])
+def test_direct_translate_handles_missing_and_whitespace_cells(
+    client, session_factory, monkeypatch, existing_row, output
+):
+    from app.models import Activity, Translation
+
+    project = _make_project(client, "Empty AI cells")
+    pid = uuid.UUID(project["id"])
+    root = f"/api/projects/{pid}"
+    created = client.post(
+        f"{root}/strings",
+        json={"key": "hello", "source_text": "Xin chào", "translations": {"en": "   "}},
+    ).json()
+    sid = uuid.UUID(created["id"])
+    if not existing_row:
+        with session_factory() as db:
+            db.query(Translation).filter(
+                Translation.string_id == sid, Translation.locale == "en"
+            ).delete()
+            db.commit()
+
+    monkeypatch.setattr(
+        "app.services.translate.translate_batch",
+        lambda source, items: {items[0].id: {"en": output}},
+    )
+    response = client.post(f"{root}/translate", json={"locales": ["en"]})
+    assert response.status_code == 200, response.text
+    assert response.json()["translated_count"] == bool(output.strip())
+    with session_factory() as db:
+        translation = db.query(Translation).filter(
+            Translation.string_id == sid, Translation.locale == "en"
+        ).first()
+        if output.strip():
+            assert translation.value == output
+        elif existing_row:
+            assert translation.value == "   "
+        else:
+            assert translation is None  # A blank result must not insert an empty row.
+        assert db.query(Activity).filter(
+            Activity.project_id == pid, Activity.batch_kind == "translate"
+        ).count() == bool(output.strip())
+
+
+def test_direct_translate_skips_string_deleted_during_generation(
+    client, session_factory, monkeypatch
+):
+    from app.models import Activity, Project, Translation
+    from app.services.strings import delete_string
+
+    project = _make_project(client, "Deleted during AI")
+    pid = uuid.UUID(project["id"])
+    root = f"/api/projects/{pid}"
+    created = client.post(
+        f"{root}/strings", json={"key": "hello", "source_text": "Xin chào"}
+    ).json()
+    sid = uuid.UUID(created["id"])
+
+    def fake_batch(source_locale, items):
+        with session_factory() as db:
+            delete_string(db, db.get(Project, pid), sid)
+        return {items[0].id: {"en": "AI output"}}
+
+    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+    response = client.post(f"{root}/translate", json={"locales": ["en"]})
+    assert response.status_code == 200, response.text
+    assert response.json()["translated_count"] == 0
+    with session_factory() as db:
+        assert db.query(Translation).filter(
+            Translation.string_id == sid, Translation.locale == "en"
+        ).one().value == ""
+        assert db.query(Activity).filter(
+            Activity.project_id == pid, Activity.batch_kind == "translate"
+        ).count() == 0
 
 
 def test_translate_proposals_do_not_persist(client, monkeypatch):

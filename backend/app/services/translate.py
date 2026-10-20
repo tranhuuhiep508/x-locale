@@ -23,7 +23,7 @@ from app.models import Job, JobStatus, Module, Project, StringEntry, Translation
 from app.schemas import TranslateApplyItem, TranslateRequest
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
-from app.services.strings import _missing_locales_clause, filtered_string_query
+from app.services.strings import _missing_locales_clause, filtered_string_query, load_string_entries
 
 SYNC_THRESHOLD = 20
 
@@ -236,7 +236,27 @@ def apply_translations(
         return 0
 
     results = translate_batch(project.base_language, items)
-    by_id = {str(entry.id): entry for entry in entries}
+    # Generation can outlive an editor save. Lock first, then replace cached values.
+    ids = [uuid.UUID(item.id) for item in items]
+    locked_ids = [
+        row[0]
+        for row in db.query(StringEntry.id)
+        .filter(
+            StringEntry.project_id == project.id,
+            StringEntry.id.in_(ids),
+            StringEntry.deleted_at.is_(None),
+        )
+        .order_by(StringEntry.id)
+        .with_for_update()
+        .all()
+    ]
+    if not locked_ids:
+        return 0
+    db.query(Translation.id).filter(Translation.string_id.in_(locked_ids)).order_by(
+        Translation.id
+    ).with_for_update().all()
+    refreshed = load_string_entries(db, project.id, locked_ids, refresh=True)
+    by_id = {str(entry.id): entry for entry in refreshed}
     translated = 0
     for item in items:
         entry = by_id.get(item.id)
@@ -244,11 +264,11 @@ def apply_translations(
             continue
         locale_map = _cell_map(results, item.id)
         for locale in item.locales:
-            translation = _ensure_translation(db, entry, locale)
-            if translation.value.strip() and not overwrite:
-                continue
             cell = locale_map.get(locale)
             if cell is None or not cell.text.strip():
+                continue
+            translation = _ensure_translation(db, entry, locale)
+            if translation.value.strip() and not overwrite:
                 continue
             translation.value = cell.text
             translation.confidence = cell.confidence
