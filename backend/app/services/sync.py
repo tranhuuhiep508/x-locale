@@ -356,6 +356,7 @@ def build_sync_state(
                 pending_remove.append(label)
                 seen_pending.add(label)
     return SyncStateOut(
+        allow_duplicate_keys=project.allow_duplicate_keys,
         stage=stage,
         layout=layout,
         base_language=project.base_language,

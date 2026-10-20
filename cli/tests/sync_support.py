@@ -12,6 +12,7 @@ def sync_state(
     config: Config, *, locales: list[str] | None = None, stage: str | None = None
 ) -> dict[str, Any]:
     return {
+        "allow_duplicate_keys": False,
         "layout": config.layout.value,
         "stage": stage or config.stage.value,
         "base_language": config.base_language,

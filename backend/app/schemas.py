@@ -506,6 +506,7 @@ class ImportResult(BaseModel):
 class SyncStateOut(BaseModel):
     """Pending-remove and tombstone identities for CLI status."""
 
+    allow_duplicate_keys: bool
     stage: str
     layout: str
     base_language: str

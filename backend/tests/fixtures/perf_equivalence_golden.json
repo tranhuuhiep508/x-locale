@@ -770,6 +770,7 @@
       }
     },
     "sync-state:flat:draft": {
+      "allow_duplicate_keys": false,
       "base_language": "vi",
       "exported": [],
       "layout": "flat",
@@ -787,6 +788,7 @@
       ]
     },
     "sync-state:flat:public": {
+      "allow_duplicate_keys": false,
       "base_language": "vi",
       "exported": [],
       "layout": "flat",
@@ -804,6 +806,7 @@
       ]
     },
     "sync-state:modular:draft": {
+      "allow_duplicate_keys": false,
       "base_language": "vi",
       "exported": [],
       "layout": "modular",
@@ -821,6 +824,7 @@
       ]
     },
     "sync-state:modular:public": {
+      "allow_duplicate_keys": false,
       "base_language": "vi",
       "exported": [],
       "layout": "modular",

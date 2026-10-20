@@ -8,6 +8,7 @@ import pytest
 
 from .support import (
     combined_output,
+    create_module,
     create_string,
     create_test_project,
     publish_strings,
@@ -145,3 +146,49 @@ def test_invalid_modular_source_is_not_overwritten_by_sync(
     assert bad.read_text() == text
     assert admin_client.get(f"/api/projects/{modular_project.id}/strings").json()["items"] == []
     assert admin_client.get(f"/api/projects/{modular_project.id}/modules").json() == []
+
+
+@pytest.mark.parametrize("deletion", ["pending", "tombstone"])
+def test_push_respects_module_scoped_deleted_keys(
+    workspace, api_base_url, admin_client, deletion
+):
+    project = create_test_project(admin_client, layout="modular")
+    root = f"/api/projects/{project.id}"
+    admin_client.patch(root, json={"allow_duplicate_keys": True}).raise_for_status()
+    auth_module = create_module(admin_client, project.id, "auth")
+    home_module = create_module(admin_client, project.id, "home")
+    auth = create_string(
+        admin_client, project.id, key="title", source_text="Auth", module_id=auth_module["id"]
+    )
+    home = create_string(
+        admin_client, project.id, key="title", source_text="Home", module_id=home_module["id"]
+    )
+    source = _workspace(workspace, api_base_url, project)
+    write_json(source, {"title": "Auth"})
+    first = run_locale(workspace, "push")
+    assert first.returncode == 0, combined_output(first)
+    if deletion == "pending":
+        publish_strings(admin_client, project.id, [home["id"]])
+    admin_client.delete(f"{root}/strings/{home['id']}").raise_for_status()
+    write_json(source, {"title": "Updated auth"})
+    result = run_locale(workspace, "push")
+    assert result.returncode == 0, combined_output(result)
+    saved = admin_client.get(f"{root}/strings/{auth['id']}")
+    saved.raise_for_status()
+    assert saved.json()["source_text"] == "Updated auth"
+    removed = admin_client.get(f"{root}/strings/{home['id']}")
+    removed.raise_for_status()
+    if deletion == "pending":
+        assert removed.json()["pending_delete"]
+    else:
+        assert removed.json()["deleted_at"] is not None
+
+    # The actual deleted identity must still block the whole push.
+    write_json(workspace / "locales/home/vi.json", {"title": "Must not restore"})
+    index = workspace / ".x-locale/push-index.json"
+    before = index.read_bytes()
+    rejected = run_locale(workspace, "push")
+    assert rejected.returncode == 1, combined_output(rejected)
+    assert "home/title" in combined_output(rejected)
+    assert index.read_bytes() == before
+    assert not (workspace / ".x-locale/push-index.pending").exists()

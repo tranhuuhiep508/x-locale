@@ -29,6 +29,7 @@ from x_locale_cli.push_index import (
     pending_file_path,
     scope_from_config,
 )
+from x_locale_cli.validation import reject_deleted_local_keys
 
 
 @pytest.fixture
@@ -183,6 +184,74 @@ def test_deleted_keys_reject_whole_push_even_after_cached_success(
         push_strings(config, client=api.client, **options)
     assert [request.method for request in api.calls] == ["GET"]
     assert api.calls[0].url.params["stage"] == "draft"
+    assert snapshot(workspace) == before
+
+
+@pytest.mark.parametrize("field", ["pending_remove", "tombstones"])
+@pytest.mark.parametrize("mode", ["normal", "cached", "full", "dry_run"])
+@pytest.mark.parametrize(
+    "local_module,removed_module",
+    [("auth", "home"), ("auth", "auth"), ("auth", "_unassigned")],
+)
+def test_duplicate_enabled_deletion_preflight(workspace, field, mode, local_module, removed_module):
+    config = config_for(workspace, "modular")
+    api = Api(config)
+    if mode != "normal":
+        push_strings(config, client=api.client)
+    if mode == "dry_run":
+        (config.output_path / local_module / "vi.json").write_text(json.dumps({"k": "Changed"}))
+    # Fetch the current project policy even when the push index is already populated.
+    api.state["allow_duplicate_keys"] = True
+    api.state[field] = [f"{removed_module}/k"]
+    api.calls.clear()
+    before = snapshot(workspace)
+    options = {mode: True} if mode in ("full", "dry_run") else {}
+    if local_module == removed_module:
+        with pytest.raises(XLocaleError, match="Restore them"):
+            push_strings(config, client=api.client, **options)
+        assert [request.method for request in api.calls] == ["GET"]
+        assert snapshot(workspace) == before
+    else:
+        push_strings(config, client=api.client, **options)
+        expected = ["GET", "POST"] if mode in ("normal", "full", "dry_run") else ["GET"]
+        assert [request.method for request in api.calls] == expected
+
+
+@pytest.mark.parametrize("field", ["pending_remove", "tombstones"])
+@pytest.mark.parametrize("removed_module", ["_unassigned", "auth"])
+def test_unassigned_deletion_identity(workspace, field, removed_module):
+    config = config_for(workspace, "modular")
+    state = sync_state(config)
+    state.update(allow_duplicate_keys=True)
+    state[field] = [f"{removed_module}/k"]
+    # Push excludes Unassigned files; exercise its identity directly at the shared check.
+    if removed_module == "_unassigned":
+        with pytest.raises(XLocaleError, match="Restore them"):
+            reject_deleted_local_keys(config, {"_unassigned/k"}, state)
+    else:
+        reject_deleted_local_keys(config, {"_unassigned/k"}, state)
+
+
+@pytest.mark.parametrize("field", ["pending_remove", "tombstones"])
+def test_older_server_keeps_project_wide_deletion_protection(workspace, field):
+    config = config_for(workspace, "modular")
+    api = Api(config)
+    del api.state["allow_duplicate_keys"]
+    api.state[field] = ["home/k"]
+    with pytest.raises(XLocaleError, match="Restore them"):
+        push_strings(config, client=api.client)
+    assert [request.method for request in api.calls] == ["GET"]
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", "true", [], {}])
+def test_invalid_key_policy_stops_push_before_import(workspace, value):
+    config = config_for(workspace, "modular")
+    api = Api(config)
+    api.state["allow_duplicate_keys"] = value
+    before = snapshot(workspace)
+    with pytest.raises(XLocaleError, match="sync-state.allow_duplicate_keys: expected a boolean"):
+        push_strings(config, client=api.client)
+    assert [request.method for request in api.calls] == ["GET"]
     assert snapshot(workspace) == before
 
 
