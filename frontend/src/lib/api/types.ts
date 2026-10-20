@@ -321,6 +321,7 @@ export interface TranslateApplyRequest {
     translations: Record<string, string>
     scores?: Record<string, number>
     description?: string | null
+    expected_description?: string | null
   }>
 }
 

@@ -60,6 +60,7 @@ import {
 import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
+  descriptionConflicts,
   applySuccessMessage,
   createMissingReviewRequest,
   descriptionsFromDrafts,
@@ -127,6 +128,8 @@ export function StringsPage() {
   const [reviewTotal, setReviewTotal] = useState(0)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
+  const descriptionOriginals = useRef<Record<string, string | null>>({})
+  const [applyConflicts, setApplyConflicts] = useState<ReturnType<typeof descriptionConflicts>>([])
   const [proposalsReady, setProposalsReady] = useState(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
@@ -274,6 +277,8 @@ export function StringsPage() {
   const missingMut = useMutation({
     mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
     onSuccess: (res) => {
+      descriptionOriginals.current = Object.fromEntries(res.items.map((item) => [item.string_id, item.description ?? null]))
+      setApplyConflicts([])
       setProposalItems(res.items)
       setReviewTotal(res.total)
       setReviewPage(res.page)
@@ -321,7 +326,7 @@ export function StringsPage() {
   const applyMut = useMutation({
     mutationFn: (items: TranslateProposalItem[]) =>
       stringsApi.translateApply(projectId, {
-        items: applyPayloadFromDrafts(items),
+        items: applyPayloadFromDrafts(items, descriptionOriginals.current),
       }),
     onSuccess: (res, items) => {
       toast.success(applySuccessMessage(res.translated_count, filledStringCount(items)))
@@ -331,7 +336,11 @@ export function StringsPage() {
       invalidateStrings()
       missingMut.mutate(missingRequest(reviewPage))
     },
-    onError: () => toast.error('Failed to save translations'),
+    onError: (error) => {
+      const conflicts = descriptionConflicts(error)
+      setApplyConflicts(conflicts)
+      toast.error(conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.' : 'Failed to save translations')
+    },
   })
 
   function closeReview() {
@@ -565,6 +574,8 @@ export function StringsPage() {
                 onClick={() => {
                   reviewRequestRef.current = createMissingReviewRequest(search, locales)
                   setProposalItems([])
+                  descriptionOriginals.current = {}
+                  setApplyConflicts([])
                   setProposalJobId(null)
                   setProposalsReady(false)
                   setReviewPage(1)
@@ -736,6 +747,11 @@ export function StringsPage() {
         generated={proposalsReady}
         error={reviewError}
         items={reviewItems}
+        conflicts={applyConflicts}
+        onResolveConflict={(conflict) => {
+          descriptionOriginals.current[conflict.string_id] = conflict.description
+          setApplyConflicts((prev) => prev.filter((item) => item.string_id !== conflict.string_id))
+        }}
         page={reviewPage}
         pageSize={reviewPageSize}
         total={reviewTotal}
@@ -743,6 +759,7 @@ export function StringsPage() {
         onPageChange={loadMissingPage}
         onClose={closeReview}
         onTranslate={(items) => {
+          setProposalItems(items)
           proposeMut.mutate({
             scope: 'strings',
             string_ids: items.map((item) => item.string_id),

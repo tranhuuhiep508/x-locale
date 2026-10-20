@@ -380,6 +380,7 @@ def test_missing_and_apply_never_invoke_ai_or_persist_composed_description(clien
                 {
                     "string_id": strings[0]["id"],
                     "description": " Only string notes ",
+                    "expected_description": "String 0",
                     "translations": {"en": "Hello"},
                 }
             ]

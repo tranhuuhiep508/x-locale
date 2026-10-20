@@ -2,7 +2,7 @@ from enum import IntEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.limits import (
     KEY_MAX_LENGTH,
@@ -422,6 +422,16 @@ class TranslateApplyItem(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     description: str | None = None
+    expected_description: str | None = None
+
+    @model_validator(mode="after")
+    def require_description_baseline(self) -> "TranslateApplyItem":
+        if (
+            "description" in self.model_fields_set
+            and "expected_description" not in self.model_fields_set
+        ):
+            raise ValueError("Description writes require expected_description")
+        return self
 
 
 class TranslateApplyRequest(BaseModel):

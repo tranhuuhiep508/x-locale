@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
 import type { Job, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -18,6 +19,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
+  type DescriptionConflict,
   draftsFromItems,
   filledCount,
   localeCount,
@@ -47,12 +49,16 @@ function ProposalTreeNode({
   disabled,
   onChange,
   onDescriptionChange,
+  conflict,
+  onResolveConflict,
 }: {
   item: TranslateProposalItem
   review: boolean
   disabled: boolean
   onChange: (stringId: string, locale: string, value: string) => void
   onDescriptionChange: (stringId: string, description: string) => void
+  conflict?: DescriptionConflict
+  onResolveConflict: (conflict: DescriptionConflict, useLatest: boolean) => void
 }) {
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
@@ -93,6 +99,19 @@ function ProposalTreeNode({
             onChange={(e) => onDescriptionChange(item.string_id, e.target.value)}
           />
         </Field>
+        {conflict ? (
+          <Alert variant="destructive">
+            <AlertTitle>Description changed since review opened</AlertTitle>
+            <AlertDescription>
+              <p>Latest saved description: {conflict.description ?? '(empty)'}</p>
+              <p>Your draft is shown above. Choose which description to use, then Apply again.</p>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, true)}>Use latest</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, false)}>Keep mine</Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </div>
 
       <FieldGroup
@@ -156,6 +175,8 @@ export function TranslateReviewDialog({
   onTranslate,
   onApply,
   progress,
+  conflicts = [],
+  onResolveConflict,
 }: {
   open: boolean
   loadingQueue: boolean
@@ -172,6 +193,8 @@ export function TranslateReviewDialog({
   onClose: () => void
   onTranslate: (items: TranslateProposalItem[]) => void
   onApply: (items: TranslateProposalItem[]) => void
+  conflicts?: DescriptionConflict[]
+  onResolveConflict?: (conflict: DescriptionConflict) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
     draftsFromItems(items)
@@ -190,8 +213,8 @@ export function TranslateReviewDialog({
   const applyCount = filledCount(draftList)
   const review = generated && !generating
   const busy = loadingQueue || generating || applying
-  const canTranslate = !busy && draftList.length > 0
-  const canApply = review && !applying && applyCount > 0 && !error
+  const canTranslate = !busy && draftList.length > 0 && conflicts.length === 0
+  const canApply = review && !applying && applyCount > 0 && !error && conflicts.length === 0
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -271,6 +294,13 @@ export function TranslateReviewDialog({
                   <ProposalTreeNode
                     key={item.string_id}
                     item={item}
+                    conflict={conflicts.find((conflict) => conflict.string_id === item.string_id)}
+                    onResolveConflict={(conflict, useLatest) => {
+                      if (useLatest) {
+                        setDrafts((prev) => updateDraftDescription(prev, conflict.string_id, conflict.description ?? ''))
+                      }
+                      onResolveConflict?.(conflict)
+                    }}
                     review={review}
                     disabled={applying || generating || pagingInPlace}
                     onChange={(stringId, locale, value) =>
