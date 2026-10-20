@@ -5,7 +5,7 @@ import uuid
 from contextlib import contextmanager
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import event, func, select
 
 from app import excel
@@ -141,6 +141,119 @@ def test_import_sql_grows_by_chunks_and_no_change_writes_nothing(client, databas
     assert unchanged.json()["created"] == unchanged.json()["updated"] == 0
     assert len(calls) <= 15
     assert not content_writes(calls)
+
+
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+@pytest.mark.parametrize(
+    "new,source_column,source,target,expected_source",
+    [
+        (False, False, None, "Hello", "Xin chào"),
+        (False, False, None, "Hi", "Xin chào"),
+        (True, False, None, "Hello", "new"),
+        (False, True, None, "Hello", ""),
+        (True, True, None, "Hello", ""),
+        (False, True, "Chào bạn", "Hello", "Chào bạn"),
+        (True, True, "Chào bạn", "Hello", "Chào bạn"),
+    ],
+    ids=[
+        "unchanged",
+        "target-edit",
+        "new-target-only",
+        "blank",
+        "new-blank",
+        "source",
+        "new-source",
+    ],
+)
+def test_excel_source_presence_preview_and_apply(
+    client,
+    session_factory,
+    database_engine,
+    layout,
+    new,
+    source_column,
+    source,
+    target,
+    expected_source,
+):
+    project = make_project(client, layout=layout)
+    root = f"/api/projects/{project['id']}"
+    module_id = None
+    if layout == "modular":
+        module_id = client.post(
+            f"{root}/modules", json={"slug": "common", "name": "Common"}
+        ).json()["id"]
+    created = client.post(
+        f"{root}/strings",
+        json={
+            "key": "greeting",
+            "source_text": "Xin chào",
+            "module_id": module_id,
+            "translations": {"en": "Hello"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    publish_strings(client, project["id"], [created.json()["id"]])
+    exported = client.get(
+        f"{root}/export", params={"format": "xlsx", "stage": "draft", "locale": "en"}
+    )
+    assert exported.status_code == 200, exported.text
+    workbook = load_workbook(io.BytesIO(exported.content))
+    sheet = workbook["common" if layout == "modular" else excel.FLAT_SHEET]
+    headers = [cell.value for cell in sheet[1]]
+    assert "vi" not in headers
+    key = "new" if new else "greeting"
+    sheet.cell(2, headers.index("key") + 1, key)
+    sheet.cell(2, headers.index("en") + 1, target)
+    if source_column:
+        column = len(headers) + 1
+        sheet.cell(1, column, "vi")
+        sheet.cell(2, column).value = source
+    raw = io.BytesIO()
+    workbook.save(raw)
+    workbook.close()
+    files = {"file": ("source-presence.xlsx", raw.getvalue())}
+
+    before_counts = counts(session_factory)
+    with sql_calls(database_engine) as calls:
+        preview = client.post(f"{root}/import", params={"dry_run": True}, files=files)
+    assert preview.status_code == 200, preview.text
+    assert not content_writes(calls)
+    assert counts(session_factory) == before_counts
+    diff = preview.json()["diff"]
+    assert diff["create_count"] == int(new)
+    # Excel intentionally counts source/description edits, not translation-only edits.
+    assert diff["update_count"] == int(not new and expected_source != "Xin chào")
+    items = diff["create"] + diff["update"]
+    if items:
+        assert [item["source_text"] for item in items] == [expected_source]
+
+    unchanged = not new and not source_column and target == "Hello"
+    with sql_calls(database_engine) as calls:
+        applied = client.post(f"{root}/import", files=files)
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["diff"] == diff
+    assert applied.json()["created"] == diff["create_count"]
+    assert applied.json()["updated"] == diff["update_count"]
+    if unchanged:
+        assert not content_writes(calls)
+    with session_factory() as db:
+        entry = db.scalar(
+            select(StringEntry).where(
+                StringEntry.project_id == uuid.UUID(project["id"]), StringEntry.key == key
+            )
+        )
+        assert entry.source_text == expected_source
+        assert entry.module_id == (uuid.UUID(module_id) if module_id else None)
+        assert entry.translations[0].value == target
+        assert entry.published_source_text == (None if new else "Xin chào")
+        assert entry.translations[0].published_value == (None if new else "Hello")
+        activity_count = db.scalar(
+            select(func.count())
+            .select_from(Activity)
+            .where(Activity.batch_id == uuid.UUID(applied.json()["batch_id"]))
+        )
+        assert activity_count == (0 if unchanged else 1)
 
 
 @pytest.mark.parametrize("layout", ["flat", "modular"])

@@ -16,6 +16,13 @@ import, including repeated rows. Its before-state is the state before the import
 and its after-state is the final working copy. Excel result counts retain their
 previous row-based behavior, including source/description update counts.
 
+Excel imports preserve existing source text when a worksheet omits the
+base-language column. New strings without that column use their key as source
+text. When the column is present, its cell value replaces the source text;
+an explicitly blank cell saves an empty source, including for new strings.
+Preview and apply use the same source rules. Translation-only changes retain
+the existing Excel counting behavior and do not increase the update count.
+
 Default imports update the working copy and preserve published snapshots. An
 explicit `status=public` publishes each imported string's final planned state,
 for both new and existing strings, after all repeated rows have been processed.
