@@ -10,6 +10,7 @@ from collections.abc import Collection, Sequence
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import (
     asc,
     desc,
@@ -33,6 +34,7 @@ from app.schemas import (
     LocaleCoverageOut,
     ProjectCoverageOut,
     StringCreate,
+    StringExpected,
     StringListOut,
     StringOut,
     StringUpdate,
@@ -970,15 +972,100 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
     return serialize_string(get_string(db, project.id, entry.id))
 
 
+def _locked_editor_entry(
+    db: Session, project_id: uuid.UUID, string_id: uuid.UUID
+) -> StringEntry:
+    # Lock children too: imports and other writers can update translations directly.
+    found = (
+        db.query(StringEntry.id)
+        .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
+        .with_for_update()
+        .first()
+    )
+    if not found:
+        raise HTTPException(status_code=404, detail="String not found")
+    db.query(Translation.id).filter(Translation.string_id == string_id).order_by(
+        Translation.id
+    ).with_for_update().all()
+    return load_string_entries(db, project_id, [string_id], refresh=True)[0]
+
+
+def _check_editor_expected(entry: StringEntry, payload: StringUpdate) -> None:
+    if payload.expected is None:
+        if "expected" in payload.model_fields_set:
+            raise HTTPException(422, detail="Expected editor values must be an object")
+        return  # Legacy API callers retain unconditional PATCH semantics.
+    expected = payload.expected.model_dump(exclude_unset=True)
+    changes = payload.model_dump(exclude_unset=True, exclude={"expected"})
+    current = {
+        "key": entry.key,
+        "source_text": entry.source_text,
+        "description": entry.description,
+        "module_id": entry.module_id,
+        "tag_ids": [tag.id for tag in entry.tags],
+        "status": entry.status,
+        "translations": {t.locale: t.value for t in entry.translations},
+        "translation_scores": {t.locale: t.confidence for t in entry.translations},
+    }
+    conflicts = []
+    for field, desired in changes.items():
+        if desired is None and field not in {"description", "module_id"}:
+            continue
+        if field in {"translations", "translation_scores"}:
+            for locale, value in desired.items():
+                if locale not in expected.get(field, {}):
+                    raise HTTPException(422, detail=f"Missing expected {field}.{locale}")
+                default = "" if field == "translations" else None
+                saved = current[field].get(locale, default)
+                if saved != expected[field][locale] and saved != value:
+                    conflicts.append(f"{field}.{locale}")
+        else:
+            if field not in expected:
+                raise HTTPException(422, detail=f"Missing expected {field}")
+            saved, original = current[field], expected[field]
+            if field == "tag_ids":
+                saved, original, desired = set(saved), set(original or []), set(desired)
+            if saved != original and saved != desired:
+                conflicts.append(field)
+    if entry.deleted_at is not None:
+        conflicts.append("deleted_at")
+    if conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_editor_save",
+                "message": "This string changed since you opened it. Review the latest saved values.",
+                "fields": conflicts,
+                "current": jsonable_encoder(serialize_string(entry)),
+            },
+        )
+
+
 def update_string(
     db: Session,
     project: Project,
     string_id: uuid.UUID,
     payload: StringUpdate,
 ) -> StringOut:
+    from app.services.write_transactions import run_write
+
+    def write() -> None:
+        _update_string(db, project, string_id, payload)
+
+    run_write(db, project.id, "update_string", write)
+    return serialize_string(get_string(db, project.id, string_id))
+
+
+def _update_string(
+    db: Session,
+    project: Project,
+    string_id: uuid.UUID,
+    payload: StringUpdate,
+) -> None:
     if payload.status == TranslationStatus.public:
         lock_publication(db, project.id)
-    entry = get_string(db, project.id, string_id)
+    entry = _locked_editor_entry(db, project.id, string_id)
+    _check_editor_expected(entry, payload)
     target_key = payload.key if payload.key is not None else entry.key
     target_module = (
         require_module_in_project(db, project.id, payload.module_id)
@@ -1012,8 +1099,6 @@ def update_string(
         guard_published_keys(db, project)
     elif payload.status == TranslationStatus.draft:
         unpublish_string(entry)
-    db.commit()
-    return serialize_string(get_string(db, project.id, string_id))
 
 
 def upsert_translation(
@@ -1023,25 +1108,27 @@ def upsert_translation(
     locale: str,
     payload: TranslationUpdate,
 ) -> StringOut:
-    entry = get_string(db, project.id, string_id)
+    from app.services.write_transactions import run_write
+
     locale = require_locale_code(locale)
     if locale not in project.target_languages and locale != project.base_language:
         raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
 
-    translation = next((t for t in entry.translations if t.locale == locale), None)
-    if not translation:
-        translation = Translation(
-            string_id=entry.id,
-            locale=locale,
-            value=payload.value,
-            confidence=None,
-        )
-        db.add(translation)
-    else:
-        if translation.value != payload.value:
-            translation.confidence = None
-        translation.value = payload.value
-    db.commit()
+    def write() -> None:
+        entry = _locked_editor_entry(db, project.id, string_id)
+        if "expected" in payload.model_fields_set:
+            if payload.expected is None:
+                raise HTTPException(422, detail="Expected translation must be a string")
+            _check_editor_expected(
+                entry,
+                StringUpdate(
+                    translations={locale: payload.value},
+                    expected=StringExpected(translations={locale: payload.expected}),
+                ),
+            )
+        apply_translation_values(db, entry, {locale: payload.value})
+
+    run_write(db, project.id, "upsert_translation", write)
     return serialize_string(get_string(db, project.id, string_id))
 
 

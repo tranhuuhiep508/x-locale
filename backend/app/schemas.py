@@ -270,6 +270,21 @@ class StringCreate(BaseModel):
     translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
 
+class StringExpected(BaseModel):
+    """Original values of fields changed by an editor (null differs from omitted)."""
+
+    model_config = {"extra": "forbid"}
+
+    key: str | None = None
+    source_text: str | None = None
+    description: str | None = None
+    module_id: UUID | None = None
+    tag_ids: list[UUID] | None = None
+    status: TranslationStatus | None = None
+    translations: dict[str, str] = Field(default_factory=dict)
+    translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
+
+
 class StringUpdate(BaseModel):
     key: str | None = Field(default=None, max_length=KEY_MAX_LENGTH)
     source_text: str | None = None
@@ -279,10 +294,12 @@ class StringUpdate(BaseModel):
     status: TranslationStatus | None = None
     translations: dict[str, str] | None = None
     translation_scores: dict[str, ConfidenceScore] | None = None
+    expected: StringExpected | None = None
 
 
 class TranslationUpdate(BaseModel):
     value: str
+    expected: str | None = None
 
 
 class StringListOut(BaseModel):

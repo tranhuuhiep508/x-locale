@@ -2,14 +2,17 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Undo2, Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
+import { ApiError } from '@/lib/api/client'
 import type {
   BatchRequest,
   Module,
   StringEntry,
+  StringUpdate,
   Tag,
   TranslationStatus,
 } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -53,6 +56,20 @@ function isFocusOutsideEvent(event: { detail?: { originalEvent?: Event } }) {
 }
 
 type FormErrors = Partial<Record<'key' | 'source_text', string>>
+type SaveConflict = { fields: string[]; current: StringEntry }
+
+function editorValues(entry: StringEntry) {
+  return {
+    key: entry.key,
+    source_text: entry.source_text,
+    description: entry.description,
+    module_id: entry.module_id,
+    tag_ids: entry.tags.map((tag) => tag.id).sort(),
+    status: entry.status,
+    translations: Object.fromEntries(entry.translations.map((t) => [t.locale, t.value])),
+    translation_scores: Object.fromEntries(entry.translations.map((t) => [t.locale, t.confidence])),
+  }
+}
 
 function mergeTranslations(
   prev: Record<string, string>,
@@ -93,7 +110,7 @@ function isFormDirty(
     sourceText: string
     description: string
     moduleId: string
-    tagId: string
+    tagIds: string[]
     status: TranslationStatus
     translations: Record<string, string>
     scores: Record<string, number>
@@ -103,7 +120,7 @@ function isFormDirty(
   if (values.sourceText !== entry.source_text) return true
   if (values.description !== (entry.description ?? '')) return true
   if (values.moduleId !== (entry.module_id ?? '')) return true
-  if (values.tagId !== (entry.tags[0]?.id ?? '')) return true
+  if (JSON.stringify([...values.tagIds].sort()) !== JSON.stringify(entry.tags.map((tag) => tag.id).sort())) return true
   if (values.status !== entry.status) return true
   const saved = translationsFromEntry(entry, targetLocales)
   const savedScores = scoresFromEntry(entry, targetLocales)
@@ -122,7 +139,7 @@ function applyEntryToForm(
     setSourceText: (value: string) => void
     setDescription: (value: string) => void
     setModuleId: (value: string) => void
-    setTagId: (value: string) => void
+    setTagIds: (value: string[]) => void
     setStatus: (value: TranslationStatus) => void
     setTranslations: (value: Record<string, string>) => void
     setScores: (value: Record<string, number>) => void
@@ -132,7 +149,7 @@ function applyEntryToForm(
   setters.setSourceText(entry.source_text)
   setters.setDescription(entry.description ?? '')
   setters.setModuleId(entry.module_id ?? '')
-  setters.setTagId(entry.tags[0]?.id ?? '')
+  setters.setTagIds(entry.tags.map((tag) => tag.id))
   setters.setStatus(entry.status)
   setters.setTranslations(translationsFromEntry(entry, targetLocales))
   setters.setScores(scoresFromEntry(entry, targetLocales))
@@ -155,9 +172,10 @@ export default function StringFormDialog({
   const [sourceText, setSourceText] = useState(entry?.source_text ?? '')
   const [description, setDescription] = useState(entry?.description ?? '')
   const [moduleId, setModuleId] = useState(entry?.module_id ?? '')
-  const [tagId, setTagId] = useState(entry?.tags[0]?.id ?? '')
+  const [tagIds, setTagIds] = useState(() => entry?.tags.map((tag) => tag.id) ?? [])
+  const tagId = tagIds[0] ?? ''
+  const setTagId = (value: string) => setTagIds(value ? [value] : [])
   const [status, setStatus] = useState<TranslationStatus>(() => entry?.status ?? 'draft')
-  const originalStatus: TranslationStatus = entry?.status ?? 'draft'
   const [translations, setTranslations] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
     for (const locale of targetLocales) {
@@ -174,6 +192,15 @@ export default function StringFormDialog({
   const [createdModules, setCreatedModules] = useState<Module[]>([])
   const [createdTags, setCreatedTags] = useState<Tag[]>([])
   const [baseline, setBaseline] = useState(entry ?? null)
+  const [conflict, setConflict] = useState<SaveConflict | null>(null)
+  // Resolving a locale replaces both its text and its associated confidence.
+  const conflictFields = [...new Set(conflict?.fields.flatMap((field) => {
+    if (field.startsWith('translations.') || field.startsWith('translation_scores.')) {
+      const locale = field.split('.')[1]
+      return [`translations.${locale}`, `translation_scores.${locale}`]
+    }
+    return [field]
+  }) ?? [])]
   const moduleOptions = [...modules, ...createdModules.filter((item) => !modules.some((m) => m.id === item.id))]
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
@@ -183,7 +210,7 @@ export default function StringFormDialog({
     sourceText,
     description,
     moduleId,
-    tagId,
+    tagIds,
     status,
     translations,
     scores,
@@ -207,33 +234,136 @@ export default function StringFormDialog({
       source_text: sourceText.trim(),
       description: description.trim() || null,
       module_id: moduleId || null,
-      tag_ids: tagId ? [tagId] : [],
+      tag_ids: [...tagIds].sort(),
       translations,
     }
     if (Object.keys(scores).length > 0) {
       body.translation_scores = scores
     }
-    if (!isEdit || status !== originalStatus) {
+    if (!isEdit || status !== baseline?.status) {
       body.status = status
     }
     return body
   }
 
+  function editPayload(): StringUpdate {
+    if (!baseline) return {}
+    const original = editorValues(baseline)
+    const body = payload()
+    const edited = { ...body, key, source_text: sourceText, description: description || null }
+    const changes: StringUpdate = { expected: {} }
+    const expected = changes.expected!
+    for (const field of ['key', 'source_text', 'description', 'module_id', 'tag_ids', 'status'] as const) {
+      const value = body[field]
+      if (JSON.stringify(edited[field]) === JSON.stringify(original[field])) continue
+      if (value === undefined || JSON.stringify(value) === JSON.stringify(original[field])) continue
+      Object.assign(changes, { [field]: value })
+      Object.assign(expected, { [field]: original[field] })
+    }
+    for (const locale of targetLocales) {
+      const value = translations[locale] ?? ''
+      const saved = original.translations[locale] ?? ''
+      const scoreChanged = (scores[locale] ?? null) !== (original.translation_scores[locale] ?? null)
+      if (value === saved && !scoreChanged) continue
+      changes.translations = { ...changes.translations, [locale]: value }
+      expected.translations = { ...expected.translations, [locale]: saved }
+      if (scores[locale] !== undefined) {
+        changes.translation_scores = { ...changes.translation_scores, [locale]: scores[locale] }
+        expected.translation_scores = {
+          ...expected.translation_scores,
+          [locale]: original.translation_scores[locale] ?? null,
+        }
+      }
+    }
+    return changes
+  }
+
+  function resolveConflict(useLatest: boolean) {
+    if (!conflict || !baseline) return
+    // Only rebase reviewed fields. Rebasing the whole form would make untouched,
+    // stale inputs look like new edits on the next Save.
+    const fresh = conflict.current
+    const next = { ...baseline }
+    for (const field of conflict.fields) {
+      if (field.startsWith('translations.') || field.startsWith('translation_scores.')) {
+        const locale = field.split('.')[1]
+        const latest = fresh.translations.find((t) => t.locale === locale)
+        next.translations = next.translations.filter((t) => t.locale !== locale)
+        if (latest) next.translations = [...next.translations, latest]
+        if (useLatest) {
+          setTranslations((prev) => ({ ...prev, [locale]: latest?.value ?? '' }))
+          setScores((prev) => {
+            const updated = { ...prev }
+            delete updated[locale]
+            if (latest?.confidence != null) updated[locale] = latest.confidence
+            return updated
+          })
+        }
+      } else {
+        switch (field) {
+          case 'key':
+            next.key = fresh.key
+            if (useLatest) setKey(fresh.key)
+            break
+          case 'source_text':
+            next.source_text = fresh.source_text
+            if (useLatest) setSourceText(fresh.source_text)
+            break
+          case 'description':
+            next.description = fresh.description
+            if (useLatest) setDescription(fresh.description ?? '')
+            break
+          case 'module_id':
+            next.module_id = fresh.module_id
+            next.module_slug = fresh.module_slug
+            if (useLatest) setModuleId(fresh.module_id ?? '')
+            break
+          case 'tag_ids':
+            next.tags = fresh.tags
+            if (useLatest) setTagIds(fresh.tags.map((tag) => tag.id))
+            break
+          case 'status':
+            next.status = fresh.status
+            if (useLatest) setStatus(fresh.status)
+            break
+        }
+      }
+    }
+    setBaseline(next)
+    setConflict(null)
+  }
+
+  function conflictText(saved: boolean, field: string) {
+    const values = saved ? editorValues(conflict!.current) : { ...payload(), status }
+    const [name, locale] = field.split('.')
+    const value = locale
+      ? (values[name as 'translations' | 'translation_scores'] ?? {})[locale]
+      : values[name as keyof typeof values]
+    return value == null || value === '' ? '(empty)' : Array.isArray(value) ? value.join(', ') || '(none)' : String(value)
+  }
+
   const saveMut = useMutation({
     mutationFn: async () => {
-      const body = payload()
       if (isEdit && entry) {
-        await stringsApi.update(projectId, entry.id, body)
+        await stringsApi.update(projectId, entry.id, editPayload())
       } else {
-        await stringsApi.create(projectId, body)
+        await stringsApi.create(projectId, payload())
       }
     },
     onSuccess: () => {
       toast.success(isEdit ? 'String saved' : 'String created')
       onSuccess()
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : `Failed to ${isEdit ? 'save' : 'create'} string`),
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        const detail = (e.body as { detail?: SaveConflict & { code?: string } })?.detail
+        if (detail?.code === 'stale_editor_save') {
+          setConflict(detail)
+          return
+        }
+      }
+      toast.error(e instanceof Error ? e.message : `Failed to ${isEdit ? 'save' : 'create'} string`)
+    },
   })
 
   const translateMut = useMutation({
@@ -268,12 +398,13 @@ export default function StringFormDialog({
       if (!fresh) return
       setConfirmDiscard(false)
       setBaseline(fresh)
+      setConflict(null)
       applyEntryToForm(fresh, targetLocales, {
         setKey,
         setSourceText,
         setDescription,
         setModuleId,
-        setTagId,
+        setTagIds,
         setStatus,
         setTranslations,
         setScores,
@@ -287,6 +418,7 @@ export default function StringFormDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (conflict || saveMut.isPending) return
     const nextErrors: FormErrors = {}
     if (!key.trim()) nextErrors.key = 'Key is required'
     if (!sourceText.trim()) nextErrors.source_text = 'Source text is required'
@@ -360,12 +492,13 @@ export default function StringFormDialog({
               onRestored={async () => {
                 const fresh = await stringsApi.get(projectId, entry.id)
                 setBaseline(fresh)
+                setConflict(null)
                 applyEntryToForm(fresh, targetLocales, {
                   setKey,
                   setSourceText,
                   setDescription,
                   setModuleId,
-                  setTagId,
+                  setTagIds,
                   setStatus,
                   setTranslations,
                   setScores,
@@ -379,6 +512,29 @@ export default function StringFormDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {conflict ? (
+              <Alert variant="destructive" className="mx-5 mt-5 w-auto">
+                <AlertTitle>Another save changed this string</AlertTitle>
+                <AlertDescription className="flex flex-col gap-3">
+                  <p>Your input is still here. Review the conflicting values before saving again. Translation text and confidence are resolved together.</p>
+                  {conflictFields.filter((field) => !['deleted_at', 'pending_delete'].includes(field)).map((field) => (
+                    <div key={field} className="grid gap-1 whitespace-pre-wrap break-words">
+                      <strong>{field.replace('translations.', 'Translation ').replace('translation_scores.', 'Confidence ')}</strong>
+                      <span>Your value: {conflictText(false, field)}</span>
+                      <span>Latest saved: {conflictText(true, field)}</span>
+                    </div>
+                  ))}
+                  {conflict.current.deleted_at ? (
+                    <p>This string was deleted. Close the editor and refresh the catalog.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={() => resolveConflict(true)}>Use latest values</Button>
+                      <Button type="button" variant="outline" onClick={() => resolveConflict(false)}>Keep my changes</Button>
+                    </div>
+                  )}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-8">
               <FieldGroup className="gap-4">
                 <Field data-invalid={errors.key ? 'true' : undefined}>
@@ -673,7 +829,7 @@ export default function StringFormDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy || Boolean(entry?.deleted_at)}>
+              <Button type="submit" disabled={busy || Boolean(conflict) || Boolean(entry?.deleted_at)}>
                 {saveMut.isPending && <Spinner data-icon="inline-start" />}
                 {isEdit ? 'Save changes' : 'Create string'}
               </Button>
