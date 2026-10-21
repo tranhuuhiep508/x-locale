@@ -13,10 +13,13 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
+from app import auth
 from app.config import settings
-from app.database import engine
+from app.database import engine, get_db
+from app.main import app
 from app.models import Job, JobStatus, StringEntry
-from app.services import import_lock, jobs
+from app.services import import_lock, imports, jobs
+from tests.helpers import make_project
 from tests.test_import_concurrency import seed_import_project
 from tests.test_import_jobs import async_request, import_request
 
@@ -361,3 +364,92 @@ def test_recovery_loop_runs_at_startup_retries_and_stops(monkeypatch):
     monkeypatch.setattr(jobs, "recover_abandoned_jobs", recover)
     jobs.recovery_loop(Stop())
     assert len(calls) == 2
+
+
+def test_concurrent_admission_preserves_worker_capacity_before_auth(
+    client, project, session_factory, monkeypatch
+):
+    other = make_project(client, "Other admission project")
+    other["api_key"] = client.post(
+        f"/api/projects/{other['id']}/api-keys", json={"name": "CLI"}
+    ).json()["key"]
+    small = create_engine(settings.database_url, pool_size=2, max_overflow=0, pool_timeout=0.5)
+    factory = sessionmaker(bind=small, autoflush=False)
+    slots = threading.BoundedSemaphore(1)
+    in_auth, allow_auth, in_work, finish = (threading.Event() for _ in range(4))
+    original_auth, original_work = auth._resolve_api_key, imports.import_json_data
+    original_override = app.dependency_overrides[get_db]
+
+    def get_small_db():
+        with factory() as db:
+            yield db
+
+    def resolve(db, key):
+        result = original_auth(db, key)
+        if key == project["api_key"] and not in_auth.is_set():
+            in_auth.set()
+            assert allow_auth.wait(5)
+        return result
+
+    def work(*args, **kwargs):
+        in_work.set()
+        assert finish.wait(5)
+        return original_work(*args, **kwargs)
+
+    monkeypatch.setattr(settings, "import_async_threshold", 1)
+    monkeypatch.setattr(jobs, "engine", small)
+    monkeypatch.setattr(jobs, "SessionLocal", factory)
+    monkeypatch.setattr(jobs, "_job_slots", slots)
+    monkeypatch.setattr(auth, "_resolve_api_key", resolve)
+    monkeypatch.setattr(imports, "import_json_data", work)
+    app.dependency_overrides[get_db] = get_small_db
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            path, kwargs = async_request(project, "cli")
+            first = pool.submit(client.post, path, **kwargs)
+            try:
+                assert in_auth.wait(5)
+                path, kwargs = async_request(other, "cli")
+                second = pool.submit(client.post, path, **kwargs).result(timeout=2)
+                assert second.status_code == 503, second.text
+                assert second.json()["detail"]["code"] == "job_capacity"
+                assert second.headers["Retry-After"] == "5"
+                # The rejected request never consumes the reserved worker slot.
+                assert small.pool.checkedout() == 1
+            finally:
+                allow_auth.set()
+            accepted = first.result(timeout=5)
+        assert accepted.status_code == 202, accepted.text
+        assert in_work.wait(5)
+        # Returning 202 does not release admission while the executor is still live.
+        assert not slots.acquire(blocking=False)
+        assert client.get("/healthcheck/readiness").status_code == 200
+    finally:
+        allow_auth.set()
+        finish.set()
+        assert slots.acquire(timeout=5), "Executor did not release its admission slot"
+        slots.release()
+        app.dependency_overrides[get_db] = original_override
+        small.dispose()
+    with session_factory() as db:
+        assert db.get(Job, uuid.UUID(accepted.json()["job_id"])).status == JobStatus.completed
+
+
+@pytest.mark.parametrize("outcome", ["sync", "unauthorized", "start_failure"])
+def test_request_failure_or_sync_response_releases_admission(client, project, monkeypatch, outcome):
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(jobs, "_job_slots", slots)
+    monkeypatch.setattr(settings, "import_async_threshold", 1000 if outcome == "sync" else 1)
+    path, kwargs = async_request(project, "cli")
+    if outcome == "unauthorized":
+        kwargs["headers"]["X-API-Key"] = "invalid"
+    if outcome == "start_failure":
+
+        def fail(*args, **kwargs):
+            raise HTTPException(503, "Cannot create job")
+
+        monkeypatch.setattr(jobs, "start_job", fail)
+    response = client.post(path, **kwargs)
+    assert response.status_code == {"sync": 200, "unauthorized": 401, "start_failure": 503}[outcome]
+    assert slots.acquire(timeout=5), "Request leaked its admission slot"
+    slots.release()

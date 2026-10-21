@@ -138,6 +138,14 @@ The job row is committed as `running` before the response, so the first
 `validating`, `writing` (with `chunks_done`/`chunks_total`), and `done`; undo uses
 `planning` and `writing`.
 
+Each API worker admits at most four requests with `Prefer: respond-async` or
+running import/undo jobs. Admission happens before auth/project database queries
+and stays reserved until executor cleanup. Excess submissions return `503` with
+code `job_capacity` and `Retry-After: 5`, without creating a job. Small imports
+that finish synchronously release admission with the response. Requests without
+the async preference are unaffected. This leaves connection capacity for auth,
+status polling, and progress writes in the default 15-connection pool.
+
 The import advisory lock stays the only one-import-per-project guard. The request
 takes it to reject a busy project with 409. Committing the job row would drop
 that transaction lock before the worker runs, so the owned worker connection

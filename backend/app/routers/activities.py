@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 
 from app.auth import ProjectAccess
 from app.database import DbSession
@@ -36,7 +36,7 @@ from app.services.activities import (
     serialize_activity,
 )
 from app.services.import_lock import acquire_import_lock
-from app.services.jobs import accepted_response, launch_job, runs_async
+from app.services.jobs import accepted_response, launch_job, reserve_job_slot, runs_async
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["activities"])
 
@@ -166,6 +166,7 @@ def revert_activity_preview_endpoint(
     "/activities/batch/{batch_id}/revert",
     response_model=dict,
     responses={202: {"model": JobAcceptedOut, "description": "Undo runs as a background job"}},
+    dependencies=[Depends(reserve_job_slot)],
 )
 def revert_batch_endpoint(
     batch_id: uuid.UUID,

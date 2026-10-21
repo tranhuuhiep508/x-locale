@@ -6,7 +6,16 @@ import uuid
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
@@ -29,6 +38,7 @@ from app.services.jobs import (
     JobWork,
     accepted_response,
     launch_job,
+    reserve_job_slot,
     runs_async,
     wants_async,
 )
@@ -172,7 +182,12 @@ def _import_job_work(
 ASYNC_RESPONSES = {202: {"model": JobAcceptedOut, "description": "Import runs as a background job"}}
 
 
-@router.post("/import", response_model=ImportResult, responses=ASYNC_RESPONSES)
+@router.post(
+    "/import",
+    response_model=ImportResult,
+    responses=ASYNC_RESPONSES,
+    dependencies=[Depends(reserve_job_slot)],
+)
 def import_project(
     project: ProjectAccess,
     db: DbSession,
@@ -222,7 +237,12 @@ def import_project(
     return result
 
 
-@router.post("/strings/import", response_model=ImportResult, responses=ASYNC_RESPONSES)
+@router.post(
+    "/strings/import",
+    response_model=ImportResult,
+    responses=ASYNC_RESPONSES,
+    dependencies=[Depends(reserve_job_slot)],
+)
 def import_strings_compat(
     payload: ImportPayload,
     project: ProjectAccess,

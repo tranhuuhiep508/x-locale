@@ -6,11 +6,11 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import HTTPException
+from fastapi import Header, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.engine import Connection
@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.auth import membership_for
 from app.config import settings
-from app.database import SessionLocal, engine
+from app.database import DbSession, SessionLocal, engine
 from app.models import Job, JobStatus, Project, User
 from app.schemas import JobAcceptedOut
 from app.services import import_lock
@@ -64,6 +64,39 @@ RECOVERY_INTERVAL_S = 60
 JOB_LOCK_NAMESPACE = 0x584C4A42
 INTERRUPTED = "This operation was interrupted. Please run it again."
 RECOVERABLE_KINDS = ("import", "excel_import", "revert")
+# Each API worker has a 15-connection pool; leave room for auth, polling and progress.
+_job_slots = threading.BoundedSemaphore(4)
+_JOB_SLOT_KEY = "background_job_slot"
+
+
+def reserve_job_slot(
+    db: DbSession, prefer: Annotated[str | None, Header()] = None
+) -> Generator[None]:
+    """Run before project/auth dependencies, without checking out a DB connection.
+
+    A launched worker takes the reservation out of the request's session info.
+    Synchronous requests and validation/launch failures release it on teardown.
+    """
+    if not wants_async(prefer):
+        yield
+        return
+    slots = _job_slots
+    if not slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "job_capacity",
+                "message": "Background job capacity is full. Please try again shortly.",
+            },
+            headers={"Retry-After": "5"},
+        )
+    db.info[_JOB_SLOT_KEY] = slots.release
+    try:
+        yield
+    finally:
+        release = db.info.pop(_JOB_SLOT_KEY, None)
+        if release is not None:
+            release()
 
 
 def _job_lock_params(job_id: uuid.UUID) -> dict[str, object]:
@@ -136,6 +169,7 @@ def launch_job(
     held, release_worker = threading.Event(), threading.Event()
     job_id = uuid.uuid4()
     conn = engine.connect()
+    release_slot = db.info.pop(_JOB_SLOT_KEY, None)
     started = False
     run_work = False
     startup_errors: list[Exception] = []
@@ -153,8 +187,12 @@ def launch_job(
             if run_work and not startup_errors:
                 run_job(job_id, project_id, work, conn)
         finally:
-            if not conn.closed:
-                _release_job_connection(conn, job_id)
+            try:
+                if not conn.closed:
+                    _release_job_connection(conn, job_id)
+            finally:
+                if release_slot is not None:
+                    release_slot()
 
     try:
         conn.execute(
@@ -183,7 +221,11 @@ def launch_job(
     finally:
         release_worker.set()
         if not started:
-            _release_job_connection(conn, job_id)
+            try:
+                _release_job_connection(conn, job_id)
+            finally:
+                if release_slot is not None:
+                    release_slot()
 
 
 def accepted_response(job: Job) -> JSONResponse:
