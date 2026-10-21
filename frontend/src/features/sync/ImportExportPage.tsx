@@ -420,7 +420,8 @@ export function ImportExportPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    Applied to JSON uploads. Excel ignores this and uses sheet names as module slugs.
+                    Applied to JSON uploads. Excel uses module mappings in its hidden _meta sheet,
+                    or sheet names for legacy workbooks without mappings.
                   </p>
                 </Field>
               ) : null}
@@ -488,7 +489,7 @@ export function ImportExportPage() {
           <CardTitle>Import template & Schema</CardTitle>
           <CardDescription>
             {isModularProject
-              ? 'JSON keys are stored exactly as written. Pick a module when uploading JSON. For Excel, each sheet name is the module slug.'
+              ? 'JSON keys are stored exactly as written. Pick a module when uploading JSON. Excel exports and examples store full module slugs in a hidden _meta sheet. Before renaming or copying a worksheet, unhide _meta and update or add its module_slug:<sheet name> entry. The entry value is the full module slug and must be unique per worksheet. Legacy workbooks without mappings use sheet names as module slugs.'
               : 'JSON keys are stored exactly as written. Excel uses one strings sheet.'}
           </CardDescription>
         </CardHeader>
