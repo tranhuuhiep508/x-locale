@@ -11,13 +11,37 @@ export function JobProgress({
   className,
   error,
   onRetry,
+  pollingPaused,
+  onCheckAgain,
+  onDismiss,
 }: {
   progress: TranslateJobProgress | null | undefined
   label: string
   className?: string
   error?: unknown
   onRetry?: () => void
+  pollingPaused?: boolean
+  onCheckAgain?: () => void
+  onDismiss?: () => void
 }) {
+  if (pollingPaused) {
+    return (
+      <Alert className={className}>
+        <AlertDescription className="flex flex-col items-start gap-2">
+          <p>Still running; the result is unknown.</p>
+          <p>Dismissing stops tracking. The operation may still finish on the server.</p>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={onCheckAgain}>
+              Check again
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onDismiss}>
+              Dismiss
+            </Button>
+          </div>
+        </AlertDescription>
+      </Alert>
+    )
+  }
   if (error) {
     return (
       <Alert variant="destructive" className={className}>

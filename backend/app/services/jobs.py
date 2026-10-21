@@ -7,11 +7,13 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy import select, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -58,13 +60,38 @@ def runs_async(prefer: str | None, size: int) -> bool:
 
 
 _HANDOFF_TIMEOUT_S = 5
+RECOVERY_INTERVAL_S = 60
+JOB_LOCK_NAMESPACE = 0x584C4A42
+INTERRUPTED = "This operation was interrupted. Please run it again."
+RECOVERABLE_KINDS = ("import", "excel_import", "revert")
 
 
-def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any]) -> Job:
+def _job_lock_params(job_id: uuid.UUID) -> dict[str, object]:
+    return {"namespace": JOB_LOCK_NAMESPACE, "job_id": str(job_id)}
+
+
+def _release_job_connection(conn: Connection, job_id: uuid.UUID) -> None:
+    try:
+        if not conn.invalidated:
+            conn.rollback()
+            # The dedicated worker connection owns both job and handoff locks.
+            conn.execute(text("SELECT pg_advisory_unlock_all()"))
+            conn.commit()
+    except Exception:
+        # A pooled connection must never retain a session advisory lock.
+        conn.invalidate()
+        logger.exception("Could not release ownership of job %s", job_id)
+    finally:
+        conn.close()
+
+
+def start_job(
+    db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any], *, job_id: uuid.UUID
+) -> Job:
     """Create the job as ``running`` and commit, so the first poll already sees it.
 
-    Committing ends the request's transaction lock. ``launch_job`` holds a
-    session lock across that commit until the worker is waiting.
+    Committing ends the request's transaction lock. ``launch_job`` queues the
+    worker's session lock before this commit so the project stays protected.
     """
     actor = {
         key: value
@@ -75,12 +102,14 @@ def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any
     if actor.get("actor_type") == "user" and actor.get("actor_id"):
         created_by = uuid.UUID(str(actor["actor_id"]))
     job = Job(
+        id=job_id,
         project_id=project_id,
         kind=kind,
         status=JobStatus.running,
         created_by=created_by,
         payload={
             **meta,
+            "ownership_version": 1,
             "actor": actor,
             "progress": {"phase": "queued", "chunks_done": 0, "chunks_total": 0},
         },
@@ -91,25 +120,6 @@ def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any
     return job
 
 
-def _hold_session_lock(
-    project_id: uuid.UUID, held: threading.Event, release: threading.Event
-) -> None:
-    """Hold the session lock on a connection this function keeps open.
-
-    ``Session.commit`` returns the request connection to the pool, so the lock
-    cannot live there: a later unlock may check out a different connection.
-    """
-    conn = engine.connect()
-    try:
-        import_lock.acquire_import_session_lock(conn, project_id)
-        held.set()
-        release.wait()
-        import_lock.release_import_session_lock(conn, project_id)
-    finally:
-        held.set()
-        conn.close()
-
-
 def launch_job(
     db: Session,
     project_id: uuid.UUID,
@@ -117,51 +127,63 @@ def launch_job(
     meta: dict[str, Any],
     work: JobWork,
 ) -> Job:
-    """Commit the job, then keep the project locked until the worker is queued.
+    """Hand the request's project lock directly to the owned worker connection.
 
-    The request already holds the transaction lock. A second connection waits
-    for the session lock, the commit hands that lock to it, and it unlocks
-    only once the worker is blocked on the same key.
+    The worker queues a session lock before the request commits. It keeps that
+    lock through its content transaction, so launch needs only two connections
+    and never leaves a gap for another import during the handoff.
     """
-    held, release_holder = threading.Event(), threading.Event()
-    holder = threading.Thread(
-        target=_hold_session_lock,
-        args=(project_id, held, release_holder),
-        name="import-lock-handoff",
-        daemon=True,
-    )
-    holder.start()
+    held, release_worker = threading.Event(), threading.Event()
+    job_id = uuid.uuid4()
+    conn = engine.connect()
+    started = False
+    run_work = False
+    startup_errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            try:
+                import_lock.acquire_import_session_lock(conn, project_id)
+                conn.commit()
+            except Exception as exc:
+                startup_errors.append(exc)
+            finally:
+                held.set()
+            release_worker.wait()
+            if run_work and not startup_errors:
+                run_job(job_id, project_id, work, conn)
+        finally:
+            if not conn.closed:
+                _release_job_connection(conn, job_id)
+
     try:
+        conn.execute(
+            text("SELECT pg_advisory_lock(:namespace, hashtext(:job_id))"),
+            _job_lock_params(job_id),
+        )
+        conn.commit()
+        threading.Thread(target=worker, name=f"job-{job_id}", daemon=True).start()
+        started = True
         deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
         while time.monotonic() < deadline and not import_lock.import_lock_waiting(db, project_id):
             time.sleep(0.01)
-        job = start_job(db, project_id, kind, meta)
+        job = start_job(db, project_id, kind, meta, job_id=job_id)
         if not held.wait(_HANDOFF_TIMEOUT_S):
-            logger.warning("Job %s session lock was not granted", job.id)
-        threading.Thread(
-            target=run_job,
-            args=(job.id, project_id, work),
-            name=f"job-{job.id}",
-            daemon=True,
-        ).start()
-        deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
-        worker_waiting = False
-        while time.monotonic() < deadline:
-            if import_lock.import_lock_waiting(db, project_id):
-                worker_waiting = True
-                break
-            time.sleep(0.01)
-        if not worker_waiting:
-            # shortcut: the overwrite gap returns if the worker never queues. A job
-            # queue should own this lock instead of a handoff thread.
-            logger.warning("Job %s did not reach the import lock; releasing the handoff", job.id)
+            raise HTTPException(
+                status_code=503, detail="Job worker could not acquire the import lock"
+            )
+        if startup_errors:
+            raise startup_errors[0]
+        run_work = True
         return job
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        _record_failure(job_id, exc)
         raise
     finally:
-        release_holder.set()
-        holder.join(_HANDOFF_TIMEOUT_S)
+        release_worker.set()
+        if not started:
+            _release_job_connection(conn, job_id)
 
 
 def accepted_response(job: Job) -> JSONResponse:
@@ -196,8 +218,8 @@ def _record_failure(job_id: uuid.UUID, exc: Exception) -> None:
     message, error = _error_details(exc)
     db = SessionLocal()
     try:
-        job = db.get(Job, job_id)
-        if job is None:
+        job = db.get(Job, job_id, with_for_update=True)
+        if job is None or job.status != JobStatus.running:
             return
         _finish(job, JobStatus.failed, phase="failed")
         job.error = message
@@ -207,17 +229,17 @@ def _record_failure(job_id: uuid.UUID, exc: Exception) -> None:
         db.close()
 
 
-def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
+def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork, conn: Connection) -> None:
     """Run ``work`` in its own session while holding the project's import lock.
 
     ``work`` must leave its writes uncommitted. Completed status is written in
     that same transaction, so a saved import or undo never reads as running
     and a failure rolls the write back.
     """
-    db = SessionLocal()
+    db = SessionLocal(bind=conn)
     try:
         job = db.get(Job, job_id)
-        if job is None:
+        if job is None or job.status != JobStatus.running:
             return
         db.info["activity"] = dict((job.payload or {}).get("actor") or {})
         db.info[JOB_ID_KEY] = job_id
@@ -225,6 +247,9 @@ def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
         wait_for_import_lock(db, project_id)
+        db.refresh(job)
+        if job.status != JobStatus.running:
+            return
         db.refresh(project)
         result = work(db, project)
         job = db.get(Job, job_id)
@@ -232,6 +257,9 @@ def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
             db.rollback()
             return
         db.refresh(job)
+        if job.status != JobStatus.running:
+            db.rollback()
+            return
         _finish(job, JobStatus.completed, phase="done")
         job.result = result
         db.commit()
@@ -243,4 +271,59 @@ def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
             logger.exception("Job %s failed", job_id)
         _record_failure(job_id, exc)
     finally:
-        db.close()
+        try:
+            db.close()
+        finally:
+            _release_job_connection(conn, job_id)
+
+
+def recover_abandoned_jobs() -> int:
+    """Fail old jobs only when neither an executor nor a project writer owns them.
+
+    Legacy jobs have no ownership lock: deploy this with all old workers stopped.
+    Each candidate gets a short transaction so live jobs never block recovery.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=RECOVERY_INTERVAL_S)
+    with SessionLocal() as db:
+        candidates = db.execute(
+            select(Job.id, Job.project_id).where(
+                Job.status == JobStatus.running,
+                Job.kind.in_(RECOVERABLE_KINDS),
+                Job.created_at < cutoff,
+            )
+        ).all()
+    recovered = 0
+    for job_id, project_id in candidates:
+        with SessionLocal() as db:
+            if not db.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:namespace, hashtext(:job_id))"),
+                _job_lock_params(job_id),
+            ):
+                continue
+            try:
+                import_lock.acquire_import_lock(db, project_id)
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                continue
+            job = db.get(Job, job_id, with_for_update=True)
+            if job is None or job.status != JobStatus.running:
+                continue
+            _finish(job, JobStatus.failed, phase="failed")
+            job.error = INTERRUPTED
+            job.result = {"error": {"status_code": 503, "detail": INTERRUPTED}}
+            db.commit()
+            recovered += 1
+            logger.warning("Recovered interrupted job %s (%s)", job.id, job.kind)
+    return recovered
+
+
+def recovery_loop(stop: threading.Event) -> None:
+    """Run immediately, then periodically, with a shutdown-interruptible wait."""
+    while not stop.is_set():
+        try:
+            recover_abandoned_jobs()
+        except Exception:
+            logger.exception("Interrupted-job recovery failed; will retry")
+        if stop.wait(RECOVERY_INTERVAL_S):
+            return

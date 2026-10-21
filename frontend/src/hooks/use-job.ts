@@ -1,5 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useEffectEvent, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from 'react'
+import {
+  forgetJob, getActiveJob, isJobPollingPaused, resumeJobPolling, subscribeActiveJob,
+} from '@/lib/active-job'
 import type { ApiError } from '@/lib/api/client'
 import { isJobFinished, jobError, jobsApi } from '@/lib/api/jobs'
 import type { Job } from '@/lib/api/types'
@@ -14,14 +17,26 @@ type JobHandlers = {
 
 /** Poll a background job every second and call one handler once when it ends. */
 export function useJob(jobId: string | null, handlers: JobHandlers) {
+  const queryClient = useQueryClient()
+  useSyncExternalStore(subscribeActiveJob, getActiveJob)
+  const pollingPaused = isJobPollingPaused(jobId)
   const query = useQuery({
     queryKey: queryKeys.jobs.detail(jobId ?? ''),
     queryFn: () => jobsApi.get(jobId!),
-    enabled: Boolean(jobId),
+    enabled: Boolean(jobId) && !pollingPaused,
+    refetchOnWindowFocus: () => !isJobPollingPaused(jobId),
+    refetchOnReconnect: () => !isJobPollingPaused(jobId),
     refetchInterval: (current) =>
-      current.state.status === 'error' || isJobFinished(current.state.data) ? false : POLL_MS,
+      isJobPollingPaused(jobId) || current.state.status === 'error' ||
+      isJobFinished(current.state.data) ? false : POLL_MS,
   })
   const handled = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (pollingPaused && jobId) {
+      void queryClient.cancelQueries({ queryKey: queryKeys.jobs.detail(jobId), exact: true })
+    }
+  }, [jobId, pollingPaused, queryClient])
 
   const succeed = useEffectEvent((job: Job) => {
     handlers.onCompleted(job)
@@ -40,5 +55,14 @@ export function useJob(jobId: string | null, handlers: JobHandlers) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Effect Events must not be dependencies.
   }, [jobId, job, query.isError])
 
-  return query
+  return {
+    ...query,
+    pollingPaused,
+    checkAgain: () => {
+      if (!jobId) return
+      resumeJobPolling(jobId)
+      void query.refetch()
+    },
+    dismiss: () => { if (jobId) forgetJob(jobId) },
+  }
 }

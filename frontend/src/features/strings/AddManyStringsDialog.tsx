@@ -83,9 +83,7 @@ export function AddManyStringsDialog({
   const [step, setStep] = useState<'paste' | 'preview'>('paste')
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [pendingMap, setPendingMap] = useState<Record<string, string> | null>(null)
-  const [importJobId, setImportJobId] = useState<string | null>(null)
-  const storedJobId = useActiveJobId(projectId, 'add')
-  const trackedJobId = importJobId ?? storedJobId
+  const trackedJobId = useActiveJobId(projectId, 'add')
 
   const moduleOptions = [
     ...modules,
@@ -108,7 +106,7 @@ export function AddManyStringsDialog({
   }
 
   function closeDialog() {
-    if (busy && !importJob.isError) return
+    if (busy && !importJob.isError && !importJob.pollingPaused) return
     if (!trackedJobId) resetForm()
     onClose()
   }
@@ -130,7 +128,6 @@ export function AddManyStringsDialog({
     onSuccess: (result, { dry }) => {
       if (isJobAccepted(result)) {
         rememberJob({ jobId: result.job_id, projectId, kind: 'add', dryRun: dry })
-        setImportJobId(result.job_id)
       } else showResult(result)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
@@ -138,7 +135,6 @@ export function AddManyStringsDialog({
 
   const importJob = useJob(trackedJobId, {
     onCompleted: (job) => {
-      setImportJobId(null)
       const result = job.result as unknown as ImportResult
       if (result.dry_run) {
         claimFinish(job.id)
@@ -151,7 +147,6 @@ export function AddManyStringsDialog({
       onSuccess()
     },
     onFailed: (error) => {
-      setImportJobId(null)
       if (!trackedJobId || !claimFinish(trackedJobId)) return
       toast.error(error.message)
     },
@@ -368,6 +363,9 @@ export function AddManyStringsDialog({
               progress={importJob.data?.progress}
               error={importJob.isError ? importJob.error : undefined}
               onRetry={() => { void importJob.refetch() }}
+              pollingPaused={importJob.pollingPaused}
+              onCheckAgain={importJob.checkAgain}
+              onDismiss={importJob.dismiss}
               label={importProgressLabel(importJob.data?.progress)}
             />
           ) : null}
@@ -376,7 +374,7 @@ export function AddManyStringsDialog({
         <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
-              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError}>
+              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError && !importJob.pollingPaused}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>

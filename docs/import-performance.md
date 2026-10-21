@@ -140,14 +140,30 @@ The job row is committed as `running` before the response, so the first
 
 The import advisory lock stays the only one-import-per-project guard. The request
 takes it to reject a busy project with 409. Committing the job row would drop
-that transaction lock before the worker runs, so the request also holds a
-session lock until the worker is waiting on the same key, then unlocks. The
-worker holds the transaction lock until its one write ends. That write includes
+that transaction lock before the worker runs, so the owned worker connection
+queues a session lock before the commit. Once granted, it keeps that lock
+through its content transaction and releases it before returning to the pool.
+The same connection owns both the job and project locks, so the handoff needs
+only the request connection and the worker connection. The worker also holds
+the transaction lock until its one write ends. That write includes
 the completed status, for both import and undo, so a saved change never reads
 as running and a failure rolls the change back before the job is marked
-`failed`. If the worker process dies, Postgres releases the lock and the job
-row stays `running`. String-batch undo does not report a step count; its bar
-stays indeterminate.
+`failed`. Each new job also holds a separate ownership advisory lock before its
+running row is committed. This lock stays on the worker's content connection
+through completion, including while queued for the project lock. If the worker
+process dies, Postgres rolls back its content and releases both locks.
+
+At startup and every 60 seconds, recovery examines import, Excel import, and
+undo jobs older than 60 seconds. It marks one failed only after obtaining both
+its ownership lock and its project import lock without waiting, then rechecking
+that it is still running. A long but live job is never failed based on age.
+Interrupted jobs say "This operation was interrupted. Please run it again."
+They are not replayed automatically. Translation jobs are outside this recovery.
+
+**First deployment:** stop all old API workers before starting the new version.
+Legacy jobs have no ownership lock, so cleanup must not run alongside old workers.
+No schema migration is needed; new job payloads include `ownership_version: 1`.
+String-batch undo does not report a step count; its bar stays indeterminate.
 
 Requests without the header keep the synchronous 200 response. Older CLIs do not
 send it, so they never mistake a 202 for a finished push. The UI and current CLI
@@ -157,8 +173,14 @@ the job completes.
 
 Polling errors leave the job id saved in the tab. The UI offers **Retry status**
 and allows closing an import or undo dialog while the result is unknown. It
-clears the saved job only after a completed or failed job response; retrying
-status never submits the import or undo again.
+clears the saved job after a completed or failed job response, or explicit
+**Dismiss**. Automatic polling pauses after 30 minutes and says "Still running;
+the result is unknown." The deadline is saved in session storage, so reloading
+does not restart the wait. **Check again** starts a fresh 30-minute window.
+**Dismiss** clears tracking and re-enables controls; the server operation may
+still finish. Neither action resubmits or cancels work. A legacy stored job gets
+one fresh, persisted window. This recovery applies to Import / Export, Add many,
+undo, and the project-level watcher.
 
 Add many preserves its submitted JSON, module, and tags when a pending preview
 is closed and reopened. A preview recovered after a reload has no original

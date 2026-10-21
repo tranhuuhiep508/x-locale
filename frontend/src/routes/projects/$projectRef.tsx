@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar'
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { useJob } from '@/hooks/use-job'
+import { JobProgress } from '@/components/job-progress'
 import {
   claimFinish,
   getActiveJob,
@@ -61,10 +62,11 @@ function ProjectJobWatcher() {
   const active = useSyncExternalStore(subscribeActiveJob, getActiveJob)
   const qc = useQueryClient()
   const toast = useToast()
-  useJob(active?.jobId ?? null, {
+  const jobQuery = useJob(active?.jobId ?? null, {
     onCompleted: (job) => {
-      if (!active || !claimFinish(job.id)) return
+      if (!active) return
       if (active.dryRun || job.result?.dry_run === true) return
+      if (!claimFinish(job.id)) return
       refreshProjectContent(qc, active.projectId)
       toast.success(jobSuccessMessage(active.kind, job.result))
     },
@@ -73,7 +75,17 @@ function ProjectJobWatcher() {
       toast.error(error.message)
     },
   })
-  return null
+  if (!jobQuery.pollingPaused) return null
+  return (
+    <JobProgress
+      className="mx-4 mt-4 w-auto"
+      progress={null}
+      label=""
+      pollingPaused
+      onCheckAgain={jobQuery.checkAgain}
+      onDismiss={jobQuery.dismiss}
+    />
+  )
 }
 
 function ProjectLayout() {

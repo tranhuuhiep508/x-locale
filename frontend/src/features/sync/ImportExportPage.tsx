@@ -88,9 +88,7 @@ export function ImportExportPage() {
   const [importModuleId, setImportModuleId] = useState('')
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
-  const [importJobId, setImportJobId] = useState<string | null>(null)
-  const storedJobId = useActiveJobId(projectId, 'import')
-  const trackedJobId = importJobId ?? storedJobId
+  const trackedJobId = useActiveJobId(projectId, 'import')
 
   const layout = exportLayout ?? project?.layout ?? 'flat'
   const targetLocale = importLocale ?? project?.base_language ?? 'en'
@@ -127,7 +125,6 @@ export function ImportExportPage() {
     onSuccess: (res, { dry }) => {
       if (isJobAccepted(res)) {
         rememberJob({ jobId: res.job_id, projectId, kind: 'import', dryRun: dry })
-        setImportJobId(res.job_id)
       } else showImportResult(res)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Import failed'),
@@ -135,7 +132,6 @@ export function ImportExportPage() {
 
   const importJob = useJob(trackedJobId, {
     onCompleted: (job) => {
-      setImportJobId(null)
       const result = job.result as unknown as ImportResult
       const won = claimFinish(job.id)
       if (result.dry_run) {
@@ -150,7 +146,6 @@ export function ImportExportPage() {
       refreshProjectContent(queryClient, projectId)
     },
     onFailed: (error) => {
-      setImportJobId(null)
       if (!trackedJobId || !claimFinish(trackedJobId)) return
       toast.error(error.message)
     },
@@ -459,6 +454,9 @@ export function ImportExportPage() {
                 progress={importJob.data?.progress}
                 error={importJob.isError ? importJob.error : undefined}
                 onRetry={() => { void importJob.refetch() }}
+                pollingPaused={importJob.pollingPaused}
+                onCheckAgain={importJob.checkAgain}
+                onDismiss={importJob.dismiss}
                 label={importProgressLabel(importJob.data?.progress)}
               />
             ) : null}
@@ -476,7 +474,7 @@ export function ImportExportPage() {
               ) : (
                 <Upload data-icon="inline-start" />
               )}
-              {importJobId ? 'Importing…' : importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
+              {trackedJobId ? 'Importing…' : importMut.isPending ? 'Uploading…' : 'Choose file (JSON or XLSX)'}
             </Button>
           </CardFooter>
         </Card>

@@ -1,3 +1,5 @@
+import asyncio
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -26,6 +28,7 @@ from app.routers import (
 )
 from app.services.activity_state import is_key_integrity_error
 from app.services.catalog import is_module_project_fk_error
+from app.services.jobs import recovery_loop
 from app.services.key_policy import is_key_policy_error, key_policy_conflict
 
 require_postgres_database_url(settings.database_url)
@@ -35,7 +38,16 @@ require_postgres_database_url(settings.database_url)
 async def lifespan(_: FastAPI):
     settings.validate_for_runtime()
     register_activity_listener()
-    yield
+    stop_recovery = threading.Event()
+    recovery = threading.Thread(
+        target=recovery_loop, args=(stop_recovery,), name="job-recovery", daemon=True
+    )
+    recovery.start()
+    try:
+        yield
+    finally:
+        stop_recovery.set()
+        await asyncio.to_thread(recovery.join, 5)
 
 
 _api_docs = "/docs" if settings.dev_bypass_active else None

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
-import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob } from '@/lib/active-job'
+import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob, useActiveJobId } from '@/lib/active-job'
 import { isJobAccepted } from '@/lib/api/jobs'
 import type {
   ActivityChange,
@@ -141,7 +141,7 @@ export function ActivityPage() {
   const toast = useToast()
   const [undoTarget, setUndoTarget] = useState<ActivityFeedCard | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [undoJobId, setUndoJobId] = useState<string | null>(null)
+  const undoJobId = useActiveJobId(projectId, 'revert')
 
   const { data: project } = useQuery(projectQuery(projectId))
   const { data, isLoading, isError, isSuccess, refetch } = useQuery(
@@ -192,7 +192,6 @@ export function ActivityPage() {
     onSuccess: (result) => {
       if (isJobAccepted(result)) {
         rememberJob({ jobId: result.job_id, projectId, kind: 'revert' })
-        setUndoJobId(result.job_id)
       } else undoSucceeded(result)
     },
     onError: undoFailed,
@@ -200,7 +199,6 @@ export function ActivityPage() {
 
   const undoJob = useJob(undoJobId, {
     onCompleted: (job) => {
-      setUndoJobId(null)
       if (claimFinish(job.id)) {
         const result = job.result as unknown as BatchRevertResult
         toast.success(jobSuccessMessage('revert', { reverted: result.reverted }))
@@ -209,7 +207,6 @@ export function ActivityPage() {
       closeUndo()
     },
     onFailed: (error) => {
-      setUndoJobId(null)
       if (error.status === 409) void undoPreviewQuery.refetch()
       if (undoJobId && !claimFinish(undoJobId)) return
       toast.error(error instanceof Error ? error.message : 'Undo failed')
@@ -386,6 +383,9 @@ export function ActivityPage() {
                 progress={undoJob.data?.progress}
                 error={undoJob.isError ? undoJob.error : undefined}
                 onRetry={() => { void undoJob.refetch() }}
+                pollingPaused={undoJob.pollingPaused}
+                onCheckAgain={undoJob.checkAgain}
+                onDismiss={undoJob.dismiss}
                 label={undoProgressLabel(undoJob.data?.progress)}
               />
             ) : null}
@@ -403,7 +403,7 @@ export function ActivityPage() {
         }
         confirmLabel={undoOverwrite ? 'Overwrite and undo' : 'Undo'}
         variant={undoOverwrite ? 'destructive' : 'default'}
-        isLoading={undoBusy && !undoJob.isError}
+        isLoading={undoBusy && !undoJob.isError && !undoJob.pollingPaused}
         confirmDisabled={
           undoBusy || undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
         }

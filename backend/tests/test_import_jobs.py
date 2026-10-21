@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models import Activity, Job, JobStatus, Module, StringEntry
-from app.services import import_lock, imports, jobs
+from app.services import imports, jobs
 from app.services.jobs import wants_async
 from tests.helpers import make_project
 from tests.test_import_concurrency import (
@@ -163,9 +163,7 @@ def test_running_job_is_visible_and_holds_import_lock(
         try:
             assert entered.wait(5)
             with session_factory() as db:
-                job_id = db.scalar(
-                    select(Job.id).where(Job.project_id == uuid.UUID(project["id"]))
-                )
+                job_id = db.scalar(select(Job.id).where(Job.project_id == uuid.UUID(project["id"])))
             job = poll(client, project, kind, job_id, until_done=False)
             assert job["status"] == "running"
             assert job["progress"]["phase"] == "queued"
@@ -261,14 +259,15 @@ def test_second_import_during_handoff_is_rejected(
     client, project, session_factory, small_threshold, monkeypatch
 ):
     entered, release = Event(), Event()
-    original = import_lock.release_import_session_lock
+    original = jobs.start_job
 
-    def pause(db, project_id):
+    def pause(*args, **kwargs):
+        job = original(*args, **kwargs)
         entered.set()
         assert release.wait(10), "Handoff test did not release the session lock"
-        original(db, project_id)
+        return job
 
-    monkeypatch.setattr(import_lock, "release_import_session_lock", pause)
+    monkeypatch.setattr(jobs, "start_job", pause)
     with ThreadPoolExecutor(max_workers=1) as pool:
         path, kwargs = async_request(project, "cli")
         submitting = pool.submit(client.post, path, **kwargs)
@@ -309,14 +308,12 @@ def test_job_start_failure_releases_handoff_lock(
     client, project, small_threshold, monkeypatch, after_commit
 ):
     finished = Event()
-    captured = {}
-    original_hold = jobs._hold_session_lock
+    original_release = jobs._release_job_connection
     original_start = jobs.start_job
 
-    def hold(project_id, held, release):
-        captured["release"] = release
+    def release(conn, job_id):
         try:
-            original_hold(project_id, held, release)
+            original_release(conn, job_id)
         finally:
             finished.set()
 
@@ -325,7 +322,7 @@ def test_job_start_failure_releases_handoff_lock(
             original_start(*args, **kwargs)
         raise HTTPException(503, "Job creation failed")
 
-    monkeypatch.setattr(jobs, "_hold_session_lock", hold)
+    monkeypatch.setattr(jobs, "_release_job_connection", release)
     monkeypatch.setattr(jobs, "start_job", fail_start)
     try:
         path, kwargs = async_request(project, "cli")
@@ -336,9 +333,6 @@ def test_job_start_failure_releases_handoff_lock(
         response = client.post(path, **kwargs)
         assert response.status_code == 200, response.text
     finally:
-        # Also clean up when this regression test runs against the old code.
-        if "release" in captured:
-            captured["release"].set()
         assert finished.wait(5)
 
 

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivityPage } from '@/features/activity/ActivityPage'
-import { clearActiveJob } from '@/lib/active-job'
+import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
@@ -218,6 +218,29 @@ describe('Activity undo published_key_conflict', () => {
     expect(within(dialog).getByRole('heading', { name: 'Undo this batch?' })).toBeTruthy()
     expect(screen.getByText('Imported strings')).toBeTruthy()
     catalogUntouched()
+  })
+
+  it('restores a paused undo after reload and dismisses it without submitting again', async () => {
+    rememberJob({
+      jobId: 'old-undo', projectId: 'proj-1', kind: 'revert',
+      pollingStartedAt: Date.now() - 31 * 60 * 1000,
+    })
+    renderPage()
+    expect(await screen.findByText('Imported strings')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Still running; the result is unknown.')).toBeTruthy()
+    expect((within(dialog).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled)
+      .toBe(false)
+    expect(jobsApi.get).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => {
+      expect((within(dialog).getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled)
+        .toBe(false)
+    })
+    expect(getActiveJob()).toBeNull()
+    expect(sessionStorage.getItem('x-locale-active-job')).toBeNull()
+    expect(activitiesApi.revertBatch).not.toHaveBeenCalled()
   })
 
   it('shows the server message when the background revert job fails', async () => {

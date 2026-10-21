@@ -173,6 +173,24 @@ describe('AddManyStringsDialog', () => {
     expect(screen.queryByText('Checking keys…')).toBeNull()
   })
 
+  it('recovers an expired saved job and re-enables preview when dismissed', () => {
+    rememberJob({
+      jobId: 'expired-add', projectId: 'proj-1', kind: 'add', dryRun: true,
+      pollingStartedAt: Date.now() - 31 * 60 * 1000,
+    })
+    renderDialog()
+    expect(screen.getByText('Still running; the result is unknown.')).toBeTruthy()
+    expect(screen.getByText(/The operation may still finish on the server/)).toBeTruthy()
+    expect(jobsApi.get).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"new": "Mới"}' } })
+    expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(getActiveJob()).toBeNull()
+    expect(sessionStorage.getItem('x-locale-active-job')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(syncApi.importFile).not.toHaveBeenCalled()
+  })
+
   it('returns to the paste step when the background job fails', async () => {
     renderDialog()
     vi.mocked(syncApi.importFile).mockResolvedValueOnce({

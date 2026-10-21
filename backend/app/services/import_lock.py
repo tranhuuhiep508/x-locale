@@ -51,13 +51,6 @@ def acquire_import_session_lock(db: Session, project_id: uuid.UUID) -> None:
     )
 
 
-def release_import_session_lock(db: Session, project_id: uuid.UUID) -> None:
-    db.execute(
-        text("SELECT pg_advisory_unlock(:namespace, hashtext(:project_uuid))"),
-        _lock_params(project_id),
-    )
-
-
 def import_lock_waiting(db: Session, project_id: uuid.UUID) -> bool:
     """True when another session is blocked on this project's import lock."""
     waiting = db.scalar(
