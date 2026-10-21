@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivityPage } from '@/features/activity/ActivityPage'
-import { clearActiveJob } from '@/lib/active-job'
+import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
+import { ActiveJobWatcher } from '@/components/active-job-watcher'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
@@ -146,6 +147,7 @@ function renderPage() {
   client.setQueryData(catalogKey, catalog)
   const view = render(
     <QueryClientProvider client={client}>
+      <ActiveJobWatcher />
       <ActivityPage />
     </QueryClientProvider>,
   )
@@ -255,9 +257,32 @@ describe('Activity undo published_key_conflict', () => {
       expect(toast.error).toHaveBeenCalledWith(PUBLISHED_KEY_CONFLICT)
     })
     expect(toast.success).not.toHaveBeenCalled()
-    expect(jobsApi.get).toHaveBeenCalledWith('job-revert')
+    expect(jobsApi.get).toHaveBeenCalledWith('job-revert', expect.any(AbortSignal))
     expect(within(dialog).getByRole('heading', { name: 'Undo this batch?' })).toBeTruthy()
     expect(screen.getByText('Imported strings')).toBeTruthy()
     catalogUntouched()
+  })
+
+  it('stopping tracking an undo clears its local busy state and refreshes its preview', async () => {
+    vi.mocked(activitiesApi.revertBatch).mockResolvedValue({
+      job_id: 'stopped-undo', kind: 'revert', status: 'running',
+    })
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'stopped-undo', kind: 'revert', status: 'running', result: null, error: null,
+      progress: null, created_at: null, completed_at: null,
+    })
+    renderPage()
+    expect(await screen.findByText('Imported strings')).toBeTruthy()
+    const dialog = await confirmUndo()
+    await waitFor(() => expect(getActiveJob()?.jobId).toBe('stopped-undo'))
+    act(() => { rememberJob({ ...getActiveJob()!, pollUntil: 0 }) })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop tracking' }))
+    await waitFor(() => expect(getActiveJob()).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    const reopened = await screen.findByRole('alertdialog')
+    await waitFor(() => expect((within(reopened).getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(activitiesApi.revertBatch).toHaveBeenCalledTimes(1)
+    expect(activitiesApi.revertBatchPreview).toHaveBeenCalledTimes(2)
   })
 })

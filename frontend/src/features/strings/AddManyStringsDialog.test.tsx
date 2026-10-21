@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ActiveJobWatcher } from '@/components/active-job-watcher'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
 import { ApiError } from '@/lib/api/client'
@@ -108,22 +109,17 @@ function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
   })
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
+      <ActiveJobWatcher />
       <TooltipProvider>{children}</TooltipProvider>
     </QueryClientProvider>
   )
-  const view = render(
-    <AddManyStringsDialog
-      open
-      projectId="proj-1"
-      project={project}
-      modules={modules}
-      tags={tags}
-      onClose={onClose}
-      onSuccess={onSuccess}
-    />,
-    { wrapper },
+  const dialog = (open: boolean) => (
+    <AddManyStringsDialog open={open} projectId="proj-1" project={project} modules={modules}
+      tags={tags} onClose={onClose} onSuccess={onSuccess} />
   )
-  return { ...view, client, onSuccess, onClose }
+  const view = render(dialog(true), { wrapper })
+  return { ...view, client, onSuccess, onClose, setOpen: (open: boolean) => view.rerender(dialog(open)) }
+
 }
 
 describe('AddManyStringsDialog', () => {
@@ -169,7 +165,7 @@ describe('AddManyStringsDialog', () => {
       true,
     )
     expect(await screen.findByText(/\+ e2e_new/, undefined, { timeout: 3000 })).toBeTruthy()
-    expect(jobsApi.get).toHaveBeenCalledWith('job-1')
+    expect(jobsApi.get).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     expect(screen.queryByText('Checking keys…')).toBeNull()
   })
 
@@ -204,7 +200,7 @@ describe('AddManyStringsDialog', () => {
   })
 
   it.each([404, 503])('keeps the job after a %s poll error and retries status', async (status) => {
-    const { onClose } = renderDialog()
+    const { onClose, setOpen } = renderDialog()
     vi.mocked(syncApi.importFile).mockResolvedValueOnce({
       job_id: 'job-retry', status: 'running', kind: 'import',
     })
@@ -213,12 +209,13 @@ describe('AddManyStringsDialog', () => {
     fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
 
-    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
     expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
     expect(getActiveJob()?.jobId).toBe('job-retry')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onClose).toHaveBeenCalledTimes(1)
+    setOpen(false)
     expect(getActiveJob()?.jobId).toBe('job-retry')
     const calls = vi.mocked(jobsApi.get).mock.calls.length
     await new Promise((resolve) => setTimeout(resolve, 1200))
@@ -230,6 +227,8 @@ describe('AddManyStringsDialog', () => {
       created_at: null, completed_at: null, progress: null,
     })
     fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
+    await waitFor(() => expect(getActiveJob()).toBeNull())
+    setOpen(true)
     expect(await screen.findByText('New strings')).toBeTruthy()
     expect(getActiveJob()).toBeNull()
     expect(syncApi.importFile).toHaveBeenCalledTimes(1)
@@ -252,7 +251,7 @@ describe('AddManyStringsDialog', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Common' }))
     fireEvent.click(screen.getByRole('button', { name: 'ios' }))
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onClose).toHaveBeenCalledTimes(1)
     rerender(dialog(false))
@@ -264,10 +263,14 @@ describe('AddManyStringsDialog', () => {
     if (finishesWhileClosed) {
       await act(async () => { await client.refetchQueries({ queryKey: ['jobs', 'reopen-preview'] }) })
     }
-    rerender(dialog(true))
     if (!finishesWhileClosed) {
+      rerender(dialog(true))
+      expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      rerender(dialog(false))
       fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
     }
+    rerender(dialog(true))
     expect(await screen.findByText('New strings')).toBeTruthy()
     const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement
     expect(apply.disabled).toBe(false)
@@ -312,7 +315,7 @@ describe('AddManyStringsDialog', () => {
   })
 
   it('can close an applied import after a poll error without submitting it twice', async () => {
-    const { onSuccess, onClose } = renderDialog()
+    const { onSuccess, onClose, setOpen } = renderDialog()
     vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce({
       job_id: 'job-apply-retry', status: 'running', kind: 'import',
     })
@@ -321,10 +324,11 @@ describe('AddManyStringsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     expect(await screen.findByText('New strings')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(await screen.findByRole('button', { name: 'Retry status' })).toBeTruthy()
+    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
     expect((screen.getByRole('button', { name: /Apply/ }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
+    setOpen(false)
     expect(getActiveJob()?.jobId).toBe('job-apply-retry')
     vi.mocked(jobsApi.get).mockResolvedValue({
       id: 'job-apply-retry', kind: 'import', status: 'completed',
@@ -348,6 +352,31 @@ describe('AddManyStringsDialog', () => {
     expect(await screen.findByText('New strings')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false)
     expect(syncApi.importFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops tracking an applied import and requires a fresh preview without resubmitting', async () => {
+    const { setOpen } = renderDialog()
+    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce({
+      job_id: 'stopped-apply', status: 'running', kind: 'import',
+    })
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'stopped-apply', kind: 'import', status: 'running', result: null, error: null,
+      progress: null, created_at: null, completed_at: null,
+    })
+    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save":"Lưu"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('New strings')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(getActiveJob()?.jobId).toBe('stopped-apply'))
+    act(() => { rememberJob({ ...getActiveJob()!, pollUntil: 0 }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    setOpen(false)
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop tracking' }))
+    await waitFor(() => expect(getActiveJob()).toBeNull())
+    setOpen(true)
+    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+    expect(syncApi.importFile).toHaveBeenCalledTimes(2)
   })
 
   it('rejects invalid JSON without calling import', async () => {

@@ -108,7 +108,7 @@ export function AddManyStringsDialog({
   }
 
   function closeDialog() {
-    if (busy && !importJob.isError) return
+    if (busy && !importJob.isError && !importJob.isPaused) return
     if (!trackedJobId) resetForm()
     onClose()
   }
@@ -137,6 +137,12 @@ export function AddManyStringsDialog({
   })
 
   const importJob = useJob(trackedJobId, {
+    onStopped: () => {
+      setImportJobId(null)
+      setPreview(null)
+      setPendingMap(null)
+      setStep('paste')
+    },
     onCompleted: (job) => {
       setImportJobId(null)
       const result = job.result as unknown as ImportResult
@@ -367,7 +373,7 @@ export function AddManyStringsDialog({
               className="pt-4"
               progress={importJob.data?.progress}
               error={importJob.isError ? importJob.error : undefined}
-              onRetry={() => { void importJob.refetch() }}
+              paused={importJob.isPaused}
               label={importProgressLabel(importJob.data?.progress)}
             />
           ) : null}
@@ -376,7 +382,7 @@ export function AddManyStringsDialog({
         <ReviewDialogFooter>
           {step === 'paste' ? (
             <>
-              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError}>
+              <Button variant="outline" onClick={closeDialog} disabled={busy && !importJob.isError && !importJob.isPaused}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>

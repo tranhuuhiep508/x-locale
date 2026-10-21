@@ -5,7 +5,7 @@ import type { Job, JobAccepted } from '@/lib/api/types'
 export const RESPOND_ASYNC = { Prefer: 'respond-async' }
 
 export const jobsApi = {
-  get: (jobId: string) => api.get<Job>(`/jobs/${jobId}`),
+  get: (jobId: string, signal?: AbortSignal) => api.get<Job>(`/jobs/${jobId}`, undefined, signal),
 }
 
 export function isJobAccepted(value: unknown): value is JobAccepted {
