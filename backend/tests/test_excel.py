@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import uuid
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -584,7 +586,7 @@ def test_workbook_tag_order_matches_catalog_sort():
     assert tags_cell(reverse) == expected
 
 
-def test_build_workbook_sanitizes_formula_injection():
+def test_build_workbook_serializes_formulas_as_text():
     project = Project(
         name="Security App",
         slug="security-app",
@@ -619,16 +621,17 @@ def test_build_workbook_sanitizes_formula_injection():
     wb_bytes = build_workbook(
         project, [dangerous_entry, normal_entry, empty_tags_entry], stage="draft"
     )
+    _assert_workbook_is_text(wb_bytes)
     wb = load_workbook(io.BytesIO(wb_bytes))
     rows = list(wb[FLAT_SHEET].iter_rows(values_only=True))
     by_key = {r[0]: r for r in rows[1:]}
 
-    dangerous = by_key['\'=HYPERLINK("http://evil")']
-    assert dangerous[0] == '\'=HYPERLINK("http://evil")'
-    assert dangerous[1] == "'+cmd|' /C calc'"
-    assert dangerous[2] == "'-1day,@malicious,safe"
-    assert dangerous[3] == "'=SUM(A1:A10)"
-    assert dangerous[4] == "'@malicious_link"
+    dangerous = by_key['=HYPERLINK("http://evil")']
+    assert dangerous[0] == '=HYPERLINK("http://evil")'
+    assert dangerous[1] == "+cmd|' /C calc'"
+    assert dangerous[2] == "-1day,@malicious,safe"
+    assert dangerous[3] == "=SUM(A1:A10)"
+    assert dangerous[4] == "@malicious_link"
 
     normal = by_key["btn.save"]
     assert normal[0] == "btn.save"
@@ -642,7 +645,7 @@ def test_build_workbook_sanitizes_formula_injection():
     assert empty_tags[2] in ("", None)
 
 
-def test_import_workbook_desanitizes_key_and_tags_round_trip(client):
+def test_import_workbook_literal_key_and_tags_round_trip(client):
     project = _make_project(client, name="Formula Key Tags Round Trip")
     pid = project["id"]
 
@@ -743,8 +746,7 @@ def test_import_workbook_desanitizes_key_and_tags_round_trip(client):
     apostrophe = by_key["'quoted.key"]
     assert {t["name"] for t in apostrophe["tags"]} == {"'keep"}
 
-    # Re-import the same sanitized workbook: lookup uses the original key, not the
-    # Excel prefix, so we update in place instead of creating quoted duplicates.
+    # Re-importing literal keys updates in place instead of creating duplicates.
     r_again = client.post(
         f"/api/projects/{pid}/import?dry_run=false",
         files={
@@ -765,3 +767,121 @@ def test_import_workbook_desanitizes_key_and_tags_round_trip(client):
         "plain.key",
         "'quoted.key",
     }
+
+
+def _assert_workbook_is_text(raw):
+    with ZipFile(io.BytesIO(raw)) as archive:
+        for name in archive.namelist():
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                root = ElementTree.fromstring(archive.read(name))
+                assert root.findall(".//{*}f") == []
+    wb = load_workbook(io.BytesIO(raw))
+    try:
+        for ws in wb:
+            for row in ws:
+                for cell in row:
+                    if cell.value is not None:
+                        assert cell.data_type == "s", (ws.title, cell.coordinate, cell.value)
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("template", [False, True])
+def test_all_workbook_text_including_templates_and_metadata_is_literal(monkeypatch, template):
+    from app import excel
+
+    project = Project(
+        id=uuid.uuid4(),
+        name="Text cells",
+        slug='=HYPERLINK("https://example.com")',
+        base_language="vi",
+        target_languages=["en"],
+        layout=ProjectLayout.flat,
+    )
+    value = '=HYPERLINK("https://example.com")'
+    monkeypatch.setattr(excel, "DEMO_IMPORT_ROWS", {"auth": [(value, value)]})
+    if template:
+        raw = build_template_workbook(project)
+    else:
+        raw = build_workbook(
+            project,
+            [StringEntry(key=value, source_text=value, status=TranslationStatus.draft)],
+            stage="draft",
+        )
+    _assert_workbook_is_text(raw)
+    wb = load_workbook(io.BytesIO(raw), data_only=True)
+    try:
+        assert wb[FLAT_SHEET].cell(2, 1).value == value
+        assert wb[FLAT_SHEET].cell(2, 4).value == value
+        assert dict(wb["_meta"].values)["project_slug"] == project.slug
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("stage", ["draft", "public"])
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+@pytest.mark.parametrize("as_job", [False, True])
+def test_formula_prefixes_and_literal_apostrophes_roundtrip(
+    client, session_factory, stage, layout, as_job
+):
+    project = _make_project(client, name="Literal Excel Text", layout=layout)
+    pid = uuid.UUID(project["id"])
+    root = f"/api/projects/{pid}"
+    values = ["'" * quotes + prefix + "literal" for prefix in "=+-@" for quotes in range(3)]
+    tag_names = ["!first", *values, "z-last"]
+    with session_factory() as db:
+        tags = {name: Tag(project_id=pid, name=name) for name in tag_names}
+        module = Module(project_id=pid, slug="auth", name="Auth") if layout == "modular" else None
+        entries = [
+            StringEntry(
+                project_id=pid,
+                key=value,
+                key_policy_allows_duplicates=False,
+                source_text=value,
+                description=value,
+                module=module,
+                status=TranslationStatus.draft,
+                tags=[tags[value]],
+                translations=[Translation(locale="en", value=value)],
+            )
+            for value in values
+        ]
+        # Each special tag also occurs after a safe first tag in a combined cell.
+        entries.append(
+            StringEntry(
+                project_id=pid,
+                key="all-tags",
+                key_policy_allows_duplicates=False,
+                source_text="All tags",
+                module=module,
+                status=TranslationStatus.draft,
+                tags=list(tags.values()),
+                translations=[Translation(locale="en", value="All tags")],
+            )
+        )
+        db.add_all(entries)
+        db.commit()
+        ids = [str(entry.id) for entry in entries]
+    if stage == "public":
+        publish_strings(client, str(pid), ids)
+    before = client.get(f"{root}/strings").json()
+    exported = client.get(f"{root}/export", params={"format": "xlsx", "stage": stage})
+    assert exported.status_code == 200, exported.text
+    _assert_workbook_is_text(exported.content)
+    for _ in range(2):
+        response = client.post(
+            f"{root}/import",
+            files={"file": ("literal.xlsx", exported.content)},
+            headers={"Prefer": "respond-async"} if as_job else {},
+        )
+        if as_job:
+            assert response.status_code == 202, response.text
+            job = poll(client, project, "xlsx", response.json()["job_id"])
+            assert job["status"] == "completed", job
+            result = job["result"]
+        else:
+            assert response.status_code == 200, response.text
+            result = response.json()
+        assert result["created"] == 0
+        assert result["updated"] == 0
+        assert client.get(f"{root}/strings").json() == before

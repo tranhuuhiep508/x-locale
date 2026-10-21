@@ -6,6 +6,8 @@ import io
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell import WriteOnlyCell
+from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
 from app.helpers import (
@@ -141,15 +143,15 @@ def _write_meta_sheet(
     wb: Workbook, project: Project, stage: str, module_sheets: dict[str, str]
 ) -> None:
     meta = wb.create_sheet("_meta")
-    meta.append(["key", "value"])
-    meta.append(["project_id", str(project.id)])
-    meta.append(["project_slug", project.slug])
-    meta.append(["base_language", project.base_language])
-    meta.append(["stage", stage])
-    meta.append(["target_languages", ",".join(project.target_languages)])
-    meta.append(["layout", _layout_value(project)])
+    _append_text_row(meta, ["key", "value"])
+    _append_text_row(meta, ["project_id", str(project.id)])
+    _append_text_row(meta, ["project_slug", project.slug])
+    _append_text_row(meta, ["base_language", project.base_language])
+    _append_text_row(meta, ["stage", stage])
+    _append_text_row(meta, ["target_languages", ",".join(project.target_languages)])
+    _append_text_row(meta, ["layout", _layout_value(project)])
     for name, slug in module_sheets.items():
-        meta.append([f"{MODULE_SLUG_PREFIX}{name}", slug])
+        _append_text_row(meta, [f"{MODULE_SLUG_PREFIX}{name}", slug])
     meta.sheet_state = "hidden"
 
 
@@ -161,33 +163,26 @@ def _write_template_sheet(
     base_language: str,
 ) -> None:
     ws = wb.create_sheet(name)
-    ws.append(["key", "description", "tags", *locales])
+    _append_text_row(ws, ["key", "description", "tags", *locales])
     for key, source in rows:
         row: list[Any] = [key, "", ""]
         for locale in locales:
             row.append(source if locale == base_language else "")
-        ws.append(row)
+        _append_text_row(ws, row)
 
 
-DANGEROUS_PREFIXES = ("=", "+", "-", "@")
+def _text_value(val: Any) -> str:
+    return "" if val is None else str(val)
 
 
-def _sanitize_cell_value(val: Any) -> Any:
-    if val is None:
-        return ""
-    s = str(val)
-    if s.startswith(DANGEROUS_PREFIXES):
-        return f"'{s}"
-    return s
-
-
-def _desanitize_cell_value(val: Any) -> str:
-    if val is None:
-        return ""
-    s = str(val)
-    if s.startswith("'") and len(s) > 1 and s[1] in DANGEROUS_PREFIXES:
-        return s[1:]
-    return s
+def _append_text_row(ws: Worksheet, values: list[Any]) -> None:
+    cells = []
+    for value in values:
+        cell = WriteOnlyCell(ws, value=_text_value(value))
+        # Explicit string cells preserve literal text without creating Excel formulas.
+        cell.data_type = "s"
+        cells.append(cell)
+    ws.append(cells)
 
 
 def _write_sheet(
@@ -200,7 +195,7 @@ def _write_sheet(
 ) -> None:
     ws = wb.create_sheet(name)
     headers = ["key", "description", "tags", *locales]
-    ws.append(headers)
+    _append_text_row(ws, headers)
 
     def _row_key(entry: StringEntry) -> str:
         if stage == "public":
@@ -228,23 +223,23 @@ def _write_sheet(
             tag.name for tag in sorted(entry.tags or [], key=lambda tag: (tag.name, str(tag.id)))
         )
         row: list[Any] = [
-            _sanitize_cell_value(row_key),
-            _sanitize_cell_value(entry.description),
-            _sanitize_cell_value(tags),
+            row_key,
+            entry.description,
+            tags,
         ]
         for locale in locales:
             if locale == project.base_language:
-                row.append(_sanitize_cell_value(source))
+                row.append(source)
             else:
                 t = next((x for x in entry.translations if x.locale == locale), None)
                 if stage == "public":
                     if t is not None and t.published_value is not None:
-                        row.append(_sanitize_cell_value(t.published_value))
+                        row.append(t.published_value)
                     else:
                         row.append("")
                 else:
-                    row.append(_sanitize_cell_value(t.value if t else ""))
-        ws.append(row)
+                    row.append(t.value if t else "")
+        _append_text_row(ws, row)
 
 
 def import_workbook(
@@ -329,7 +324,7 @@ def import_workbook(
             for number, row in enumerate(iterator, start=2):
                 if not row or row[key_idx] is None:
                     continue
-                key = _desanitize_cell_value(row[key_idx]).strip()
+                key = _text_value(row[key_idx]).strip()
                 if not key:
                     continue
                 context = f"Sheet {sheet_name!r} row {number}: "
@@ -339,7 +334,7 @@ def import_workbook(
                         f"{context}key {key_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
                     )
                 description = (
-                    _desanitize_cell_value(row[desc_idx]).strip()
+                    _text_value(row[desc_idx]).strip()
                     if desc_idx is not None and row[desc_idx]
                     else None
                 ) or None
@@ -347,16 +342,14 @@ def import_workbook(
                 if tags_idx is not None and row[tags_idx]:
                     names = tuple(
                         ensure_max_length(
-                            _desanitize_cell_value(value.strip()),
+                            value.strip(),
                             field="tag name",
                             limit=TAG_NAME_MAX_LENGTH,
                         )
                         for value in str(row[tags_idx]).split(",")
                         if value.strip()
                     )
-                values = {
-                    locale: _desanitize_cell_value(row[index]) for locale, index in locales.items()
-                }
+                values = {locale: _text_value(row[index]) for locale, index in locales.items()}
                 label = f"{module}/{key}" if module is not None else key
                 rows.append(
                     ImportRow(
