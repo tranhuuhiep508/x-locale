@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from sqlalchemy import event
 
 from app.excel import (
     FLAT_SHEET,
@@ -246,6 +247,68 @@ def _make_project(client, name="Excel Test Project", layout="flat", base="vi", t
     )
     assert r.status_code == 201, r.text
     return r.json()
+
+
+@pytest.mark.parametrize(("count", "expected_queries"), [(4, 1), (501, 2)])
+@pytest.mark.parametrize("tagged", [False, True])
+def test_excel_export_batches_tag_queries(
+    client, session_factory, database_engine, count, expected_queries, tagged
+):
+    project = _make_project(client, targets=["en", "ja"])
+    pid = uuid.UUID(project["id"])
+    with session_factory() as db:
+        tags = [Tag(project_id=pid, name=name) for name in ("z-last", "a-first")] if tagged else []
+        db.add_all(
+            StringEntry(
+                project_id=pid,
+                key=f"key{i:04}",
+                key_policy_allows_duplicates=False,
+                source_text=f"Source {i}",
+                description=f"Description {i}",
+                status=TranslationStatus.draft,
+                tags=tags if i % 2 == 0 else [],
+                translations=[
+                    Translation(locale="en", value=f"English {i}"),
+                    Translation(locale="ja", value=f"Japanese {i}"),
+                ],
+            )
+            for i in range(count)
+        )
+        db.commit()
+
+    tag_queries = []
+
+    def observe(_conn, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "string_tags" in statement:
+            tag_queries.append(statement)
+
+    event.listen(database_engine, "before_cursor_execute", observe)
+    try:
+        response = client.get(
+            f"/api/projects/{pid}/export", params={"format": "xlsx", "stage": "draft"}
+        )
+    finally:
+        event.remove(database_engine, "before_cursor_execute", observe)
+    assert response.status_code == 200, response.text
+    assert len(tag_queries) == expected_queries
+    wb = load_workbook(io.BytesIO(response.content))
+    try:
+        assert list(wb[FLAT_SHEET].values) == [
+            ("key", "description", "tags", "vi", "en", "ja"),
+            *[
+                (
+                    f"key{i:04}",
+                    f"Description {i}",
+                    "a-first,z-last" if tagged and i % 2 == 0 else None,
+                    f"Source {i}",
+                    f"English {i}",
+                    f"Japanese {i}",
+                )
+                for i in range(count)
+            ],
+        ]
+    finally:
+        wb.close()
 
 
 def test_build_workbook_flat_structure():

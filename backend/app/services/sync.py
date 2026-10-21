@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session, aliased, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from app.helpers import content_hash, export_key, reject_nul, validate_module_slug
 from app.models import Module, Project, StringEntry, Tag, Translation, TranslationStatus
@@ -27,6 +27,7 @@ def load_export_entries(db: Session, project_id) -> list[StringEntry]:
             joinedload(StringEntry.translations),
             joinedload(StringEntry.module),
             joinedload(StringEntry.published_module),
+            selectinload(StringEntry.tags),
         )
         .filter(StringEntry.project_id == project_id)
         .order_by(StringEntry.key)
