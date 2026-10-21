@@ -35,6 +35,12 @@ Each JSON module must map locale codes to objects of string
 keys and values; malformed module or unassigned maps return HTTP 400 in preview
 and apply before any reference or content rows are created.
 
+Excel exports and templates write literal string cells, including values beginning
+with `=`, `+`, `-`, `@`, or apostrophes. Imports preserve those apostrophes and do
+not decode the apostrophe escapes used by earlier exports. Regenerate pre-fix
+workbooks before importing; their original leading apostrophes cannot be inferred
+reliably. Existing whitespace trimming and comma-separated tag rules still apply.
+
 Modular Excel exports and templates preserve full module slugs in the hidden
 `_meta` worksheet as `module_slug:<worksheet name>` rows. Worksheet names are
 unique, stay within Excel's 31-character limit, and are display labels; imports
