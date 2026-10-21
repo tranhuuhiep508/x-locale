@@ -35,6 +35,19 @@ Each JSON module must map locale codes to objects of string
 keys and values; malformed module or unassigned maps return HTTP 400 in preview
 and apply before any reference or content rows are created.
 
+Modular Excel exports and templates preserve full module slugs in the hidden
+`_meta` worksheet as `module_slug:<worksheet name>` rows. Worksheet names are
+unique, stay within Excel's 31-character limit, and are display labels; imports
+use the mapped slug for module identity. `_unassigned` retains its reserved
+meaning. Workbooks with mappings must include one valid, distinct mapping for
+every data worksheet. Renaming or copying a data worksheet requires updating its
+mapping in `_meta`; invalid or incomplete mappings fail before any content is
+written. Notes worksheets without a `key` column are still ignored.
+
+Legacy workbooks without mappings still use worksheet names as module slugs.
+Old exports whose long slugs were already truncated cannot be repaired reliably
+from worksheet names alone; re-export those workbooks after upgrading.
+
 ## Compatibility fixtures
 
 `backend/tests/fixtures/import_golden.json` was captured from the ORM path at

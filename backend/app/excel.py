@@ -29,6 +29,7 @@ from app.services.sync import check_export_keys
 
 UNASSIGNED_SHEET = "_unassigned"
 FLAT_SHEET = "strings"
+MODULE_SLUG_PREFIX = "module_slug:"
 
 DEMO_IMPORT_ROWS: dict[str, list[tuple[str, str]]] = {
     "auth": [("auth.email", "Địa chỉ email"), ("auth.sign_in", "Đăng nhập")],
@@ -55,6 +56,27 @@ def _export_locales(project: Project, locale: str | None) -> list[str]:
     return [locale]
 
 
+def _module_sheet_names(slugs: list[str]) -> dict[str, str]:
+    used = {"_meta", UNASSIGNED_SHEET}
+    names = {}
+    # Reserve complete short slugs before shortened names can claim them.
+    for slug in sorted(slugs):
+        if len(slug) <= 31 and slug.casefold() not in used:
+            names[slug] = slug
+            used.add(slug.casefold())
+    for slug in sorted(slugs):
+        if slug in names:
+            continue
+        name, number = slug[:31], 0
+        while name.casefold() in used:
+            number += 1
+            suffix = f"_{number}"
+            name = slug[: 31 - len(suffix)] + suffix
+        names[slug] = name
+        used.add(name.casefold())
+    return names
+
+
 def build_workbook(
     project: Project,
     entries: list[StringEntry],
@@ -66,6 +88,7 @@ def build_workbook(
     wb.remove(default)
 
     locales = _export_locales(project, locale)
+    module_sheets = {}
     check_export_keys(project, entries, stage, modular=_is_modular(project))
     if _is_modular(project):
         by_module: dict[str | None, list[StringEntry]] = {}
@@ -74,14 +97,18 @@ def build_workbook(
             owned = owned_module(project.id, module)
             slug = owned.slug if owned else None
             by_module.setdefault(slug, []).append(e)
-        for slug in sorted(k for k in by_module if k is not None):
-            _write_sheet(wb, slug, by_module[slug], locales, project, stage)
+        names = _module_sheet_names([k for k in by_module if k is not None])
+        for slug in sorted(names):
+            name = names[slug]
+            _write_sheet(wb, name, by_module[slug], locales, project, stage)
+            module_sheets[name] = slug
         if None in by_module or not by_module:
             _write_sheet(wb, UNASSIGNED_SHEET, by_module.get(None, []), locales, project, stage)
+            module_sheets[UNASSIGNED_SHEET] = UNASSIGNED_SHEET
     else:
         _write_sheet(wb, FLAT_SHEET, entries, locales, project, stage)
 
-    _write_meta_sheet(wb, project, stage)
+    _write_meta_sheet(wb, project, stage, module_sheets)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -94,19 +121,25 @@ def build_template_workbook(project: Project) -> bytes:
     default = wb.active
     wb.remove(default)
     locales = [project.base_language, *project.target_languages]
+    module_sheets = {}
     if _is_modular(project):
+        names = _module_sheet_names([slug for slug in DEMO_IMPORT_ROWS if slug != UNASSIGNED_SHEET])
         for slug, rows in DEMO_IMPORT_ROWS.items():
-            _write_template_sheet(wb, slug, rows, locales, project.base_language)
+            name = UNASSIGNED_SHEET if slug == UNASSIGNED_SHEET else names[slug]
+            _write_template_sheet(wb, name, rows, locales, project.base_language)
+            module_sheets[name] = slug
     else:
         flat_rows = [row for rows in DEMO_IMPORT_ROWS.values() for row in rows]
         _write_template_sheet(wb, FLAT_SHEET, flat_rows, locales, project.base_language)
-    _write_meta_sheet(wb, project, "draft")
+    _write_meta_sheet(wb, project, "draft", module_sheets)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-def _write_meta_sheet(wb: Workbook, project: Project, stage: str) -> None:
+def _write_meta_sheet(
+    wb: Workbook, project: Project, stage: str, module_sheets: dict[str, str]
+) -> None:
     meta = wb.create_sheet("_meta")
     meta.append(["key", "value"])
     meta.append(["project_id", str(project.id)])
@@ -115,6 +148,8 @@ def _write_meta_sheet(wb: Workbook, project: Project, stage: str) -> None:
     meta.append(["stage", stage])
     meta.append(["target_languages", ",".join(project.target_languages)])
     meta.append(["layout", _layout_value(project)])
+    for name, slug in module_sheets.items():
+        meta.append([f"{MODULE_SLUG_PREFIX}{name}", slug])
     meta.sheet_state = "hidden"
 
 
@@ -125,7 +160,7 @@ def _write_template_sheet(
     locales: list[str],
     base_language: str,
 ) -> None:
-    ws = wb.create_sheet(name[:31])
+    ws = wb.create_sheet(name)
     ws.append(["key", "description", "tags", *locales])
     for key, source in rows:
         row: list[Any] = [key, "", ""]
@@ -163,7 +198,7 @@ def _write_sheet(
     project: Project,
     stage: str,
 ) -> None:
-    ws = wb.create_sheet(name[:31])  # Excel sheet name limit
+    ws = wb.create_sheet(name)
     headers = ["key", "description", "tags", *locales]
     ws.append(headers)
 
@@ -223,18 +258,38 @@ def import_workbook(
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     rows, groups = [], []
     try:
+        modular = _is_modular(project)
+        module_sheets = {}
         if "_meta" in wb.sheetnames:
-            meta = {
-                row[0]: row[1]
-                for row in wb["_meta"].iter_rows(min_row=2, values_only=True)
-                if row[0]
-            }
+            meta = {}
+            identities = set()
+            for row in wb["_meta"].iter_rows(min_row=2, values_only=True):
+                if not row or not row[0]:
+                    continue
+                key, value = row[0], row[1] if len(row) > 1 else None
+                if modular and isinstance(key, str) and key.startswith(MODULE_SLUG_PREFIX):
+                    name = key[len(MODULE_SLUG_PREFIX) :]
+                    if name in module_sheets:
+                        raise ValueError(f"Duplicate module mapping for sheet {name!r}")
+                    if name == "_meta" or name not in wb.sheetnames:
+                        raise ValueError(f"Module mapping references unknown data sheet {name!r}")
+                    if not isinstance(value, str):
+                        raise ValueError(f"Invalid module slug mapping for sheet {name!r}")
+                    if (name == UNASSIGNED_SHEET) != (value == UNASSIGNED_SHEET):
+                        raise ValueError(f"Invalid unassigned module mapping for sheet {name!r}")
+                    if value != UNASSIGNED_SHEET:
+                        reject_nul(value, field="module slug", context=f"Sheet {name!r}: ")
+                        value = validate_module_slug(value)
+                    if value in identities:
+                        raise ValueError(f"Conflicting module mappings for slug {value!r}")
+                    identities.add(value)
+                    module_sheets[name] = value
+                meta[key] = value
             if meta.get("project_id") and str(meta["project_id"]) != str(project.id):
                 if meta.get("project_slug") and meta["project_slug"] != project.slug:
                     raise ValueError(
                         f"Workbook belongs to project {meta.get('project_slug')}, not {project.slug}"
                     )
-        modular = _is_modular(project)
         for sheet_name in wb.sheetnames:
             if sheet_name == "_meta":
                 continue
@@ -249,12 +304,18 @@ def import_workbook(
             desc_idx = headers.index("description") if "description" in headers else None
             tags_idx = headers.index("tags") if "tags" in headers else None
             module = None
-            if modular and sheet_name != UNASSIGNED_SHEET:
-                reject_nul(sheet_name, field="module slug", context=f"Sheet {sheet_name!r}: ")
-                try:
-                    module = validate_module_slug(sheet_name)
-                except ValueError as exc:
-                    raise ValueError(f"Invalid sheet name {sheet_name!r}: {exc}") from exc
+            if modular:
+                if module_sheets and sheet_name not in module_sheets:
+                    raise ValueError(f"Missing module mapping for data sheet {sheet_name!r}")
+                slug = module_sheets.get(sheet_name, sheet_name)
+                if slug != UNASSIGNED_SHEET:
+                    reject_nul(slug, field="module slug", context=f"Sheet {sheet_name!r}: ")
+                    try:
+                        module = validate_module_slug(slug)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"Invalid module slug for sheet {sheet_name!r}: {exc}"
+                        ) from exc
             groups.append((module, None, modular))
             locales = {}
             for index, header in enumerate(headers):
@@ -296,7 +357,7 @@ def import_workbook(
                 values = {
                     locale: _desanitize_cell_value(row[index]) for locale, index in locales.items()
                 }
-                label = f"{sheet_name}/{key}" if modular and sheet_name != UNASSIGNED_SHEET else key
+                label = f"{module}/{key}" if module is not None else key
                 rows.append(
                     ImportRow(
                         key=key,

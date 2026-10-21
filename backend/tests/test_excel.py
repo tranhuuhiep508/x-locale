@@ -5,11 +5,13 @@ from __future__ import annotations
 import io
 import uuid
 
+import pytest
 from openpyxl import Workbook, load_workbook
 
 from app.excel import (
     FLAT_SHEET,
     UNASSIGNED_SHEET,
+    _module_sheet_names,
     build_template_workbook,
     build_workbook,
 )
@@ -22,6 +24,210 @@ from app.models import (
     Translation,
     TranslationStatus,
 )
+from tests.helpers import json_upload, publish_strings
+from tests.test_import_jobs import poll
+
+
+def test_module_sheet_names_reserve_short_names_and_bound_collision_suffixes():
+    prefix = "a" * 31
+    slugs = [prefix + str(number) for number in range(15)] + [prefix, "a" * 29 + "_1"]
+    names = _module_sheet_names(slugs)
+    assert names[prefix] == prefix
+    assert names["a" * 29 + "_1"] == "a" * 29 + "_1"
+    assert len({name.casefold() for name in names.values()}) == len(slugs)
+    assert all(len(name) <= 31 for name in names.values())
+    assert names == _module_sheet_names(list(reversed(slugs)))
+    case_names = _module_sheet_names(["auth", "Auth", "_meta", "_unassigned"])
+    assert len({name.casefold() for name in case_names.values()}) == 4
+    assert not {"_meta", "_unassigned"} & {name.casefold() for name in case_names.values()}
+
+
+@pytest.mark.parametrize("stage", ["draft", "public"])
+def test_module_mapping_uses_the_selected_stage(client, stage):
+    project = _make_project(client, layout="modular")
+    root = f"/api/projects/{project['id']}"
+    module_ids = []
+    for slug in ("a" * 128, "b" * 128):
+        response = client.post(f"{root}/modules", json={"slug": slug, "name": slug})
+        assert response.status_code == 201, response.text
+        module_ids.append(response.json()["id"])
+    entry = client.post(
+        f"{root}/strings",
+        json={"key": "title", "source_text": "Source", "module_id": module_ids[0]},
+    )
+    assert entry.status_code == 201, entry.text
+    sid = entry.json()["id"]
+    publish_strings(client, project["id"], [sid])
+    moved = client.patch(f"{root}/strings/{sid}", json={"module_id": module_ids[1]})
+    assert moved.status_code == 200, moved.text
+    exported = client.get(f"{root}/export", params={"format": "xlsx", "stage": stage})
+    assert exported.status_code == 200, exported.text
+    wb = load_workbook(io.BytesIO(exported.content))
+    mappings = [value for key, value in wb["_meta"].values if key.startswith("module_slug:")]
+    assert mappings == [("a" if stage == "public" else "b") * 128]
+    wb.close()
+
+
+@pytest.mark.parametrize("stage", ["draft", "public"])
+@pytest.mark.parametrize("allow_duplicates", [False, True])
+@pytest.mark.parametrize("as_job", [False, True])
+def test_long_module_slugs_roundtrip_preserves_identity(client, stage, allow_duplicates, as_job):
+    project = _make_project(client, layout="modular")
+    root = f"/api/projects/{project['id']}"
+    assert client.patch(root, json={"allow_duplicate_keys": allow_duplicates}).status_code == 200
+    slugs = ["a" * 31, "a" * 32, "a" * 31 + "b", "b" * 128, "a" * 29 + "_1"]
+    payload = {"modules": {}, "unassigned": {"vi": {"loose": "Unassigned"}}}
+    for number, slug in enumerate(slugs):
+        key = "title" if allow_duplicates else f"title{number}"
+        payload["modules"][slug] = {"vi": {key: "Source"}, "en": {key: "Original"}}
+    seeded = client.post(f"{root}/import", files=json_upload(payload))
+    assert seeded.status_code == 200, seeded.text
+    before = client.get(f"{root}/strings").json()["items"]
+    identities = {(row["id"], row["module_id"], row["key"]) for row in before}
+    modules_before = client.get(f"{root}/modules").json()
+    if stage == "public":
+        publish_strings(client, project["id"], [row["id"] for row in before])
+    exported = client.get(f"{root}/export", params={"format": "xlsx", "stage": stage})
+    assert exported.status_code == 200, exported.text
+    wb = load_workbook(io.BytesIO(exported.content))
+    assert wb["_meta"].sheet_state == "hidden"
+    mapping = {
+        key.removeprefix("module_slug:"): value
+        for key, value in wb["_meta"].iter_rows(min_row=2, values_only=True)
+        if key.startswith("module_slug:")
+    }
+    assert set(mapping.values()) == {*slugs, UNASSIGNED_SHEET}
+    assert mapping["a" * 31] == "a" * 31
+    assert mapping["a" * 29 + "_1"] == "a" * 29 + "_1"
+    assert all(len(name) <= 31 for name in wb.sheetnames)
+
+    def upload(raw):
+        response = client.post(
+            f"{root}/import",
+            files={"file": ("roundtrip.xlsx", raw)},
+            headers={"Prefer": "respond-async"} if as_job else {},
+        )
+        if as_job:
+            assert response.status_code == 202, response.text
+            job = poll(client, project, "xlsx", response.json()["job_id"])
+            assert job["status"] == "completed", job
+            return job["result"]
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert upload(exported.content)["created"] == 0
+    edited_name = next(name for name, slug in mapping.items() if slug == "b" * 128)
+    wb[edited_name].cell(2, 5, "Edited translation")
+    wb[edited_name].cell(2, 4, "Edited source")
+    edited = io.BytesIO()
+    wb.save(edited)
+    preview = client.post(
+        f"{root}/import",
+        params={"dry_run": True},
+        files={"file": ("preview.xlsx", edited.getvalue())},
+    )
+    assert preview.status_code == 200, preview.text
+    edited_key = wb[edited_name].cell(2, 1).value
+    assert preview.json()["diff"]["update"][0]["key"] == f"{'b' * 128}/{edited_key}"
+    wb[edited_name].cell(2, 4, "Source")
+    edited = io.BytesIO()
+    wb.save(edited)
+    wb.close()
+    assert upload(edited.getvalue())["created"] == 0
+    after = client.get(f"{root}/strings").json()["items"]
+    assert {(row["id"], row["module_id"], row["key"]) for row in after} == identities
+    assert client.get(f"{root}/modules").json() == modules_before
+    changed = next(row for row in after if row["module_slug"] == "b" * 128)
+    assert (
+        next(t["value"] for t in changed["translations"] if t["locale"] == "en")
+        == "Edited translation"
+    )
+    if stage == "public":
+        public = client.get(f"{root}/export", params={"stage": "public"}).json()
+        assert public["modules"]["b" * 128]["en"][changed["key"]] == "Original"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_modular_template_mapping_and_legacy_workbooks(client, legacy):
+    project = _make_project(client, layout="modular")
+    root = f"/api/projects/{project['id']}"
+    template = client.get(f"{root}/import-template", params={"format": "xlsx"})
+    assert template.status_code == 200, template.text
+    wb = load_workbook(io.BytesIO(template.content))
+    mapping = {
+        key: value
+        for key, value in wb["_meta"].iter_rows(min_row=2, values_only=True)
+        if key.startswith("module_slug:")
+    }
+    assert mapping == {
+        "module_slug:auth": "auth",
+        "module_slug:common": "common",
+        "module_slug:_unassigned": UNASSIGNED_SHEET,
+    }
+    wb.create_sheet("Notes").append(["Read me"])
+    if legacy:
+        for number in range(wb["_meta"].max_row, 1, -1):
+            if str(wb["_meta"].cell(number, 1).value).startswith("module_slug:"):
+                wb["_meta"].delete_rows(number)
+    raw = io.BytesIO()
+    wb.save(raw)
+    wb.close()
+    imported = client.post(f"{root}/import", files={"file": ("template.xlsx", raw.getvalue())})
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["created"] == 5
+    assert {m["slug"] for m in client.get(f"{root}/modules").json()} == {"auth", "common"}
+    rows = client.get(f"{root}/strings").json()["items"]
+    assert next(row for row in rows if row["key"] == "hello")["module_id"] is None
+
+
+@pytest.mark.parametrize(
+    "mappings,error",
+    [
+        ([("auth", "new-module")], "Missing module mapping"),
+        (
+            [("auth", "new-module"), ("auth", "new-module"), ("home", "home")],
+            "Duplicate module mapping",
+        ),
+        ([("auth", "new-module"), ("home", "new-module")], "Conflicting module mappings"),
+        ([("auth", "new-module"), ("home", "INVALID")], "Invalid module slug"),
+        ([("auth", "new-module"), ("home", "a" * 129)], "at most 128"),
+        ([("auth", "new-module"), ("home", None)], "Invalid module slug mapping"),
+        ([("auth", "new-module"), ("home", 123)], "Invalid module slug mapping"),
+        ([("auth", "new-module"), ("renamed", "home")], "unknown data sheet"),
+        ([("auth", "new-module"), ("home", UNASSIGNED_SHEET)], "Invalid unassigned"),
+        ([("auth", "new-module"), ("home", "home"), ("_meta", "meta")], "unknown data sheet"),
+        (
+            [("auth", "new-module"), ("home", "home"), (UNASSIGNED_SHEET, "assigned")],
+            "Invalid unassigned",
+        ),
+    ],
+)
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_invalid_module_mappings_rejected_before_writes(client, mappings, error, dry_run):
+    project = _make_project(client, layout="modular")
+    root = f"/api/projects/{project['id']}"
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name in ("auth", "home", UNASSIGNED_SHEET):
+        ws = wb.create_sheet(name)
+        ws.append(["key", "vi"])
+        ws.append([name, "Source"])
+    meta = wb.create_sheet("_meta")
+    meta.append(["key", "value"])
+    for name, slug in mappings:
+        meta.append([f"module_slug:{name}", slug])
+    raw = io.BytesIO()
+    wb.save(raw)
+    wb.close()
+    response = client.post(
+        f"{root}/import",
+        params={"dry_run": dry_run},
+        files={"file": ("invalid.xlsx", raw.getvalue())},
+    )
+    assert response.status_code == 400, response.text
+    assert error in response.json()["detail"]
+    assert client.get(f"{root}/strings").json()["total"] == 0
+    assert client.get(f"{root}/modules").json() == []
 
 
 def _make_project(client, name="Excel Test Project", layout="flat", base="vi", targets=None):
