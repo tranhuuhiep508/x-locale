@@ -9,13 +9,16 @@ export type ActiveJob = {
   projectId: string
   kind: ActiveJobKind
   dryRun?: boolean
+  pollUntil: number
 }
 
+export const JOB_POLL_LIMIT_MS = 5 * 60 * 1000
 const STORAGE_KEY = 'x-locale-active-job'
 
 let current: ActiveJob | null = readStored()
 const listeners = new Set<() => void>()
 const claimed = new Set<string>()
+let stoppedJobId: string | null = null
 
 function readStored(): ActiveJob | null {
   try {
@@ -23,7 +26,7 @@ function readStored(): ActiveJob | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as ActiveJob
     if (!parsed?.jobId || !parsed.projectId || !parsed.kind) return null
-    return parsed
+    return { ...parsed, pollUntil: Number.isFinite(parsed.pollUntil) ? parsed.pollUntil : 0 }
   } catch {
     return null
   }
@@ -35,7 +38,8 @@ function publish(next: ActiveJob | null) {
 }
 
 /** Remember a background job so a later page, or a reload, can still finish it. */
-export function rememberJob(job: ActiveJob) {
+export function rememberJob(input: Omit<ActiveJob, 'pollUntil'> & { pollUntil?: number }) {
+  const job: ActiveJob = { ...input, pollUntil: input.pollUntil ?? Date.now() + JOB_POLL_LIMIT_MS }
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(job))
   } catch {
@@ -55,6 +59,15 @@ export function forgetJob(jobId: string) {
   if (current?.jobId === jobId) publish(null)
 }
 
+export function stopTrackingJob(jobId: string) {
+  stoppedJobId = jobId
+  forgetJob(jobId)
+}
+
+export function getStoppedJobId() {
+  return stoppedJobId
+}
+
 /** First caller announces the result. Later callers still update their own screen. */
 export function claimFinish(jobId: string): boolean {
   if (!jobId || claimed.has(jobId)) return false
@@ -65,6 +78,7 @@ export function claimFinish(jobId: string): boolean {
 
 export function clearActiveJob() {
   claimed.clear()
+  stoppedJobId = null
   try {
     sessionStorage.removeItem(STORAGE_KEY)
   } catch {

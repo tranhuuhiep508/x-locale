@@ -57,7 +57,7 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 async function request<T>(
   method: string,
   path: string,
-  opts?: { body?: unknown; params?: QueryParams; headers?: Record<string, string> },
+  opts?: { body?: unknown; params?: QueryParams; headers?: Record<string, string>; signal?: AbortSignal },
 ): Promise<T> {
   const url = buildUrl(path, opts?.params)
 
@@ -73,6 +73,7 @@ async function request<T>(
     credentials: 'include',
     headers,
     body,
+    signal: opts?.signal,
   })
 
   if (!res.ok) {
@@ -85,8 +86,8 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, params?: QueryParams) =>
-    request<T>('GET', path, { params }),
+  get: <T>(path: string, params?: QueryParams, signal?: AbortSignal) =>
+    request<T>('GET', path, { params, signal }),
 
   post: <T>(path: string, body?: unknown, params?: QueryParams, headers?: Record<string, string>) =>
     request<T>('POST', path, { body, params, headers }),

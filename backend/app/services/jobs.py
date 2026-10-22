@@ -7,11 +7,15 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from concurrent.futures import Future
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy import func, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -58,9 +62,54 @@ def runs_async(prefer: str | None, size: int) -> bool:
 
 
 _HANDOFF_TIMEOUT_S = 5
+RECOVERY_INTERVAL_S = 60
+JOB_LOCK_NAMESPACE = 0x584C4A42
+RECOVERABLE_KINDS = ("import", "excel_import", "revert")
+INTERRUPTED_MESSAGE = (
+    "This operation was interrupted by a server restart or lost worker. Please run it again."
+)
 
 
-def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any]) -> Job:
+def try_job_lock(db: Connection | Session, job_id: uuid.UUID, *, session: bool = False) -> bool:
+    function = "pg_try_advisory_lock" if session else "pg_try_advisory_xact_lock"
+    return bool(
+        db.scalar(
+            text(f"SELECT {function}(:namespace, hashtext(:job_id))"),
+            {"namespace": JOB_LOCK_NAMESPACE, "job_id": str(job_id)},
+        )
+    )
+
+
+@contextmanager
+def owned_job_connection(job_id: uuid.UUID):
+    """Keep ownership across work commits/rollbacks without another lasting connection."""
+    conn = engine.connect()
+    acquired = False
+    try:
+        acquired = try_job_lock(conn, job_id, session=True)
+        if not acquired:
+            raise HTTPException(503, "Unable to start job. Please try again.")
+        conn.commit()  # The ORM must start its own transaction on this pinned connection.
+        yield conn
+    finally:
+        try:
+            conn.rollback()
+            if acquired and not conn.invalidated:
+                conn.execute(
+                    text("SELECT pg_advisory_unlock(:namespace, hashtext(:job_id))"),
+                    {"namespace": JOB_LOCK_NAMESPACE, "job_id": str(job_id)},
+                )
+                conn.commit()
+        except Exception:
+            logger.exception("Could not release ownership of job %s", job_id)
+            conn.invalidate()
+        finally:
+            conn.close()
+
+
+def start_job(
+    db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any], *, job_id: uuid.UUID
+) -> Job:
     """Create the job as ``running`` and commit, so the first poll already sees it.
 
     Committing ends the request's transaction lock. ``launch_job`` holds a
@@ -75,6 +124,7 @@ def start_job(db: Session, project_id: uuid.UUID, kind: str, meta: dict[str, Any
     if actor.get("actor_type") == "user" and actor.get("actor_id"):
         created_by = uuid.UUID(str(actor["actor_id"]))
     job = Job(
+        id=job_id,
         project_id=project_id,
         kind=kind,
         status=JobStatus.running,
@@ -123,6 +173,15 @@ def launch_job(
     for the session lock, the commit hands that lock to it, and it unlocks
     only once the worker is blocked on the same key.
     """
+    job_id = uuid.uuid4()
+    ready: Future[None] = Future()
+    execute, abort = threading.Event(), threading.Event()
+    worker = threading.Thread(
+        target=run_job,
+        args=(job_id, project_id, work, ready, execute, abort),
+        name=f"job-{job_id}",
+        daemon=True,
+    )
     held, release_holder = threading.Event(), threading.Event()
     holder = threading.Thread(
         target=_hold_session_lock,
@@ -130,20 +189,19 @@ def launch_job(
         name="import-lock-handoff",
         daemon=True,
     )
-    holder.start()
+    dispatched = False
     try:
+        worker.start()
+        ready.result(timeout=_HANDOFF_TIMEOUT_S)
+        holder.start()
         deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
         while time.monotonic() < deadline and not import_lock.import_lock_waiting(db, project_id):
             time.sleep(0.01)
-        job = start_job(db, project_id, kind, meta)
+        job = start_job(db, project_id, kind, meta, job_id=job_id)
         if not held.wait(_HANDOFF_TIMEOUT_S):
             logger.warning("Job %s session lock was not granted", job.id)
-        threading.Thread(
-            target=run_job,
-            args=(job.id, project_id, work),
-            name=f"job-{job.id}",
-            daemon=True,
-        ).start()
+        dispatched = True
+        execute.set()
         deadline = time.monotonic() + _HANDOFF_TIMEOUT_S
         worker_waiting = False
         while time.monotonic() < deadline:
@@ -156,12 +214,20 @@ def launch_job(
             # queue should own this lock instead of a handoff thread.
             logger.warning("Job %s did not reach the import lock; releasing the handoff", job.id)
         return job
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        if not dispatched:
+            abort.set()
+            try:
+                _record_failure(job_id, exc)
+            except Exception:
+                logger.exception("Could not record job %s launch failure", job_id)
         raise
     finally:
+        execute.set()
         release_holder.set()
-        holder.join(_HANDOFF_TIMEOUT_S)
+        if holder.ident is not None:
+            holder.join(_HANDOFF_TIMEOUT_S)
 
 
 def accepted_response(job: Job) -> JSONResponse:
@@ -192,11 +258,19 @@ def _finish(job: Job, status: JobStatus, *, phase: str) -> None:
     flag_modified(job, "payload")
 
 
-def _record_failure(job_id: uuid.UUID, exc: Exception) -> None:
+def _record_failure(job_id: uuid.UUID, exc: Exception, *, conn: Connection | None = None) -> None:
     message, error = _error_details(exc)
-    db = SessionLocal()
+    db = SessionLocal(bind=conn) if conn is not None else SessionLocal()
     try:
-        job = db.get(Job, job_id)
+        job = (
+            db.query(Job)
+            .filter(
+                Job.id == job_id,
+                Job.status == JobStatus.running,
+            )
+            .with_for_update()
+            .first()
+        )
         if job is None:
             return
         _finish(job, JobStatus.failed, phase="failed")
@@ -207,40 +281,119 @@ def _record_failure(job_id: uuid.UUID, exc: Exception) -> None:
         db.close()
 
 
-def run_job(job_id: uuid.UUID, project_id: uuid.UUID, work: JobWork) -> None:
+def run_job(
+    job_id: uuid.UUID,
+    project_id: uuid.UUID,
+    work: JobWork,
+    ready: Future[None],
+    execute: threading.Event,
+    abort: threading.Event,
+) -> None:
     """Run ``work`` in its own session while holding the project's import lock.
 
     ``work`` must leave its writes uncommitted. Completed status is written in
     that same transaction, so a saved import or undo never reads as running
     and a failure rolls the write back.
     """
-    db = SessionLocal()
     try:
-        job = db.get(Job, job_id)
-        if job is None:
-            return
-        db.info["activity"] = dict((job.payload or {}).get("actor") or {})
-        db.info[JOB_ID_KEY] = job_id
-        project = db.get(Project, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="Project not found")
-        wait_for_import_lock(db, project_id)
-        db.refresh(project)
-        result = work(db, project)
-        job = db.get(Job, job_id)
-        if job is None:
-            db.rollback()
-            return
-        db.refresh(job)
-        _finish(job, JobStatus.completed, phase="done")
-        job.result = result
-        db.commit()
+        with owned_job_connection(job_id) as conn:
+            ready.set_result(None)
+            execute.wait()
+            if abort.is_set():
+                return
+            with SessionLocal(bind=conn) as db:
+                try:
+                    wait_for_import_lock(db, project_id)
+                    job = db.get(Job, job_id)
+                    if job is None or job.status != JobStatus.running:
+                        return
+                    db.info["activity"] = dict((job.payload or {}).get("actor") or {})
+                    db.info[JOB_ID_KEY] = job_id
+                    project = db.get(Project, project_id)
+                    if project is None:
+                        raise HTTPException(status_code=404, detail="Project not found")
+                    result = work(db, project)
+                    db.refresh(job)
+                    if job.status != JobStatus.running:
+                        db.rollback()
+                        return
+                    _finish(job, JobStatus.completed, phase="done")
+                    job.result = result
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    if is_key_policy_error(exc):
+                        exc = key_policy_conflict()
+                    if not isinstance(exc, HTTPException):
+                        logger.exception("Job %s failed", job_id)
+                    _record_failure(job_id, exc, conn=None if conn.invalidated else conn)
     except Exception as exc:
-        db.rollback()
-        if is_key_policy_error(exc):
-            exc = key_policy_conflict()
-        if not isinstance(exc, HTTPException):
-            logger.exception("Job %s failed", job_id)
-        _record_failure(job_id, exc)
-    finally:
-        db.close()
+        if not ready.done():
+            ready.set_exception(exc)
+        else:
+            logger.exception("Job %s executor failed; recovery will finish it", job_id)
+
+
+def recover_abandoned_jobs() -> int:
+    """Age selects candidates; both database locks prove that work cannot still commit."""
+    eligible = (
+        Job.status == JobStatus.running,
+        Job.kind.in_(RECOVERABLE_KINDS),
+        Job.created_at < func.now() - timedelta(seconds=RECOVERY_INTERVAL_S),
+    )
+    with SessionLocal() as db:
+        candidates = db.query(Job.id, Job.project_id).filter(*eligible).all()
+    recovered = 0
+    for job_id, project_id in candidates:
+        with SessionLocal() as db:
+            if not try_job_lock(db, job_id):
+                continue
+            try:
+                import_lock.acquire_import_lock(db, project_id)
+            except HTTPException as exc:
+                if exc.status_code == 409:
+                    continue
+                raise
+            job = (
+                db.query(Job)
+                .filter(Job.id == job_id, *eligible)
+                .with_for_update(
+                    skip_locked=True,
+                )
+                .first()
+            )
+            if job is None:
+                continue
+            _finish(job, JobStatus.failed, phase="failed")
+            job.error = INTERRUPTED_MESSAGE
+            job.result = {
+                "error": {
+                    "status_code": 503,
+                    "detail": {
+                        "code": "job_interrupted",
+                        "message": INTERRUPTED_MESSAGE,
+                    },
+                }
+            }
+            db.commit()
+            recovered += 1
+            logger.warning(
+                "Recovered interrupted job %s kind=%s project=%s age_seconds=%.0f",
+                job_id,
+                job.kind,
+                project_id,
+                (datetime.now(UTC) - job.created_at).total_seconds(),
+            )
+    return recovered
+
+
+def recover_jobs_safely() -> None:
+    try:
+        recover_abandoned_jobs()
+    except Exception:
+        logger.exception("Job recovery failed; retrying on the next interval")
+
+
+def recovery_loop(stop: threading.Event) -> None:
+    while not stop.wait(RECOVERY_INTERVAL_S):
+        recover_jobs_safely()

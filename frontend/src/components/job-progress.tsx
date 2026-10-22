@@ -1,5 +1,3 @@
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { jobProgressPercent } from '@/lib/job-progress'
 import type { TranslateJobProgress } from '@/lib/api/types'
@@ -10,24 +8,21 @@ export function JobProgress({
   label,
   className,
   error,
-  onRetry,
+  paused,
 }: {
   progress: TranslateJobProgress | null | undefined
   label: string
   className?: string
   error?: unknown
-  onRetry?: () => void
+  paused?: boolean
 }) {
-  if (error) {
+  if (error || paused) {
     return (
-      <Alert variant="destructive" className={className}>
-        <AlertDescription className="flex flex-col items-start gap-2">
-          <p>Could not check progress. The operation may still finish.</p>
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-            Retry status
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <div className={cn('flex flex-col gap-2', className)} aria-live="polite">
+        <p>{paused ? 'This operation may still be running. Check again for an update.'
+          : 'Could not check progress. The operation may still finish.'}</p>
+        <p>Use the job status banner to check again or stop tracking.</p>
+      </div>
     )
   }
   const percent = jobProgressPercent(progress)

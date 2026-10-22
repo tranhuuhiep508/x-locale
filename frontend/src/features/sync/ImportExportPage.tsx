@@ -134,6 +134,12 @@ export function ImportExportPage() {
   })
 
   const importJob = useJob(trackedJobId, {
+    onStopped: () => {
+      setImportJobId(null)
+      setPreviewResult(null)
+      setShowPreview(false)
+      pendingFileRef.current = null
+    },
     onCompleted: (job) => {
       setImportJobId(null)
       const result = job.result as unknown as ImportResult
@@ -458,7 +464,7 @@ export function ImportExportPage() {
               <JobProgress
                 progress={importJob.data?.progress}
                 error={importJob.isError ? importJob.error : undefined}
-                onRetry={() => { void importJob.refetch() }}
+                paused={importJob.isPaused}
                 label={importProgressLabel(importJob.data?.progress)}
               />
             ) : null}

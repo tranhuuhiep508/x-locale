@@ -145,9 +145,27 @@ session lock until the worker is waiting on the same key, then unlocks. The
 worker holds the transaction lock until its one write ends. That write includes
 the completed status, for both import and undo, so a saved change never reads
 as running and a failure rolls the change back before the job is marked
-`failed`. If the worker process dies, Postgres releases the lock and the job
-row stays `running`. String-batch undo does not report a step count; its bar
+`failed`. String-batch undo does not report a step count; its bar
 stays indeterminate.
+
+Each executor also holds a separate session advisory lock for its job, claimed
+before the job row is committed. Its ORM session is bound to that same open
+connection, so ownership survives dry-run rollback and status commits without
+holding an extra connection for the lifetime of the job. Ownership is explicitly
+unlocked before returning the connection to the pool; an unlock failure discards
+the connection.
+
+At startup and every 60 seconds, each API worker examines running `import`,
+`excel_import`, and `revert` jobs older than 60 seconds. It marks one failed only
+after acquiring both the job ownership lock and project import lock, then
+rechecking the row. Age or unchanged progress alone never fails a live job.
+Abandoned jobs return a terminal `job_interrupted` error with an instruction to
+run the operation again. Recovery never resubmits work. A live but hung executor
+keeps ownership and is not terminated by recovery.
+
+For the first deployment of ownership tracking, replace all old API worker
+processes together: do not overlap old executors without ownership locks with
+the new recovery sweeps. No schema migration is needed.
 
 Requests without the header keep the synchronous 200 response. Older CLIs do not
 send it, so they never mistake a 202 for a finished push. The UI and current CLI
@@ -155,10 +173,19 @@ always send it. `loc push` polls the job (1 s backing off to 3 s, up to
 `X_LOCALE_JOB_TIMEOUT` seconds, default 1800) and updates its push index only when
 the job completes.
 
-Polling errors leave the job id saved in the tab. The UI offers **Retry status**
-and allows closing an import or undo dialog while the result is unknown. It
-clears the saved job only after a completed or failed job response; retrying
-status never submits the import or undo again.
+The UI saves a five-minute polling deadline with the job id in sessionStorage.
+Navigation and reload preserve that deadline; legacy saved jobs without one
+start paused. On expiry it cancels outstanding status requests and stops all
+automatic status checks. The project-wide job banner offers **Check status**
+(one GET, remaining paused for a running job) and **Stop tracking**. Polling
+errors offer **Retry status**, which resumes automatic polling only before the
+original deadline. Import and undo dialogs can be closed while polling is paused
+or unavailable, making the banner accessible.
+
+Stopping tracking clears the tab's stored and component job ids and releases
+its busy controls, without cancelling or resubmitting the server operation.
+Unapplied previews must be run again before Apply. The job's actual terminal
+result still controls success/failure handling; browser timeout is not failure.
 
 Add many preserves its submitted JSON, module, and tags when a pending preview
 is closed and reopened. A preview recovered after a reload has no original

@@ -70,6 +70,55 @@ test('the upload zone opens the file picker from the keyboard', async ({ page })
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 })
 
+test('an expired import survives reload and can be dismissed without resubmission', async ({ page }) => {
+  await goToImportExport(page)
+  await page.clock.install()
+  const jobId = '00000000-0000-4000-8000-000000000056'
+  let submissions = 0
+  let polls = 0
+  await page.route('**/api/projects/*/import?*', async (route) => {
+    submissions += 1
+    await route.fulfill({ json: { job_id: jobId, kind: 'import', status: 'running' }, status: 202 })
+  })
+  await page.route(`**/api/jobs/${jobId}`, async (route) => {
+    polls += 1
+    await route.fulfill({ json: {
+      id: jobId, kind: 'import', status: 'running', result: null, error: null,
+      created_at: null, completed_at: null, progress: { phase: 'queued', chunks_done: 0, chunks_total: 0 },
+    } })
+  })
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'vi.json', mimeType: 'application/json', buffer: Buffer.from('{"paused_import":"Source"}'),
+  })
+  await expect.poll(() => polls).toBeGreaterThan(0)
+  const storedJob = await page.evaluate(() => JSON.parse(sessionStorage.getItem('x-locale-active-job')!))
+  await page.clock.runFor(5 * 60 * 1000)
+  const check = page.getByRole('button', { name: 'Check status' })
+  await expect(check).toBeVisible()
+  const stoppedCount = polls
+  // Dismiss on the submitting screen first, where a component-local id also exists.
+  await page.getByRole('button', { name: 'Stop tracking' }).click()
+  await expect(page.getByRole('button', { name: 'Choose file (JSON or XLSX)' })).toBeEnabled()
+  expect(await page.evaluate(() => sessionStorage.getItem('x-locale-active-job'))).toBeNull()
+  // Restore that expired record to exercise a tab resuming the same unknown operation.
+  await page.evaluate((record) => sessionStorage.setItem('x-locale-active-job', JSON.stringify(record)), storedJob)
+  await page.reload()
+  await expect(check).toBeVisible()
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('x-locale-active-job')!).pollUntil)).toBe(storedJob.pollUntil)
+  await expect(page.getByRole('button', { name: 'Choose file (JSON or XLSX)' })).toBeDisabled()
+  await page.clock.runFor(2000)
+  expect(polls).toBe(stoppedCount)
+  await check.click()
+  await expect.poll(() => polls).toBe(stoppedCount + 1)
+  await page.getByRole('link', { name: 'Activity', exact: true }).click()
+  await expect(check).toBeVisible()
+  await page.getByRole('button', { name: 'Stop tracking' }).click()
+  await page.getByRole('link', { name: 'Import / Export' }).click()
+  await expect(page.getByRole('button', { name: 'Choose file (JSON or XLSX)' })).toBeEnabled()
+  expect(await page.evaluate(() => sessionStorage.getItem('x-locale-active-job'))).toBeNull()
+  expect(submissions).toBe(1)
+})
+
 test('invalid and oversized drops are rejected before upload', async ({ page }) => {
   await goToImportExport(page)
   const uploads: string[] = []
