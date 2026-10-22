@@ -349,10 +349,11 @@ def _limit_lock_wait(db) -> None:
     db.execute(text("SET LOCAL statement_timeout = '8s'"))
 
 
-def _publication_waiter(session_factory, project_id) -> bool:
+def _publication_waiter(session_factory, project_id, backend_pid=0) -> bool:
     params = {
         "namespace": strings_service._PUBLISH_LOCK_NAMESPACE,
         "project_uuid": project_id,
+        "backend_pid": backend_pid,
     }
     with session_factory() as db:
         return bool(
@@ -365,6 +366,7 @@ def _publication_waiter(session_factory, project_id) -> bool:
                           AND classid = CAST(:namespace AS oid)
                           AND objid = hashtext(:project_uuid)::oid
                           AND NOT granted
+                          AND (:backend_pid = 0 OR pid = :backend_pid)
                     )
                     """
                 ),
@@ -373,14 +375,124 @@ def _publication_waiter(session_factory, project_id) -> bool:
         )
 
 
-def _wait_until_publication_blocks(session_factory, project_id) -> None:
-    """Poll the lock manager until the publisher is waiting. A fixed sleep can miss it."""
+def _wait_until_publication_blocks(session_factory, project_id, backend_pid=0) -> None:
+    """Poll until the writer is waiting. A fixed sleep can miss it."""
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        if _publication_waiter(session_factory, project_id):
+        if _publication_waiter(session_factory, project_id, backend_pid):
             return
         time.sleep(0.01)
-    raise AssertionError("publisher never waited on the publication lock")
+    raise AssertionError("writer never waited on the publication lock")
+
+
+@pytest.mark.parametrize("publisher", ["update", "batch"])
+@pytest.mark.parametrize("deletion", ["single", "batch_ids", "batch_filter", "batch_never_published"])
+def test_delete_waits_for_first_publication(client, session_factory, publisher, deletion):
+    project, root = _project(client, "Delete during first publication")
+    created = client.post(
+        f"{root}/strings",
+        json={"key": "save", "source_text": "Lưu", "translations": {"en": "Save"}},
+    )
+    assert created.status_code == 201, created.text
+    project_id = uuid.UUID(project["id"])
+    string_id = uuid.UUID(created.json()["id"])
+    preloaded = Event()
+    start_delete = Event()
+    errors: list[BaseException] = []
+    results = []
+    delete_pids: list[int] = []
+
+    def run_delete() -> None:
+        try:
+            with session_factory() as db:
+                _limit_lock_wait(db)
+                project_row = db.get(Project, project_id)
+                cached = strings_service.get_string(db, project_id, string_id)
+                assert cached.published_key is None
+                delete_pids.append(db.scalar(text("SELECT pg_backend_pid()")))
+                preloaded.set()
+                if not start_delete.wait(5):
+                    raise TimeoutError("delete never started")
+                if deletion == "single":
+                    strings_service.delete_string(db, project_row, string_id)
+                else:
+                    if deletion == "batch_ids":
+                        selection = {"string_ids": [string_id]}
+                    elif deletion == "batch_never_published":
+                        selection = {"filter": {"q": "save", "never_published": True}}
+                    else:
+                        selection = {"filter": {"q": "save"}}
+                    result = strings_service.apply_batch(
+                        db, project_row, BatchRequest(action="delete", **selection)
+                    )
+                    results.append(result)
+                # Keep the original ORM object alive through the service call.
+                assert cached.id == string_id
+                # The service must release its lock even when the filter becomes empty.
+                with session_factory() as probe:
+                    _limit_lock_wait(probe)
+                    strings_service.lock_publication(probe, project_id)
+        except BaseException as exc:
+            errors.append(exc)
+
+    deleter = Thread(target=run_delete, name="delete-after-first-publish")
+    deleter.start()
+    try:
+        assert preloaded.wait(5), "delete did not preload the draft"
+        with session_factory() as db:
+            _limit_lock_wait(db)
+            project_row = db.get(Project, project_id)
+            strings_service.lock_publication(db, project_id)
+            start_delete.set()
+            _wait_until_publication_blocks(session_factory, project["id"], delete_pids[0])
+            if publisher == "update":
+                strings_service.update_string(
+                    db, project_row, string_id, StringUpdate(status="public")
+                )
+            else:
+                entries = strings_service.load_string_entries(db, project_id, [string_id])
+                strings_service.apply_batch(
+                    db,
+                    project_row,
+                    BatchRequest(
+                        action="publish",
+                        string_ids=[string_id],
+                        fingerprint=strings_service.compute_publish_fingerprint(entries),
+                    ),
+                )
+    finally:
+        start_delete.set()
+        deleter.join(15)
+    assert not deleter.is_alive(), "delete did not finish"
+    if errors:
+        raise AssertionError("delete failed") from errors[0]
+
+    filtered_out = deletion == "batch_never_published"
+    if results:
+        assert results[0].affected == (0 if filtered_out else 1)
+    with session_factory() as db:
+        row = strings_service.get_string(db, project_id, string_id)
+        assert row.status == strings_service.TranslationStatus.public
+        assert row.deleted_at is None
+        assert row.pending_delete is (not filtered_out)
+        assert row.published_key == "save"
+        assert row.published_source_text == "Lưu"
+        assert next(t for t in row.translations if t.locale == "en").published_value == "Save"
+    public = _export(client, root).json()
+    assert public["vi"]["save"] == "Lưu"
+    assert public["en"]["save"] == "Save"
+    draft = _export(client, root, stage="draft").json()
+    assert ("save" in draft["vi"]) is filtered_out
+    if not filtered_out:
+        published = _publish(client, project["id"], [str(string_id)])
+        assert published.status_code == 200, published.text
+        for stage in ("draft", "public"):
+            exported = _export(client, root, stage=stage)
+            assert exported.status_code == 200, exported.text
+            assert all("save" not in values for values in exported.json().values())
+        row = client.get(f"{root}/strings/{string_id}").json()
+        assert row["deleted_at"] is not None
+        assert row["pending_delete"] is False
 
 
 def _import_while_publish_blocks(session_factory, monkeypatch, project_id, publish) -> None:

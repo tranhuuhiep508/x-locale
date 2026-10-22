@@ -1134,8 +1134,12 @@ def upsert_translation(
 
 
 def delete_string(db: Session, project: Project, string_id: uuid.UUID) -> None:
-    entry = get_string(db, project.id, string_id)
-    queue_or_soft_delete(entry)
+    # Serialize with first publication, then refresh any cached draft state.
+    lock_publication(db, project.id)
+    entries = load_string_entries(db, project.id, [string_id], refresh=True)
+    if not entries:
+        raise HTTPException(status_code=404, detail="String not found")
+    queue_or_soft_delete(entries[0])
     db.commit()
 
 
@@ -1164,11 +1168,11 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             status_code=400,
             detail={"code": PUBLISH_FINGERPRINT_REQUIRED},
         )
-    if action == "publish":
+    if action in {"publish", "delete"}:
         lock_publication(db, project.id)
 
     ids = resolve_string_ids(db, project, payload.string_ids, payload.filter)
-    entries = load_string_entries(db, project.id, ids)
+    entries = load_string_entries(db, project.id, ids, refresh=action == "delete")
 
     if action == "publish":
         current = compute_publish_fingerprint(entries)
@@ -1179,6 +1183,8 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             )
 
     if not ids:
+        if action == "delete":
+            db.commit()
         return BatchResult(affected=0, batch_id=uuid.uuid4())
 
     batch_id = uuid.uuid4()

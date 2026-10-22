@@ -289,7 +289,21 @@ def test_edit_public_string_keeps_published_export(client):
     assert refreshed["has_unpublished_changes"] is False
 
 
-def test_delete_public_string_is_pending_until_publish(client):
+def _delete_string(client, pid, sid, *, batch, affected=1):
+    if batch:
+        response = client.post(
+            f"/api/projects/{pid}/strings/batch",
+            json={"action": "delete", "string_ids": [sid]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["affected"] == affected
+    else:
+        response = client.delete(f"/api/projects/{pid}/strings/{sid}")
+        assert response.status_code == 204, response.text
+
+
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+def test_delete_public_string_is_pending_until_publish(client, batch):
     project = _make_project(client, "Pending Delete")
     pid = project["id"]
     created = client.post(
@@ -298,12 +312,15 @@ def test_delete_public_string_is_pending_until_publish(client):
     ).json()
     sid = created["id"]
 
-    r = client.delete(f"/api/projects/{pid}/strings/{sid}")
-    assert r.status_code == 204
+    _delete_string(client, pid, sid, batch=batch)
     row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert row["pending_delete"] is True
     assert row["has_unpublished_changes"] is True
     assert row["status"] == "public"
+    activities = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    _delete_string(client, pid, sid, batch=batch, affected=0)
+    assert client.get(f"/api/projects/{pid}/strings/{sid}").json() == row
+    assert client.get(f"/api/projects/{pid}/activities").json()["items"] == activities
 
     draft = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}).json()
     public = client.get(f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}).json()
@@ -318,7 +335,7 @@ def test_delete_public_string_is_pending_until_publish(client):
     row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert row["pending_delete"] is False
 
-    client.delete(f"/api/projects/{pid}/strings/{sid}")
+    _delete_string(client, pid, sid, batch=batch)
     publish_strings(client, pid, [sid])
     listed = client.get(f"/api/projects/{pid}/strings").json()
     assert listed["total"] == 0
@@ -399,7 +416,8 @@ def test_sync_state_lists_pending_remove_hidden_from_draft_export(client):
     assert after["tombstones"] == ["draft/123ewfewf"]
 
 
-def test_never_published_delete_is_soft(client):
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+def test_never_published_delete_is_soft(client, batch):
     project = _make_project(client, "Soft Draft")
     pid = project["id"]
     created = client.post(
@@ -407,11 +425,15 @@ def test_never_published_delete_is_soft(client):
         json={"key": "draft_key", "source_text": "Nháp"},
     ).json()
     sid = created["id"]
-    assert client.delete(f"/api/projects/{pid}/strings/{sid}").status_code == 204
+    _delete_string(client, pid, sid, batch=batch)
     listed = client.get(f"/api/projects/{pid}/strings").json()
     assert listed["total"] == 0
     row = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert row["deleted_at"] is not None
+    activities = client.get(f"/api/projects/{pid}/activities").json()["items"]
+    _delete_string(client, pid, sid, batch=batch, affected=0)
+    assert client.get(f"/api/projects/{pid}/strings/{sid}").json() == row
+    assert client.get(f"/api/projects/{pid}/activities").json()["items"] == activities
     draft = client.get(
         f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "draft"}
     ).json()
@@ -425,6 +447,23 @@ def test_never_published_delete_is_soft(client):
     assert listed["total"] == 1
     assert listed["items"][0]["id"] != sid
     assert listed["items"][0]["source_text"] == "Nháp 2"
+
+
+@pytest.mark.parametrize("foreign", [False, True], ids=["missing", "other-project"])
+def test_delete_string_requires_project_owned_row(client, foreign):
+    project = _make_project(client, "Delete scope")
+    sid = str(uuid.uuid4())
+    if foreign:
+        other = _make_project(client, "Other project")
+        created = client.post(
+            f"/api/projects/{other['id']}/strings",
+            json={"key": "save", "source_text": "Lưu"},
+        )
+        assert created.status_code == 201, created.text
+        sid = created.json()["id"]
+    response = client.delete(f"/api/projects/{project['id']}/strings/{sid}")
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "String not found"
 
 
 def test_unpublish_omits_from_public_export_immediately(client):
