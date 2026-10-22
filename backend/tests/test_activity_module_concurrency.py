@@ -11,8 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import SESSION_COOKIE, create_session_token, hash_api_key
-from app.models import Activity, ApiKey, Module, ProjectMember, StringEntry, User
-from app.services import activities, catalog, write_transactions
+from app.models import Activity, ApiKey, Module, Project, ProjectMember, StringEntry, User
+from app.schemas import StringUpdate
+from app.services import activities, catalog, strings, write_transactions
 from app.services.activity_state import SnapshotReferences
 from tests.helpers import make_project, publish_strings
 from tests.test_write_transactions import database_error
@@ -99,6 +100,169 @@ def wait_for_database_block(database_engine, waiter_pid):
             ):
                 return
     pytest.fail("request did not reach the expected Postgres lock wait")
+
+
+def setup_single_edit(client, session_factory, field="source_text"):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    created = client.post(
+        f"{root}/strings",
+        json={"key": "race", "source_text": "A1", "translations": {"en": "A1"}},
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    payload = {"source_text": "A2"} if field == "source_text" else {"translations": {"en": "A2"}}
+    edited = client.patch(f"{root}/strings/{sid}", json=payload)
+    assert edited.status_code == 200, edited.text
+    with session_factory() as db:
+        activity = (
+            db.query(Activity)
+            .filter(Activity.string_id == uuid.UUID(sid), Activity.before.isnot(None))
+            .order_by(Activity.created_at.desc())
+            .first()
+        )
+        admin = db.query(User).filter(User.oidc_issuer == "x-locale-dev").one()
+        client.cookies.set(SESSION_COOKIE, create_session_token(admin))
+        return dict(pid=pid, root=root, ids=[sid], edit_id=str(activity.id))
+
+
+@pytest.mark.parametrize("field", ["source_text", "translations"])
+@pytest.mark.parametrize("force", [False, True])
+def test_single_undo_rejects_save_committed_before_claim(
+    client, session_factory, monkeypatch, field, force
+):
+    case = setup_single_edit(client, session_factory, field)
+    sid = uuid.UUID(case["ids"][0])
+    claim = activities.claim_rows
+    calls = []
+
+    def save_before_claim(db, table, rows):
+        calls.append(True)
+        with session_factory() as other:
+            other.execute(text("SET LOCAL statement_timeout = '5s'"))
+            project = other.get(Project, uuid.UUID(case["pid"]))
+            payload = (
+                StringUpdate(source_text="A3")
+                if field == "source_text"
+                else StringUpdate(translations={"en": "A3"})
+            )
+            strings.update_string(other, project, sid, payload)
+        with session_factory() as observer:
+            entry = observer.get(StringEntry, sid)
+            assert entry.updated_at != rows[0]["updated_at"]
+        return claim(db, table, rows)
+
+    monkeypatch.setattr(activities, "claim_rows", save_before_claim)
+    response = undo_request(client, case, "single", force=force)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == write_transactions.retryable_write_conflict(
+        "concurrent_modification"
+    ).detail
+    assert calls == [True]
+    with session_factory() as db:
+        entry = db.get(StringEntry, sid)
+        value = entry.source_text if field == "source_text" else entry.translations[0].value
+        assert value == "A3"
+        assert db.get(Activity, uuid.UUID(case["edit_id"])).reverted_by_id is None
+        assert not db.query(Activity).filter(Activity.revert_of_id.isnot(None)).count()
+
+
+@pytest.mark.parametrize("field", ["source_text", "translations"])
+def test_single_undo_holds_claim_until_commit(
+    client, session_factory, database_engine, monkeypatch, field
+):
+    case = setup_single_edit(client, session_factory, field)
+    sid = uuid.UUID(case["ids"][0])
+    held, resume, writer_started = Event(), Event(), Event()
+    claim = activities.claim_rows
+    pids = {}
+
+    def pause_after_claim(db, table, rows):
+        db.execute(text("SET LOCAL statement_timeout = '10s'"))
+        matched = claim(db, table, rows)
+        assert matched == {sid}
+        held.set()
+        assert resume.wait(7)
+        return matched
+
+    def save():
+        with session_factory() as db:
+            db.execute(text("SET LOCAL statement_timeout = '10s'"))
+            pids["writer"] = db.scalar(text("SELECT pg_backend_pid()"))
+            project = db.get(Project, uuid.UUID(case["pid"]))
+            payload = (
+                StringUpdate(source_text="A3")
+                if field == "source_text"
+                else StringUpdate(translations={"en": "A3"})
+            )
+            writer_started.set()
+            return strings.update_string(db, project, sid, payload)
+
+    monkeypatch.setattr(activities, "claim_rows", pause_after_claim)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        undone = pool.submit(undo_request, client, case, "single", force=False)
+        try:
+            assert held.wait(5)
+            saved = pool.submit(save)
+            assert writer_started.wait(5)
+            wait_for_database_block(database_engine, pids["writer"])
+        finally:
+            resume.set()
+        response = undone.result(timeout=12)
+        saved.result(timeout=12)
+    assert response.status_code == 200, response.text
+    with session_factory() as db:
+        entry = db.get(StringEntry, sid)
+        value = entry.source_text if field == "source_text" else entry.translations[0].value
+        assert value == "A3"
+        original = db.get(Activity, uuid.UUID(case["edit_id"]))
+        marker = db.get(Activity, original.reverted_by_id)
+        assert marker.revert_of_id == original.id
+        assert marker.before[field] == ("A2" if field == "source_text" else {"en": "A2"})
+        assert marker.after[field] == ("A1" if field == "source_text" else {"en": "A1"})
+
+
+def test_single_undo_missing_row_after_planning_returns_404(client, session_factory, monkeypatch):
+    case = setup_single_edit(client, session_factory)
+    sid = uuid.UUID(case["ids"][0])
+    claim = activities.claim_rows
+
+    def delete_before_claim(db, table, rows):
+        with session_factory() as other:
+            other.delete(other.get(StringEntry, sid))
+            other.commit()
+        return claim(db, table, rows)
+
+    monkeypatch.setattr(activities, "claim_rows", delete_before_claim)
+    response = undo_request(client, case, "single", force=False)
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "String no longer exists"
+    with session_factory() as db:
+        assert db.get(StringEntry, sid) is None
+        assert db.get(Activity, uuid.UUID(case["edit_id"])).reverted_by_id is None
+        assert not db.query(Activity).filter(Activity.revert_of_id.isnot(None)).count()
+
+
+def test_single_undo_commit_failure_rolls_back_content_and_markers(
+    client, session_factory, monkeypatch
+):
+    case = setup_single_edit(client, session_factory)
+    sid = uuid.UUID(case["ids"][0])
+
+    def fail_commit(db):
+        db.flush()
+        assert db.get(StringEntry, sid).source_text == "A1"
+        original = db.get(Activity, uuid.UUID(case["edit_id"]))
+        assert db.get(Activity, original.reverted_by_id).revert_of_id == original.id
+        raise RuntimeError("commit failed after flush")
+
+    monkeypatch.setattr(Session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="commit failed after flush"):
+        undo_request(client, case, "single", force=False)
+    with session_factory() as db:
+        assert db.get(StringEntry, sid).source_text == "A2"
+        assert db.get(Activity, uuid.UUID(case["edit_id"])).reverted_by_id is None
+        assert not db.query(Activity).filter(Activity.revert_of_id.isnot(None)).count()
 
 
 @pytest.mark.parametrize("operation", ["batch", "single", "version", "last_history"])

@@ -1688,8 +1688,15 @@ def _execute_inverse(
     references: SnapshotReferences,
 ) -> tuple[dict | None, dict | None]:
     validate_undo_timestamps(activity.id, activity.before, activity.after)
+    original_version = None
     if activity.entity_type == EntityType.string:
         entry = _load_activity_entry(db, activity)
+        if entry is not None:
+            original_version = {"id": entry.id, "updated_at": entry.updated_at}
+            # Resolve live references before claiming the string to preserve lock order.
+            references._load_modules(
+                {mid for mid in (entry.module_id, entry.published_module_id) if mid}
+            )
         before = _live_snapshot(entry) if entry else None
         target = _revert_target(db, activity, before, references=references)
         if target is None:
@@ -1705,6 +1712,12 @@ def _execute_inverse(
             status_code=409,
             detail=f"Conflict on activity {activity.id}. Pass force=true to override.",
         )
+    if original_version is not None:
+        matched = claim_rows(db, StringEntry.__table__, [original_version])
+        if not matched:
+            if not db.query(StringEntry.id).filter(StringEntry.id == original_version["id"]).first():
+                raise HTTPException(status_code=404, detail="String no longer exists")
+            raise retryable_write_conflict("concurrent_modification")
     apply_revert(db, activity, entry=entry, target=target, references=references)
     db.flush()
     return before, _activity_snapshot(db, activity)
