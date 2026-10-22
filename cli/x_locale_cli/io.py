@@ -15,7 +15,6 @@ from x_locale_cli.models import (
     Config,
     Layout,
     PulledFileReport,
-    Stage,
 )
 from x_locale_cli.validation import ValidatedExport
 
@@ -306,14 +305,6 @@ def pull_scope_locales(config: Config, export: Any) -> list[str]:
     return sorted(k for k, v in export.items() if isinstance(v, dict))
 
 
-def _try_resolve_under_output(output_dir: Path, *parts: str) -> Path | None:
-    """Resolve a path under *output_dir*, or ``None`` when it is unsafe to touch."""
-    try:
-        return resolve_under_output(output_dir, *parts)
-    except XLocaleError:
-        return None
-
-
 def _owned_locale_paths(
     output_root: Path, layout: Layout, scope: list[str]
 ) -> list[tuple[Path, str]]:
@@ -493,77 +484,6 @@ def apply_pull_export(plan: PullPlan) -> PullApplyResult:
         manifest_deleted=manifest_deleted,
         base_locale_touched=plan.base_locale_touched,
     )
-
-
-def _pushable_module_slug(slug: str) -> bool:
-    return not slug.startswith("_") and not slug.startswith(".") and slug != UNASSIGNED_SLUG
-
-
-def _expected_base_locale_paths(config: Config, export: Any, output_root: Path) -> set[Path]:
-    scope = pull_scope_locales(config, export)
-    base = config.base_language
-    if base not in scope:
-        return set()
-    expected: set[Path] = set()
-    if config.layout is Layout.flat:
-        if isinstance(export, dict) and isinstance(export.get(base), dict):
-            expected.add(resolve_under_output(output_root, f"{base}.json").resolve())
-        return expected
-
-    if not isinstance(export, dict):
-        return expected
-    modules = export.get("modules") if isinstance(export.get("modules"), dict) else {}
-    for module_slug, locale_map in modules.items():
-        slug = str(module_slug)
-        if config.stage is Stage.draft and not _pushable_module_slug(slug):
-            continue
-        if not isinstance(locale_map, dict) or base not in locale_map:
-            continue
-        expected.add(resolve_under_output(output_root, slug, f"{base}.json").resolve())
-
-    if config.stage is Stage.public:
-        unassigned = export.get("unassigned") if isinstance(export.get("unassigned"), dict) else {}
-        base_map = string_map(unassigned.get(base))
-        if base_map:
-            expected.add(
-                resolve_under_output(output_root, UNASSIGNED_SLUG, f"{base}.json").resolve()
-            )
-    return expected
-
-
-def _owned_pushable_base_paths(config: Config, output_root: Path, scope: list[str]) -> list[Path]:
-    base = config.base_language
-    if base not in scope:
-        return []
-    if config.layout is Layout.flat:
-        return [resolve_under_output(output_root, f"{base}.json")]
-    paths: list[Path] = []
-    if not output_root.is_dir():
-        return paths
-    for child in sorted(output_root.iterdir()):
-        if not child.is_dir():
-            continue
-        if child.name.startswith(".") or child.name.startswith("_") or child.is_symlink():
-            continue
-        target = _try_resolve_under_output(output_root, child.name, f"{base}.json")
-        if target is not None:
-            paths.append(target)
-    return paths
-
-
-def pull_will_touch_base_locale(config: Config, export: Any, output_root: Path) -> bool:
-    """True when pull will rewrite or prune push-relevant base-language files."""
-    scope = pull_scope_locales(config, export)
-    base = config.base_language
-    if base not in scope:
-        return False
-    expected = _expected_base_locale_paths(config, export, output_root)
-    if expected:
-        return True
-    for path in _owned_pushable_base_paths(config, output_root, scope):
-        if path.exists() and path.resolve() not in expected:
-            return True
-    return False
 
 
 def file_module_locale(path: Path, output_dir: Path) -> tuple[str | None, str]:
