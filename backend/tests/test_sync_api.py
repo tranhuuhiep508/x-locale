@@ -591,6 +591,58 @@ def test_discard_changes_restores_published_working_copy(client):
     assert string["has_unpublished_changes"] is False
 
 
+@pytest.mark.parametrize("count", [1, 2], ids=["row", "batch"])
+def test_discard_changes_restores_empty_published_source(client, count):
+    project = _make_project(client, "Discard Empty")
+    pid = project["id"]
+    imported = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": "vi", "dry_run": False},
+        files=_json_upload({f"empty_{i}": "" for i in range(count)}),
+    )
+    assert imported.status_code == 200, imported.text
+    entries = client.get(f"/api/projects/{pid}/strings").json()["items"]
+    assert len(entries) == count
+    ids = [entry["id"] for entry in entries]
+    publish_strings(client, pid, ids)
+    for sid in ids:
+        edited = client.patch(
+            f"/api/projects/{pid}/strings/{sid}", json={"source_text": "Unwanted edit"}
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["published_source_text"] == ""
+        assert edited.json()["has_unpublished_changes"] is True
+
+    discarded = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_changes", "string_ids": ids},
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json()["affected"] == count
+    for sid in ids:
+        entry = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+        assert entry["source_text"] == entry["published_source_text"] == ""
+        assert entry["has_unpublished_changes"] is False
+
+    repeated = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={"action": "discard_changes", "string_ids": ids},
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["affected"] == 0
+
+
+def test_discard_changes_preserves_source_without_snapshot():
+    from app.models import StringEntry
+    from app.services.strings import discard_working_changes
+
+    entry = StringEntry(
+        key="legacy", published_key="legacy", source_text="Keep me", published_source_text=None
+    )
+    assert discard_working_changes(entry) is False
+    assert entry.source_text == "Keep me"
+
+
 def test_list_filter_unpublished_changes(client):
     project = _make_project(client, "Filter Dirty")
     pid = project["id"]
