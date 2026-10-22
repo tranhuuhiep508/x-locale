@@ -28,7 +28,7 @@ function batchActionMessage(action: BatchAction, affected: number, includeDelete
     case 'discard_delete':
       return `Discarded pending delete on ${affected} ${noun}`
     case 'restore':
-      return `Restored ${affected} ${noun}`
+      return `Restored ${affected} ${noun} as ${affected === 1 ? 'draft' : 'drafts'}`
     case 'restore_last_history':
       return `Restored last edit on ${affected} ${noun}`
     case 'delete':

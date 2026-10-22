@@ -191,7 +191,7 @@ function StringActionsCell({
       setConfirmDiscard(false)
       onRefresh()
       if (action === 'restore') {
-        toast.success('Restored')
+        toast.success('Restored as draft')
       } else {
         toast.success('Working copy discarded')
       }

@@ -107,10 +107,11 @@ def mark_deleted(entry: StringEntry) -> None:
 
 
 def restore_string(entry: StringEntry) -> bool:
-    """Clear pending delete and/or tombstone. Returns True if anything changed."""
+    """Revive tombstones as drafts, or cancel a pending removal."""
     changed = False
     if entry.deleted_at is not None:
         entry.deleted_at = None
+        entry.status = TranslationStatus.draft
         changed = True
     if entry.pending_delete:
         entry.pending_delete = False

@@ -454,6 +454,7 @@ def import_rows(
                 mutated = True
             entry["pending_delete"] = False
             if entry["deleted_at"] is not None:
+                entry["status"] = TranslationStatus.draft
                 catalog.live[(entry["module_id"], row.key)] = entry
                 catalog.live_keys.setdefault(row.key, []).append(entry)
             entry["deleted_at"] = None
