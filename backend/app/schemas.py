@@ -380,10 +380,18 @@ class TranslateRequest(BatchFilter):
     descriptions: dict[UUID, str] | None = None
 
 
+class TranslationSourceConflict(BaseModel):
+    string_id: UUID
+    key: str
+    expected_source_text: str
+    source_text: str
+
+
 class TranslateResult(BaseModel):
     translated_count: int
     locales: list[str]
     job_id: UUID | None = None
+    skipped_source_conflicts: list[TranslationSourceConflict] = Field(default_factory=list)
 
 
 class TranslatePreviewRequest(BaseModel):
@@ -419,6 +427,7 @@ class TranslateProposalsResult(BaseModel):
 
 class TranslateApplyItem(BaseModel):
     string_id: UUID
+    expected_source_text: str
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     description: str | None = None

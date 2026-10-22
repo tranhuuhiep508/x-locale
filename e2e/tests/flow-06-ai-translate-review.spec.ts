@@ -88,3 +88,52 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await expect(row.getByRole('switch', { name: 'Draft' })).toBeVisible()
   await expect(row.getByText('[en]')).toBeVisible()
 })
+
+test('stale AI proposals require targeted regeneration and preserve unrelated drafts', async ({ page }) => {
+  await openDemoStrings(page)
+  const projectId = projectIdFromUrl(page)
+  const root = `/api/projects/${projectId}`
+  const prefix = `e2e_source_conflict_${Date.now()}`
+  const rows: Array<{ id: string; key: string }> = []
+  for (const suffix of ['stale', 'unrelated']) {
+    const response = await page.request.post(`${root}/strings`, {
+      data: { key: `${prefix}_${suffix}`, source_text: 'Lưu' },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    rows.push(await response.json())
+  }
+  await page.getByRole('textbox', { name: 'Search strings' }).fill(prefix)
+  await expect(page.getByRole('row').filter({ hasText: rows[1].key })).toBeVisible()
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.locator('li').filter({ hasText: prefix })).toHaveCount(2)
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  const stale = dialog.locator('li').filter({ hasText: rows[0].key })
+  const unrelated = dialog.locator('li').filter({ hasText: rows[1].key })
+  await expect(stale.getByLabel('en', { exact: true })).toBeVisible()
+  await unrelated.getByLabel('en', { exact: true }).fill('Unrelated reviewed draft')
+  const edited = await page.request.patch(`${root}/strings/${rows[0].id}`, { data: { source_text: 'Hủy' } })
+  expect(edited.ok()).toBeTruthy()
+  const conflictResponse = page.waitForResponse((response) => response.url().endsWith('/translate/apply'))
+  await dialog.getByRole('button', { name: /^Apply/ }).click()
+  expect((await conflictResponse).status()).toBe(409)
+  await expect(stale.getByText('Source text changed since generation')).toBeVisible()
+  await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
+  const before = await page.request.get(`${root}/strings/${rows[1].id}`)
+  expect((await before.json()).translations.every((cell: { value: string }) => cell.value === '')).toBe(true)
+  const regenerated = page.waitForResponse((response) => response.url().endsWith('/translate/proposals'))
+  await dialog.getByRole('button', { name: 'Regenerate changed strings' }).click()
+  const generation = await regenerated
+  expect(generation.ok()).toBeTruthy()
+  expect(generation.request().postDataJSON().string_ids).toEqual([rows[0].id])
+  await expect(stale.getByText('Source text changed since generation')).toBeHidden()
+  await expect(stale.getByLabel('en', { exact: true })).toBeVisible()
+  await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
+  const applied = page.waitForResponse((response) => response.url().endsWith('/translate/apply'))
+  await dialog.getByRole('button', { name: /^Apply/ }).click()
+  const response = await applied
+  expect(response.ok(), await response.text()).toBeTruthy()
+  const items = response.request().postDataJSON().items as Array<{ string_id: string; expected_source_text: string; translations: Record<string, string> }>
+  expect(items.find((item) => item.string_id === rows[0].id)?.expected_source_text).toBe('Hủy')
+  expect(items.find((item) => item.string_id === rows[1].id)?.translations.en).toBe('Unrelated reviewed draft')
+})

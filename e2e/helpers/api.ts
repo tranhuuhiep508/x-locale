@@ -88,6 +88,7 @@ export async function translateApplyBatchViaApi(
   const proposals = (await proposalsResponse.json()) as {
     items: Array<{
       string_id: string
+      source_text: string
       translations: Record<string, string>
       scores?: Record<string, number>
     }>
@@ -96,8 +97,8 @@ export async function translateApplyBatchViaApi(
 
   const applyResponse = await page.request.post(`/api/projects/${projectId}/translate/apply`, {
     data: {
-      items: proposals.items.map(({ string_id, translations, scores }) => ({
-        string_id, translations, scores,
+      items: proposals.items.map(({ string_id, source_text, translations, scores }) => ({
+        string_id, expected_source_text: source_text, translations, scores,
       })),
     },
   })

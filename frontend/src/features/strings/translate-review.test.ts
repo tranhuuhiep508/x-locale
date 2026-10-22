@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TranslateProposalItem } from '@/lib/api/types'
+import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
   applySuccessMessage,
@@ -11,6 +12,7 @@ import {
   filledStringCount,
   mergeProposalResults,
   reviewStatusDescription,
+  sourceConflicts,
   translateProgressLabel,
   translateProgressPercent,
   updateDraftDescription,
@@ -160,6 +162,7 @@ describe('applyPayloadFromDrafts', () => {
     expect(payload).toEqual([
       {
         string_id: 'a',
+        expected_source_text: 'Xin chào',
         translations: { en: 'Hello' },
         scores: { en: 91 },
         description: 'ctx',
@@ -317,5 +320,38 @@ describe('translateProgressLabel', () => {
       'Filling missing locales…',
     )
     expect(translateProgressLabel(null)).toBe('Generating translations…')
+  })
+})
+
+describe('source freshness', () => {
+  it('parses only valid source conflicts from the expected API error', () => {
+    const conflict = { string_id: 'a', key: 'save', expected_source_text: 'Lưu', source_text: 'Hủy' }
+    expect(sourceConflicts(new ApiError(409, 'Changed', {
+      detail: { code: 'stale_translation_source', conflicts: [conflict, null, {}, { ...conflict, source_text: null }] },
+    }))).toEqual([conflict])
+    expect(sourceConflicts(new ApiError(409, 'Changed', {
+      detail: { code: 'stale_translation_description', conflicts: [conflict] },
+    }))).toEqual([])
+    expect(sourceConflicts(new Error('Network failed'))).toEqual([])
+    expect(sourceConflicts(new ApiError(500, 'Failed'))).toEqual([])
+  })
+
+  it('sends the exact reviewed source, including whitespace', () => {
+    const payload = applyPayloadFromDrafts([item({ string_id: 'a', source_text: ' Lưu\n' })], {})
+    expect(payload[0].expected_source_text).toBe(' Lưu\n')
+  })
+
+  it('drops old translations and scores when a new source returns only some locales', () => {
+    const previous = [
+      item({ string_id: 'a', source_text: 'Lưu', translations: { en: 'Save', ja: '保存' }, scores: { en: 99, ja: 95 } }),
+      item({ string_id: 'b', translations: { en: 'My draft' } }),
+    ]
+    const merged = mergeProposalResults(previous, [
+      item({ string_id: 'a', source_text: 'Hủy', translations: { en: 'Cancel' }, scores: { en: 90 } }),
+    ])
+    expect(merged[0].translations).toEqual({ en: 'Cancel', ja: '' })
+    expect(merged[0].scores).toEqual({ en: 90 })
+    expect(merged[1]).toBe(previous[1])
+    expect(applyPayloadFromDrafts(merged, {})[0].expected_source_text).toBe('Hủy')
   })
 })

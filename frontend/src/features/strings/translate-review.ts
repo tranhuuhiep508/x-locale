@@ -1,4 +1,4 @@
-import type { TranslateProposalItem, TranslateRequest } from '@/lib/api/types'
+import type { TranslateProposalItem, TranslateRequest, TranslationSourceConflict } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
 import { ApiError } from '@/lib/api/client'
 import { searchToBatchFilter } from '@/features/strings/publish-preview'
@@ -119,11 +119,15 @@ export function mergeProposalResults(
   for (const item of previous) {
     const next = byId.get(item.string_id)
     if (next) {
+      const sameSource = item.source_text === next.source_text
+      const previousTranslations = sameSource
+        ? item.translations
+        : Object.fromEntries(Object.keys(item.translations).map((locale) => [locale, '']))
       merged.push({
         ...item,
         ...next,
-        translations: { ...item.translations, ...next.translations },
-        scores: { ...(item.scores ?? {}), ...(next.scores ?? {}) },
+        translations: { ...previousTranslations, ...next.translations },
+        scores: { ...(sameSource ? item.scores ?? {} : {}), ...(next.scores ?? {}) },
       })
     } else {
       merged.push(item)
@@ -169,6 +173,16 @@ export function reviewStatusDescription({
 
 export type DescriptionConflict = { string_id: string; key: string; description: string | null }
 
+export function sourceConflicts(error: unknown): TranslationSourceConflict[] {
+  if (!(error instanceof ApiError) || error.status !== 409) return []
+  const detail = (error.body as { detail?: { code?: string; conflicts?: unknown } } | null)?.detail
+  if (detail?.code !== 'stale_translation_source' || !Array.isArray(detail.conflicts)) return []
+  return detail.conflicts.filter((item): item is TranslationSourceConflict =>
+    item != null && typeof item.string_id === 'string' && typeof item.key === 'string'
+    && typeof item.expected_source_text === 'string' && typeof item.source_text === 'string',
+  )
+}
+
 export function descriptionConflicts(error: unknown): DescriptionConflict[] {
   if (!(error instanceof ApiError) || error.status !== 409) return []
   const detail = (error.body as { detail?: { code?: string; conflicts?: unknown } } | null)?.detail
@@ -185,6 +199,7 @@ export function applyPayloadFromDrafts(
 ) {
   return items.map((item) => ({
     string_id: item.string_id,
+    expected_source_text: item.source_text,
     translations: Object.fromEntries(
       Object.entries(item.translations).filter(([, value]) => value.trim()),
     ),

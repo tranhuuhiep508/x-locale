@@ -280,6 +280,7 @@ export interface TranslateRequest extends BatchFilter {
 
 export interface TranslateResult {
   translated_count: number
+  skipped_source_conflicts: TranslationSourceConflict[]
   locales: string[]
   job_id: string | null
 }
@@ -318,11 +319,19 @@ export interface TranslateProposalsResult {
 export interface TranslateApplyRequest {
   items: Array<{
     string_id: string
+    expected_source_text: string
     translations: Record<string, string>
     scores?: Record<string, number>
     description?: string | null
     expected_description?: string | null
   }>
+}
+
+export interface TranslationSourceConflict {
+  string_id: string
+  key: string
+  expected_source_text: string
+  source_text: string
 }
 
 export interface TranslateApplyResult {

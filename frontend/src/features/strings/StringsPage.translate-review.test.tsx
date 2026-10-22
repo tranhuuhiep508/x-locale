@@ -118,3 +118,104 @@ describe('translation review retranslation', () => {
     expect(payload).not.toHaveProperty('expected_description')
   })
 })
+
+const sourceConflict = new ApiError(409, 'Source changed', {
+  detail: { code: 'stale_translation_source', conflicts: [
+    { string_id: 'a', key: 'greeting', expected_source_text: 'Xin chào', source_text: 'Hủy' },
+  ] },
+})
+
+async function openSourceConflict() {
+  const other = { ...item, string_id: 'b', key: 'other' }
+  vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, total: 2, items: [item, other] })
+  vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValueOnce({
+    ...page, items: [item, other].map((row) => ({ ...row, translations: { en: 'Generated' } })),
+  })
+  vi.mocked(stringsApi.translateApply).mockReset().mockRejectedValueOnce(sourceConflict)
+    .mockResolvedValue({ translated_count: 2, batch_id: 'batch', locales: ['en'] })
+  render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+  await screen.findAllByLabelText('Description')
+  fireEvent.click(screen.getByRole('button', { name: /^Translate$/ }))
+  await screen.findAllByLabelText('en')
+  fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
+  fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
+  fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'My context' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+  await screen.findByText('Source text changed since generation')
+}
+
+describe('source conflict recovery', () => {
+  it.each([false, true])('regenerates only affected rows and preserves other drafts (background: %s)', async (background) => {
+    await openSourceConflict()
+    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
+    expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
+    expect(screen.getByText('Latest saved source: Hủy')).toBeTruthy()
+    const replacement = { ...item, source_text: 'Hủy', description: 'Server context', translations: { en: 'Cancel' }, scores: { en: 80 } }
+    vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
+      ...page, items: background ? [] : [replacement], job_id: background ? 'source-job' : null,
+    })
+    vi.mocked(jobsApi.get).mockResolvedValue({
+      id: 'source-job', kind: 'translate_proposals', status: 'completed', result: { items: [replacement] },
+      error: null, created_at: null, completed_at: null, progress: null,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
+    expect(vi.mocked(stringsApi.translateProposals).mock.calls[1][1]).toEqual({
+      scope: 'strings', string_ids: ['a'], locales: ['en'], descriptions: { a: 'My context' },
+    })
+    await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
+    expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
+    expect((screen.getAllByLabelText('Description')[0] as HTMLTextAreaElement).value).toBe('My context')
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(stringsApi.translateApply).mock.calls[1][1].items).toMatchObject([
+      { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' }, expected_description: 'Original', description: 'My context' },
+      { string_id: 'b', expected_source_text: 'Xin chào', translations: { en: 'Unrelated draft' } },
+    ])
+  })
+
+  it.each(['empty', 'background empty', 'failure', 'background failure'] as const)('keeps drafts after %s and allows removal', async (outcome) => {
+    await openSourceConflict()
+    if (outcome === 'failure') {
+      vi.mocked(stringsApi.translateProposals).mockRejectedValueOnce(new Error('Generation unavailable'))
+    } else {
+      vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({ ...page, items: [], job_id: outcome.startsWith('background') ? 'recovery-job' : null })
+      vi.mocked(jobsApi.get).mockResolvedValue({
+        id: 'recovery-job', kind: 'translate_proposals', status: outcome === 'background failure' ? 'failed' : 'completed',
+        result: { items: [] }, error: outcome === 'background failure' ? 'Generation unavailable' : null,
+        created_at: null, completed_at: null, progress: null,
+      })
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled).toBe(false))
+    expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
+    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(true)
+    if (outcome.endsWith('empty')) expect(screen.getByText(/No replacement was produced/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from review' }))
+    expect(screen.queryByText('Source text changed since generation')).toBeNull()
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Unrelated draft')
+    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(stringsApi.translateApply).mock.calls[1][1].items).toHaveLength(1)
+    expect(vi.mocked(stringsApi.translateApply).mock.calls[1][1].items[0].string_id).toBe('b')
+  })
+
+  it('retries failed regeneration without losing either row draft', async () => {
+    await openSourceConflict()
+    vi.mocked(stringsApi.translateProposals).mockRejectedValueOnce(new Error('Try again'))
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    await screen.findByText('Try again')
+    expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
+    vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
+      ...page, items: [{ ...item, source_text: 'Hủy', translations: { en: 'Cancel' } }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
+    await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
+    expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
+    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
