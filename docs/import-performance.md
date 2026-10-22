@@ -148,16 +148,24 @@ as running and a failure rolls the change back before the job is marked
 `failed`. String-batch undo does not report a step count; its bar
 stays indeterminate.
 
-Each executor also holds a separate session advisory lock for its job, claimed
-before the job row is committed. Its ORM session is bound to that same open
+Each import/undo executor also holds a separate session advisory lock for its job,
+claimed before the job row is committed. Its ORM session is bound to that same open
 connection, so ownership survives dry-run rollback and status commits without
 holding an extra connection for the lifetime of the job. Ownership is explicitly
 unlocked before returning the connection to the pool; an unlock failure discards
 the connection.
 
+AI `translate` and `translate_proposals` callbacks acquire the same job ownership
+lock before starting work, using a session bound to that connection. Only a
+`pending` job can start; a delayed callback skips a job already finished by
+recovery. The worker commits `running` before generation and keeps ownership
+across transactions and separate progress updates. Translation writes and the
+completed result commit together. AI work does not acquire the project import lock.
+
 At startup and every 60 seconds, each API worker examines running `import`,
-`excel_import`, and `revert` jobs older than 60 seconds. It marks one failed only
-after acquiring both the job ownership lock and project import lock, then
+`excel_import`, and `revert` jobs, plus pending or running `translate` and
+`translate_proposals` jobs, older than 60 seconds. It marks one failed only after
+acquiring job ownership (and the project import lock for import/undo), then
 rechecking the row. Age or unchanged progress alone never fails a live job.
 Abandoned jobs return a terminal `job_interrupted` error with an instruction to
 run the operation again. Recovery never resubmits work. A live but hung executor
@@ -165,7 +173,9 @@ keeps ownership and is not terminated by recovery.
 
 For the first deployment of ownership tracking, replace all old API worker
 processes together: do not overlap old executors without ownership locks with
-the new recovery sweeps. No schema migration is needed.
+the new recovery sweeps. This also applies when deploying AI ownership tracking:
+old AI workers must finish or stop before the expanded sweeps start. No schema
+migration is needed.
 
 Requests without the header keep the synchronous 200 response. Older CLIs do not
 send it, so they never mistake a 202 for a finished push. The UI and current CLI

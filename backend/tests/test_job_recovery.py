@@ -59,7 +59,7 @@ def test_abandoned_job_fails_with_retry_message(client, session_factory, project
     "options",
     [
         {"age": 20},
-        {"kind": "translate"},
+        {"kind": "unknown"},
         {"status": JobStatus.pending},
         {"status": JobStatus.completed},
         {"status": JobStatus.failed},
