@@ -14,7 +14,7 @@ import httpx
 from x_locale_cli.config import CONFIG_DIR
 from x_locale_cli.console import console
 from x_locale_cli.errors import JobFailedError
-from x_locale_cli.io import pull_will_touch_base_locale, scoped_key
+from x_locale_cli.io import scoped_key
 from x_locale_cli.models import UNASSIGNED_SLUG, Config, Layout, PulledFileReport, Stage
 
 PUSH_INDEX_VERSION = 2
@@ -347,12 +347,6 @@ def apply_index_after_success(
             f"could not be saved ({exc}). The next push may resend the same keys."
         )
         return False
-
-
-def pull_should_mark_pending(config: Config, export: Any, *, output_dir: Path | None = None) -> bool:
-    """True when this pull will rewrite or prune push-relevant base-language files."""
-    root = (output_dir if output_dir is not None else config.output_path).resolve()
-    return pull_will_touch_base_locale(config, export, root)
 
 
 def _module_base_maps_from_export(export: Any, base_language: str) -> dict[str, dict[str, str]]:
