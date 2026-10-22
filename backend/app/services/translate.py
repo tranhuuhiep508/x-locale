@@ -21,7 +21,7 @@ from app.ai import (
 from app.database import SessionLocal
 from app.helpers import require_locale_code
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
-from app.schemas import TranslateApplyItem, TranslateRequest
+from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceConflict
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
 from app.services.strings import _missing_locales_clause, filtered_string_query, load_string_entries
@@ -231,10 +231,10 @@ def apply_translations(
     entries: list[StringEntry],
     locales: list[str],
     overwrite: bool,
-) -> int:
+) -> tuple[int, list[TranslationSourceConflict]]:
     items = work_items(project, entries, locales, overwrite)
     if not items:
-        return 0
+        return 0, []
 
     results = translate_batch(project.base_language, items)
     # Generation can outlive an editor save. Lock first, then replace cached values.
@@ -252,16 +252,27 @@ def apply_translations(
         .all()
     ]
     if not locked_ids:
-        return 0
+        return 0, []
     db.query(Translation.id).filter(Translation.string_id.in_(locked_ids)).order_by(
         Translation.id
     ).with_for_update().all()
     refreshed = load_string_entries(db, project.id, locked_ids, refresh=True)
     by_id = {str(entry.id): entry for entry in refreshed}
     translated = 0
+    skipped: list[TranslationSourceConflict] = []
     for item in items:
         entry = by_id.get(item.id)
         if entry is None:
+            continue
+        if entry.source_text != item.source_text:
+            skipped.append(
+                TranslationSourceConflict(
+                    string_id=entry.id,
+                    key=entry.key,
+                    expected_source_text=item.source_text,
+                    source_text=entry.source_text,
+                )
+            )
             continue
         locale_map = _cell_map(results, item.id)
         for locale in item.locales:
@@ -274,7 +285,7 @@ def apply_translations(
             translation.value = cell.text
             translation.confidence = cell.confidence
             translated += 1
-    return translated
+    return translated, skipped
 
 
 def preview_translations(
@@ -312,11 +323,12 @@ def _proposal_dict(
     translations: dict[str, str],
     scores: dict[str, int] | None = None,
     description: str | None = None,
+    source_text: str | None = None,
 ) -> dict[str, Any]:
     return {
         "string_id": str(entry.id),
         "key": entry.key,
-        "source_text": entry.source_text,
+        "source_text": entry.source_text if source_text is None else source_text,
         "status": _status_str(entry),
         "description": description,
         "translations": translations,
@@ -392,6 +404,7 @@ def propose_translations(
                 translations,
                 _scores_from_cells(locale_map, item.locales),
                 description=_description_for(entry, descriptions),
+                source_text=item.source_text,
             )
         )
     return proposals
@@ -424,6 +437,26 @@ def commit_proposals(
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
+    source_conflicts = [
+        TranslationSourceConflict(
+            string_id=entry.id,
+            key=entry.key,
+            expected_source_text=item.expected_source_text,
+            source_text=entry.source_text,
+        ).model_dump(mode="json")
+        for item in items
+        if (entry := by_id.get(item.string_id)) is not None
+        and entry.source_text != item.expected_source_text
+    ]
+    if source_conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_source",
+                "message": "Source text changed. Regenerate the affected translations before applying again.",
+                "conflicts": source_conflicts,
+            },
+        )
     conflicts = []
     for item in items:
         entry = by_id.get(item.string_id)
@@ -503,13 +536,17 @@ def run_translate_job(
         }
 
         entries = _load_entries_by_ids(db, entry_ids)
-        translated = apply_translations(db, project, entries, locales, overwrite)
+        translated, skipped = apply_translations(db, project, entries, locales, overwrite)
 
         if job_id:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = JobStatus.completed
-                job.result = {"translated_count": translated, "locales": locales}
+                job.result = {
+                    "translated_count": translated,
+                    "locales": locales,
+                    "skipped_source_conflicts": [item.model_dump(mode="json") for item in skipped],
+                }
                 job.completed_at = datetime.now(UTC)
 
         db.commit()

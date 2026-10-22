@@ -141,3 +141,25 @@ to `(projects.id, projects.allow_duplicate_keys)` by an `ON UPDATE CASCADE`
 foreign key, so toggles and concurrent writes cannot bypass the selected policy.
 The internal column is not part of string content, history, or public schemas.
 A migration downgrade is refused while live duplicate keys exist.
+
+### AI translation source conflicts
+
+Every `POST /api/projects/{id}/translate/apply` item requires
+`expected_source_text`, copied exactly from the reviewed proposal's `source_text`.
+Missing or null baselines return 422. Apply locks and refreshes strings before
+comparing sources; any mismatch returns 409 with `detail.code` equal to
+`stale_translation_source` and `conflicts` containing `string_id`, `key`,
+`expected_source_text`, and current `source_text`. No part of that Apply batch is
+saved. Source conflicts are reported before description conflicts; resolving one
+does not bypass the other. The review dialog preserves drafts and regenerates
+only affected rows, or lets the user remove them from the review.
+
+Automatic `POST /api/projects/{id}/translate` skips strings whose source changed
+during generation and saves unaffected strings. Its response includes
+`skipped_source_conflicts` (an empty list normally), using the same conflict
+fields. Completed background jobs include that list in `job.result`, together
+with `translated_count` and `locales`; a job with every string skipped completes
+with zero translations. Comparison is exact, including whitespace; restoring the
+identical source makes an existing proposal valid again. AI writes still affect
+only the working copy. Deploy backend and frontend together; custom Apply clients
+must send the baseline, and older browser tabs may need a reload.

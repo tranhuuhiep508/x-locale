@@ -159,7 +159,13 @@ def test_filtered_queue_paging_and_apply_refresh(client, translation_catalog):
     apply = client.post(
         f"{base}/translate/apply",
         json={
-            "items": [{"string_id": first["items"][0]["string_id"], "translations": {"fr": "Prêt"}}]
+            "items": [
+                {
+                    "string_id": first["items"][0]["string_id"],
+                    "expected_source_text": first["items"][0]["source_text"],
+                    "translations": {"fr": "Prêt"},
+                }
+            ]
         },
     )
     assert apply.status_code == 200, apply.text

@@ -509,6 +509,7 @@ def test_import_and_ai_apply_do_not_promote(client):
             "items": [
                 {
                     "string_id": created["id"],
+                    "expected_source_text": created["source_text"],
                     "translations": {"en": "AI Save", "ja": "保存"},
                 }
             ]

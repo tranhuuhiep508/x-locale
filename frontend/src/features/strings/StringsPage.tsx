@@ -61,6 +61,7 @@ import {
   TRANSLATE_MISSING_PAGE_SIZE,
   applyPayloadFromDrafts,
   descriptionConflicts,
+  sourceConflicts,
   applySuccessMessage,
   createMissingReviewRequest,
   descriptionsFromDrafts,
@@ -130,6 +131,9 @@ export function StringsPage() {
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
   const descriptionOriginals = useRef<Record<string, string | null>>({})
   const [applyConflicts, setApplyConflicts] = useState<ReturnType<typeof descriptionConflicts>>([])
+  const [applySourceConflicts, setApplySourceConflicts] = useState<ReturnType<typeof sourceConflicts>>([])
+  const regenerationIds = useRef<string[] | null>(null)
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [proposalsReady, setProposalsReady] = useState(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
@@ -279,6 +283,9 @@ export function StringsPage() {
     onSuccess: (res) => {
       descriptionOriginals.current = Object.fromEntries(res.items.map((item) => [item.string_id, item.description ?? null]))
       setApplyConflicts([])
+      setApplySourceConflicts([])
+      regenerationIds.current = null
+      setRecoveryMessage(null)
       setProposalItems(res.items)
       setReviewTotal(res.total)
       setReviewPage(res.page)
@@ -288,6 +295,26 @@ export function StringsPage() {
     onError: () => toast.error('Failed to load missing translations'),
   })
 
+  function acceptProposals(items: TranslateProposalItem[]) {
+    const recovering = regenerationIds.current
+    if (recovering) {
+      const replacements = items.filter((item) => recovering.includes(item.string_id))
+      const replaced = new Set(replacements.map((item) => item.string_id))
+      setProposalItems((prev) => mergeProposalResults(prev, replacements.map((item) => ({
+        ...item,
+        description: prev.find((row) => row.string_id === item.string_id)?.description,
+      }))))
+      setApplySourceConflicts((prev) => prev.filter((item) => !replaced.has(item.string_id)))
+      setRecoveryMessage(recovering.some((id) => !replaced.has(id))
+        ? 'No replacement was produced for some changed strings. Retry or remove them from this review.'
+        : null)
+    } else {
+      setProposalItems((prev) => mergeProposalResults(prev, items))
+    }
+    regenerationIds.current = null
+    setProposalsReady(true)
+  }
+
   const proposeMut = useMutation({
     mutationFn: (req: TranslateRequest) => stringsApi.translateProposals(projectId, req),
     onSuccess: (res) => {
@@ -295,10 +322,9 @@ export function StringsPage() {
         setProposalJobId(res.job_id)
         return
       }
-      setProposalItems((prev) => mergeProposalResults(prev, res.items))
-      setProposalsReady(true)
+      acceptProposals(res.items)
     },
-    onError: () => toast.error('Translation failed — check Bedrock credentials'),
+    onError: (error) => toast.error(error.message),
   })
 
   const proposalJobQuery = useQuery({
@@ -311,8 +337,7 @@ export function StringsPage() {
 
   const acceptJobResult = useEffectEvent((job: NonNullable<typeof proposalJobQuery.data>) => {
     if (job.status === 'completed') {
-      setProposalItems((prev) => mergeProposalResults(prev, proposalsFromJobResult(job.result)))
-      setProposalsReady(true)
+      acceptProposals(proposalsFromJobResult(job.result))
       setProposalJobId(null)
     }
   })
@@ -324,6 +349,7 @@ export function StringsPage() {
   }, [proposalJobId, proposalJobQuery.data])
 
   const applyMut = useMutation({
+    onMutate: (items: TranslateProposalItem[]) => { setProposalItems(items) },
     mutationFn: (items: TranslateProposalItem[]) =>
       stringsApi.translateApply(projectId, {
         items: applyPayloadFromDrafts(items, descriptionOriginals.current),
@@ -338,8 +364,12 @@ export function StringsPage() {
     },
     onError: (error) => {
       const conflicts = descriptionConflicts(error)
+      const changedSources = sourceConflicts(error)
       setApplyConflicts(conflicts)
-      toast.error(conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.' : 'Failed to save translations')
+      setApplySourceConflicts(changedSources)
+      toast.error(changedSources.length
+        ? 'Source text changed. Nothing was saved. Regenerate the changed strings.'
+        : conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.' : 'Failed to save translations')
     },
   })
 
@@ -748,6 +778,30 @@ export function StringsPage() {
         error={reviewError}
         items={reviewItems}
         conflicts={applyConflicts}
+        sourceConflicts={applySourceConflicts}
+        recoveryMessage={recoveryMessage}
+        onRegenerate={(items) => {
+          setProposalItems(items)
+          setRecoveryMessage(null)
+          setProposalJobId(null)
+          const ids = applySourceConflicts.map((item) => item.string_id)
+          regenerationIds.current = ids
+          proposeMut.mutate({
+            scope: 'strings',
+            string_ids: ids,
+            locales,
+            descriptions: descriptionsFromDrafts(items.filter((item) => ids.includes(item.string_id))),
+          })
+        }}
+        onRemoveFromReview={(items, stringId) => {
+          setProposalItems(items.filter((item) => item.string_id !== stringId))
+          setApplySourceConflicts((prev) => prev.filter((item) => item.string_id !== stringId))
+          setApplyConflicts((prev) => prev.filter((item) => item.string_id !== stringId))
+          setRecoveryMessage(null)
+          setProposalJobId(null)
+          regenerationIds.current = null
+          proposeMut.reset()
+        }}
         onResolveConflict={(conflict) => {
           descriptionOriginals.current[conflict.string_id] = conflict.description
           setApplyConflicts((prev) => prev.filter((item) => item.string_id !== conflict.string_id))
@@ -760,6 +814,8 @@ export function StringsPage() {
         onClose={closeReview}
         onTranslate={(items) => {
           setProposalItems(items)
+          regenerationIds.current = null
+          setRecoveryMessage(null)
           proposeMut.mutate({
             scope: 'strings',
             string_ids: items.map((item) => item.string_id),

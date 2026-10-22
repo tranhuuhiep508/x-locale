@@ -6,7 +6,7 @@ import {
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
-import type { Job, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
+import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,8 @@ function ProposalTreeNode({
   onDescriptionChange,
   conflict,
   onResolveConflict,
+  sourceConflict,
+  onRemove,
 }: {
   item: TranslateProposalItem
   review: boolean
@@ -59,6 +61,8 @@ function ProposalTreeNode({
   onDescriptionChange: (stringId: string, description: string) => void
   conflict?: DescriptionConflict
   onResolveConflict: (conflict: DescriptionConflict, useLatest: boolean) => void
+  sourceConflict?: TranslationSourceConflict
+  onRemove: () => void
 }) {
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
@@ -99,6 +103,17 @@ function ProposalTreeNode({
             onChange={(e) => onDescriptionChange(item.string_id, e.target.value)}
           />
         </Field>
+        {sourceConflict ? (
+          <Alert variant="destructive">
+            <AlertTitle>Source text changed since generation</AlertTitle>
+            <AlertDescription>
+              <p className="whitespace-pre-wrap">Reviewed source: {sourceConflict.expected_source_text}</p>
+              <p className="whitespace-pre-wrap">Latest saved source: {sourceConflict.source_text}</p>
+              <p>Nothing from this Apply was saved. Regenerate changed strings before applying again.</p>
+              <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onRemove}>Remove from review</Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {conflict ? (
           <Alert variant="destructive">
             <AlertTitle>Description changed since review opened</AlertTitle>
@@ -177,6 +192,10 @@ export function TranslateReviewDialog({
   progress,
   conflicts = [],
   onResolveConflict,
+  sourceConflicts = [],
+  recoveryMessage,
+  onRegenerate,
+  onRemoveFromReview,
 }: {
   open: boolean
   loadingQueue: boolean
@@ -195,6 +214,10 @@ export function TranslateReviewDialog({
   onApply: (items: TranslateProposalItem[]) => void
   conflicts?: DescriptionConflict[]
   onResolveConflict?: (conflict: DescriptionConflict) => void
+  sourceConflicts?: TranslationSourceConflict[]
+  recoveryMessage?: string | null
+  onRegenerate?: (items: TranslateProposalItem[]) => void
+  onRemoveFromReview?: (items: TranslateProposalItem[], stringId: string) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
     draftsFromItems(items)
@@ -213,8 +236,8 @@ export function TranslateReviewDialog({
   const applyCount = filledCount(draftList)
   const review = generated && !generating
   const busy = loadingQueue || generating || applying
-  const canTranslate = !busy && draftList.length > 0 && conflicts.length === 0
-  const canApply = review && !applying && applyCount > 0 && !error && conflicts.length === 0
+  const canTranslate = !busy && draftList.length > 0 && conflicts.length === 0 && sourceConflicts.length === 0
+  const canApply = review && !busy && applyCount > 0 && !error && conflicts.length === 0 && sourceConflicts.length === 0
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -259,6 +282,7 @@ export function TranslateReviewDialog({
               Applied values stay in the working copy until you publish.
             </p>
           ) : null}
+          {recoveryMessage ? <p className="text-sm text-destructive" role="status">{recoveryMessage}</p> : null}
         </ReviewDialogHeader>
 
         <ReviewDialogBody>
@@ -295,6 +319,8 @@ export function TranslateReviewDialog({
                     key={item.string_id}
                     item={item}
                     conflict={conflicts.find((conflict) => conflict.string_id === item.string_id)}
+                    sourceConflict={sourceConflicts.find((conflict) => conflict.string_id === item.string_id)}
+                    onRemove={() => onRemoveFromReview?.(draftList, item.string_id)}
                     onResolveConflict={(conflict, useLatest) => {
                       if (useLatest) {
                         setDrafts((prev) => updateDraftDescription(prev, conflict.string_id, conflict.description ?? ''))
@@ -337,6 +363,12 @@ export function TranslateReviewDialog({
           >
             Discard
           </Button>
+          {sourceConflicts.length > 0 ? (
+            <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
+              {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+              Regenerate changed strings
+            </Button>
+          ) : null}
           <Button
             variant={review ? 'outline' : 'default'}
             type="button"

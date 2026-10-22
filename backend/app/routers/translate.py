@@ -95,12 +95,14 @@ def translate(
 
     attach_batch(db, batch_id, "translate")
     try:
-        translated = apply_translations(db, project, entries, locales, payload.overwrite)
+        translated, skipped = apply_translations(db, project, entries, locales, payload.overwrite)
     except Exception as exc:
         raise _ai_http_error(exc) from exc
 
     db.commit()
-    return TranslateResult(translated_count=translated, locales=locales)
+    return TranslateResult(
+        translated_count=translated, locales=locales, skipped_source_conflicts=skipped
+    )
 
 
 @router.post("/translate/preview", response_model=TranslatePreviewResult)

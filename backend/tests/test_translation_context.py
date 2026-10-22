@@ -379,6 +379,7 @@ def test_missing_and_apply_never_invoke_ai_or_persist_composed_description(clien
             "items": [
                 {
                     "string_id": strings[0]["id"],
+                    "expected_source_text": strings[0]["source_text"],
                     "description": " Only string notes ",
                     "expected_description": "String 0",
                     "translations": {"en": "Hello"},

@@ -212,9 +212,7 @@ def test_overlapping_direct_translations_only_write_empty_cells_once(
 
     project = _make_project(client, "Overlapping AI")
     pid = uuid.UUID(project["id"])
-    client.post(
-        f"/api/projects/{pid}/strings", json={"key": "hello", "source_text": "Xin chào"}
-    )
+    client.post(f"/api/projects/{pid}/strings", json={"key": "hello", "source_text": "Xin chào"})
     both_generating = Barrier(2)
     written, release_commit = Event(), Event()
 
@@ -229,7 +227,8 @@ def test_overlapping_direct_translations_only_write_empty_cells_once(
             project_row = db.get(Project, pid)
             entries = select_entries(db, project_row, TranslateRequest(locales=["en"]))
             attach_batch(db, uuid.uuid4(), "translate")
-            count = apply_translations(db, project_row, entries, ["en"], False)
+            count, skipped = apply_translations(db, project_row, entries, ["en"], False)
+            assert skipped == []
             if count:
                 written.set()
                 assert release_commit.wait(10), "translation commit was not released"
@@ -244,9 +243,12 @@ def test_overlapping_direct_translations_only_write_empty_cells_once(
             release_commit.set()
         assert sorted(f.result(timeout=10) for f in futures) == [0, 1]
     with session_factory() as db:
-        assert db.query(Activity).filter(
-            Activity.project_id == pid, Activity.batch_kind == "translate"
-        ).count() == 1
+        assert (
+            db.query(Activity)
+            .filter(Activity.project_id == pid, Activity.batch_kind == "translate")
+            .count()
+            == 1
+        )
 
 
 @pytest.mark.parametrize("existing_row", [False, True])
@@ -564,7 +566,11 @@ def test_translate_apply_rejects_oversized_payload(client):
         f"/api/projects/{pid}/translate/apply",
         json={
             "items": [
-                {"string_id": string["id"], "translations": {"en": f"v{i}"}}
+                {
+                    "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
+                    "translations": {"en": f"v{i}"},
+                }
                 for i in range(101)
             ]
         },
@@ -626,7 +632,13 @@ def test_translate_apply_persists_and_is_revertible(client, monkeypatch):
     r = client.post(
         f"/api/projects/{pid}/translate/apply",
         json={
-            "items": [{k: v for k, v in item.items() if k != "description"} for item in proposed]
+            "items": [
+                {
+                    **{k: v for k, v in item.items() if k != "description"},
+                    "expected_source_text": item["source_text"],
+                }
+                for item in proposed
+            ]
         },
     )
     assert r.status_code == 200, r.text
@@ -669,6 +681,7 @@ def test_translate_apply_skips_locale_filled_after_preview(client):
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "translations": {"en": "AI Hello", "ja": "こんにちは"},
                 }
             ]
@@ -697,6 +710,7 @@ def test_translate_apply_saves_description(client):
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "description": "Greeting on the home screen",
                     "expected_description": None,
                     "translations": {"en": "Hello"},
@@ -796,7 +810,13 @@ def test_translate_preview_and_apply_include_scores(client, monkeypatch):
     applied = client.post(
         f"/api/projects/{pid}/translate/apply",
         json={
-            "items": [{k: v for k, v in item.items() if k != "description"} for item in proposed]
+            "items": [
+                {
+                    **{k: v for k, v in item.items() if k != "description"},
+                    "expected_source_text": item["source_text"],
+                }
+                for item in proposed
+            ]
         },
     )
     assert applied.status_code == 200, applied.text
@@ -946,6 +966,7 @@ def test_translate_apply_untouched_description_preserves_concurrent_edit(client)
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "translations": {"en": "Hello"},
                 }
             ]
@@ -983,6 +1004,7 @@ def test_translate_apply_stale_description_rolls_back_entire_batch(client, desir
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "translations": {"en": "Hello"},
                     "description": desired,
                     "expected_description": "Original",
@@ -1033,6 +1055,7 @@ def test_translate_apply_description_edits_and_clears(client, original, desired,
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "translations": {"en": "Hello"},
                     "description": desired,
                     "expected_description": expected,
@@ -1055,6 +1078,7 @@ def test_translate_apply_requires_original_for_description_write(client, descrip
             "items": [
                 {
                     "string_id": string["id"],
+                    "expected_source_text": string["source_text"],
                     "description": description,
                     "translations": {"en": "Hello"},
                 }
@@ -1109,6 +1133,7 @@ def test_competing_apply_descriptions_refresh_after_row_lock(client, session_fac
                     [
                         TranslateApplyItem(
                             string_id=sid,
+                            expected_source_text="Xin chào",
                             description="Second",
                             expected_description="Original",
                             translations={"en": "Second translation"},
@@ -1129,6 +1154,7 @@ def test_competing_apply_descriptions_refresh_after_row_lock(client, session_fac
             [
                 TranslateApplyItem(
                     string_id=sid,
+                    expected_source_text="Xin chào",
                     description="First",
                     expected_description="Original",
                     translations={},
