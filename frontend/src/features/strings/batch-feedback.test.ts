@@ -9,7 +9,8 @@ describe('batchSuccessMessage', () => {
     expect(batchSuccessMessage('unpublish', 4)).toBe('Unpublished 4 strings')
     expect(batchSuccessMessage('discard_changes', 2)).toBe('Discarded changes on 2 strings')
     expect(batchSuccessMessage('discard_delete', 1)).toBe('Discarded pending delete on 1 string')
-    expect(batchSuccessMessage('restore', 2)).toBe('Restored 2 strings')
+    expect(batchSuccessMessage('restore', 2)).toBe('Restored 2 strings as drafts')
+    expect(batchSuccessMessage('restore', 1)).toBe('Restored 1 string as draft')
     expect(batchSuccessMessage('restore_last_history', 1)).toBe('Restored last edit on 1 string')
   })
 

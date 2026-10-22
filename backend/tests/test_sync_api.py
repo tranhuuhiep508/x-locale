@@ -341,6 +341,14 @@ def test_delete_public_string_is_pending_until_publish(client):
     public = client.get(
         f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}
     ).json()
+    assert "bye" not in public["vi"]
+    restored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert restored["status"] == "draft"
+    assert restored["published_key"] == "bye"
+    publish_strings(client, pid, [sid])
+    public = client.get(
+        f"/api/projects/{pid}/export", params={"layout": "flat", "stage": "public"}
+    ).json()
     assert public["vi"]["bye"] == "Tạm biệt"
 
 
