@@ -134,12 +134,7 @@ def set_member_role(
 
 
 def remove_member(db: Session, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    # Lock order: projects row (FOR NO KEY UPDATE) before api_keys.
-    # Key-authorized catalog writes go the other way (api_keys.last_used_at,
-    # then FOR KEY SHARE on projects from FK inserts). That is safe only
-    # because NO KEY UPDATE does not conflict with KEY SHARE. Any path that
-    # writes api_keys and then UPDATEs, DELETEs or locks projects will
-    # deadlock with this function.
+    # Lock the project before revoking keys so membership writes serialize.
     lock_project(db, project_id)
     member = _get_member(db, project_id, user_id)
     if member.role == MemberRole.admin and _admin_count(db, project_id) <= 1:

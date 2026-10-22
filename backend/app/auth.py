@@ -12,6 +12,7 @@ from typing import Annotated
 import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, Path, Request
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
 from app.database import get_db
@@ -175,7 +176,9 @@ def _resolve_api_key(db: Session, raw_key: str) -> tuple[ApiKey, Project]:
     project = db.query(Project).filter(Project.id == api_key.project_id).first()
     if not project:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    api_key.last_used_at = datetime.now(UTC)
+    used_at = datetime.now(UTC)
+    db.info["api_key_usage"] = (api_key.id, used_at)
+    set_committed_value(api_key, "last_used_at", used_at)
     set_activity_context(
         db,
         AuthContext(

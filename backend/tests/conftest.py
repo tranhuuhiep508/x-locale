@@ -103,6 +103,7 @@ def session_factory(database_engine):
 
 @pytest.fixture()
 def client(database_engine, session_factory, monkeypatch):
+    from app import database
     from app.config import settings
     from app.database import get_db
     from app.main import app
@@ -111,13 +112,10 @@ def client(database_engine, session_factory, monkeypatch):
     monkeypatch.setattr(settings, "oidc_issuer", "")
     monkeypatch.setattr(settings, "oidc_client_id", "")
     monkeypatch.setattr(settings, "oidc_client_secret", "")
+    monkeypatch.setattr(database, "SessionLocal", session_factory)
 
     def override_get_db():
-        db = session_factory()
-        try:
-            yield db
-        finally:
-            db.close()
+        yield from get_db()
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:

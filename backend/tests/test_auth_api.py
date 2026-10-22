@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from tests.helpers import _make_project
 
 
@@ -142,7 +144,12 @@ def test_create_project_and_string(client):
     assert r.json()["total"] >= 1
 
 
-def test_api_key_auth(client):
+@pytest.mark.parametrize("endpoint", ["strings", "export", "bootstrap"])
+def test_api_key_reads_persist_last_used(client, session_factory, endpoint):
+    from datetime import UTC, datetime
+
+    from app.models import ApiKey
+
     r = client.post(
         "/api/projects",
         json={"name": "Keyed", "target_languages": ["en"]},
@@ -156,13 +163,129 @@ def test_api_key_auth(client):
     )
     assert r.status_code == 201, r.text
     raw_key = r.json()["key"]
+    key_id = uuid.UUID(r.json()["id"])
     assert raw_key.startswith("xlocale_")
 
+    with session_factory() as db:
+        assert db.get(ApiKey, key_id).last_used_at is None
+
+    before = datetime.now(UTC)
     r = client.get(
-        f"/api/projects/{pid}/strings",
+        "/api/bootstrap" if endpoint == "bootstrap" else f"/api/projects/{pid}/{endpoint}",
         headers={"X-API-Key": raw_key},
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
+    with session_factory() as db:
+        first_used = db.get(ApiKey, key_id).last_used_at
+        assert first_used is not None
+        assert first_used >= before
+
+    r = client.get("/api/bootstrap", headers={"X-API-Key": raw_key})
+    assert r.status_code == 200, r.text
+    with session_factory() as db:
+        assert db.get(ApiKey, key_id).last_used_at > first_used
+
+
+@pytest.mark.parametrize("endpoint", ["bootstrap", "export"])
+def test_api_key_auth_with_one_connection(
+    client, database_engine, session_factory, monkeypatch, endpoint
+):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app import database
+    from app.models import ApiKey
+
+    project = _make_project(client, "One connection")
+    response = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert response.status_code == 201, response.text
+    key = response.json()
+    engine = create_engine(database_engine.url, pool_size=1, max_overflow=0, pool_timeout=0.2)
+    monkeypatch.setattr(
+        database, "SessionLocal", sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    )
+    try:
+        url = "/api/bootstrap" if endpoint == "bootstrap" else f"/api/projects/{project['id']}/export"
+        response = client.get(url, headers={"X-API-Key": key["key"]})
+        assert response.status_code == 200, response.text
+        with session_factory() as db:
+            assert db.get(ApiKey, uuid.UUID(key["id"])).last_used_at is not None
+    finally:
+        engine.dispose()
+
+
+def test_api_key_usage_does_not_commit_content(client, session_factory):
+    from app.auth import _resolve_api_key
+    from app.database import get_db
+    from app.main import app
+    from app.models import ApiKey, Project
+
+    project = _make_project(client, "Usage transaction")
+    response = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert response.status_code == 201, response.text
+    key = response.json()
+    project_id = uuid.UUID(project["id"])
+    request_db = app.dependency_overrides[get_db]()
+    db = next(request_db)
+    try:
+        stored_project = db.get(Project, project_id)
+        stored_project.name = "Must roll back"
+        db.flush()
+        _resolve_api_key(db, key["key"])
+    finally:
+        request_db.close()
+
+    with session_factory() as db:
+        assert db.get(Project, project_id).name == "Usage transaction"
+        assert db.get(ApiKey, uuid.UUID(key["id"])).last_used_at is not None
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_late_usage_cleanup_preserves_newer_state(client, session_factory, revoke):
+    from app.auth import _resolve_api_key
+    from app.database import get_db
+    from app.main import app
+    from app.models import ApiKey
+
+    project = _make_project(client, "Late usage")
+    response = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert response.status_code == 201, response.text
+    key = response.json()
+    request_db = app.dependency_overrides[get_db]()
+    db = next(request_db)
+    try:
+        _resolve_api_key(db, key["key"])
+        if revoke:
+            response = client.delete(f"/api/projects/{project['id']}/api-keys/{key['id']}")
+            assert response.status_code == 204, response.text
+        else:
+            response = client.get("/api/bootstrap", headers={"X-API-Key": key["key"]})
+            assert response.status_code == 200, response.text
+        with session_factory() as check_db:
+            latest_usage = check_db.get(ApiKey, uuid.UUID(key["id"])).last_used_at
+    finally:
+        request_db.close()
+
+    with session_factory() as db:
+        stored = db.get(ApiKey, uuid.UUID(key["id"]))
+        assert stored.last_used_at == latest_usage
+        assert (stored.revoked_at is not None) == revoke
+
+
+def test_invalid_and_revoked_keys_do_not_record_usage(client, session_factory):
+    from app.models import ApiKey
+
+    project = _make_project(client, "Rejected usage")
+    response = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert response.status_code == 201, response.text
+    key = response.json()
+    response = client.delete(f"/api/projects/{project['id']}/api-keys/{key['id']}")
+    assert response.status_code == 204, response.text
+    for raw_key in ("invalid-key", key["key"]):
+        response = client.get("/api/bootstrap", headers={"X-API-Key": raw_key})
+        assert response.status_code == 401, response.text
+    with session_factory() as db:
+        assert db.get(ApiKey, uuid.UUID(key["id"])).last_used_at is None
 
 
 def test_api_key_write_activity_uses_key_not_owner(client):

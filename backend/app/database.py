@@ -2,7 +2,7 @@ from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, func, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import require_postgres_database_url, settings
@@ -21,7 +21,21 @@ def get_db() -> Generator[Session]:
     try:
         yield db
     finally:
+        usage = db.info.get("api_key_usage")
+        bind = db.get_bind()
         db.close()
+        if usage is not None:
+            from app.models import ApiKey
+
+            key_id, used_at = usage
+            # Release the content connection before persisting usage in its own transaction.
+            with Session(bind=bind) as usage_db:
+                usage_db.execute(
+                    update(ApiKey)
+                    .where(ApiKey.id == key_id, ApiKey.revoked_at.is_(None))
+                    .values(last_used_at=func.greatest(ApiKey.last_used_at, used_at))
+                )
+                usage_db.commit()
 
 
 DbSession = Annotated[Session, Depends(get_db)]
