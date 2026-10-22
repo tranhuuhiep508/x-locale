@@ -74,6 +74,45 @@ beforeEach(() => {
 })
 
 describe('translation review retranslation', () => {
+  it('stops polling an interrupted job and clears its error on retry while preserving drafts', async () => {
+    const interrupted = 'This operation was interrupted by a server restart or lost worker. Please run it again.'
+    let finishRetry!: (result: TranslateProposalsResult) => void
+    const retryResponse = new Promise<TranslateProposalsResult>((resolve) => { finishRetry = resolve })
+    vi.mocked(stringsApi.translateProposals).mockReset()
+      .mockResolvedValueOnce({ ...page, items: [{ ...item, description: 'My context', translations: { en: 'Hello' } }] })
+      .mockResolvedValueOnce({ ...page, items: [], job_id: 'interrupted-job' })
+      .mockImplementationOnce(() => retryResponse)
+    vi.mocked(jobsApi.get).mockResolvedValueOnce({
+      id: 'interrupted-job', kind: 'translate_proposals', status: 'failed', result: null,
+      error: interrupted, created_at: null, completed_at: null, progress: { phase: 'failed', chunks_done: 0, chunks_total: 1 },
+    }).mockResolvedValueOnce({
+      id: 'retry-job', kind: 'translate_proposals', status: 'completed',
+      result: { items: [{ ...item, translations: { en: 'Hello' } }] },
+      error: null, created_at: null, completed_at: null, progress: null,
+    })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.change(await screen.findByLabelText('Description'), { target: { value: 'My context' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Translate$/ }))
+    fireEvent.change(await screen.findByLabelText('en'), { target: { value: 'My draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+    await screen.findByText(interrupted)
+    expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)) })
+    expect(jobsApi.get).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+    await waitFor(() => expect(screen.queryByText(interrupted)).toBeNull())
+    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('My context')
+    expect(vi.mocked(stringsApi.translateProposals).mock.calls[2][1].descriptions).toEqual({ a: 'My context' })
+    await act(async () => { finishRetry({ ...page, items: [], job_id: 'retry-job' }) })
+    await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello'))
+    expect(screen.queryByText(interrupted)).toBeNull()
+    expect(jobsApi.get).toHaveBeenLastCalledWith('retry-job')
+    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it.each([false, true])('preserves Use latest through incomplete results (background: %s)', async (background) => {
     let finishProposals!: (result: TranslateProposalsResult) => void
     const pendingProposals = new Promise<TranslateProposalsResult>((resolve) => { finishProposals = resolve })

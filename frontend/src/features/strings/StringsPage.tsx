@@ -814,6 +814,7 @@ export function StringsPage() {
         onClose={closeReview}
         onTranslate={(items) => {
           setProposalItems(items)
+          setProposalJobId(null)
           regenerationIds.current = null
           setRecoveryMessage(null)
           proposeMut.mutate({

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -65,6 +65,7 @@ _HANDOFF_TIMEOUT_S = 5
 RECOVERY_INTERVAL_S = 60
 JOB_LOCK_NAMESPACE = 0x584C4A42
 RECOVERABLE_KINDS = ("import", "excel_import", "revert")
+AI_JOB_KINDS = ("translate", "translate_proposals")
 INTERRUPTED_MESSAGE = (
     "This operation was interrupted by a server restart or lost worker. Please run it again."
 )
@@ -335,25 +336,31 @@ def run_job(
 
 
 def recover_abandoned_jobs() -> int:
-    """Age selects candidates; both database locks prove that work cannot still commit."""
+    """Age selects candidates; database ownership proves that work cannot still commit."""
     eligible = (
-        Job.status == JobStatus.running,
-        Job.kind.in_(RECOVERABLE_KINDS),
+        or_(
+            and_(Job.kind.in_(RECOVERABLE_KINDS), Job.status == JobStatus.running),
+            and_(
+                Job.kind.in_(AI_JOB_KINDS),
+                Job.status.in_((JobStatus.pending, JobStatus.running)),
+            ),
+        ),
         Job.created_at < func.now() - timedelta(seconds=RECOVERY_INTERVAL_S),
     )
     with SessionLocal() as db:
-        candidates = db.query(Job.id, Job.project_id).filter(*eligible).all()
+        candidates = db.query(Job.id, Job.project_id, Job.kind).filter(*eligible).all()
     recovered = 0
-    for job_id, project_id in candidates:
+    for job_id, project_id, kind in candidates:
         with SessionLocal() as db:
             if not try_job_lock(db, job_id):
                 continue
-            try:
-                import_lock.acquire_import_lock(db, project_id)
-            except HTTPException as exc:
-                if exc.status_code == 409:
-                    continue
-                raise
+            if kind in RECOVERABLE_KINDS:
+                try:
+                    import_lock.acquire_import_lock(db, project_id)
+                except HTTPException as exc:
+                    if exc.status_code == 409:
+                        continue
+                    raise
             job = (
                 db.query(Job)
                 .filter(Job.id == job_id, *eligible)

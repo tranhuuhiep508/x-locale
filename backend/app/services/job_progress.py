@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import SessionLocal
-from app.models import Job
+from app.models import Job, JobStatus
 
 JOB_ID_KEY = "job_id"
 _progress_lock = threading.Lock()
@@ -26,7 +26,12 @@ def write_job_progress(
     with _progress_lock:
         db = SessionLocal()
         try:
-            job = db.query(Job).filter(Job.id == job_id).first()
+            job = (
+                db.query(Job)
+                .filter(Job.id == job_id, Job.status == JobStatus.running)
+                .with_for_update()
+                .first()
+            )
             if job is None:
                 return
             payload = dict(job.payload or {})

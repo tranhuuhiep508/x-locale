@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
+from app.activity import attach_batch
 from app.ai import (
     BATCH_SIZE,
     ProgressCallback,
@@ -24,6 +26,7 @@ from app.models import Job, JobStatus, Module, Project, StringEntry, Translation
 from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceConflict
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
+from app.services.jobs import _finish, owned_job_connection
 from app.services.strings import _missing_locales_clause, filtered_string_query, load_string_entries
 
 SYNC_THRESHOLD = 20
@@ -506,6 +509,65 @@ def commit_proposals(
     return translated, locales_written
 
 
+@contextmanager
+def _ai_job_session(job_id: uuid.UUID | None) -> Iterator[Session | None]:
+    """Own AI work across transactions; a delayed callback cannot restart a finished job."""
+    with owned_job_connection(job_id) if job_id else nullcontext() as conn:
+        with SessionLocal(bind=conn) if conn is not None else SessionLocal() as db:
+            try:
+                if job_id is not None:
+                    job = (
+                        db.query(Job)
+                        .filter(Job.id == job_id, Job.status == JobStatus.pending)
+                        .with_for_update()
+                        .first()
+                    )
+                    if job is None:
+                        yield None
+                        return
+                    db.info["activity"] = dict((job.payload or {}).get("actor") or {})
+                    job.status = JobStatus.running
+                    db.commit()
+                yield db
+            except Exception as exc:
+                # Rollback can allow reconnection. Never record a failure after losing ownership.
+                lost_ownership = conn is not None and conn.invalidated
+                db.rollback()
+                if job_id is not None and not lost_ownership and not conn.invalidated:
+                    job = (
+                        db.query(Job)
+                        .filter(Job.id == job_id, Job.status == JobStatus.running)
+                        .populate_existing()
+                        .with_for_update()
+                        .first()
+                    )
+                    if job is not None:
+                        _finish(job, JobStatus.failed, phase="failed")
+                        job.error = str(exc)
+                        db.commit()
+                raise
+
+
+def _complete_ai_job(db: Session, job_id: uuid.UUID | None, result: dict[str, Any]) -> bool:
+    if job_id is not None:
+        if db.get_bind().invalidated:
+            raise RuntimeError("AI job lost its database connection")
+        job = (
+            db.query(Job)
+            .filter(Job.id == job_id, Job.status == JobStatus.running)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if job is None:
+            db.rollback()
+            return False
+        _finish(job, JobStatus.completed, phase="done")
+        job.result = result
+    db.commit()
+    return True
+
+
 def run_translate_job(
     project_id: uuid.UUID,
     entry_ids: list[uuid.UUID],
@@ -514,59 +576,31 @@ def run_translate_job(
     batch_id: uuid.UUID,
     job_id: uuid.UUID | None = None,
 ) -> int:
-    db = SessionLocal()
-    try:
-        actor: dict[str, str | None] = {}
-        if job_id:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = JobStatus.running
-                actor = ((job.payload or {}).get("actor") or {})
-
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
+    with _ai_job_session(job_id) as db:
+        if db is None:
             return 0
-
+        project = db.get(Project, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        actor = db.info.get("activity") or {}
         db.info["activity"] = {
             "actor_type": actor.get("actor_type") or "user",
             "actor_id": actor.get("actor_id"),
             "actor_label": actor.get("actor_label") or "user",
-            "batch_id": str(batch_id),
-            "batch_kind": "translate",
         }
-
+        attach_batch(db, batch_id, "translate")
         entries = _load_entries_by_ids(db, entry_ids)
         translated, skipped = apply_translations(db, project, entries, locales, overwrite)
-
-        if job_id:
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = JobStatus.completed
-                job.result = {
-                    "translated_count": translated,
-                    "locales": locales,
-                    "skipped_source_conflicts": [item.model_dump(mode="json") for item in skipped],
-                }
-                job.completed_at = datetime.now(UTC)
-
-        db.commit()
-        return translated
-    except Exception as exc:
-        db.rollback()
-        if job_id:
-            failed = SessionLocal()
-            try:
-                job = failed.query(Job).filter(Job.id == job_id).first()
-                if job:
-                    job.status = JobStatus.failed
-                    job.error = str(exc)
-                    job.completed_at = datetime.now(UTC)
-                    failed.commit()
-            finally:
-                failed.close()
-        raise
-    finally:
-        db.close()
+        completed = _complete_ai_job(
+            db,
+            job_id,
+            {
+                "translated_count": translated,
+                "locales": locales,
+                "skipped_source_conflicts": [item.model_dump(mode="json") for item in skipped],
+            },
+        )
+        return translated if completed else 0
 
 
 def run_propose_job(
@@ -577,18 +611,12 @@ def run_propose_job(
     job_id: uuid.UUID,
     descriptions: dict[str, str] | None = None,
 ) -> None:
-    db = SessionLocal()
-    try:
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = JobStatus.running
-
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
+    with _ai_job_session(job_id) as db:
+        if db is None:
             return
-
-        db.commit()
-
+        project = db.get(Project, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
         entries = _load_entries_by_ids(db, entry_ids)
 
         def on_progress(phase: ProgressPhase, chunks_done: int, chunks_total: int) -> None:
@@ -602,26 +630,4 @@ def run_propose_job(
             parse_descriptions(descriptions),
             on_progress=on_progress,
         )
-
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = JobStatus.completed
-            job.result = {"locales": locales, "items": items}
-            job.completed_at = datetime.now(UTC)
-
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        failed = SessionLocal()
-        try:
-            job = failed.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = JobStatus.failed
-                job.error = str(exc)
-                job.completed_at = datetime.now(UTC)
-                failed.commit()
-        finally:
-            failed.close()
-        raise
-    finally:
-        db.close()
+        _complete_ai_job(db, job_id, {"locales": locales, "items": items})
