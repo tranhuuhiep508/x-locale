@@ -389,8 +389,8 @@ def discard_working_changes(entry: StringEntry) -> bool:
     if entry.module_id != entry.published_module_id:
         entry.module_id = entry.published_module_id
         changed = True
-    if entry.source_text != (entry.published_source_text or ""):
-        entry.source_text = entry.published_source_text or entry.source_text
+    if entry.published_source_text is not None and entry.source_text != entry.published_source_text:
+        entry.source_text = entry.published_source_text
         changed = True
     for translation in entry.translations or []:
         published = translation.published_value if translation.published_value is not None else ""
