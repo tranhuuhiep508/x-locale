@@ -6,20 +6,26 @@ and `docs/` for the data model and draft/public workflow.
 
 ## Cursor Cloud specific instructions
 
-Dependencies are already installed by the environment update script on VM startup
-(backend + CLI via `uv sync`, frontend via `npm install`). You normally only need
-to start the services and run tests — do not re-run installs unless something is
-missing.
+`.cursor/install.sh` installs uv (symlinked onto `/usr/local/bin`), backend dependencies
+(`uv sync --all-extras`), CLI dependencies including the dev extra (`uv sync --extra dev`),
+frontend dependencies (`npm ci`), and native PostgreSQL 16.
+`.cursor/start.sh` runs on every boot: it starts that cluster, migrates, seeds the
+Demo App, and launches the backend and frontend in tmux. Docker is not installed;
+do not use `docker compose` for Postgres. Do not re-run installs unless a tool or
+`node_modules` is missing.
 
 ### Services
 
 | Service | Dir | Start (dev) | Port | Notes |
 |----------|------------|-------------------------------------------------------------------------|------|-------|
-| Backend | `backend/` | `docker compose up -d postgres`, then `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
-| Frontend | `frontend/`| `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
+| Postgres | n/a | `sudo pg_ctlcluster 16 main start` (already started by `.cursor/start.sh`) | 5432 | Native PostgreSQL 16, libc collation C. Role `xlocale`, databases `xlocale` and `xlocale_test`. |
+| Backend | `backend/` | tmux `backend`: `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
+| Frontend | `frontend/`| tmux `frontend`: `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
 | CLI | `cli/` | `uv run --project cli loc <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
 
 Start the backend BEFORE the frontend. Vite uses `strictPort: true` on 5173.
+Logs: `/tmp/xlocale-backend.log` and `/tmp/xlocale-frontend.log`. Root `.env` is
+created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing.
 
 ### Config / auth
 
