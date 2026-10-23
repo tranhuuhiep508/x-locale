@@ -8,7 +8,7 @@ from sqlalchemy import event
 from app.config import settings
 from app.database import get_db
 from app.main import app
-from app.models import Project
+from app.models import Project, Translation
 from app.services.strings import project_coverage
 from tests.helpers import make_project
 
@@ -53,6 +53,33 @@ def create_string(client, project, key, **fields):
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+@pytest.mark.parametrize("targets", [["vi", "en"], ["vi"]])
+def test_coverage_excludes_legacy_base_targets(client, session_factory, targets):
+    project = make_project(client)
+    project_id = uuid.UUID(project["id"])
+    root = f"/api/projects/{project['id']}"
+    with session_factory() as db:
+        db.get(Project, project_id).target_languages = targets
+        db.commit()
+    row = create_string(
+        client, project, "save", translations={"en": "Save"} if "en" in targets else {}
+    )
+    with session_factory() as db:
+        db.add(Translation(string_id=uuid.UUID(row["id"]), locale="vi", value="Legacy"))
+        db.commit()
+
+    response = client.get(f"{root}/coverage")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "total": 1,
+        "locales": [{"locale": "en", "translated": 1, "missing": 0}] if "en" in targets else [],
+    }
+    assert client.get(f"{root}/strings", params={"missing_any": True}).json()["total"] == 0
+    with session_factory() as db:
+        legacy = db.query(Translation).filter_by(string_id=uuid.UUID(row["id"]), locale="vi").one()
+        assert legacy.value == "Legacy"
 
 
 def test_coverage_matches_catalog_working_copy_filters(client):

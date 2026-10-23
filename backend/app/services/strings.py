@@ -903,7 +903,11 @@ def project_coverage(db: Session, project: Project) -> ProjectCoverageOut:
     """Count working-copy coverage with at most two reads, regardless of locale count."""
     live = string_query(db, project.id, eager=False)
     total = live.with_entities(func.count(StringEntry.id)).scalar() or 0
-    locales = list(dict.fromkeys(project.target_languages or []))
+    locales = [
+        locale
+        for locale in dict.fromkeys(project.target_languages or [])
+        if locale != project.base_language
+    ]
     translated = {}
     if total and locales:
         rows = (

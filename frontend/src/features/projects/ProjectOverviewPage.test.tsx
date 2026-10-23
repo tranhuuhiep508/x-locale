@@ -103,6 +103,31 @@ afterEach(() => {
 })
 
 describe('project overview', () => {
+  it.each([
+    { targets: ['vi', 'en'], count: 1 },
+    { targets: ['vi'], count: 0 },
+  ])('excludes legacy base targets from coverage and the language count ($count targets)', async ({ targets, count }) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: targets })
+    vi.mocked(projectsApi.coverage).mockResolvedValue({
+      total: 10,
+      locales: count ? [{ locale: 'en', translated: 10, missing: 0 }] : [],
+    })
+    renderOverview()
+    await screen.findByRole('link', { name: new RegExp(`Languages ${count} Target languages`) })
+    expect(screen.getAllByText('Vietnamese')).toHaveLength(1)
+    expect(screen.queryByRole('progressbar', { name: 'Vietnamese translation coverage' })).toBeNull()
+    expect(document.querySelector('a[href*="missing_locale=vi"]')).toBeNull()
+    if (count) {
+      await screen.findByRole('progressbar', { name: 'English translation coverage' })
+      expect(screen.getByRole('link', { name: /View translations/ }).getAttribute('href')).toBe(
+        '/projects/demo-app/strings?complete_locale=en'
+      )
+    } else {
+      expect(screen.getByText('Add a target language')).toBeTruthy()
+      expect(screen.queryByRole('progressbar')).toBeNull()
+    }
+  })
+
   it('shows working-copy coverage and links to the matching catalog filters', async () => {
     renderOverview()
     await waitFor(() =>
