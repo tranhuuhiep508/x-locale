@@ -292,6 +292,9 @@ def test_usage_write_failure_preserves_client_status(client, session_factory, mo
             raise RuntimeError("usage write failed")
 
     monkeypatch.setattr(database, "Session", FailingUsageSession)
+    # Alembic's fileConfig disables loggers that already exist. Turn this one back on.
+    usage_logger = logging.getLogger("app.database")
+    usage_logger.disabled = False
     caplog.set_level(logging.WARNING, logger="app.database")
 
     missing = client.get(f"/api/jobs/{uuid.uuid4()}", headers=headers)
