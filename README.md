@@ -246,6 +246,13 @@ cd frontend && npm run gen:api
 
 See [.env.example](.env.example). Notable vars:
 
+For production configuration stored in AWS Secrets Manager, see
+[the boto3 setup guide](docs/aws-secrets-manager.md). Mount the full secret ARN at
+`/run/x-locale/secrets-arn`; the backend then reads all application settings from
+that JSON secret and code defaults, ignoring application env vars and `.env`.
+The production image's default command requires this mount before migrations.
+Local development and CI keep the existing configuration behavior without it.
+
 | Var | Purpose |
 |-----|---------|
 | `X_LOCALE_SECRET` | Signs session JWTs. **Required in production:** set a long random value; the app refuses to start with the repo default when OIDC is configured or `AUTH_DEV_BYPASS=false`. |

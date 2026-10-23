@@ -1,14 +1,111 @@
+import json
+import re
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 # Default in repo; production must override via X_LOCALE_SECRET.
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
+SECRETS_ARN_PATH = Path("/run/x-locale/secrets-arn")
+
+
+def _read_secrets_arn() -> str | None:
+    try:
+        arn = SECRETS_ARN_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        if not SECRETS_ARN_PATH.is_symlink():
+            return None
+        raise RuntimeError("Cannot read Secrets Manager bootstrap file") from None
+    except OSError, UnicodeError:
+        raise RuntimeError("Cannot read Secrets Manager bootstrap file") from None
+    if not re.fullmatch(
+        r"arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[\w/+=.@-]+-[A-Za-z0-9]{6}",
+        arn,
+        flags=re.ASCII,
+    ):
+        raise RuntimeError("Secrets Manager bootstrap file must contain a full secret ARN")
+    return arn
+
+
+def _load_aws_settings(settings_cls: type[BaseSettings], arn: str) -> dict:
+    try:
+        with closing(
+            boto3.client(
+                "secretsmanager",
+                region_name=arn.split(":")[3],
+                config=Config(
+                    retries={"mode": "standard", "total_max_attempts": 3},
+                    connect_timeout=5,
+                    read_timeout=10,
+                ),
+            )
+        ) as client:
+            response = client.get_secret_value(SecretId=arn)
+    except (BotoCoreError, ClientError) as error:
+        raise RuntimeError(
+            f"Cannot load Secrets Manager configuration ({type(error).__name__}); "
+            "check AWS credentials, permissions, "
+            "connectivity, and secret availability"
+        ) from None
+    if "SecretString" not in response:
+        raise RuntimeError("Secrets Manager configuration requires a JSON SecretString")
+    try:
+        payload = json.loads(response["SecretString"])
+    except ValueError, TypeError:
+        raise RuntimeError("Secrets Manager configuration must be valid JSON") from None
+    if not isinstance(payload, dict):
+        raise RuntimeError("Secrets Manager configuration must be a JSON object")
+    values = {
+        name: payload[name.upper()] for name in settings_cls.model_fields if name.upper() in payload
+    }
+    # Validate before any caller can create a database engine, even with dev bypass enabled.
+    database_url = values.get("database_url")
+    try:
+        if not isinstance(database_url, str):
+            raise ValueError
+        require_postgres_database_url(database_url)
+        if not make_url(database_url).database:
+            raise ValueError
+    except ArgumentError, ValueError, SystemExit:
+        raise RuntimeError(
+            "Secrets Manager configuration requires a valid Postgres DATABASE_URL"
+        ) from None
+    secret = values.get("x_locale_secret")
+    if (
+        not isinstance(secret, str)
+        or not secret.strip()
+        or secret.strip() == INSECURE_DEFAULT_X_LOCALE_SECRET
+    ):
+        raise RuntimeError("Secrets Manager configuration requires a secure X_LOCALE_SECRET")
+    return values
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"), extra="ignore", hide_input_in_errors=True
+    )
+
+    def __init__(self, **values):
+        # Pydantic reads dotenv before settings_customise_sources selects AWS mode.
+        if _read_secrets_arn() is not None:
+            values["_env_file"] = None
+        super().__init__(**values)
+
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
+        arn = _read_secrets_arn()
+        if arn is not None:
+            return (lambda: _load_aws_settings(settings_cls, arn),)
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
     database_url: str = ""
     # Bootstrap database for CREATE/DROP. Harnesses connect here, not to postgres.
