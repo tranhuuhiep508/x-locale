@@ -272,6 +272,64 @@ def test_late_usage_cleanup_preserves_newer_state(client, session_factory, revok
         assert (stored.revoked_at is not None) == revoke
 
 
+def test_usage_write_failure_preserves_client_status(client, session_factory, monkeypatch, caplog):
+    import logging
+
+    from sqlalchemy.orm import Session
+
+    from app import database
+    from app.models import ApiKey
+
+    project = _make_project(client, "Usage failure")
+    created = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert created.status_code == 201, created.text
+    raw_key = created.json()["key"]
+    key_id = uuid.UUID(created.json()["id"])
+    headers = {"X-API-Key": raw_key}
+
+    class FailingUsageSession(Session):
+        def execute(self, statement, *args, **kwargs):
+            raise RuntimeError("usage write failed")
+
+    monkeypatch.setattr(database, "Session", FailingUsageSession)
+    caplog.set_level(logging.WARNING, logger="app.database")
+
+    missing = client.get(f"/api/jobs/{uuid.uuid4()}", headers=headers)
+    assert missing.status_code == 404, missing.text
+    forbidden = client.get(f"/api/projects/{project['id']}/members", headers=headers)
+    assert forbidden.status_code == 403, forbidden.text
+    assert forbidden.json()["detail"] == "API keys cannot perform this action"
+
+    with session_factory() as db:
+        assert db.get(ApiKey, key_id).last_used_at is None
+    assert caplog.text.count("Failed to persist API key last_used_at") == 2
+
+
+def test_authenticated_key_records_usage_on_forbidden_and_missing(client, session_factory):
+    from app.models import ApiKey
+
+    project = _make_project(client, "Counted denial")
+    created = client.post(f"/api/projects/{project['id']}/api-keys", json={"name": "ci"})
+    assert created.status_code == 201, created.text
+    raw_key = created.json()["key"]
+    key_id = uuid.UUID(created.json()["id"])
+    headers = {"X-API-Key": raw_key}
+
+    with session_factory() as db:
+        assert db.get(ApiKey, key_id).last_used_at is None
+
+    forbidden = client.get(f"/api/projects/{project['id']}/members", headers=headers)
+    assert forbidden.status_code == 403, forbidden.text
+    with session_factory() as db:
+        after_forbidden = db.get(ApiKey, key_id).last_used_at
+        assert after_forbidden is not None
+
+    missing = client.get(f"/api/jobs/{uuid.uuid4()}", headers=headers)
+    assert missing.status_code == 404, missing.text
+    with session_factory() as db:
+        assert db.get(ApiKey, key_id).last_used_at > after_forbidden
+
+
 def test_invalid_and_revoked_keys_do_not_record_usage(client, session_factory):
     from app.models import ApiKey
 

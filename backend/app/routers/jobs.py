@@ -25,6 +25,7 @@ def job_access(
     """Same rule as ``project_access``: an API key reads its own project's jobs,
     a session reads jobs of projects it belongs to, everything else is 404."""
     if x_api_key:
+        # 404 below still counts: usage is recorded when the key authenticates.
         _, project = _resolve_api_key(db, x_api_key)
         job = db.get(Job, job_id)
         if job is None or job.project_id != project.id:

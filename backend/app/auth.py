@@ -12,7 +12,6 @@ from typing import Annotated
 import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, Path, Request
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
 from app.database import get_db
@@ -177,8 +176,8 @@ def _resolve_api_key(db: Session, raw_key: str) -> tuple[ApiKey, Project]:
     if not project:
         raise HTTPException(status_code=401, detail="Invalid API key")
     used_at = datetime.now(UTC)
+    # last_used_at means the key was presented and authenticated, not that the request succeeded.
     db.info["api_key_usage"] = (api_key.id, used_at)
-    set_committed_value(api_key, "last_used_at", used_at)
     set_activity_context(
         db,
         AuthContext(
@@ -270,6 +269,7 @@ def _member_access(
 
 def _reject_api_key(db: Session, project_ref: str, raw_key: str) -> None:
     """Keys can do catalog work only. Mismatch stays 404 so existence does not leak."""
+    # 403 and 404 here still count: usage is recorded when the key authenticates.
     _, key_project = _resolve_api_key(db, raw_key)
     resolved = resolve_project_ref(db, project_ref)
     if key_project.id != resolved.id:

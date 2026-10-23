@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from typing import Annotated
 
@@ -6,6 +7,8 @@ from sqlalchemy import create_engine, event, func, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import require_postgres_database_url, settings
+
+logger = logging.getLogger(__name__)
 
 require_postgres_database_url(settings.database_url)
 engine = create_engine(settings.database_url, pool_pre_ping=True)
@@ -28,14 +31,19 @@ def get_db() -> Generator[Session]:
             from app.models import ApiKey
 
             key_id, used_at = usage
-            # Release the content connection before persisting usage in its own transaction.
-            with Session(bind=bind) as usage_db:
-                usage_db.execute(
-                    update(ApiKey)
-                    .where(ApiKey.id == key_id, ApiKey.revoked_at.is_(None))
-                    .values(last_used_at=func.greatest(ApiKey.last_used_at, used_at))
+            try:
+                # Release the content connection before persisting usage in its own transaction.
+                with Session(bind=bind) as usage_db:
+                    usage_db.execute(
+                        update(ApiKey)
+                        .where(ApiKey.id == key_id, ApiKey.revoked_at.is_(None))
+                        .values(last_used_at=func.greatest(ApiKey.last_used_at, used_at))
+                    )
+                    usage_db.commit()
+            except Exception:
+                logger.warning(
+                    "Failed to persist API key last_used_at for %s", key_id, exc_info=True
                 )
-                usage_db.commit()
 
 
 DbSession = Annotated[Session, Depends(get_db)]
