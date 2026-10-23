@@ -175,7 +175,9 @@ def _resolve_api_key(db: Session, raw_key: str) -> tuple[ApiKey, Project]:
     project = db.query(Project).filter(Project.id == api_key.project_id).first()
     if not project:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    api_key.last_used_at = datetime.now(UTC)
+    used_at = datetime.now(UTC)
+    # last_used_at means the key was presented and authenticated, not that the request succeeded.
+    db.info["api_key_usage"] = (api_key.id, used_at)
     set_activity_context(
         db,
         AuthContext(
@@ -267,6 +269,7 @@ def _member_access(
 
 def _reject_api_key(db: Session, project_ref: str, raw_key: str) -> None:
     """Keys can do catalog work only. Mismatch stays 404 so existence does not leak."""
+    # 403 and 404 here still count: usage is recorded when the key authenticates.
     _, key_project = _resolve_api_key(db, raw_key)
     resolved = resolve_project_ref(db, project_ref)
     if key_project.id != resolved.id:
