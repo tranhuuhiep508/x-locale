@@ -426,6 +426,8 @@ def import_rows(
             original_links[sid] = set()
             if not row.excel:
                 for locale in project.target_languages:
+                    if locale == project.base_language:
+                        continue
                     require_locale_code(locale)
                     translation = {
                         "id": uuid.uuid4(),

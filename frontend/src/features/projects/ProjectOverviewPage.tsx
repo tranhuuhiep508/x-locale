@@ -241,6 +241,7 @@ export function ProjectOverviewPage() {
     )
 
   const total = coverage.data?.total ?? project.string_count
+  const targetLocales = project.target_languages.filter((locale) => locale !== project.base_language)
   const coverageByLocale = new Map(coverage.data?.locales.map((row) => [row.locale, row]))
   const languageName = (locale: string) =>
     languages.find((language) => language.code === locale)?.name ?? locale
@@ -284,7 +285,7 @@ export function ProjectOverviewPage() {
         <StatCard
           icon={Globe2}
           label="Languages"
-          value={project.target_languages.length}
+          value={targetLocales.length}
           description="Target languages"
           projectRef={projectRef}
           to="/projects/$projectRef/settings"
@@ -325,9 +326,9 @@ export function ProjectOverviewPage() {
               </Badge>
             </div>
 
-            {project.target_languages.length > 0 ? (
+            {targetLocales.length > 0 ? (
               <ul className="min-w-0 divide-y divide-border/60">
-                {project.target_languages.map((locale) => (
+                {targetLocales.map((locale) => (
                   <LanguageCoverage
                     key={locale}
                     projectRef={projectRef}

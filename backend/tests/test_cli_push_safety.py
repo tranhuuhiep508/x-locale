@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
+from app.models import Project
 from tests.helpers import json_upload, make_project, publish_strings
 
 
@@ -105,10 +108,13 @@ def test_recreated_live_key_shadows_old_tombstone(client):
 
 
 @pytest.mark.parametrize("layout", ["flat", "modular"])
-def test_base_language_in_targets_has_unique_sync_and_export_locales(client, layout):
+def test_base_language_in_targets_has_unique_sync_and_export_locales(client, session_factory, layout):
     project = make_project(client, "Overlapping Locales", targets=["en", "vi", "ja"], layout=layout)
-    # This configuration is accepted, including on existing projects.
-    assert project["target_languages"] == ["en", "vi", "ja"]
+    assert project["target_languages"] == ["en", "ja"]
+    # Existing projects can still have an overlapping target list in storage.
+    with session_factory() as db:
+        db.get(Project, uuid.UUID(project["id"])).target_languages = ["en", "vi", "ja"]
+        db.commit()
     root = f"/api/projects/{project['id']}"
     values = {"hello": "Xin chào"}
     payload = (

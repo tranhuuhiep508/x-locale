@@ -27,9 +27,20 @@ from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceC
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
 from app.services.jobs import _finish, owned_job_connection
-from app.services.strings import _missing_locales_clause, filtered_string_query, load_string_entries
+from app.services.strings import (
+    _missing_locales_clause,
+    filtered_string_query,
+    load_string_entries,
+    validate_locales,
+)
 
 SYNC_THRESHOLD = 20
+
+
+def resolve_translation_locales(project: Project, locales: list[str] | None) -> list[str]:
+    targets = locales or [loc for loc in project.target_languages if loc != project.base_language]
+    validate_locales(project, targets)
+    return targets
 
 
 def _entries_query(
@@ -40,6 +51,7 @@ def _entries_query(
     *,
     eager: bool,
 ):
+    validate_locales(project, locales)
     query = filtered_string_query(
         db,
         project,
@@ -75,7 +87,7 @@ def select_entries(
     payload: TranslateRequest,
     locales: list[str] | None = None,
 ) -> list[StringEntry]:
-    target_locales = locales or payload.locales or list(project.target_languages)
+    target_locales = resolve_translation_locales(project, locales or payload.locales)
     query = _entries_query(db, project, payload, target_locales, eager=False)
     id_rows = (
         query.with_entities(StringEntry.id, StringEntry.key)
@@ -171,6 +183,7 @@ def work_items(
     overwrite: bool,
     descriptions: dict[uuid.UUID, str] | None = None,
 ) -> list[TranslateItem]:
+    validate_locales(project, locales)
     items: list[TranslateItem] = []
     for entry in entries:
         needed = needed_locales(entry, locales, overwrite)
@@ -298,6 +311,7 @@ def preview_translations(
     locales: list[str],
     description: str | None,
 ) -> tuple[dict[str, str], dict[str, int]]:
+    validate_locales(project, locales)
     result = translate_batch(
         project.base_language,
         [
@@ -421,6 +435,9 @@ def commit_proposals(
     if not items:
         return 0, []
 
+    # Legacy proposal clients silently skip unconfigured targets; only reject the base here.
+    if any(project.base_language in item.translations for item in items):
+        validate_locales(project, [project.base_language])
     allowed = set(project.target_languages)
     ids = [item.string_id for item in items]
     # Lock parents separately: the eager translation join has a nullable side.

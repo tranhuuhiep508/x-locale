@@ -470,6 +470,8 @@ def serialize_string(entry: StringEntry) -> StringOut:
 def ensure_translation_rows(db: Session, entry: StringEntry, project: Project) -> None:
     existing = {t.locale for t in entry.translations}
     for locale in project.target_languages:
+        if locale == project.base_language:
+            continue
         locale = require_locale_code(locale)
         if locale not in existing:
             translation = Translation(
@@ -738,7 +740,9 @@ def filtered_string_query(db: Session, project: Project, filt, *, eager: bool = 
         q=getattr(filt, "q", None),
         missing_locale=getattr(filt, "missing_locale", None),
         missing_any_locales=(
-            project.target_languages if getattr(filt, "missing_any", None) else None
+            [locale for locale in project.target_languages if locale != project.base_language]
+            if getattr(filt, "missing_any", None)
+            else None
         ),
         complete_locale=getattr(filt, "complete_locale", None),
         status=getattr(filt, "status", None),
@@ -768,11 +772,15 @@ def resolve_string_ids(
     return [row.id for row in q.with_entities(StringEntry.id).all()]
 
 
-def validate_locales(project: Project, translations: dict[str, str] | None) -> None:
+def validate_locales(project: Project, translations: Collection[str] | None) -> None:
     if not translations:
         return
+    if project.base_language in translations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Base language '{project.base_language}' must be edited through source_text.",
+        )
     allowed = set(project.target_languages)
-    allowed.add(project.base_language)
     for locale in translations:
         if locale not in allowed:
             raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
@@ -857,7 +865,11 @@ def list_strings(
         untagged=untagged,
         q=q,
         missing_locale=missing_locale,
-        missing_any_locales=project.target_languages if missing_any else None,
+        missing_any_locales=(
+            [locale for locale in project.target_languages if locale != project.base_language]
+            if missing_any
+            else None
+        ),
         complete_locale=complete_locale,
         status=status,
         pending_delete=pending_delete,
@@ -891,7 +903,11 @@ def project_coverage(db: Session, project: Project) -> ProjectCoverageOut:
     """Count working-copy coverage with at most two reads, regardless of locale count."""
     live = string_query(db, project.id, eager=False)
     total = live.with_entities(func.count(StringEntry.id)).scalar() or 0
-    locales = list(dict.fromkeys(project.target_languages or []))
+    locales = [
+        locale
+        for locale in dict.fromkeys(project.target_languages or [])
+        if locale != project.base_language
+    ]
     translated = {}
     if total and locales:
         rows = (
@@ -1063,6 +1079,7 @@ def _update_string(
     string_id: uuid.UUID,
     payload: StringUpdate,
 ) -> None:
+    validate_locales(project, payload.translations)
     if payload.status == TranslationStatus.public:
         lock_publication(db, project.id)
     entry = _locked_editor_entry(db, project.id, string_id)
@@ -1091,7 +1108,6 @@ def _update_string(
         )
         entry.tags = tags
     if payload.translations is not None:
-        validate_locales(project, payload.translations)
         ensure_translation_rows(db, entry, project)
         apply_translation_values(db, entry, payload.translations, payload.translation_scores)
     if payload.status == TranslationStatus.public:
@@ -1112,8 +1128,7 @@ def upsert_translation(
     from app.services.write_transactions import run_write
 
     locale = require_locale_code(locale)
-    if locale not in project.target_languages and locale != project.base_language:
-        raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
+    validate_locales(project, [locale])
 
     def write() -> None:
         entry = _locked_editor_entry(db, project.id, string_id)
