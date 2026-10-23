@@ -34,7 +34,7 @@ vi.mock('@/lib/api/jobs', async (importOriginal) => ({
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/strings')>(),
   stringsApi: {
-    list: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
+    list: vi.fn(), create: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
   },
 }))
 
@@ -53,6 +53,7 @@ let client: QueryClient
 afterEach(() => {
   cleanup()
   client.clear()
+  vi.unstubAllGlobals()
 })
 beforeEach(() => {
   vi.resetAllMocks()
@@ -74,6 +75,31 @@ beforeEach(() => {
 })
 
 describe('translation review retranslation', () => {
+  it('excludes a legacy base target from AI selections and editor saves', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    })
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['vi', 'en'] })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await screen.findByText('0 strings · 1 target language')
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledWith(
+      'demo-app', expect.objectContaining({ locales: ['en'] }),
+    ))
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add string' })[0])
+    fireEvent.change(await screen.findByLabelText('Key'), { target: { value: 'save' } })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Lưu' } })
+    expect(screen.queryByLabelText(/^vi$/i)).toBeNull()
+    fireEvent.change(screen.getByLabelText(/^en$/i), { target: { value: 'Save' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create string' }))
+    await waitFor(() => expect(stringsApi.create).toHaveBeenCalledWith(
+      'demo-app', expect.objectContaining({ source_text: 'Lưu', translations: { en: 'Save' } }),
+    ))
+  })
+
   it('stops polling an interrupted job and clears its error on retry while preserving drafts', async () => {
     const interrupted = 'This operation was interrupted by a server restart or lost worker. Please run it again.'
     let finishRetry!: (result: TranslateProposalsResult) => void

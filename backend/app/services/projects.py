@@ -117,7 +117,7 @@ def _validated_locales(base: str, targets: list[str]) -> tuple[str, list[str]]:
     target_langs: list[str] = []
     for loc in targets:
         code = validate_locale_code(loc)
-        if code in seen:
+        if code == base_lang or code in seen:
             continue
         seen.add(code)
         target_langs.append(code)

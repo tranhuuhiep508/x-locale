@@ -24,6 +24,18 @@ users ──< api_keys >── projects ──< modules
 - `jobs.project_id` is required and set when a translate, import, or undo job is created. `GET /api/jobs/{id}` returns the job to a member of that project, or to an API key of that project. A missing job and a job outside the caller's projects (or the key's project) both return 404 `Job not found`. A failed import or undo job stores the rejection in `result.error` as `{status_code, detail}`, the response the sync request would have returned.
 - `activities` is append-only. Only **string** content writes are logged (keys, source, translations, tags, publish, delete). Module, tag, project, and API key changes are not. Content rows are revertible.
 
+Base-language corrections belong in `source_text`, through string create/PATCH or
+source imports (JSON, Excel, and CLI). Translation maps and
+`PUT /api/projects/{project_id}/strings/{id}/translations/{locale}` accept configured
+target languages only. A base-language entry rejects the entire request with HTTP
+400 and detail `Base language 'vi' must be edited through source_text.` (using the
+project's base language). AI locale selections and proposal Apply enforce the same
+base-language restriction; omitted or empty AI locale lists default to configured
+targets excluding the base. Project locale-setting writes remove the base language
+from target lists. Existing base-language translation rows and history are retained
+but are not used by source exports. A `source_text` edit changes draft exports;
+public exports change only when the source correction is published.
+
 ## Translation context
 
 `projects.translation_context` and `modules.translation_context` are nullable text

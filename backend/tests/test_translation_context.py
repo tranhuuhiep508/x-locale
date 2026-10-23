@@ -397,7 +397,9 @@ def test_eager_loading_mixed_modules_avoids_lazy_queries():
     engine = open_engine()
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        project = Project(name="Test", slug="test", translation_context="Project")
+        project = Project(
+            name="Test", slug="test", translation_context="Project", target_languages=["en"]
+        )
         db.add(project)
         db.flush()
         ids = []

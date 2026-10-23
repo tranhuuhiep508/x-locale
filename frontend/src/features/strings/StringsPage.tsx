@@ -216,7 +216,10 @@ export function StringsPage() {
   const modules = modulesResult.data ?? []
   const { data: tags = [] } = useQuery(tagsQuery(projectId))
   const { data: project } = useQuery(projectQuery(projectId))
-  const locales = useMemo(() => project?.target_languages ?? [], [project?.target_languages])
+  const locales = useMemo(
+    () => project?.target_languages.filter((locale) => locale !== project.base_language) ?? [],
+    [project?.target_languages, project?.base_language],
+  )
 
   function missingRequest(page: number): TranslateRequest {
     const request = reviewRequestRef.current

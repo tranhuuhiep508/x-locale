@@ -29,6 +29,7 @@ from app.services.translate import (
     preview_translations,
     propose_translations,
     queued_progress,
+    resolve_translation_locales,
     run_propose_job,
     run_translate_job,
     select_entries,
@@ -60,8 +61,8 @@ def translate(
     project: ProjectAccess,
     db: DbSession,
 ) -> TranslateResult:
-    locales = payload.locales or list(project.target_languages)
-    entries = select_entries(db, project, payload)
+    locales = resolve_translation_locales(project, payload.locales)
+    entries = select_entries(db, project, payload, locales)
     work = count_work(entries, locales, payload.overwrite)
     batch_id = uuid.uuid4()
     entry_ids = [e.id for e in entries]
@@ -111,12 +112,7 @@ def translate_preview(
     project: ProjectAccess,
     db: DbSession,
 ) -> TranslatePreviewResult:
-    locales = payload.locales or list(project.target_languages)
-    allowed = set(project.target_languages)
-    allowed.add(project.base_language)
-    for locale in locales:
-        if locale not in allowed:
-            raise HTTPException(status_code=400, detail=f"Locale '{locale}' is not configured")
+    locales = resolve_translation_locales(project, payload.locales)
 
     module = None
     if payload.module_id is not None:
@@ -147,7 +143,7 @@ def translate_missing(
     project: ProjectAccess,
     db: DbSession,
 ) -> TranslateProposalsResult:
-    locales = payload.locales or list(project.target_languages)
+    locales = resolve_translation_locales(project, payload.locales)
     items, total, page, page_size = list_missing_page(db, project, payload, locales)
     return TranslateProposalsResult(
         locales=locales,
@@ -165,7 +161,7 @@ def translate_proposals(
     project: ProjectAccess,
     db: DbSession,
 ) -> TranslateProposalsResult:
-    locales = payload.locales or list(project.target_languages)
+    locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
     descriptions = parse_descriptions(payload.descriptions)
     work = count_work(entries, locales, payload.overwrite)
