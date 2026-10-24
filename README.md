@@ -262,12 +262,13 @@ See [.env.example](.env.example). Notable vars:
 | `OPENAI_MODEL` | Model accepted by the endpoint (default `gpt-6-luna`). |
 | `OPENAI_BASE_URL` | Optional API base URL; empty uses the SDK's normal OpenAI endpoint. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Positive output-token limit per request (default 16000). |
+| `OPENAI_REASONING_EFFORT` | Responses API reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` (default `none`). |
 | `AI_TRANSLATE_BATCH_SIZE` | Positive source-item count per request (default 20). |
 | `AI_TRANSLATE_MAX_WORKERS` | Positive concurrent-batch limit per translation operation (default 5). |
 
 AI translation uses the official OpenAI Python SDK's Responses API and strict
 structured output with an object root (`{"items": [...]}`). Sampling retains model
-defaults; reasoning effort is fixed to `none` for faster, cheaper batches.
+defaults; reasoning effort defaults to `none` (`OPENAI_REASONING_EFFORT`) for faster, cheaper batches.
 Translation context guides glossary, tone, mandatory
 translator notes, and placeholder preservation. Confidence is clamped to 0–100.
 

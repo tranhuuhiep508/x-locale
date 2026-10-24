@@ -1,7 +1,10 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+OpenAIReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 # Default in repo; production must override via X_LOCALE_SECRET.
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
@@ -20,6 +23,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-6-luna"
     openai_base_url: str = ""
     openai_max_output_tokens: PositiveInt = 16000
+    openai_reasoning_effort: OpenAIReasoningEffort = "none"
     ai_translate_batch_size: PositiveInt = 20
     ai_translate_max_workers: PositiveInt = 5
     # Deterministic AI translations for E2E / local dev (no model calls).

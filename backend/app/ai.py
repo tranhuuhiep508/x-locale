@@ -217,7 +217,7 @@ def _generate(client: OpenAI, prompt: str) -> dict[str, dict[str, TranslatedCell
             model=settings.openai_model.strip(),
             input=prompt,
             max_output_tokens=settings.openai_max_output_tokens,
-            reasoning={"effort": "none"},
+            reasoning={"effort": settings.openai_reasoning_effort},
             text_format=TranslationsResponse,
         )
         return _parse_response(response)

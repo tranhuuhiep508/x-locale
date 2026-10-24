@@ -155,6 +155,13 @@ def test_request_schema_model_tokens_prompt_and_base_url(sdk, monkeypatch):
     )
 
 
+def test_openai_reasoning_effort_is_configurable(sdk, monkeypatch):
+    monkeypatch.setattr(settings, "openai_reasoning_effort", "medium")
+    ai.translate_batch("vi", [ITEM])
+    body = json.loads(sdk[1][0].content)
+    assert body["reasoning"] == {"effort": "medium"}
+
+
 def test_default_url_and_reusable_client(sdk):
     _, requests, factory, _ = sdk
     ai.translate_batch("vi", [ITEM])
@@ -309,6 +316,12 @@ def test_missing_configuration(sdk, monkeypatch, setting):
 def test_positive_configuration(setting, value):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{setting: value})
+
+
+@pytest.mark.parametrize("value", ["invalid", "NONE"])
+def test_openai_reasoning_effort_validation(value):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, openai_reasoning_effort=value)
 
 
 def test_workers_overlap_and_queue_runs_before_slowest_finishes(sdk, monkeypatch):
@@ -512,6 +525,7 @@ def test_defaults(monkeypatch):
         "OPENAI_MODEL",
         "OPENAI_BASE_URL",
         "OPENAI_MAX_OUTPUT_TOKENS",
+        "OPENAI_REASONING_EFFORT",
         "AI_TRANSLATE_BATCH_SIZE",
         "AI_TRANSLATE_MAX_WORKERS",
     ):
@@ -520,6 +534,7 @@ def test_defaults(monkeypatch):
     assert config.openai_api_key == config.openai_base_url == ""
     assert config.openai_model == "gpt-6-luna"
     assert config.openai_max_output_tokens == 16000
+    assert config.openai_reasoning_effort == "none"
     assert config.ai_translate_batch_size == 20
     assert config.ai_translate_max_workers == 5
 
