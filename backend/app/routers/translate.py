@@ -1,4 +1,4 @@
-"""Translate missing strings via Bedrock (sync or background job)."""
+"""Translate missing strings with AI (sync or background job)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.activity import attach_batch
+from app.ai import AIConfigurationError, log_ai_failure, safe_ai_error
 from app.auth import ProjectAccess
 from app.database import DbSession
 from app.models import Job, JobStatus, Module
@@ -49,9 +50,11 @@ def _actor_from_session(db: DbSession) -> dict[str, str | None]:
 
 
 def _ai_http_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, ValueError):
-        return HTTPException(status_code=503, detail=str(exc))
-    return HTTPException(status_code=502, detail=f"AI translation failed: {exc}")
+    log_ai_failure(exc)
+    return HTTPException(
+        status_code=503 if isinstance(exc, AIConfigurationError) else 502,
+        detail=safe_ai_error(exc),
+    )
 
 
 @router.post("/translate", response_model=TranslateResult)
@@ -98,7 +101,7 @@ def translate(
     try:
         translated, skipped = apply_translations(db, project, entries, locales, payload.overwrite)
     except Exception as exc:
-        raise _ai_http_error(exc) from exc
+        raise _ai_http_error(exc) from None
 
     db.commit()
     return TranslateResult(
@@ -133,7 +136,7 @@ def translate_preview(
             payload.description,
         )
     except Exception as exc:
-        raise _ai_http_error(exc) from exc
+        raise _ai_http_error(exc) from None
     return TranslatePreviewResult(translations=translations, scores=scores)
 
 
@@ -204,11 +207,9 @@ def translate_proposals(
         )
 
     try:
-        items = propose_translations(
-            project, entries, locales, payload.overwrite, descriptions
-        )
+        items = propose_translations(project, entries, locales, payload.overwrite, descriptions)
     except Exception as exc:
-        raise _ai_http_error(exc) from exc
+        raise _ai_http_error(exc) from None
     return TranslateProposalsResult(
         locales=locales,
         items=items,

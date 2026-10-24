@@ -170,7 +170,7 @@ def test_late_result_error_and_progress_preserve_terminal_state(
 
     monkeypatch.setattr(translate, "translate_batch", finish_elsewhere)
     if raises:
-        with pytest.raises(RuntimeError, match="Late failure"):
+        with pytest.raises(RuntimeError, match="AI translation failed"):
             run_worker(kind, project, job_id)
     else:
         run_worker(kind, project, job_id)
@@ -207,11 +207,11 @@ def test_ai_failure_rolls_back_work_and_releases_ownership(
     monkeypatch.setattr(translate, "translate_batch", fake_batch)
     monkeypatch.setattr(translate, "apply_translations", fail_apply)
     monkeypatch.setattr(translate, "propose_translations", fail_propose)
-    with pytest.raises(RuntimeError, match="Generation failed"):
+    with pytest.raises(RuntimeError, match="AI translation failed"):
         run_worker(kind, project, job_id)
     body = client.get(f"/api/jobs/{job_id}").json()
     assert body["status"] == "failed"
-    assert body["error"] == "Generation failed"
+    assert body["error"] == "AI translation failed. Please try again."
     assert body["progress"]["phase"] == "failed"
     with session_factory() as db:
         assert jobs.try_job_lock(db, job_id)

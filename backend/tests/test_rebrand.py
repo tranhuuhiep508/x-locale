@@ -132,9 +132,15 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "seed-demo" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
     for text in (dev, prod):
-        assert "BEDROCK_OUTPUT_MODE: ${BEDROCK_OUTPUT_MODE:-json_schema}" in text
-        assert "BEDROCK_JSON_SCHEMA_STRICT: ${BEDROCK_JSON_SCHEMA_STRICT:-true}" in text
-        assert "BEDROCK_MAX_TOKENS: ${BEDROCK_MAX_TOKENS:-16000}" in text
+        for setting, default in (
+            ("OPENAI_API_KEY", ""),
+            ("OPENAI_MODEL", "gpt-6-luna"),
+            ("OPENAI_BASE_URL", ""),
+            ("OPENAI_MAX_OUTPUT_TOKENS", "16000"),
+            ("AI_TRANSLATE_BATCH_SIZE", "20"),
+            ("AI_TRANSLATE_MAX_WORKERS", "5"),
+        ):
+            assert f"{setting}: ${{{setting}:-{default}}}" in text
 
 
 def test_env_example_scopes_parse_and_dotenv_ignores_inline_comments(monkeypatch):
