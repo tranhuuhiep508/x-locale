@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,15 @@ from app.config import Settings, settings
 SECRET = "sentinel-credential"
 UPSTREAM = "sentinel-upstream-content"
 ITEM = TranslateItem("s1", "Lưu {name}", ("en",), "Use Save; concise UI tone")
+
+
+@pytest.fixture
+def ai_logs(caplog):
+    # Alembic's fileConfig disables loggers that already exist. Turn this one back on.
+    ai_logger = logging.getLogger("app.ai")
+    ai_logger.disabled = False
+    caplog.set_level(logging.ERROR, logger="app.ai")
+    return caplog
 
 
 def row(item_id="s1", **kwargs):
@@ -457,7 +467,7 @@ def test_batch_failure_never_saves_partial_work(
         (RuntimeError(UPSTREAM + SECRET), 502),
     ],
 )
-def test_http_error_boundary_is_safe(sdk, client, monkeypatch, failure, status, caplog):
+def test_http_error_boundary_is_safe(sdk, client, monkeypatch, failure, status, ai_logs):
     from app.services import translate
     from tests.helpers import make_project
 
@@ -468,12 +478,12 @@ def test_http_error_boundary_is_safe(sdk, client, monkeypatch, failure, status, 
         json={"source_text": "Hi", "locales": ["en"]},
     )
     assert response.status_code == status
-    assert SECRET not in response.text + caplog.text
-    assert UPSTREAM not in response.text + caplog.text
+    assert SECRET not in response.text + ai_logs.text
+    assert UPSTREAM not in response.text + ai_logs.text
     if isinstance(failure, AIConfigurationError):
-        assert "AI translation failed (" not in caplog.text
+        assert "AI translation failed (" not in ai_logs.text
     else:
-        assert "AI translation failed (RuntimeError)" in caplog.text
+        assert "AI translation failed (RuntimeError)" in ai_logs.text
 
 
 def test_startup_does_not_create_client(sdk, monkeypatch):
@@ -584,7 +594,7 @@ def test_one_worker_processes_every_chunk(sdk, monkeypatch):
 
 @pytest.mark.parametrize("kind", ["translate", "translate_proposals"])
 def test_unexpected_job_error_hides_raw_exception(
-    sdk, client, session_factory, monkeypatch, kind, caplog
+    sdk, client, session_factory, monkeypatch, kind, ai_logs
 ):
     import uuid
 
@@ -607,9 +617,9 @@ def test_unexpected_job_error_hides_raw_exception(
     body = client.get(f"/api/jobs/{job_id}").json()
     assert body["status"] == "failed"
     assert body["error"] == "AI translation failed. Please try again."
-    rendered = json.dumps(body) + "".join(traceback.format_exception(error.value)) + caplog.text
+    rendered = json.dumps(body) + "".join(traceback.format_exception(error.value)) + ai_logs.text
     assert SECRET not in rendered and UPSTREAM not in rendered
-    assert "AI translation failed (RuntimeError)" in caplog.text
+    assert "AI translation failed (RuntimeError)" in ai_logs.text
 
 
 def test_gap_filling_runs_while_another_batch_is_active(sdk, monkeypatch):
