@@ -135,6 +135,7 @@ def test_request_schema_model_tokens_prompt_and_base_url(sdk, monkeypatch):
     assert str(request.url) == "https://gateway.example/api/v1/responses"
     assert body["model"] == "test-model"
     assert body["max_output_tokens"] == 8000
+    assert body["reasoning"] == {"effort": "none"}
     assert "timeout" not in body
     assert request.extensions["timeout"] == DEFAULT_TIMEOUT.as_dict()
     assert "Use Save; concise UI tone" in body["input"]

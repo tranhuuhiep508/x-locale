@@ -266,8 +266,9 @@ See [.env.example](.env.example). Notable vars:
 | `AI_TRANSLATE_MAX_WORKERS` | Positive concurrent-batch limit per translation operation (default 5). |
 
 AI translation uses the official OpenAI Python SDK's Responses API and strict
-structured output with an object root (`{"items": [...]}`). Sampling and reasoning
-settings retain model defaults. Translation context guides glossary, tone, mandatory
+structured output with an object root (`{"items": [...]}`). Sampling retains model
+defaults; reasoning effort is fixed to `none` for faster, cheaper batches.
+Translation context guides glossary, tone, mandatory
 translator notes, and placeholder preservation. Confidence is clamped to 0–100.
 
 Each batch gets one generation and at most one gap-filling generation for missing
