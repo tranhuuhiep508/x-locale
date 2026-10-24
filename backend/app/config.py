@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-OpenAIReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+OpenAIReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
 # Default in repo; production must override via X_LOCALE_SECRET.
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
