@@ -128,8 +128,11 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
 
     prod = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
-    assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}" in prod
+    assert "X_LOCALE_SECRETS_ARN_FILE" in prod
+    assert "/run/x-locale/secrets-arn:ro" in prod
+    assert "X_LOCALE_SECRET:" not in prod
     assert "seed-demo" not in prod
+    assert "command:" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
     for text in (dev, prod):
         assert "BEDROCK_OUTPUT_MODE: ${BEDROCK_OUTPUT_MODE:-json_schema}" in text

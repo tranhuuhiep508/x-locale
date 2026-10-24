@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import typer
 
-app = typer.Typer(help="x-locale backend management commands", no_args_is_help=True)
+app = typer.Typer(
+    help="x-locale backend management commands",
+    no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
+)
 
 
 @app.callback()
