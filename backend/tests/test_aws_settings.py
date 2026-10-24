@@ -71,7 +71,11 @@ def test_local_sources_unchanged_and_no_aws(bootstrap, monkeypatch, tmp_path):
 
 
 def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
-    payload = {name.upper(): field.default for name, field in config.Settings.model_fields.items()}
+    payload = {
+        name.upper(): field.default
+        for name, field in config.Settings.model_fields.items()
+        if name != "auth_dev_bypass"
+    }
     payload.update(PAYLOAD)
     payload.update(
         {
@@ -79,7 +83,6 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
             "AWS_REGION": "ap-southeast-1",
             "BEDROCK_MAX_TOKENS": "2048",
             "SESSION_COOKIE_SECURE": True,
-            "AUTH_DEV_BYPASS": False,
             "IMPORT_ASYNC_THRESHOLD": 22,
             "OIDC_CLIENT_SECRET": "test-oidc-value",
             "STATIC_DIR": "static",
@@ -89,12 +92,15 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
     )
     respond(aws, payload)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///wrong.db")
-    monkeypatch.setenv("AUTH_DEV_BYPASS", "invalid-boolean")
+    monkeypatch.setenv("AUTH_DEV_BYPASS", "true")
     monkeypatch.setenv("AWS_REGION", "wrong-region")
     dotenv = tmp_path / ".env"
     dotenv.write_text("BEDROCK_MAX_TOKENS=not-an-integer\n")
     loaded = config.Settings(_env_file=dotenv, database_url="sqlite:///also-wrong.db")
     for name in config.Settings.model_fields:
+        if name == "auth_dev_bypass":
+            assert loaded.auth_dev_bypass is True
+            continue
         expected = 2048 if name == "bedrock_max_tokens" else payload[name.upper()]
         assert getattr(loaded, name) == expected
     kwargs = aws[1].call_args.kwargs
@@ -105,13 +111,26 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
     aws[1].assert_called_once()
 
 
-def test_missing_optional_fields_use_code_defaults(aws, monkeypatch):
+def test_aws_mode_env_fills_keys_missing_from_secret(aws, monkeypatch):
     respond(aws, PAYLOAD)
     monkeypatch.setenv("BEDROCK_MAX_TOKENS", "999")
+    monkeypatch.setenv("STATIC_DIR", "static")
     loaded = config.Settings()
-    assert loaded.bedrock_max_tokens == 16000
-    assert loaded.auth_dev_bypass is False
+    assert loaded.bedrock_max_tokens == 999
+    assert loaded.static_dir == "static"
     assert loaded.oidc_client_secret == ""
+
+
+def test_aws_mode_secret_beats_env_for_present_keys(aws, monkeypatch):
+    respond(aws, {**PAYLOAD, "BEDROCK_MAX_TOKENS": 2048})
+    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "999")
+    assert config.Settings().bedrock_max_tokens == 2048
+
+
+def test_secret_rejects_auth_dev_bypass(aws):
+    respond(aws, {**PAYLOAD, "AUTH_DEV_BYPASS": True})
+    with pytest.raises(RuntimeError, match="AUTH_DEV_BYPASS"):
+        config.Settings()
 
 
 @pytest.mark.parametrize("explicit_env_file", [False, True])
@@ -214,8 +233,9 @@ def test_invalid_payload_is_safe(aws, response):
         ("X_LOCALE_SECRET", config.INSECURE_DEFAULT_X_LOCALE_SECRET),
     ],
 )
-def test_required_values_checked_even_with_dev_bypass(aws, field, value):
-    payload = {**PAYLOAD, "AUTH_DEV_BYPASS": True}
+def test_required_values_checked_even_with_dev_bypass(aws, field, value, monkeypatch):
+    monkeypatch.setenv("AUTH_DEV_BYPASS", "true")
+    payload = {**PAYLOAD}
     if value is None:
         payload.pop(field)
     else:

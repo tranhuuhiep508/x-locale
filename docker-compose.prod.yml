@@ -1,6 +1,9 @@
 # Production: single backend image serves API + built frontend on port 8000.
 # TLS is expected in front of this service (company proxy). Set SESSION_COOKIE_SECURE=true
 # when the browser sees HTTPS, or use an https:// OIDC_REDIRECT_URL.
+#
+# Application secrets and DATABASE_URL load from AWS Secrets Manager when
+# /run/x-locale/secrets-arn is mounted (see .env.example). Other settings use env vars.
 services:
   postgres:
     image: postgres:16-alpine
@@ -24,7 +27,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://xlocale:${POSTGRES_PASSWORD}@postgres:5432/xlocale
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
@@ -33,7 +35,6 @@ services:
       BEDROCK_OUTPUT_MODE: ${BEDROCK_OUTPUT_MODE:-json_schema}
       BEDROCK_JSON_SCHEMA_STRICT: ${BEDROCK_JSON_SCHEMA_STRICT:-true}
       BEDROCK_MAX_TOKENS: ${BEDROCK_MAX_TOKENS:-16000}
-      X_LOCALE_SECRET: ${X_LOCALE_SECRET:?set X_LOCALE_SECRET}
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
@@ -43,12 +44,12 @@ services:
       OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
       STATIC_DIR: static
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+    volumes:
+      - ${X_LOCALE_SECRETS_ARN_FILE:?set X_LOCALE_SECRETS_ARN_FILE}:/run/x-locale/secrets-arn:ro
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-4}"
 
 volumes:
   postgres_data:

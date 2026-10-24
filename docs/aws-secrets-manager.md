@@ -44,7 +44,6 @@ frontend image.
   "OIDC_CLIENT_SECRET": "REPLACE_WITH_CLIENT_SECRET",
   "OIDC_SCOPES": "openid email profile",
   "OIDC_REDIRECT_URL": "https://locale.example.com/api/auth/callback",
-  "AUTH_DEV_BYPASS": false,
   "SESSION_COOKIE_SECURE": true,
   "IMPORT_ASYNC_THRESHOLD": 5000,
   "ACTIVITY_RETENTION_DAYS": 90,
@@ -53,12 +52,14 @@ frontend image.
 }
 ```
 
-AWS mode uses **Secrets Manager values, then code defaults**. Application
-environment variables, `.env`, file-secret settings, and constructor overrides
-are ignored in this mode. Missing settings use their code defaults except
-`DATABASE_URL` and `X_LOCALE_SECRET`, which must be supplied and valid. The signing
-secret cannot be blank or the repository's insecure default, even when dev
-bypass is enabled. Keep `AUTH_DEV_BYPASS=false` in production.
+AWS mode merges **code defaults, then environment variables, then Secrets Manager**
+for each setting (later sources win). Dotenv and file-secret settings are not
+read. Keys present in the JSON override env for that key; env fills settings
+absent from the secret. `DATABASE_URL` and `X_LOCALE_SECRET` must be present and
+valid in the secret. The signing secret cannot be blank or the repository's
+insecure default, even when dev bypass is enabled. Do not put `AUTH_DEV_BYPASS`
+in the secret; startup rejects it. Set bypass only via environment variables and
+keep `AUTH_DEV_BYPASS=false` in production.
 
 The SDK and infrastructure retain their own configuration: AWS credential-chain
 variables, proxy settings, `PATH`, and `WEB_CONCURRENCY` are not application
@@ -136,8 +137,9 @@ credential validity; old workers retain the old password. Changing
 `X_LOCALE_SECRET` invalidates existing signed sessions, and mixed signing keys
 during a rollout can cause intermittent authentication failures.
 
-Production Compose integration and AWS resource provisioning are outside this
-change. `docker-compose.prod.yml` overrides the image's default command and does
-not mount the bootstrap file; it retains its existing environment-based setup.
-It must be adapted separately before using this AWS mode. The frontend build
-does not read the backend secret.
+`docker-compose.prod.yml` mounts the bootstrap file from the host path in
+`X_LOCALE_SECRETS_ARN_FILE` and uses the image default command (bootstrap check,
+migrations, then uvicorn). Non-secret settings stay in Compose `environment`;
+`DATABASE_URL`, `X_LOCALE_SECRET`, and other JSON keys come from Secrets Manager.
+`AUTH_DEV_BYPASS` must not appear in the secret; set it only via environment
+variables. The frontend build does not read the backend secret.

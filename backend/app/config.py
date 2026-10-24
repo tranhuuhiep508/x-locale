@@ -15,6 +15,21 @@ from sqlalchemy.exc import ArgumentError
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
 SECRETS_ARN_PATH = Path("/run/x-locale/secrets-arn")
 
+_UNREAD = object()
+_bootstrap_arn_cache: str | None | object = _UNREAD
+
+
+def _reset_bootstrap_arn_cache() -> None:
+    global _bootstrap_arn_cache
+    _bootstrap_arn_cache = _UNREAD
+
+
+def _bootstrap_arn() -> str | None:
+    global _bootstrap_arn_cache
+    if _bootstrap_arn_cache is _UNREAD:
+        _bootstrap_arn_cache = _read_secrets_arn()
+    return _bootstrap_arn_cache if isinstance(_bootstrap_arn_cache, str) else None
+
 
 def _read_secrets_arn() -> str | None:
     try:
@@ -62,14 +77,21 @@ def _load_aws_settings(settings_cls: type[BaseSettings], arn: str) -> dict:
         raise RuntimeError("Secrets Manager configuration must be valid JSON") from None
     if not isinstance(payload, dict):
         raise RuntimeError("Secrets Manager configuration must be a JSON object")
+    if "AUTH_DEV_BYPASS" in payload:
+        raise RuntimeError(
+            "Secrets Manager configuration must not set AUTH_DEV_BYPASS; "
+            "configure it with environment variables only"
+        )
     values = {
         name: payload[name.upper()] for name in settings_cls.model_fields if name.upper() in payload
     }
     # Validate before any caller can create a database engine, even with dev bypass enabled.
     database_url = values.get("database_url")
+    if not isinstance(database_url, str):
+        raise RuntimeError(
+            "Secrets Manager configuration requires a valid Postgres DATABASE_URL"
+        )
     try:
-        if not isinstance(database_url, str):
-            raise ValueError
         require_postgres_database_url(database_url)
         if not make_url(database_url).database:
             raise ValueError
@@ -94,7 +116,8 @@ class Settings(BaseSettings):
 
     def __init__(self, **values):
         # Pydantic reads dotenv before settings_customise_sources selects AWS mode.
-        if _read_secrets_arn() is not None:
+        _reset_bootstrap_arn_cache()
+        if _bootstrap_arn() is not None:
             values["_env_file"] = None
         super().__init__(**values)
 
@@ -102,9 +125,14 @@ class Settings(BaseSettings):
     def settings_customise_sources(
         cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
     ):
-        arn = _read_secrets_arn()
+        arn = _bootstrap_arn()
         if arn is not None:
-            return (lambda: _load_aws_settings(settings_cls, arn),)
+            # Earlier sources win on conflicts; secret first, then env, then init kwargs.
+            return (
+                lambda: _load_aws_settings(settings_cls, arn),
+                env_settings,
+                init_settings,
+            )
         return init_settings, env_settings, dotenv_settings, file_secret_settings
 
     database_url: str = ""

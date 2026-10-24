@@ -88,6 +88,9 @@ docker compose up --build
 Production (single origin, SPA served by FastAPI):
 
 ```bash
+# One-line file with the full Secrets Manager ARN; secret JSON holds DATABASE_URL and app secrets.
+echo 'arn:aws:secretsmanager:REGION:ACCOUNT:secret:NAME-SUFFIX' > secrets-arn
+export X_LOCALE_SECRETS_ARN_FILE=$PWD/secrets-arn
 docker compose -f docker-compose.prod.yml up --build
 ```
 
@@ -248,10 +251,12 @@ See [.env.example](.env.example). Notable vars:
 
 For production configuration stored in AWS Secrets Manager, see
 [the boto3 setup guide](docs/aws-secrets-manager.md). Mount the full secret ARN at
-`/run/x-locale/secrets-arn`; the backend then reads all application settings from
-that JSON secret and code defaults, ignoring application env vars and `.env`.
-The production image's default command requires this mount before migrations.
-Local development and CI keep the existing configuration behavior without it.
+`/run/x-locale/secrets-arn`; the backend loads that JSON secret once at startup.
+Keys present in the secret override environment variables; other settings come from
+env (for example `STATIC_DIR`, `AWS_REGION`, `AUTH_DEV_BYPASS`) and code defaults.
+Dotenv is not read in AWS mode. The production image command requires the mount
+before migrations. Set `X_LOCALE_SECRETS_ARN_FILE` for `docker-compose.prod.yml`.
+Local development and CI keep the existing configuration behavior without the mount.
 
 | Var | Purpose |
 |-----|---------|
