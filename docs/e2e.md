@@ -28,7 +28,7 @@ E2E uses a **unique Postgres database per run** and **dedicated ports** (`8001` 
 | `OIDC_*` | empty | Bypass is ignored when OIDC is configured |
 | `E2E_DATABASE_URL` | `xlocale_e2e_` stem | Name prefix only. The run appends `_{epoch}_{hex}`, creates that database from `template0`, and drops that database |
 | `X_LOCALE_SECRET` | `e2e-test-secret` | JWT signing for session cookie |
-| `AI_TRANSLATE_STUB` | `true` | Deterministic translate responses (no Bedrock) |
+| `AI_TRANSLATE_STUB` | `true` | Deterministic translate responses (no model calls) |
 | `AI_TRANSLATE_STUB_DELAY_MS` | `400` | Keeps translate progress UI visible in specs |
 | `E2E_BACKEND_PORT` | `8001` | Isolated uvicorn; never `:8000` |
 | `E2E_FRONTEND_PORT` | `5174` | Isolated Vite; never `:5173` |

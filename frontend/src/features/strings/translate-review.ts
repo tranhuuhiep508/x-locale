@@ -235,7 +235,7 @@ export function translateProgressLabel(progress?: TranslateJobProgress | null): 
   const phase = progress?.phase
   const done = progress?.chunks_done ?? 0
   const total = progress?.chunks_total ?? 0
-  if (phase === 'retrying') return 'Bedrock is busy, retrying…'
+  if (phase === 'retrying') return 'AI translation is busy, retrying…'
   if (phase === 'filling_gaps') return 'Filling missing locales…'
   if (phase === 'translating' && total > 0) {
     const current = Math.min(Math.max(done < total ? done + 1 : total, 1), total)

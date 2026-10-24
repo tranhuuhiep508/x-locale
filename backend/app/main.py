@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.ai import close_ai_client
 from app.config import require_postgres_database_url, settings
 from app.database import DbSession, register_activity_listener
 from app.routers import (
@@ -46,6 +47,7 @@ async def lifespan(_: FastAPI):
     finally:
         stop.set()
         await recovery
+        await asyncio.to_thread(close_ai_client)
 
 
 _api_docs = "/docs" if settings.dev_bypass_active else None
