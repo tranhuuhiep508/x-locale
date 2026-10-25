@@ -379,7 +379,7 @@ export default function StringFormDialog({
       setScores((prev) => mergeScores(prev, res.scores, translations, res.translations, overwrite))
       toast.success('Review AI text, then Save')
     },
-    onError: () => toast.error('Translation failed — check Bedrock credentials'),
+    onError: () => toast.error('Translation failed — check AI translation credentials'),
   })
 
   const discardMut = useMutation({

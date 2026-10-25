@@ -55,12 +55,12 @@ def test_local_sources_unchanged_and_no_aws(bootstrap, monkeypatch, tmp_path):
     factory = Mock(side_effect=AssertionError("AWS must not be used"))
     monkeypatch.setattr(config.boto3, "client", factory)
     dotenv = tmp_path / ".env"
-    dotenv.write_text("DEFAULT_BASE_LANGUAGE=ja\nBEDROCK_MAX_TOKENS=123\n")
-    monkeypatch.delenv("BEDROCK_MAX_TOKENS", raising=False)
+    dotenv.write_text("DEFAULT_BASE_LANGUAGE=ja\nOPENAI_MAX_OUTPUT_TOKENS=123\n")
+    monkeypatch.delenv("OPENAI_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.setenv("DEFAULT_BASE_LANGUAGE", "en")
     loaded = config.Settings(_env_file=dotenv)
     assert loaded.default_base_language == "en"
-    assert loaded.bedrock_max_tokens == 123
+    assert loaded.openai_max_output_tokens == 123
     assert (
         config.Settings(_env_file=dotenv, default_base_language="fr").default_base_language == "fr"
     )
@@ -81,7 +81,7 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
         {
             "ENV": "production",
             "AWS_REGION": "ap-southeast-1",
-            "BEDROCK_MAX_TOKENS": "2048",
+            "OPENAI_MAX_OUTPUT_TOKENS": "2048",
             "SESSION_COOKIE_SECURE": True,
             "IMPORT_ASYNC_THRESHOLD": 22,
             "OIDC_CLIENT_SECRET": "test-oidc-value",
@@ -95,13 +95,13 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
     monkeypatch.setenv("AUTH_DEV_BYPASS", "true")
     monkeypatch.setenv("AWS_REGION", "wrong-region")
     dotenv = tmp_path / ".env"
-    dotenv.write_text("BEDROCK_MAX_TOKENS=not-an-integer\n")
+    dotenv.write_text("OPENAI_MAX_OUTPUT_TOKENS=not-an-integer\n")
     loaded = config.Settings(_env_file=dotenv, database_url="sqlite:///also-wrong.db")
     for name in config.Settings.model_fields:
         if name == "auth_dev_bypass":
             assert loaded.auth_dev_bypass is True
             continue
-        expected = 2048 if name == "bedrock_max_tokens" else payload[name.upper()]
+        expected = 2048 if name == "openai_max_output_tokens" else payload[name.upper()]
         assert getattr(loaded, name) == expected
     kwargs = aws[1].call_args.kwargs
     assert kwargs["region_name"] == "eu-west-1"
@@ -113,18 +113,18 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
 
 def test_aws_mode_env_fills_keys_missing_from_secret(aws, monkeypatch):
     respond(aws, PAYLOAD)
-    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "999")
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "999")
     monkeypatch.setenv("STATIC_DIR", "static")
     loaded = config.Settings()
-    assert loaded.bedrock_max_tokens == 999
+    assert loaded.openai_max_output_tokens == 999
     assert loaded.static_dir == "static"
     assert loaded.oidc_client_secret == ""
 
 
 def test_aws_mode_secret_beats_env_for_present_keys(aws, monkeypatch):
-    respond(aws, {**PAYLOAD, "BEDROCK_MAX_TOKENS": 2048})
-    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "999")
-    assert config.Settings().bedrock_max_tokens == 2048
+    respond(aws, {**PAYLOAD, "OPENAI_MAX_OUTPUT_TOKENS": 2048})
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "999")
+    assert config.Settings().openai_max_output_tokens == 2048
 
 
 def test_secret_rejects_auth_dev_bypass(aws):

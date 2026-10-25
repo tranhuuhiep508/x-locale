@@ -30,10 +30,13 @@ frontend image.
   "TEST_DATABASE_URL": "",
   "ENV": "production",
   "AWS_REGION": "us-east-1",
-  "BEDROCK_MODEL_ID": "global.openai.gpt-6-luna",
-  "BEDROCK_MAX_TOKENS": 16000,
-  "BEDROCK_OUTPUT_MODE": "json_schema",
-  "BEDROCK_JSON_SCHEMA_STRICT": true,
+  "OPENAI_API_KEY": "REPLACE_WITH_OPENAI_API_KEY",
+  "OPENAI_MODEL": "gpt-6-luna",
+  "OPENAI_BASE_URL": "",
+  "OPENAI_MAX_OUTPUT_TOKENS": 16000,
+  "OPENAI_REASONING_EFFORT": "none",
+  "AI_TRANSLATE_BATCH_SIZE": 20,
+  "AI_TRANSLATE_MAX_WORKERS": 5,
   "AI_TRANSLATE_STUB": false,
   "AI_TRANSLATE_STUB_DELAY_MS": 0,
   "X_LOCALE_SECRET": "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET",
@@ -78,7 +81,7 @@ arn:aws:secretsmanager:us-east-1:123456789012:secret:x-locale/production-AbCdEf
 This file path is an application convention, not an AWS requirement. Deployment
 must create the mount; no secret values should be baked into the image. The
 retrieval region comes from the ARN, so no bootstrap `AWS_REGION` is needed.
-The JSON's `AWS_REGION` independently configures Bedrock and may differ.
+The JSON's `AWS_REGION` is a separate application setting and is not the region used to fetch this secret.
 
 Use a workload IAM role through boto3's
 [default credential chain](https://docs.aws.amazon.com/boto3/latest/guide/credentials.html).

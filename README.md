@@ -270,51 +270,49 @@ Local development and CI keep the existing configuration behavior without the mo
 | `WEB_CONCURRENCY` | Production uvicorn worker processes (default 4). Each worker keeps its own database pool, about 15 connections, so size Postgres `max_connections` for `workers × 15` plus headroom. Dev compose stays on one process with `--reload`. |
 | `DEFAULT_BASE_LANGUAGE` | Default for new projects (`vi`) |
 | `ACTIVITY_RETENTION_DAYS` | Delete activity rows older than N days (default 90; 0 = keep forever). Run `python -m app.cli prune-activities` on a schedule. Drops old feed/history, not strings. |
-| `AWS_REGION` | Bedrock region (default `us-east-1`) |
-| `BEDROCK_MODEL_ID` | Model or inference profile ID for AI translate (default `global.openai.gpt-6-luna`); must support Converse and the selected output mode |
-| `BEDROCK_OUTPUT_MODE` | `json_schema` (default) or `tool` (opt in); choose based on the model/profile's documented support |
-| `BEDROCK_JSON_SCHEMA_STRICT` | Default `true`. In `json_schema` mode, sends `additionalModelRequestFields.text.format.strict`. Set `false` for models that reject that field (e.g. Claude Sonnet 4.6). GPT-6 Luna needs `true`. |
-| `BEDROCK_MAX_TOKENS` | Maximum output tokens for a Bedrock translate request (default 16000). Models with a smaller output cap must lower it, or Bedrock rejects the request. |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Optional environment credentials for AI translate. Must be real process env vars (`export` or Docker Compose). The backend uses boto3's default credential chain and SigV4 signing; IAM roles (including EKS Pod Identity) and AWS profiles/SSO are also supported. Omit environment credentials when using Pod Identity so they do not override the role. |
-| `AWS_SESSION_TOKEN` | Required when supplying temporary AWS credentials through environment variables. |
+| `OPENAI_API_KEY` | OpenAI key or gateway virtual key; required only for real AI translation. |
+| `OPENAI_MODEL` | Model accepted by the endpoint (default `gpt-6-luna`). |
+| `OPENAI_BASE_URL` | Optional API base URL; empty uses the SDK's normal OpenAI endpoint. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | Positive output-token limit per request (default 16000). |
+| `OPENAI_REASONING_EFFORT` | Responses API `reasoning.effort`: `none`, `low`, `medium`, `high`, `xhigh`, or `max`. API default is `medium`; x-locale default is `none`. |
+| `AI_TRANSLATE_BATCH_SIZE` | Positive source-item count per request (default 20). |
+| `AI_TRANSLATE_MAX_WORKERS` | Positive concurrent-batch limit per translation operation (default 5). |
 
-AI translate uses Bedrock Converse with the model's default sampling parameters.
-The default `json_schema` mode includes `outputConfig.textFormat`, and the backend
-reads the resulting JSON text. `BEDROCK_JSON_SCHEMA_STRICT` defaults to true and
-sends the model-specific `text.format.strict` field; set it false for models that
-reject that field. Opt into `tool` to send the `submit_translations` tool and
-read translations from `toolUse.input`. Tool mode always sends `toolChoice` auto,
-and the tool spec sets `strict` so the model must follow the schema. Automatic
-choice permits free-text responses, which the translator rejects because it
-requires tool input. Both modes use the same translation schema and normalize
-into the same results.
+AI translation uses the official OpenAI Python SDK's Responses API and strict
+structured output with an object root (`{"items": [...]}`). Sampling retains model
+defaults; `reasoning.effort` defaults to `none` via `OPENAI_REASONING_EFFORT` (override to `low`–`max` when needed).
+Translation context guides glossary, tone, mandatory
+translator notes, and placeholder preservation. Confidence is clamped to 0–100.
 
-| Model/profile example | `BEDROCK_OUTPUT_MODE` | `BEDROCK_JSON_SCHEMA_STRICT` |
-|---|---|---|
-| Claude Sonnet 4.6 | `json_schema` | `false` |
-| GPT-6 Luna | `json_schema` | `true` |
+Each batch gets one generation and at most one gap-filling generation for missing
+cells. Remaining gaps are omitted. Refused, incomplete, invalid, or failed requests
+fail the entire operation without saving translations from successful batches.
+AI translation never publishes; public snapshots are unchanged.
 
-Output mode is configured explicitly rather than inferred from a model name, so
-opaque application inference profile ARNs work with the same settings. Check the
-model card and geographic profile restrictions for the selected output mode.
-Unsupported mode errors are reported; there is no automatic mode fallback.
+The client shares its connection pool within a process and closes on shutdown after
+active operations finish. The SDK handles two retries (up to three HTTP attempts)
+for eligible failures. No timeout overrides are configured: SDK connection, read,
+write, and pool defaults apply, not a total job deadline. Retries and gap filling
+can extend total operation duration. Worker limits apply per operation and multiply
+across simultaneous operations and server processes.
 
-Translation instructions guide terminology, tone, and placeholder preservation;
-missing locales are retried once. Top-p and top-k are omitted;
-reasoning effort and thinking settings are also omitted, retaining each model's
-defaults. Refused, truncated, malformed, or missing output fails without applying
-translations. Confidence scores are clamped to 0–100 in the backend; the shared
-schema omits numeric constraints because Bedrock structured outputs exclude them.
+### Migrating AI configuration
 
-Set `BEDROCK_MODEL_ID` to a model or inference profile available in `AWS_REGION`
-and restart the backend. Examples for `us-east-1`:
+Replace `BEDROCK_MODEL_ID` with `OPENAI_MODEL` using an endpoint model name such as
+`gpt-6-luna`, and replace `BEDROCK_MAX_TOKENS` with `OPENAI_MAX_OUTPUT_TOKENS`.
+Remove `BEDROCK_OUTPUT_MODE` and `BEDROCK_JSON_SCHEMA_STRICT`; strict structured
+output is always used. Set `OPENAI_API_KEY`. No database migration or public API
+change is required. Deploy the new settings with the release, restart the backend,
+and verify health checks and stub-mode translation. Automated tests never call
+live models.
 
-- OpenAI GPT-6 Luna: `us.openai.gpt-6-luna` (or `global.openai.gpt-6-luna`)
-- OpenAI GPT-OSS 120B: `openai.gpt-oss-120b-1:0`
+Leave the gateway URL empty until one is selected. Before enabling a gateway,
+verify its model name, Responses endpoint, and native strict-schema support using
+the actual `TranslationsResponse` schema through `responses.parse()`.
 
-Availability and AWS permissions depend on your account and region. See the
-[Claude sampling migration guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html),
-[GPT-6 Luna model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-6-luna.html),
-[Bedrock client-side tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-client-side.html),
-[Bedrock tool choice](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html),
-and [Bedrock structured output rules](https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html).
+Keep batches at 20 items and five workers until representative benchmarks compare
+20/30/40 items for duration, completeness, truncation, rate limits, and token usage.
+Global limits, shared queues, token-aware batching, stronger placeholder/ICU checks,
+and confidence calibration are separate follow-up work.
+
+See the [OpenAI structured output guide](https://developers.openai.com/api/docs/guides/structured-outputs).

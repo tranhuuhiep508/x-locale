@@ -1,88 +1,120 @@
 from __future__ import annotations
 
 import json
-import random
+import logging
 import threading
 import time
-from collections.abc import Callable
+import traceback
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
+from pydantic import BaseModel, ConfigDict
 
 from app.config import settings
 
-_AUTH_ERROR = (
-    "AWS Bedrock auth is not configured. Configure an IAM role (such as EKS Pod Identity), "
-    "an AWS profile, or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
-    "with AWS_SESSION_TOKEN for temporary credentials."
-)
-
-BATCH_SIZE = 20
-MAX_CHUNK_WORKERS = 5
-TOOL_NAME = "submit_translations"
-MAX_CONVERSE_ATTEMPTS = 3
-THROTTLE_BACKOFF_SECONDS = (0.5, 1.0, 2.0)
-THROTTLE_CODES = frozenset(
-    {"ThrottlingException", "TooManyRequestsException", "ServiceUnavailableException"}
-)
+logger = logging.getLogger(__name__)
 
 ProgressPhase = Literal["translating", "retrying", "filling_gaps"]
 ProgressCallback = Callable[[ProgressPhase, int, int], None]
 
-SUBMIT_TRANSLATIONS_TOOL = {
-    "toolSpec": {
-        "name": TOOL_NAME,
-        "description": (
-            "Submit translations for every source string. "
-            "Copy each item id exactly. Include every requested locale "
-            "and an honest confidence score from 0 to 100."
-        ),
-        "inputSchema": {
-            "json": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "properties": {
-                                "id": {"type": "string"},
-                                "translations": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "additionalProperties": False,
-                                        "properties": {
-                                            "locale": {"type": "string"},
-                                            "text": {"type": "string"},
-                                            "confidence": {
-                                                "type": "integer",
-                                                "description": (
-                                                    "Confidence from 0 to 100 that this "
-                                                    "translation is correct for UI use."
-                                                ),
-                                            },
-                                        },
-                                        "required": ["locale", "text", "confidence"],
-                                    },
-                                },
-                            },
-                            "required": ["id", "translations"],
-                        },
-                    }
-                },
-                "required": ["items"],
-            }
-        },
-        "strict": True,
-    }
-}
+
+class AITranslationError(RuntimeError):
+    """A fixed, safe message suitable for HTTP responses, job errors, and logs."""
+
+
+class AIConfigurationError(AITranslationError):
+    pass
+
+
+def safe_ai_error(exc: Exception) -> str:
+    return (
+        str(exc)
+        if isinstance(exc, AITranslationError)
+        else "AI translation failed. Please try again."
+    )
+
+
+def log_ai_failure(exc: Exception) -> None:
+    """Log the failure type and stack. The message can contain request data."""
+    if isinstance(exc, AITranslationError):
+        return
+    logger.error(
+        "AI translation failed (%s)\n%s",
+        type(exc).__name__,
+        "".join(traceback.format_tb(exc.__traceback__)),
+    )
+
+
+class TranslationValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    locale: str
+    text: str
+    confidence: int
+
+
+class TranslationItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    translations: list[TranslationValue]
+
+
+class TranslationsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[TranslationItem]
+
+
+_client: OpenAI | None = None
+_client_condition = threading.Condition()
+_active_operations = 0
+
+
+@contextmanager
+def _translation_client() -> Iterator[OpenAI]:
+    global _client, _active_operations
+    with _client_condition:
+        if _client is None:
+            options = (
+                {"base_url": settings.openai_base_url.strip()}
+                if settings.openai_base_url.strip()
+                # Prevent SDK environment fallback from bypassing our settings source.
+                else {"data_residency": "global"}
+            )
+            try:
+                _client = OpenAI(api_key=settings.openai_api_key.strip(), max_retries=2, **options)
+            except Exception:
+                raise AIConfigurationError(
+                    "AI translation client configuration is invalid."
+                ) from None
+        client = _client
+        _active_operations += 1
+    try:
+        yield client
+    finally:
+        with _client_condition:
+            _active_operations -= 1
+            _client_condition.notify_all()
+
+
+def close_ai_client() -> None:
+    """Drain translation operations before closing their shared connection pool."""
+    global _client
+    with _client_condition:
+        _client_condition.wait_for(lambda: _active_operations == 0)
+        if _client is not None:
+            _client.close()
+            _client = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +139,7 @@ def clamp_confidence(value: object) -> int | None:
         return None
     try:
         number = int(round(float(value)))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return max(0, min(100, number))
 
@@ -136,7 +168,7 @@ def _item_payload(item: TranslateItem) -> dict:
 
 def _instruction_notes(items: list[TranslateItem]) -> str:
     lines = [
-        f'- id={item.id}: {item.context.strip()}'
+        f"- id={item.id}: {item.context.strip()}"
         for item in items
         if item.context and item.context.strip()
     ]
@@ -151,16 +183,13 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
     output_instruction = (
         "- Return only a JSON object matching the supplied schema, with every item "
         "and every requested locale. Do not use Markdown.\n\n"
-        if settings.bedrock_output_mode == "json_schema"
-        else f"- Call {TOOL_NAME} with every item and every requested locale. "
-        "Do not reply with free text.\n\n"
     )
     return (
         "You are a professional UI translator.\n"
         f"Translate each source string from {source_locale} into the locales "
         "listed on that item.\n\n"
         "Rules:\n"
-        "- If an item has \"instructions\", those notes are mandatory and win over a "
+        '- If an item has "instructions", those notes are mandatory and win over a '
         "literal translation of the source. Follow glossary terms, tone, length, "
         "and any required output text exactly, even if it is not a normal translation.\n"
         "- Instructions may be written in any language; interpret the intent.\n"
@@ -182,144 +211,72 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
     )
 
 
-def _client_error_code(exc: ClientError) -> str:
-    response = exc.response if isinstance(exc.response, dict) else {}
-    error = response.get("Error")
-    if not isinstance(error, dict):
-        return ""
-    return str(error.get("Code") or "")
-
-
-def _is_throttle_error(exc: BaseException) -> bool:
-    return isinstance(exc, ClientError) and _client_error_code(exc) in THROTTLE_CODES
-
-
-def _converse_once(prompt: str) -> dict:
-    if settings.bedrock_output_mode == "json_schema":
-        output_options = {
-            "outputConfig": {
-                "textFormat": {
-                    "type": "json_schema",
-                    "structure": {
-                        "jsonSchema": {
-                            "name": TOOL_NAME,
-                            "schema": json.dumps(
-                                SUBMIT_TRANSLATIONS_TOOL["toolSpec"]["inputSchema"]["json"]
-                            ),
-                        }
-                    },
-                }
-            }
-        }
-        if settings.bedrock_json_schema_strict:
-            output_options["additionalModelRequestFields"] = {"text": {"format": {"strict": True}}}
-    else:
-        output_options = {
-            "toolConfig": {
-                "tools": [SUBMIT_TRANSLATIONS_TOOL],
-                "toolChoice": {"auto": {}},
-            }
-        }
+def _generate(client: OpenAI, prompt: str) -> dict[str, dict[str, TranslatedCell]]:
     try:
-        client = boto3.Session().client(
-            "bedrock-runtime",
-            region_name=settings.aws_region,
-            # Require AWS credentials even if a Bedrock bearer token is in the environment.
-            # First-time JSON Schema compilation can take several minutes.
-            config=Config(signature_version="v4", read_timeout=300),
+        response = client.responses.parse(
+            model=settings.openai_model.strip(),
+            input=prompt,
+            max_output_tokens=settings.openai_max_output_tokens,
+            reasoning={"effort": settings.openai_reasoning_effort},
+            text_format=TranslationsResponse,
         )
-        return client.converse(
-            modelId=settings.bedrock_model_id,
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            # Leave sampling and reasoning settings at the model's defaults.
-            inferenceConfig={"maxTokens": settings.bedrock_max_tokens},
-            **output_options,
+        return _parse_response(response)
+    except AITranslationError:
+        raise
+    except AuthenticationError, PermissionDeniedError:
+        raise AITranslationError(
+            "AI translation authentication or permission failed. Check the configured credentials."
+        ) from None
+    except RateLimitError:
+        raise AITranslationError(
+            "AI translation rate limit exceeded. Please try again later."
+        ) from None
+    except APITimeoutError:
+        raise AITranslationError("AI translation request timed out. Please try again.") from None
+    except APIConnectionError:
+        raise AITranslationError("AI translation connection failed. Please try again.") from None
+    except APIStatusError as exc:
+        message = (
+            "AI translation upstream service failed. Please try again."
+            if exc.status_code >= 500
+            else "AI translation request was rejected. Check the model and endpoint configuration."
         )
-    except NoCredentialsError as exc:
-        raise ValueError(_AUTH_ERROR) from exc
-    except ClientError as exc:
-        if _is_throttle_error(exc):
-            raise
-        raise RuntimeError(f"Bedrock request failed: {exc}") from exc
-    except BotoCoreError as exc:
-        raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+        raise AITranslationError(message) from None
+    except Exception:
+        # SDK parsing errors can contain the full model output.
+        raise AITranslationError(
+            "AI translation returned invalid or unsuccessful output."
+        ) from None
 
 
-def _converse(prompt: str, on_retry: Callable[[], None] | None = None) -> dict:
-    last_error: BaseException | None = None
-    for attempt in range(MAX_CONVERSE_ATTEMPTS):
-        try:
-            return _converse_once(prompt)
-        except ClientError as exc:
-            last_error = exc
-            if not _is_throttle_error(exc) or attempt >= MAX_CONVERSE_ATTEMPTS - 1:
-                raise RuntimeError(f"Bedrock request failed: {exc}") from exc
-            if on_retry is not None:
-                on_retry()
-            delay = THROTTLE_BACKOFF_SECONDS[attempt] + random.uniform(0, 0.25)
-            time.sleep(delay)
-    raise RuntimeError(f"Bedrock request failed: {last_error}") from last_error
-
-
-def _parse_response(response: dict) -> dict[str, dict[str, TranslatedCell]]:
-    content = response.get("output", {}).get("message", {}).get("content") or []
-    if response.get("stopReason") not in {"end_turn", "tool_use"}:
-        raise RuntimeError(
-            f"Bedrock did not complete translations: {response.get('stopReason')}"
+def _parse_response(response) -> dict[str, dict[str, TranslatedCell]]:
+    if (
+        response.status != "completed"
+        or any(
+            content.type == "refusal"
+            for output in response.output
+            if output.type == "message"
+            for content in output.content
         )
-    if settings.bedrock_output_mode == "json_schema":
-        raw_input = "".join(
-            block["text"]
-            for block in content
-            if isinstance(block, dict) and isinstance(block.get("text"), str)
-        )
-    else:
-        tool_use = None
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            candidate = block.get("toolUse")
-            if isinstance(candidate, dict) and candidate.get("name") == TOOL_NAME:
-                tool_use = candidate
-                break
-
-        if tool_use is None:
-            raise RuntimeError("Bedrock did not call submit_translations")
-        raw_input = tool_use.get("input")
-    if isinstance(raw_input, str):
-        try:
-            raw_input = json.loads(raw_input)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Bedrock translations are not valid JSON") from exc
-    if not isinstance(raw_input, dict):
-        raise RuntimeError("Bedrock translations are missing items")
-
-    rows = raw_input.get("items")
-    if not isinstance(rows, list):
-        raise RuntimeError("Bedrock translations are missing items")
+        or response.output_parsed is None
+    ):
+        raise AITranslationError("AI translation returned invalid or unsuccessful output.")
 
     result: dict[str, dict[str, TranslatedCell]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        item_id = str(row.get("id") or "").strip()
-        if not item_id:
-            continue
-        translations = row.get("translations")
-        if not isinstance(translations, list):
-            continue
-        dest = result.setdefault(item_id, {})
-        for cell in translations:
-            if not isinstance(cell, dict):
-                continue
-            locale = str(cell.get("locale") or "").strip()
-            text = cell.get("text")
-            if not locale or not isinstance(text, str) or not text.strip():
-                continue
-            dest[locale] = TranslatedCell(
-                text=text,
-                confidence=clamp_confidence(cell.get("confidence")),
-            )
+    for row in response.output_parsed.items:
+        item_id = row.id.strip()
+        if item_id in result:
+            raise AITranslationError("AI translation returned duplicate item IDs.")
+        dest: dict[str, TranslatedCell] = {}
+        seen_locales: set[str] = set()
+        for cell in row.translations:
+            locale = cell.locale.strip()
+            if locale in seen_locales:
+                raise AITranslationError("AI translation returned duplicate locales.")
+            seen_locales.add(locale)
+            if cell.text.strip():
+                dest[locale] = TranslatedCell(cell.text, clamp_confidence(cell.confidence))
+        result[item_id] = dest
     return result
 
 
@@ -341,17 +298,17 @@ def _filter_chunk_result(
 def _translate_chunk(
     source_locale: str,
     items: list[TranslateItem],
-    on_retry: Callable[[], None] | None = None,
+    client: OpenAI,
     on_filling: Callable[[], None] | None = None,
 ) -> dict[str, dict[str, TranslatedCell]]:
     prompt = _build_prompt(source_locale, items)
-    parsed = _filter_chunk_result(items, _parse_response(_converse(prompt, on_retry)))
+    parsed = _filter_chunk_result(items, _generate(client, prompt))
     missing = _missing_items(items, parsed)
     if missing:
         if on_filling is not None:
             on_filling()
         retry_prompt = _build_prompt(source_locale, missing)
-        retry_parsed = _parse_response(_converse(retry_prompt, on_retry))
+        retry_parsed = _generate(client, retry_prompt)
         _merge_results(parsed, _filter_chunk_result(missing, retry_parsed))
     return parsed
 
@@ -393,7 +350,8 @@ def _stub_translate_batch(
     items: list[TranslateItem],
     on_progress: ProgressCallback | None = None,
 ) -> dict[str, dict[str, TranslatedCell]]:
-    chunks_total = max(1, (len(items) + BATCH_SIZE - 1) // BATCH_SIZE)
+    size = settings.ai_translate_batch_size
+    chunks_total = max(1, (len(items) + size - 1) // size)
     if on_progress is not None:
         on_progress("translating", 0, chunks_total)
     if settings.ai_translate_stub_delay_ms > 0:
@@ -422,10 +380,22 @@ def translate_batch(
         return {}
     if settings.ai_translate_stub:
         return _stub_translate_batch(items, on_progress=on_progress)
-    if not settings.bedrock_model_id:
-        raise ValueError("BEDROCK_MODEL_ID is not configured")
+    if not settings.openai_api_key.strip():
+        raise AIConfigurationError("OPENAI_API_KEY is not configured")
+    if not settings.openai_model.strip():
+        raise AIConfigurationError("OPENAI_MODEL is not configured")
+    with _translation_client() as client:
+        return _translate_batches(source_locale, items, on_progress, client)
 
-    chunks = [items[index : index + BATCH_SIZE] for index in range(0, len(items), BATCH_SIZE)]
+
+def _translate_batches(
+    source_locale: str,
+    items: list[TranslateItem],
+    on_progress: ProgressCallback | None,
+    client: OpenAI,
+) -> dict[str, dict[str, TranslatedCell]]:
+    size = settings.ai_translate_batch_size
+    chunks = [items[index : index + size] for index in range(0, len(items), size)]
     chunks_total = len(chunks)
     chunks_done = 0
     done_lock = threading.Lock()
@@ -438,31 +408,45 @@ def translate_batch(
         on_progress(phase, current, chunks_total)
 
     report("translating", 0)
+    stop = threading.Event()
 
     def run_chunk(chunk: list[TranslateItem]) -> dict[str, dict[str, TranslatedCell]]:
         nonlocal chunks_done
-
-        def on_retry() -> None:
-            with done_lock:
-                report("retrying")
+        if stop.is_set():
+            return {}
 
         def on_filling() -> None:
             with done_lock:
                 report("filling_gaps")
 
-        result = _translate_chunk(source_locale, chunk, on_retry=on_retry, on_filling=on_filling)
+        try:
+            result = _translate_chunk(source_locale, chunk, client, on_filling=on_filling)
+        except Exception:
+            # Set before returning so the next batch this worker picks up does not call the model.
+            stop.set()
+            raise
         with done_lock:
             chunks_done += 1
             report("translating")
         return result
 
-    workers = min(MAX_CHUNK_WORKERS, len(chunks))
+    workers = min(settings.ai_translate_max_workers, len(chunks))
     if workers == 1:
-        _merge_results(merged, run_chunk(chunks[0]))
+        for chunk in chunks:
+            _merge_results(merged, run_chunk(chunk))
         return merged
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(run_chunk, chunk) for chunk in chunks]
-        for future in as_completed(futures):
-            _merge_results(merged, future.result())
-    return merged
+    executor = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futures = [executor.submit(run_chunk, chunk) for chunk in chunks]
+        try:
+            for future in as_completed(futures):
+                _merge_results(merged, future.result())
+        except Exception:
+            stop.set()
+            for future in futures:
+                future.cancel()
+            raise
+        return merged
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)

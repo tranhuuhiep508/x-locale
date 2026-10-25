@@ -7,9 +7,12 @@ from typing import Literal
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from pydantic import PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
+
+OpenAIReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
 # Default in repo; production must override via X_LOCALE_SECRET.
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
@@ -141,12 +144,14 @@ class Settings(BaseSettings):
     # production makes seed-demo refuse unless --allow-production is passed.
     env: str = ""
     aws_region: str = "us-east-1"
-    bedrock_model_id: str = "global.openai.gpt-6-luna"
-    bedrock_max_tokens: int = 16000
-    bedrock_output_mode: Literal["tool", "json_schema"] = "json_schema"
-    # Model-specific text.format.strict. Set false when a model rejects the field.
-    bedrock_json_schema_strict: bool = True
-    # Deterministic AI translations for E2E / local dev (no Bedrock calls).
+    openai_api_key: str = ""
+    openai_model: str = "gpt-6-luna"
+    openai_base_url: str = ""
+    openai_max_output_tokens: PositiveInt = 16000
+    openai_reasoning_effort: OpenAIReasoningEffort = "none"
+    ai_translate_batch_size: PositiveInt = 20
+    ai_translate_max_workers: PositiveInt = 5
+    # Deterministic AI translations for E2E / local dev (no model calls).
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
     x_locale_secret: str = INSECURE_DEFAULT_X_LOCALE_SECRET

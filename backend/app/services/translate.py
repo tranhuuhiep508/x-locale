@@ -1,4 +1,4 @@
-"""AI translate: one Bedrock request per string chunk, all requested locales."""
+"""AI translate: one AI request per string chunk, all requested locales."""
 
 from __future__ import annotations
 
@@ -12,14 +12,17 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.activity import attach_batch
 from app.ai import (
-    BATCH_SIZE,
+    AITranslationError,
     ProgressCallback,
     ProgressPhase,
     TranslatedCell,
     TranslateItem,
     as_translated_cell,
+    log_ai_failure,
+    safe_ai_error,
     translate_batch,
 )
+from app.config import settings
 from app.database import SessionLocal
 from app.helpers import require_locale_code
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
@@ -153,9 +156,7 @@ def serialize_descriptions(descriptions: dict[uuid.UUID, str] | None) -> dict[st
     return {str(key): value for key, value in descriptions.items()}
 
 
-def _description_for(
-    entry: StringEntry, descriptions: dict[uuid.UUID, str] | None
-) -> str | None:
+def _description_for(entry: StringEntry, descriptions: dict[uuid.UUID, str] | None) -> str | None:
     if descriptions is not None and entry.id in descriptions:
         return descriptions[entry.id].strip() or None
     return entry.description
@@ -376,7 +377,8 @@ def list_missing_items(
 def chunk_count(work: int) -> int:
     if work <= 0:
         return 0
-    return (work + BATCH_SIZE - 1) // BATCH_SIZE
+    size = settings.ai_translate_batch_size
+    return (work + size - 1) // size
 
 
 def queued_progress(work: int) -> dict[str, int | str]:
@@ -547,6 +549,13 @@ def _ai_job_session(job_id: uuid.UUID | None) -> Iterator[Session | None]:
                     db.commit()
                 yield db
             except Exception as exc:
+                log_ai_failure(exc)
+                # HTTPException and AITranslationError text is already safe for clients.
+                message = (
+                    str(exc)
+                    if isinstance(exc, (HTTPException, AITranslationError))
+                    else safe_ai_error(exc)
+                )
                 # Rollback can allow reconnection. Never record a failure after losing ownership.
                 lost_ownership = conn is not None and conn.invalidated
                 db.rollback()
@@ -560,9 +569,12 @@ def _ai_job_session(job_id: uuid.UUID | None) -> Iterator[Session | None]:
                     )
                     if job is not None:
                         _finish(job, JobStatus.failed, phase="failed")
-                        job.error = str(exc)
+                        job.error = message
                         db.commit()
-                raise
+                if isinstance(exc, (HTTPException, AITranslationError)):
+                    raise
+                # The original message can contain request data. Its type and stack are logged.
+                raise AITranslationError(message) from None
 
 
 def _complete_ai_job(db: Session, job_id: uuid.UUID | None, result: dict[str, Any]) -> bool:

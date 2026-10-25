@@ -314,7 +314,7 @@ describe('translateProgressLabel', () => {
       'Translating batch 3 of 3…',
     )
     expect(translateProgressLabel({ phase: 'retrying', chunks_done: 1, chunks_total: 3 })).toBe(
-      'Bedrock is busy, retrying…',
+      'AI translation is busy, retrying…',
     )
     expect(translateProgressLabel({ phase: 'filling_gaps', chunks_done: 1, chunks_total: 3 })).toBe(
       'Filling missing locales…',
