@@ -112,8 +112,8 @@ overall process startup deadline.
 
 ## Startup and changes
 
-The production image's default command checks that the bootstrap file is
-readable and nonempty before running `alembic upgrade head`, then starts the API.
+The production image's default command checks that the bootstrap path is a
+regular nonempty file before running `alembic upgrade head`, then starts the API.
 An invalid ARN, inaccessible secret, binary payload, invalid JSON, or invalid
 configuration aborts startup. Errors omit configuration values and raw AWS error
 messages. Do not enable boto3/botocore debug logging or log the settings object:
@@ -123,7 +123,7 @@ When overriding the container command or running a separate production migration
 or maintenance job, require the same mount before invoking Python. For example:
 
 ```sh
-test -r /run/x-locale/secrets-arn && test -s /run/x-locale/secrets-arn || exit 1
+test -f /run/x-locale/secrets-arn && test -s /run/x-locale/secrets-arn || exit 1
 alembic upgrade head
 ```
 
@@ -140,9 +140,27 @@ credential validity; old workers retain the old password. Changing
 `X_LOCALE_SECRET` invalidates existing signed sessions, and mixed signing keys
 during a rollout can cause intermittent authentication failures.
 
+## Compose file
+
 `docker-compose.prod.yml` mounts the bootstrap file from the host path in
 `X_LOCALE_SECRETS_ARN_FILE` and uses the image default command (bootstrap check,
-migrations, then uvicorn). Non-secret settings stay in Compose `environment`;
-`DATABASE_URL`, `X_LOCALE_SECRET`, and other JSON keys come from Secrets Manager.
+migrations, then uvicorn). Create that file before `up`. Compose does not create
+a missing source path. If an earlier run left a directory there, delete it and
+create the file. A missing path must fail startup; it must not become a directory.
+
+Non-secret settings stay in Compose `environment`. `DATABASE_URL`,
+`X_LOCALE_SECRET`, and other JSON keys come from Secrets Manager. The sample
+above (`db.internal`) is for a database outside this Compose file. For
+`docker-compose.prod.yml`, the secret `DATABASE_URL` must use host `postgres`,
+user `xlocale`, database `xlocale`, and the same password as `POSTGRES_PASSWORD`:
+
+```text
+postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale
+```
+
+Export `POSTGRES_PASSWORD` before `up`. The app does not read that variable;
+Postgres does. A URL that points somewhere else migrates that other database
+and leaves the Compose Postgres unused.
+
 `AUTH_DEV_BYPASS` must not appear in the secret; set it only via environment
 variables. The frontend build does not read the backend secret.

@@ -320,14 +320,45 @@ with Stubber(client) as stub:
     )
 
 
-def test_production_command_requires_bootstrap_before_alembic():
+def _production_command():
     dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile.prod"
     command = next(line for line in dockerfile.read_text().splitlines() if line.startswith("CMD "))
-    args = json.loads(command.removeprefix("CMD "))
-    # Exercise the actual Docker command with a guaranteed absent mount and a migration sentinel.
-    script = args[2].replace("/run/x-locale/secrets-arn", "/proc/xlocale-missing-bootstrap")
+    return json.loads(command.removeprefix("CMD "))
+
+
+def _run_production_guard(mount: str):
+    args = _production_command()
+    assert "[ ! -f " in args[2]
+    assert "[ ! -r " not in args[2]
+    # Exercise the actual Docker command with a migration sentinel.
+    script = args[2].replace("/run/x-locale/secrets-arn", mount)
     script = script.replace("alembic upgrade head", "echo MIGRATIONS_STARTED")
-    result = subprocess.run([*args[:2], script], capture_output=True, text=True)
+    return subprocess.run([*args[:2], script], capture_output=True, text=True)
+
+
+def test_production_command_requires_bootstrap_before_alembic():
+    result = _run_production_guard("/proc/xlocale-missing-bootstrap")
     assert result.returncode == 1
     assert "Production requires" in result.stderr
     assert "MIGRATIONS_STARTED" not in result.stdout
+
+
+def test_production_command_rejects_bootstrap_directory(tmp_path):
+    mount = tmp_path / "secrets-arn"
+    mount.mkdir()
+    result = _run_production_guard(str(mount))
+    assert result.returncode == 1
+    assert "Production requires" in result.stderr
+    assert "MIGRATIONS_STARTED" not in result.stdout
+
+
+def test_compose_secret_url_matches_bundled_postgres():
+    root = Path(__file__).resolve().parents[2]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    docs = (root / "docs" / "aws-secrets-manager.md").read_text(encoding="utf-8")
+    compose = (root / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    url = "postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale"
+    assert "export POSTGRES_PASSWORD=" in readme
+    assert "@postgres:5432/xlocale" in docs
+    assert url in compose
+    assert "create_host_path: false" in compose

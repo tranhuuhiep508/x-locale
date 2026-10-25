@@ -88,9 +88,12 @@ docker compose up --build
 Production (single origin, SPA served by FastAPI):
 
 ```bash
-# One-line file with the full Secrets Manager ARN; secret JSON holds DATABASE_URL and app secrets.
+# Create the ARN file before up. If that path is already a directory, delete it first.
+# Secret DATABASE_URL must be postgresql+psycopg://xlocale:<password>@postgres:5432/xlocale
+# and POSTGRES_PASSWORD must be that same password. Migrations use the secret URL.
 echo 'arn:aws:secretsmanager:REGION:ACCOUNT:secret:NAME-SUFFIX' > secrets-arn
 export X_LOCALE_SECRETS_ARN_FILE=$PWD/secrets-arn
+export POSTGRES_PASSWORD='same-as-DATABASE_URL-in-the-secret'
 docker compose -f docker-compose.prod.yml up --build
 ```
 
@@ -255,7 +258,10 @@ For production configuration stored in AWS Secrets Manager, see
 Keys present in the secret override environment variables; other settings come from
 env (for example `STATIC_DIR`, `AWS_REGION`, `AUTH_DEV_BYPASS`) and code defaults.
 Dotenv is not read in AWS mode. The production image command requires the mount
-before migrations. Set `X_LOCALE_SECRETS_ARN_FILE` for `docker-compose.prod.yml`.
+before migrations. For `docker-compose.prod.yml`, set `X_LOCALE_SECRETS_ARN_FILE` and
+`POSTGRES_PASSWORD`. The secret `DATABASE_URL` must use host `postgres`, user `xlocale`,
+database `xlocale`, and that same password. Create the ARN file before `up`; if the path
+is a directory, delete it first.
 Local development and CI keep the existing configuration behavior without the mount.
 
 | Var | Purpose |

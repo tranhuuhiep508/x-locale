@@ -4,6 +4,9 @@
 #
 # Application secrets and DATABASE_URL load from AWS Secrets Manager when
 # /run/x-locale/secrets-arn is mounted (see .env.example). Other settings use env vars.
+# This file's Postgres is the app database. The secret DATABASE_URL must be
+# postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale
+# (same password as POSTGRES_PASSWORD). A different host migrates the wrong database.
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,8 +51,15 @@ services:
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
       STATIC_DIR: static
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+    # Create the ARN file before up. create_host_path: false refuses a missing path
+    # instead of turning it into a directory.
     volumes:
-      - ${X_LOCALE_SECRETS_ARN_FILE:?set X_LOCALE_SECRETS_ARN_FILE}:/run/x-locale/secrets-arn:ro
+      - type: bind
+        source: ${X_LOCALE_SECRETS_ARN_FILE:?set X_LOCALE_SECRETS_ARN_FILE}
+        target: /run/x-locale/secrets-arn
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy
