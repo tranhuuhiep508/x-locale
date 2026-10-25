@@ -250,7 +250,8 @@ def import_workbook(
     dry_run: bool = False,
     status: TranslationStatus = TranslationStatus.draft,
 ) -> ImportResult:
-    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    # data_only would replace a formula cell with its cached result, or blank.
+    wb = load_workbook(io.BytesIO(raw), read_only=True)
     rows, groups = [], []
     try:
         modular = _is_modular(project)
