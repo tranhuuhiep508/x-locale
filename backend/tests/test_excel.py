@@ -896,6 +896,70 @@ def _cache_formula_result(raw: bytes, ref: str, formula: str, cached: str) -> by
     return out.getvalue()
 
 
+def _replace_inline_cell(raw: bytes, ref: str, text: str, inner_xml: str) -> bytes:
+    needle = f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'.encode()
+    replacement = f'<c r="{ref}">{inner_xml}</c>'.encode()
+    out = io.BytesIO()
+    with ZipFile(io.BytesIO(raw)) as src, ZipFile(out, "w") as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                assert needle in data
+                data = data.replace(needle, replacement, 1)
+            dst.writestr(name, data)
+    return out.getvalue()
+
+
+def test_import_stores_array_and_data_table_formula_text(client):
+    project = _make_project(client, name="Array And Data Table")
+    root = f"/api/projects/{project['id']}"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = FLAT_SHEET
+    ws.append(["key", "vi", "en"])
+    ws.append(["array", "src", "ARRAYEN"])
+    ws.append(["table2d", "src", "TABLE2D"])
+    ws.append(["tablerow", "src", "TABLEROW"])
+    ws.append(["tablecol", "src", "TABLECOL"])
+    raw = io.BytesIO()
+    wb.save(raw)
+    content = raw.getvalue()
+    content = _replace_inline_cell(
+        content, "C2", "ARRAYEN", '<f t="array" ref="C2">SUM(A1:A2)</f><v>3</v>'
+    )
+    content = _replace_inline_cell(
+        content,
+        "C3",
+        "TABLE2D",
+        '<f t="dataTable" ref="C3" dt2D="1" dtr="0" r1="A1" r2="B1"/><v>9</v>',
+    )
+    content = _replace_inline_cell(
+        content,
+        "C4",
+        "TABLEROW",
+        '<f t="dataTable" ref="C4" dt2D="0" dtr="1" r1="A1"/><v>4</v>',
+    )
+    content = _replace_inline_cell(
+        content,
+        "C5",
+        "TABLECOL",
+        '<f t="dataTable" ref="C5" dt2D="0" dtr="0" r1="B1"/><v>5</v>',
+    )
+
+    response = client.post(f"{root}/import", files={"file": ("special.xlsx", content)})
+    assert response.status_code == 200, response.text
+    by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
+
+    def en(key: str) -> str:
+        return next(t["value"] for t in by_key[key]["translations"] if t["locale"] == "en")
+
+    assert en("array") == "=SUM(A1:A2)"
+    assert en("table2d") == "=TABLE(A1,B1)"
+    assert en("tablerow") == "=TABLE(A1,)"
+    assert en("tablecol") == "=TABLE(,B1)"
+    assert by_key["array"]["source_text"] == "src"
+
+
 def test_import_stores_formula_cells_as_typed_text(client):
     project = _make_project(client, name="Formula Cell Text")
     root = f"/api/projects/{project['id']}"
