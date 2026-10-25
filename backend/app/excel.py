@@ -368,7 +368,7 @@ def import_workbook(
                             field="tag name",
                             limit=TAG_NAME_MAX_LENGTH,
                         )
-                        for value in str(row[tags_idx]).split(",")
+                        for value in _text_value(row[tags_idx]).split(",")
                         if value.strip()
                     )
                 values = {locale: _text_value(row[index]) for locale, index in locales.items()}
