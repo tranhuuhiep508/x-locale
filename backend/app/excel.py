@@ -7,6 +7,7 @@ from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell import WriteOnlyCell
+from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
@@ -171,7 +172,27 @@ def _write_template_sheet(
         _append_text_row(ws, row)
 
 
+def _excel_flag(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.lower() in {"1", "true"})
+
+
+def _data_table_text(formula: DataTableFormula) -> str:
+    # The file stores input cells, not a formula string. Excel shows TABLE().
+    # shortcut: deleted inputs (del1/del2) stay as their cell ref, turn them into #REF! if those files show up.
+    first = formula.r1 or ""
+    second = formula.r2 or ""
+    if _excel_flag(formula.dt2D):
+        return f"=TABLE({first},{second})"
+    if _excel_flag(formula.dtr):
+        return f"=TABLE({first},)"
+    return f"=TABLE(,{first})"
+
+
 def _text_value(val: Any) -> str:
+    if isinstance(val, ArrayFormula):
+        return val.text or ""
+    if isinstance(val, DataTableFormula):
+        return _data_table_text(val)
     return "" if val is None else str(val)
 
 
@@ -250,7 +271,8 @@ def import_workbook(
     dry_run: bool = False,
     status: TranslationStatus = TranslationStatus.draft,
 ) -> ImportResult:
-    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    # data_only would replace a formula cell with its cached result, or blank.
+    wb = load_workbook(io.BytesIO(raw), read_only=True)
     rows, groups = [], []
     try:
         modular = _is_modular(project)
@@ -346,7 +368,7 @@ def import_workbook(
                             field="tag name",
                             limit=TAG_NAME_MAX_LENGTH,
                         )
-                        for value in str(row[tags_idx]).split(",")
+                        for value in _text_value(row[tags_idx]).split(",")
                         if value.strip()
                     )
                 values = {locale: _text_value(row[index]) for locale, index in locales.items()}

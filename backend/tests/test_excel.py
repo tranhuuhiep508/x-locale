@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import datetime
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
@@ -879,6 +880,156 @@ def test_all_workbook_text_including_templates_and_metadata_is_literal(monkeypat
         assert dict(wb["_meta"].values)["project_slug"] == project.slug
     finally:
         wb.close()
+
+
+def _cache_formula_result(raw: bytes, ref: str, formula: str, cached: str) -> bytes:
+    needle = f'<c r="{ref}"><f>{formula}</f><v /></c>'.encode()
+    replacement = f'<c r="{ref}" t="str"><f>{formula}</f><v>{cached}</v></c>'.encode()
+    out = io.BytesIO()
+    with ZipFile(io.BytesIO(raw)) as src, ZipFile(out, "w") as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                assert needle in data
+                data = data.replace(needle, replacement, 1)
+            dst.writestr(name, data)
+    return out.getvalue()
+
+
+def _replace_inline_cell(raw: bytes, ref: str, text: str, inner_xml: str) -> bytes:
+    needle = f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'.encode()
+    replacement = f'<c r="{ref}">{inner_xml}</c>'.encode()
+    out = io.BytesIO()
+    with ZipFile(io.BytesIO(raw)) as src, ZipFile(out, "w") as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                assert needle in data
+                data = data.replace(needle, replacement, 1)
+            dst.writestr(name, data)
+    return out.getvalue()
+
+
+def test_import_stores_array_and_data_table_formula_text(client):
+    project = _make_project(client, name="Array And Data Table")
+    root = f"/api/projects/{project['id']}"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = FLAT_SHEET
+    ws.append(["key", "vi", "en"])
+    ws.append(["array", "src", "ARRAYEN"])
+    ws.append(["table2d", "src", "TABLE2D"])
+    ws.append(["tablerow", "src", "TABLEROW"])
+    ws.append(["tablecol", "src", "TABLECOL"])
+    raw = io.BytesIO()
+    wb.save(raw)
+    content = raw.getvalue()
+    content = _replace_inline_cell(
+        content, "C2", "ARRAYEN", '<f t="array" ref="C2">SUM(A1:A2)</f><v>3</v>'
+    )
+    content = _replace_inline_cell(
+        content,
+        "C3",
+        "TABLE2D",
+        '<f t="dataTable" ref="C3" dt2D="1" dtr="0" r1="A1" r2="B1"/><v>9</v>',
+    )
+    content = _replace_inline_cell(
+        content,
+        "C4",
+        "TABLEROW",
+        '<f t="dataTable" ref="C4" dt2D="0" dtr="1" r1="A1"/><v>4</v>',
+    )
+    content = _replace_inline_cell(
+        content,
+        "C5",
+        "TABLECOL",
+        '<f t="dataTable" ref="C5" dt2D="0" dtr="0" r1="B1"/><v>5</v>',
+    )
+
+    response = client.post(f"{root}/import", files={"file": ("special.xlsx", content)})
+    assert response.status_code == 200, response.text
+    by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
+
+    def en(key: str) -> str:
+        return next(t["value"] for t in by_key[key]["translations"] if t["locale"] == "en")
+
+    assert en("array") == "=SUM(A1:A2)"
+    assert en("table2d") == "=TABLE(A1,B1)"
+    assert en("tablerow") == "=TABLE(A1,)"
+    assert en("tablecol") == "=TABLE(,B1)"
+    assert by_key["array"]["source_text"] == "src"
+
+
+def test_import_stores_formula_tag_text(client):
+    project = _make_project(client, name="Formula Tags")
+    root = f"/api/projects/{project['id']}"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = FLAT_SHEET
+    ws.append(["key", "description", "tags", "vi", "en"])
+    ws.append(["array-tag", "note", "ARRAYTAG", "src", "Hello"])
+    ws.append(["table-tag", "note", "TABLETAG", "src", "Hello"])
+    raw = io.BytesIO()
+    wb.save(raw)
+    content = _replace_inline_cell(
+        raw.getvalue(), "C2", "ARRAYTAG", '<f t="array" ref="C2">SUM(A1:A2)</f><v>3</v>'
+    )
+    content = _replace_inline_cell(
+        content,
+        "C3",
+        "TABLETAG",
+        '<f t="dataTable" ref="C3" dt2D="1" dtr="0" r1="A1" r2="B1"/><v>9</v>',
+    )
+
+    response = client.post(f"{root}/import", files={"file": ("tags.xlsx", content)})
+    assert response.status_code == 200, response.text
+    by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
+    assert {tag["name"] for tag in by_key["array-tag"]["tags"]} == {"=SUM(A1:A2)"}
+    assert {tag["name"] for tag in by_key["table-tag"]["tags"]} == {"=TABLE(A1", "B1)"}
+
+
+def test_import_stores_formula_cells_as_typed_text(client):
+    project = _make_project(client, name="Formula Cell Text")
+    root = f"/api/projects/{project['id']}"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = FLAT_SHEET
+    ws.append(["key", "vi", "en"])
+    ws.append(["plain", "Xin chào", "Hello"])
+    ws["A3"] = "number"
+    ws["B3"] = 42
+    ws["C3"] = 7.5
+    ws["A4"] = "dated"
+    ws["B4"] = datetime(2024, 1, 2)
+    ws["C4"] = datetime(2024, 3, 4, 5, 6, 7)
+    ws["A5"] = "uncached"
+    ws["B5"] = "=B2"
+    ws["C5"] = "=SUM(C2)"
+    ws["A6"] = "cached"
+    ws["B6"] = "=B2"
+    ws["C6"] = "=C2"
+    raw = io.BytesIO()
+    wb.save(raw)
+    content = _cache_formula_result(raw.getvalue(), "B6", "B2", "Cached source")
+    content = _cache_formula_result(content, "C6", "C2", "Cached translation")
+
+    response = client.post(f"{root}/import", files={"file": ("formulas.xlsx", content)})
+    assert response.status_code == 200, response.text
+    by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
+
+    def en(key: str) -> str:
+        return next(t["value"] for t in by_key[key]["translations"] if t["locale"] == "en")
+
+    assert by_key["plain"]["source_text"] == "Xin chào"
+    assert en("plain") == "Hello"
+    assert by_key["number"]["source_text"] == "42"
+    assert en("number") == "7.5"
+    assert by_key["dated"]["source_text"] == "2024-01-02 00:00:00"
+    assert en("dated") == "2024-03-04 05:06:07"
+    assert by_key["uncached"]["source_text"] == "=B2"
+    assert en("uncached") == "=SUM(C2)"
+    assert by_key["cached"]["source_text"] == "=B2"
+    assert en("cached") == "=C2"
 
 
 @pytest.mark.parametrize("stage", ["draft", "public"])
