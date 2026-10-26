@@ -24,7 +24,8 @@ from app.ai import (
 )
 from app.config import settings
 from app.database import SessionLocal
-from app.helpers import require_locale_code
+from app.helpers import require_locale_code, require_max_length
+from app.limits import TEXT_MAX_LENGTH
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
 from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceConflict
 from app.services.catalog import owned_module
@@ -299,6 +300,7 @@ def apply_translations(
             translation = _ensure_translation(db, entry, locale)
             if translation.value.strip() and not overwrite:
                 continue
+            require_max_length(cell.text, field="value", limit=TEXT_MAX_LENGTH)
             translation.value = cell.text
             translation.confidence = cell.confidence
             translated += 1
