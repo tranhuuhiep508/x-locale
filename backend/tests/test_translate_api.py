@@ -8,6 +8,8 @@ from threading import Barrier, Event
 
 import pytest
 
+from app.config import settings
+from app.limits import TEXT_MAX_LENGTH
 from tests.helpers import _make_project
 
 
@@ -38,6 +40,28 @@ def test_translate_preview_does_not_persist(client, monkeypatch):
     assert after == before
     string = client.get(f"/api/projects/{pid}/strings").json()["items"][0]
     assert all(t["value"] == "" for t in string["translations"])
+
+
+def test_direct_translate_rejects_model_text_over_cap(client, monkeypatch):
+    monkeypatch.setattr(settings, "ai_translate_stub", True)
+    project = _make_project(client, "Over cap", targets=["en"])
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hi", "source_text": "s" * TEXT_MAX_LENGTH},
+    )
+    assert created.status_code == 201, created.text
+    root = f"/api/projects/{pid}"
+    before = client.get(f"{root}/activities").json()["total"]
+    response = client.post(
+        f"{root}/translate",
+        json={"scope": "strings", "string_ids": [created.json()["id"]], "locales": ["en"]},
+    )
+    assert response.status_code == 400, response.text
+    assert str(TEXT_MAX_LENGTH) in response.text
+    stored = client.get(f"{root}/strings/{created.json()['id']}").json()
+    assert all(item["value"] == "" for item in stored["translations"])
+    assert client.get(f"{root}/activities").json()["total"] == before
 
 
 def test_translate_fills_all_locales_in_one_batch(client, monkeypatch):

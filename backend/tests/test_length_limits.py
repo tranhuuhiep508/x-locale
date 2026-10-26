@@ -15,8 +15,9 @@ from alembic import command
 from app.config import settings
 from app.excel import FLAT_SHEET
 from app.helpers import validate_locale_code
+from app.limits import IMPORT_MAX_BYTES, TEXT_MAX_LENGTH
 from app.main import app
-from app.models import Project
+from app.models import Project, StringEntry, Translation
 from app.services.activities import _apply_published_snapshot, _apply_working_copy_only
 from tests.helpers import json_upload, make_project
 
@@ -353,3 +354,194 @@ def test_widen_downgrade_names_rows_that_do_not_fit(throwaway_database, monkeypa
     message = str(caught.value)
     assert "1 row(s) in activities.summary exceed 512 characters" in message
     assert "1 row(s) in projects.base_language exceed 10 characters" in message
+
+
+LONG_TEXT = "x" * (TEXT_MAX_LENGTH + 1)
+MAX_TEXT = "y" * TEXT_MAX_LENGTH
+
+
+def test_string_text_over_limit_is_422(client):
+    project = make_project(client, layout="flat")
+    root = f"/api/projects/{project['id']}/strings"
+    created = client.post(root, json={"key": "hello", "source_text": "Hi"})
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    cases = [
+        ("post", root, {"key": "too-source", "source_text": LONG_TEXT}),
+        ("post", root, {"key": "too-desc", "source_text": "Hi", "description": LONG_TEXT}),
+        ("post", root, {"key": "too-tr", "source_text": "Hi", "translations": {"en": LONG_TEXT}}),
+        ("patch", f"{root}/{sid}", {"source_text": LONG_TEXT}),
+        ("patch", f"{root}/{sid}", {"description": LONG_TEXT}),
+        ("patch", f"{root}/{sid}", {"translations": {"en": LONG_TEXT}}),
+        ("put", f"{root}/{sid}/translations/en", {"value": LONG_TEXT}),
+    ]
+    for method, url, body in cases:
+        response = getattr(client, method)(url, json=body)
+        assert response.status_code == 422, (method, body.keys(), response.text[:400])
+        assert str(TEXT_MAX_LENGTH) in response.text
+    stored = client.get(f"{root}/{sid}").json()
+    assert stored["source_text"] == "Hi"
+    assert stored["description"] is None
+    assert all(item["value"] != LONG_TEXT for item in stored["translations"])
+    assert client.get(root).json()["total"] == 1
+
+
+def test_overlong_expected_baseline_can_be_replaced(client, session_factory):
+    project = make_project(client, layout="flat")
+    root = f"/api/projects/{project['id']}/strings"
+    created = client.post(
+        root, json={"key": "hello", "source_text": "Hi", "translations": {"en": "Hello"}}
+    )
+    assert created.status_code == 201, created.text
+    sid = uuid.UUID(created.json()["id"])
+    with session_factory() as db:
+        row = db.get(StringEntry, sid)
+        assert row is not None
+        row.source_text = LONG_TEXT
+        row.description = LONG_TEXT
+        by_locale = {item.locale: item for item in row.translations}
+        if "en" in by_locale:
+            by_locale["en"].value = LONG_TEXT
+        else:
+            row.translations.append(Translation(locale="en", value=LONG_TEXT))
+        db.commit()
+
+    url = f"{root}/{sid}"
+    replaced = client.patch(
+        url,
+        json={
+            "source_text": "Short",
+            "description": "Short",
+            "translations": {"en": "Short"},
+            "expected": {
+                "source_text": LONG_TEXT,
+                "description": LONG_TEXT,
+                "translations": {"en": LONG_TEXT},
+            },
+        },
+    )
+    assert replaced.status_code == 200, replaced.text[:400]
+    body = replaced.json()
+    assert body["source_text"] == "Short"
+    assert body["description"] == "Short"
+    assert {item["locale"]: item["value"] for item in body["translations"]}["en"] == "Short"
+
+    rejected = client.patch(
+        url, json={"source_text": LONG_TEXT, "expected": {"source_text": "Short"}}
+    )
+    assert rejected.status_code == 422, rejected.text[:400]
+    assert client.get(url).json()["source_text"] == "Short"
+
+    with session_factory() as db:
+        row = db.get(StringEntry, sid)
+        assert row is not None
+        by_locale = {item.locale: item for item in row.translations}
+        by_locale["en"].value = LONG_TEXT
+        db.commit()
+    replaced_translation = client.put(
+        f"{url}/translations/en", json={"value": "Short", "expected": LONG_TEXT}
+    )
+    assert replaced_translation.status_code == 200, replaced_translation.text[:400]
+    too_long = client.put(
+        f"{url}/translations/en", json={"value": LONG_TEXT, "expected": "Short"}
+    )
+    assert too_long.status_code == 422, too_long.text[:400]
+
+
+def test_string_text_at_limit_is_accepted(client):
+    project = make_project(client, layout="flat")
+    root = f"/api/projects/{project['id']}/strings"
+    created = client.post(
+        root,
+        json={
+            "key": "max",
+            "source_text": MAX_TEXT,
+            "description": MAX_TEXT,
+            "translations": {"en": MAX_TEXT},
+        },
+    )
+    assert created.status_code == 201, created.text[:400]
+    body = created.json()
+    assert len(body["source_text"]) == TEXT_MAX_LENGTH
+    assert len(body["description"]) == TEXT_MAX_LENGTH
+    assert len(body["translations"][0]["value"]) == TEXT_MAX_LENGTH
+    updated = client.patch(
+        f"{root}/{body['id']}",
+        json={"source_text": MAX_TEXT, "description": MAX_TEXT, "translations": {"en": MAX_TEXT}},
+    )
+    assert updated.status_code == 200, updated.text[:400]
+    put = client.put(f"{root}/{body['id']}/translations/en", json={"value": MAX_TEXT})
+    assert put.status_code == 200, put.text[:400]
+    assert len(put.json()["translations"][0]["value"]) == TEXT_MAX_LENGTH
+
+
+def test_oversized_upload_is_400_before_workbook(client, monkeypatch):
+    project = make_project(client, layout="flat")
+
+    def fail_parse(*_args, **_kwargs):
+        raise AssertionError("parse_import_file called")
+
+    def fail_workbook(*_args, **_kwargs):
+        raise AssertionError("workbook opened")
+
+    monkeypatch.setattr("app.routers.sync.parse_import_file", fail_parse)
+    monkeypatch.setattr("app.excel.load_workbook", fail_workbook)
+    response = client.post(
+        f"/api/projects/{project['id']}/import",
+        files={
+            "file": (
+                "big.xlsx",
+                b"x" * (IMPORT_MAX_BYTES + 1),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert str(IMPORT_MAX_BYTES) in response.text
+    assert client.get(f"/api/projects/{project['id']}/strings").json()["total"] == 0
+
+
+def test_import_rejects_overlong_translation_without_writes(client, monkeypatch):
+    project = make_project(client, layout="flat")
+    root = f"/api/projects/{project['id']}"
+    uploaded = client.post(
+        f"{root}/import",
+        files=json_upload({"en": {"ok": "Hello", "bad": LONG_TEXT}}),
+    )
+    assert uploaded.status_code == 400, uploaded.text
+    assert str(TEXT_MAX_LENGTH) in uploaded.text
+    assert client.get(f"{root}/strings").json()["total"] == 0
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["key", "vi", "en"])
+    sheet.append(["ok", "Hello", "English"])
+    sheet.append(["bad", "Hello", "English"])
+    sheet.cell(3, 3)._value = LONG_TEXT
+    monkeypatch.setattr("app.excel.load_workbook", lambda *_args, **_kwargs: workbook)
+    excel = client.post(
+        f"{root}/import",
+        files={"file": ("strings.xlsx", b"placeholder", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert excel.status_code == 400, excel.text
+    assert str(TEXT_MAX_LENGTH) in excel.text
+    assert client.get(f"{root}/strings").json()["total"] == 0
+
+    described = Workbook()
+    described_sheet = described.active
+    described_sheet.append(["key", "vi", "description"])
+    described_sheet.append(["ok", "Hello", "Context"])
+    described_sheet.cell(2, 3)._value = LONG_TEXT
+
+    def fail_rows(*_args, **_kwargs):
+        raise AssertionError("import_rows called")
+
+    monkeypatch.setattr("app.excel.load_workbook", lambda *_args, **_kwargs: described)
+    monkeypatch.setattr("app.excel.import_rows", fail_rows)
+    description = client.post(
+        f"{root}/import",
+        files={"file": ("described.xlsx", b"placeholder", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert description.status_code == 400, description.text
+    assert str(TEXT_MAX_LENGTH) in description.text
+    assert client.get(f"{root}/strings").json()["total"] == 0

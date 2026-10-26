@@ -100,6 +100,8 @@ def translate(
     attach_batch(db, batch_id, "translate")
     try:
         translated, skipped = apply_translations(db, project, entries, locales, payload.overwrite)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _ai_http_error(exc) from None
 

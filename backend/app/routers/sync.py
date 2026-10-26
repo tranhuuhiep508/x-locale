@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.activity import attach_batch
 from app.auth import ProjectAccess
 from app.database import DbSession
+from app.limits import IMPORT_MAX_BYTES
 from app.models import Project, TranslationStatus
 from app.schemas import ImportPayload, ImportResult, JobAcceptedOut, SyncStateOut
 from app.services.import_lock import acquire_import_lock
@@ -197,7 +198,13 @@ def import_project(
         tag_ids=tag_ids,
         partial=partial,
     )
-    parsed = parse_import_file(file.file.read(), file.filename, file.content_type)
+    raw = file.file.read(IMPORT_MAX_BYTES + 1)
+    if len(raw) > IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Import file must be at most {IMPORT_MAX_BYTES} bytes",
+        )
+    parsed = parse_import_file(raw, file.filename, file.content_type)
 
     excel = parsed.excel is not None
     if wants_async(prefer) and (excel or runs_async(prefer, import_size(parsed.data))):

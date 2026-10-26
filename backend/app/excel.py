@@ -18,7 +18,7 @@ from app.helpers import (
     validate_locale_code,
     validate_module_slug,
 )
-from app.limits import KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH
+from app.limits import KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH, TEXT_MAX_LENGTH
 from app.models import (
     Project,
     ProjectLayout,
@@ -356,7 +356,11 @@ def import_workbook(
                         f"{context}key {key_preview(key)} must be at most {KEY_MAX_LENGTH} characters"
                     )
                 description = (
-                    _text_value(row[desc_idx]).strip()
+                    ensure_max_length(
+                        _text_value(row[desc_idx]).strip(),
+                        field="description",
+                        limit=TEXT_MAX_LENGTH,
+                    )
                     if desc_idx is not None and row[desc_idx]
                     else None
                 ) or None
