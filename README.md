@@ -138,8 +138,9 @@ See [cli/README.md](cli/README.md) for modular vs flat layouts and override flag
 | UI (session) | Microsoft Entra ID via Authlib (`OIDC_*`). `AUTH_DEV_BYPASS=true` mints a local Dev User only when OIDC is **not** configured |
 | CLI / runtime | Project API key via `X-API-Key` header |
 
-Any authenticated UI user can access all projects (no roles yet). Create and rotate
-keys under **Project → Settings**.
+Projects are listed only for members (`admin` or `editor`). A non-member gets 404.
+An API key is a project-scoped catalog credential, not a membership role.
+Create and rotate keys under **Project → Settings**.
 
 ### Microsoft Entra ID (work + personal)
 
