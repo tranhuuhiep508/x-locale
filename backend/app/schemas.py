@@ -291,17 +291,20 @@ class StringCreate(BaseModel):
 
 
 class StringExpected(BaseModel):
-    """Original values of fields changed by an editor (null differs from omitted)."""
+    """Original values of fields changed by an editor (null differs from omitted).
+
+    Baselines stay uncapped so a stored value over TEXT_MAX_LENGTH can be replaced.
+    """
 
     model_config = {"extra": "forbid"}
 
     key: str | None = None
-    source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
-    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
+    source_text: str | None = None
+    description: str | None = None
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
-    translations: TextValues = Field(default_factory=dict)
+    translations: dict[str, str] = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
 
 
@@ -451,7 +454,8 @@ class TranslateApplyItem(BaseModel):
     translations: TextValues
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
-    expected_description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
+    # Baseline of the stored description; may exceed TEXT_MAX_LENGTH.
+    expected_description: str | None = None
 
     @model_validator(mode="after")
     def require_description_baseline(self) -> "TranslateApplyItem":

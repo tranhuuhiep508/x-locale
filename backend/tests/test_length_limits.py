@@ -17,7 +17,7 @@ from app.excel import FLAT_SHEET
 from app.helpers import validate_locale_code
 from app.limits import IMPORT_MAX_BYTES, TEXT_MAX_LENGTH
 from app.main import app
-from app.models import Project
+from app.models import Project, StringEntry, Translation
 from app.services.activities import _apply_published_snapshot, _apply_working_copy_only
 from tests.helpers import json_upload, make_project
 
@@ -384,6 +384,68 @@ def test_string_text_over_limit_is_422(client):
     assert stored["description"] is None
     assert all(item["value"] != LONG_TEXT for item in stored["translations"])
     assert client.get(root).json()["total"] == 1
+
+
+def test_overlong_expected_baseline_can_be_replaced(client, session_factory):
+    project = make_project(client, layout="flat")
+    root = f"/api/projects/{project['id']}/strings"
+    created = client.post(
+        root, json={"key": "hello", "source_text": "Hi", "translations": {"en": "Hello"}}
+    )
+    assert created.status_code == 201, created.text
+    sid = uuid.UUID(created.json()["id"])
+    with session_factory() as db:
+        row = db.get(StringEntry, sid)
+        assert row is not None
+        row.source_text = LONG_TEXT
+        row.description = LONG_TEXT
+        by_locale = {item.locale: item for item in row.translations}
+        if "en" in by_locale:
+            by_locale["en"].value = LONG_TEXT
+        else:
+            row.translations.append(Translation(locale="en", value=LONG_TEXT))
+        db.commit()
+
+    url = f"{root}/{sid}"
+    replaced = client.patch(
+        url,
+        json={
+            "source_text": "Short",
+            "description": "Short",
+            "translations": {"en": "Short"},
+            "expected": {
+                "source_text": LONG_TEXT,
+                "description": LONG_TEXT,
+                "translations": {"en": LONG_TEXT},
+            },
+        },
+    )
+    assert replaced.status_code == 200, replaced.text[:400]
+    body = replaced.json()
+    assert body["source_text"] == "Short"
+    assert body["description"] == "Short"
+    assert {item["locale"]: item["value"] for item in body["translations"]}["en"] == "Short"
+
+    rejected = client.patch(
+        url, json={"source_text": LONG_TEXT, "expected": {"source_text": "Short"}}
+    )
+    assert rejected.status_code == 422, rejected.text[:400]
+    assert client.get(url).json()["source_text"] == "Short"
+
+    with session_factory() as db:
+        row = db.get(StringEntry, sid)
+        assert row is not None
+        by_locale = {item.locale: item for item in row.translations}
+        by_locale["en"].value = LONG_TEXT
+        db.commit()
+    replaced_translation = client.put(
+        f"{url}/translations/en", json={"value": "Short", "expected": LONG_TEXT}
+    )
+    assert replaced_translation.status_code == 200, replaced_translation.text[:400]
+    too_long = client.put(
+        f"{url}/translations/en", json={"value": LONG_TEXT, "expected": "Short"}
+    )
+    assert too_long.status_code == 422, too_long.text[:400]
 
 
 def test_string_text_at_limit_is_accepted(client):
