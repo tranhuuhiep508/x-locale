@@ -6,6 +6,9 @@ column must be wide enough for every value the API already accepts.
 """
 
 KEY_MAX_LENGTH = 512
+# Text columns stay unbounded in the database. These caps reject new writes only.
+TEXT_MAX_LENGTH = 32768
+IMPORT_MAX_BYTES = 20 * 1024 * 1024
 MODULE_SLUG_MAX_LENGTH = 128
 MODULE_NAME_MAX_LENGTH = 255
 TAG_NAME_MAX_LENGTH = 128

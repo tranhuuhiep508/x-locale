@@ -2,17 +2,37 @@ from enum import IntEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from fastapi import HTTPException
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
+from app.helpers import require_max_length
 from app.limits import (
     KEY_MAX_LENGTH,
     MODULE_NAME_MAX_LENGTH,
     MODULE_SLUG_MAX_LENGTH,
     TAG_COLOR_MAX_LENGTH,
     TAG_NAME_MAX_LENGTH,
+    TEXT_MAX_LENGTH,
 )
 from app.models import ProjectLayout, TranslationStatus
 from app.timefmt import UtcDateTime
+
+
+def cap_text_values(values: dict | None) -> dict | None:
+    """Dict values cannot take Field(max_length). Raise ValueError so the body is 422."""
+    if not values:
+        return values
+    for item in values.values():
+        try:
+            require_max_length(item, field="value", limit=TEXT_MAX_LENGTH)
+        except HTTPException as exc:
+            raise ValueError(exc.detail) from exc
+    return values
+
+
+TextValues = Annotated[dict[str, str], AfterValidator(cap_text_values)]
+OptionalTextValues = Annotated[dict[str, str] | None, AfterValidator(cap_text_values)]
+OptionalDescriptionValues = Annotated[dict[UUID, str] | None, AfterValidator(cap_text_values)]
 
 # ── Auth ──────────────────────────────────────────────────────────────
 
@@ -261,12 +281,12 @@ class StringOut(BaseModel):
 
 class StringCreate(BaseModel):
     key: str = Field(min_length=1, max_length=512)
-    source_text: str = Field(min_length=1)
-    description: str | None = None
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
     status: TranslationStatus = TranslationStatus.draft
-    translations: dict[str, str] = Field(default_factory=dict)
+    translations: TextValues = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
 
@@ -276,29 +296,29 @@ class StringExpected(BaseModel):
     model_config = {"extra": "forbid"}
 
     key: str | None = None
-    source_text: str | None = None
-    description: str | None = None
+    source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
+    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
-    translations: dict[str, str] = Field(default_factory=dict)
+    translations: TextValues = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
 
 
 class StringUpdate(BaseModel):
     key: str | None = Field(default=None, max_length=KEY_MAX_LENGTH)
-    source_text: str | None = None
-    description: str | None = None
+    source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
+    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
-    translations: dict[str, str] | None = None
+    translations: OptionalTextValues = None
     translation_scores: dict[str, ConfidenceScore] | None = None
     expected: StringExpected | None = None
 
 
 class TranslationUpdate(BaseModel):
-    value: str
+    value: str = Field(max_length=TEXT_MAX_LENGTH)
     expected: str | None = None
 
 
@@ -377,7 +397,7 @@ class TranslateRequest(BatchFilter):
     overwrite: bool = False
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
-    descriptions: dict[UUID, str] | None = None
+    descriptions: OptionalDescriptionValues = None
 
 
 class TranslationSourceConflict(BaseModel):
@@ -395,8 +415,8 @@ class TranslateResult(BaseModel):
 
 
 class TranslatePreviewRequest(BaseModel):
-    source_text: str = Field(min_length=1)
-    description: str | None = None
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     locales: list[str] | None = None
 
@@ -428,10 +448,10 @@ class TranslateProposalsResult(BaseModel):
 class TranslateApplyItem(BaseModel):
     string_id: UUID
     expected_source_text: str
-    translations: dict[str, str]
+    translations: TextValues
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
-    description: str | None = None
-    expected_description: str | None = None
+    description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
+    expected_description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
 
     @model_validator(mode="after")
     def require_description_baseline(self) -> "TranslateApplyItem":

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.activity import STRING_FIELDS, _actor_from_session, _jsonify
 from app.helpers import key_preview, reject_nul, require_locale_code
-from app.limits import KEY_MAX_LENGTH
+from app.limits import KEY_MAX_LENGTH, TEXT_MAX_LENGTH
 from app.models import (
     Activity,
     Module,
@@ -140,12 +140,24 @@ def _validate(
                 f"{row.context}key {key_preview(row.key)} must be at most {KEY_MAX_LENGTH} characters",
             )
         reject_nul(row.description, field="description", key=row.key, context=row.context)
+        if row.description is not None and len(row.description) > TEXT_MAX_LENGTH:
+            raise HTTPException(
+                400,
+                f"{row.context}description {key_preview(row.description)} must be at most "
+                f"{TEXT_MAX_LENGTH} characters",
+            )
         for locale, value in row.values.items():
             reject_nul(locale, field="locale", key=row.key, context=row.context)
             require_locale_code(locale)
             reject_nul(
                 value, field=f"translation value ({locale})", key=row.key, context=row.context
             )
+            if len(value) > TEXT_MAX_LENGTH:
+                raise HTTPException(
+                    400,
+                    f"{row.context}translation value ({locale}) {key_preview(value)} must be at most "
+                    f"{TEXT_MAX_LENGTH} characters",
+                )
         for name in row.tag_names:
             reject_nul(name, field="tag name", key=row.key, context=row.context)
         if any(tid not in catalog.tags for tid in row.tag_ids):
