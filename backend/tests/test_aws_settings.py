@@ -177,6 +177,20 @@ def test_secret_name_requires_aws_region_env(monkeypatch):
     factory.assert_not_called()
 
 
+def test_aws_secrets_manager_doc_secret_json_example_parses():
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "docs" / "aws-secrets-manager.md").read_text(encoding="utf-8")
+    start = text.index("```json\n", text.index("## Secret format"))
+    end = text.index("\n```", start + 7)
+    payload = json.loads(text[start + 7 : end])
+    compose = (root / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    issuer_default = compose.split("OIDC_ISSUER: ${OIDC_ISSUER:-", 1)[1].split("}", 1)[0]
+    assert payload["AWS_REGION"] == "ap-southeast-1"
+    assert payload["OIDC_ISSUER"] == issuer_default
+    assert payload["OIDC_SCOPES"] == config.Settings.model_fields["oidc_scopes"].default
+    assert "// pragma:" not in text[start:end]
+
+
 def test_config_defaults_are_real_values_not_redacted():
     root = Path(__file__).resolve().parents[2]
     config_path = root / "backend" / "app" / "config.py"

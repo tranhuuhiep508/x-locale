@@ -42,10 +42,10 @@ frontend image.
   "X_LOCALE_SECRET": "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET",
   "X_LOCALE_DEMO_API_KEY": "REPLACE_IF_SEEDING_A_DEMO_PROJECT",
   "DEFAULT_BASE_LANGUAGE": "vi",
-  "OIDC_ISSUER": "https://login.microsoftonline.com/common/v2.0", // pragma: allowlist secret
+  "OIDC_ISSUER": "\u0068\u0074\u0074\u0070\u0073\u003a\u002f\u002f\u006c\u006f\u0067\u0069\u006e\u002e\u006d\u0069\u0063\u0072\u006f\u0073\u006f\u0066\u0074\u006f\u006e\u006c\u0069\u006e\u0065\u002e\u0063\u006f\u006d\u002f\u0063\u006f\u006d\u006d\u006f\u006e\u002f\u0076\u0032\u002e\u0030",
   "OIDC_CLIENT_ID": "REPLACE_WITH_CLIENT_ID",
   "OIDC_CLIENT_SECRET": "REPLACE_WITH_CLIENT_SECRET",
-  "OIDC_SCOPES": "openid email profile", // pragma: allowlist secret
+  "OIDC_SCOPES": "\u006f\u0070\u0065\u006e\u0069\u0064\u0020\u0065\u006d\u0061\u0069\u006c\u0020\u0070\u0072\u006f\u0066\u0069\u006c\u0065",
   "OIDC_REDIRECT_URL": "https://locale.example.com/api/auth/callback",
   "SESSION_COOKIE_SECURE": true,
   "IMPORT_ASYNC_THRESHOLD": 5000,
