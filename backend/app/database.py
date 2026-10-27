@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy import create_engine, event, func, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import require_postgres_database_url, settings
 
@@ -12,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 require_postgres_database_url(settings.database_url)
 engine = create_engine(settings.database_url, pool_pre_ping=True)
+# Job ownership sits idle during AI calls; keep it off the request pool.
+job_lock_engine = create_engine(settings.database_url, poolclass=NullPool, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

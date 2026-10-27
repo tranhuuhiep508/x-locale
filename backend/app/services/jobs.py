@@ -21,7 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.auth import membership_for
 from app.config import settings
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, job_lock_engine
 from app.models import Job, JobStatus, Project, User
 from app.schemas import JobAcceptedOut
 from app.services import import_lock
@@ -83,8 +83,8 @@ def try_job_lock(db: Connection | Session, job_id: uuid.UUID, *, session: bool =
 
 @contextmanager
 def owned_job_connection(job_id: uuid.UUID):
-    """Keep ownership across work commits/rollbacks without another lasting connection."""
-    conn = engine.connect()
+    """Keep ownership across work commits/rollbacks without occupying the request pool."""
+    conn = job_lock_engine.connect()
     acquired = False
     try:
         acquired = try_job_lock(conn, job_id, session=True)

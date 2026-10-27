@@ -5,14 +5,17 @@ import selectors
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import PendingRollbackError
+from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.models import Activity, Job, JobStatus, Translation
@@ -194,10 +197,10 @@ def test_ai_failure_rolls_back_work_and_releases_ownership(
     job_id = running_job(session_factory, project, kind=kind, status=JobStatus.pending)
     with session_factory() as db:
         activities_before = db.query(Activity).count()
-    original_apply = translate.apply_translations
+    original_save = translate.save_translations
 
-    def fail_apply(db, *args):
-        original_apply(db, *args)
+    def fail_save(db, *args, **kwargs):
+        original_save(db, *args, **kwargs)
         db.flush()
         raise RuntimeError("Generation failed")
 
@@ -205,8 +208,8 @@ def test_ai_failure_rolls_back_work_and_releases_ownership(
         raise RuntimeError("Generation failed")
 
     monkeypatch.setattr(translate, "translate_batch", fake_batch)
-    monkeypatch.setattr(translate, "apply_translations", fail_apply)
-    monkeypatch.setattr(translate, "propose_translations", fail_propose)
+    monkeypatch.setattr(translate, "save_translations", fail_save)
+    monkeypatch.setattr(translate, "proposals_from_results", fail_propose)
     with pytest.raises(RuntimeError, match="AI translation failed"):
         run_worker(kind, project, job_id)
     body = client.get(f"/api/jobs/{job_id}").json()
@@ -229,12 +232,21 @@ def test_lost_ownership_connection_leaves_failure_to_recovery(
 ):
     job_id = running_job(session_factory, project, kind=kind, status=JobStatus.pending)
     original_load = translate._load_entries_by_ids
+    original_owned = translate.owned_job_connection
+    lock_holder = {}
+
+    @contextmanager
+    def capturing(job_id):
+        with original_owned(job_id) as conn:
+            lock_holder["conn"] = conn
+            yield conn
 
     def lose_connection(db, ids):
         entries = original_load(db, ids)
-        db.get_bind().invalidate()
+        lock_holder["conn"].invalidate()
         return entries
 
+    monkeypatch.setattr(translate, "owned_job_connection", capturing)
     monkeypatch.setattr(translate, "_load_entries_by_ids", lose_connection)
     monkeypatch.setattr(translate, "translate_batch", fake_batch)
     with pytest.raises((RuntimeError, PendingRollbackError)):
@@ -268,21 +280,21 @@ register_activity_listener()
 job_id, project_id, string_id = map(uuid.UUID, sys.argv[1:4])
 kind = sys.argv[4]
 batch_id = uuid.uuid4()
-original_apply = translate.apply_translations
-translate.translate_batch = lambda source, items: {item.id: {'en': 'Hello'} for item in items}
-def pause_apply(db, *args):
-    original_apply(db, *args)
+original_save = translate.save_translations
+translate.translate_batch = lambda source, items, on_progress=None: {item.id: {'en': 'Hello'} for item in items}
+def pause_save(db, *args, **kwargs):
+    result = original_save(db, *args, **kwargs)
     db.flush()
     assert db.query(Translation).filter(Translation.value == 'Hello').count() == 1
     assert db.query(Activity).filter(Activity.batch_id == batch_id).count() > 0
     print('ready', flush=True)
     signal.pause()
+    return result
 def pause_propose(*args, **kwargs):
-    kwargs['on_progress']('translating', 0, 1)
     print('ready', flush=True)
     signal.pause()
-translate.apply_translations = pause_apply
-translate.propose_translations = pause_propose
+translate.save_translations = pause_save
+translate.proposals_from_results = pause_propose
 if kind == 'translate':
     translate.run_translate_job(project_id, [string_id], ['en'], False, batch_id, job_id)
 else:
@@ -330,3 +342,46 @@ else:
         if process.poll() is None:
             process.kill()
         process.communicate(timeout=10)
+
+
+def test_ai_job_releases_request_pool_during_model_call(
+    client, session_factory, project, monkeypatch
+):
+    tiny = create_engine(jobs.engine.url, pool_size=1, max_overflow=0, pool_timeout=1)
+    TinySession = sessionmaker(bind=tiny, autoflush=False, autocommit=False)
+    monkeypatch.setattr(translate, "SessionLocal", TinySession)
+    job_id = running_job(session_factory, project, kind="translate", status=JobStatus.pending)
+    blocked, release = threading.Event(), threading.Event()
+
+    def slow_batch(source_locale, items, on_progress=None):
+        blocked.set()
+        assert release.wait(10), "test did not resume the model call"
+        return fake_batch(source_locale, items, on_progress)
+
+    monkeypatch.setattr(translate, "translate_batch", slow_batch)
+    worker = threading.Thread(target=run_worker, args=("translate", project, job_id))
+    worker.start()
+    try:
+        assert blocked.wait(10), "job did not reach translate_batch"
+        with TinySession() as db:
+            assert db.scalar(text("SELECT 1")) == 1
+        assert jobs.recover_abandoned_jobs() == 0
+        release.set()
+        worker.join(10)
+        assert not worker.is_alive()
+        body = client.get(f"/api/jobs/{job_id}").json()
+        assert body["status"] == "completed"
+        with session_factory() as db:
+            assert db.query(Translation).filter(Translation.value == "Hello").count() == 1
+    finally:
+        release.set()
+        worker.join(10)
+        tiny.dispose()
+
+
+@pytest.mark.parametrize("kind", jobs.AI_JOB_KINDS)
+def test_held_ai_lock_survives_recovery_after_sixty_seconds(session_factory, project, kind):
+    job_id = running_job(session_factory, project, kind=kind, age=120)
+    with jobs.owned_job_connection(job_id):
+        assert jobs.recover_abandoned_jobs() == 0
+    assert jobs.recover_abandoned_jobs() == 1
