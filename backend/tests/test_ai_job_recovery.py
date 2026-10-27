@@ -17,9 +17,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.orm import sessionmaker
 
+from app import database
 from app.main import app
 from app.models import Activity, Job, JobStatus, Translation
-from app.services import import_lock, jobs, translate
+from app.services import import_lock, job_progress, jobs, translate
 from app.services.job_progress import write_job_progress
 from tests.helpers import make_project
 from tests.test_job_recovery import running_job
@@ -344,13 +345,16 @@ else:
         process.communicate(timeout=10)
 
 
-def test_ai_job_releases_request_pool_during_model_call(
-    client, session_factory, project, monkeypatch
+@pytest.mark.parametrize("kind", jobs.AI_JOB_KINDS)
+def test_ai_request_releases_request_pool_during_model_call(
+    client, session_factory, project, monkeypatch, kind
 ):
     tiny = create_engine(jobs.engine.url, pool_size=1, max_overflow=0, pool_timeout=1)
     TinySession = sessionmaker(bind=tiny, autoflush=False, autocommit=False)
+    monkeypatch.setattr(database, "SessionLocal", TinySession)
     monkeypatch.setattr(translate, "SessionLocal", TinySession)
-    job_id = running_job(session_factory, project, kind="translate", status=JobStatus.pending)
+    monkeypatch.setattr(job_progress, "SessionLocal", TinySession)
+    monkeypatch.setattr("app.routers.translate.SYNC_THRESHOLD", 0)
     blocked, release = threading.Event(), threading.Event()
 
     def slow_batch(source_locale, items, on_progress=None):
@@ -359,23 +363,34 @@ def test_ai_job_releases_request_pool_during_model_call(
         return fake_batch(source_locale, items, on_progress)
 
     monkeypatch.setattr(translate, "translate_batch", slow_batch)
-    worker = threading.Thread(target=run_worker, args=("translate", project, job_id))
-    worker.start()
     try:
-        assert blocked.wait(10), "job did not reach translate_batch"
-        with TinySession() as db:
-            assert db.scalar(text("SELECT 1")) == 1
-        assert jobs.recover_abandoned_jobs() == 0
-        release.set()
-        worker.join(10)
-        assert not worker.is_alive()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            endpoint = "translate" if kind == "translate" else "translate/proposals"
+            response = pool.submit(
+                client.post,
+                f"/api/projects/{project['id']}/{endpoint}",
+                json={"locales": ["en"]},
+            )
+            try:
+                assert blocked.wait(10), "job did not reach translate_batch"
+                assert tiny.pool.checkedout() == 0
+                readiness = client.get("/healthcheck/readiness")
+                assert readiness.status_code == 200, readiness.text
+                assert jobs.recover_abandoned_jobs() == 0
+            finally:
+                release.set()
+            accepted = response.result(timeout=10)
+        assert accepted.status_code == 200, accepted.text
+        job_id = accepted.json()["job_id"]
         body = client.get(f"/api/jobs/{job_id}").json()
         assert body["status"] == "completed"
-        with session_factory() as db:
-            assert db.query(Translation).filter(Translation.value == "Hello").count() == 1
+        if kind == "translate":
+            with session_factory() as db:
+                assert db.query(Translation).filter(Translation.value == "Hello").count() == 1
+        else:
+            assert body["result"]["items"][0]["translations"] == {"en": "Hello"}
     finally:
         release.set()
-        worker.join(10)
         tiny.dispose()
 
 
