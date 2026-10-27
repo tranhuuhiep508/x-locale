@@ -132,7 +132,11 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
     assert "X_LOCALE_SECRET_ID" in prod
     assert "/run/x-locale/secrets-arn" not in prod
-    assert "X_LOCALE_SECRET:" not in prod
+    assert "DATABASE_URL: ${DATABASE_URL:-}" in prod
+    assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:-}" in prod
+    assert "[REDACTED]" not in prod
+    assert "AWS_REGION: ${AWS_REGION:-us-east-1}" in prod  # pragma: allowlist secret
+    assert "OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}" in prod  # pragma: allowlist secret
     assert "seed-demo" not in prod
     assert "command:" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod

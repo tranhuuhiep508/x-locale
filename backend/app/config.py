@@ -16,7 +16,7 @@ from sqlalchemy.exc import ArgumentError
 OpenAIReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
 # Default in repo; production must override via X_LOCALE_SECRET.
-INSECURE_DEFAULT_X_LOCALE_SECRET = "[REDACTED]-in-production"  # pragma: allowlist secret
+INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
 SECRET_ID_ENV = "X_LOCALE_SECRET_ID"
 _ARN_REGION_RE = re.compile(
     r"^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[\w/+=.@-]+-[A-Za-z0-9]{6}$",
@@ -29,14 +29,22 @@ def _bootstrap_secret_id() -> str | None:
     return value or None
 
 
-def _secrets_manager_region(secret_id: str) -> str | None:
+def _resolve_secrets_manager_region(secret_id: str) -> str:
     if _ARN_REGION_RE.match(secret_id):
         return secret_id.split(":")[3]
-    return None
+    region = os.environ.get("AWS_REGION", "").strip() or os.environ.get(
+        "AWS_DEFAULT_REGION", ""
+    ).strip()
+    if not region:
+        raise RuntimeError(
+            "Secrets Manager configuration requires AWS_REGION or AWS_DEFAULT_REGION "
+            "when X_LOCALE_SECRET_ID is a secret name"
+        )
+    return region
 
 
 def _load_aws_settings(settings_cls: type[BaseSettings], secret_id: str) -> dict:
-    region_name = _secrets_manager_region(secret_id)
+    region_name = _resolve_secrets_manager_region(secret_id)
     try:
         with closing(
             boto3.client(
@@ -126,7 +134,7 @@ class Settings(BaseSettings):
     test_database_url: str = ""
     # production makes seed-demo refuse unless --allow-production is passed.
     env: str = ""
-    aws_region: str = "[REDACTED]"
+    aws_region: str = "us-east-1"  # pragma: allowlist secret
     openai_api_key: str = ""
     openai_model: str = "gpt-6-luna"
     openai_base_url: str = ""
@@ -138,15 +146,15 @@ class Settings(BaseSettings):
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
     x_locale_secret: str = INSECURE_DEFAULT_X_LOCALE_SECRET
-    x_locale_demo_api_key: str = "[REDACTED]"
+    x_locale_demo_api_key: str = "demo-local-key"  # pragma: allowlist secret
     default_base_language: str = "vi"
 
     # OIDC
     oidc_issuer: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
-    oidc_scopes: str = "[REDACTED]"
-    oidc_redirect_url: str = "[REDACTED]"
+    oidc_scopes: str = "openid email profile"  # pragma: allowlist secret
+    oidc_redirect_url: str = "http://localhost:5173/api/auth/callback"  # pragma: allowlist secret
     auth_dev_bypass: bool = False
     session_cookie_secure: bool = False
 

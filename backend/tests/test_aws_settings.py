@@ -112,27 +112,82 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
     aws[1].assert_called_once()
 
 
-def test_secret_name_uses_boto_region_not_app_default(monkeypatch):
-    monkeypatch.setenv(config.SECRET_ID_ENV, SECRET_NAME)
-    monkeypatch.setenv("AWS_REGION", "ap-southeast-1")
-    client = boto3.session.Session().client(
-        "secretsmanager",
-        region_name="ap-southeast-1",
-        aws_access_key_id="testing",
-        aws_secret_access_key="testing",
-    )
-    factory = Mock(return_value=client)
-    monkeypatch.setattr(config.boto3, "client", factory)
-    with Stubber(client) as stub:
+def _stub_secrets_client(monkeypatch, *, secret_id: str, payload: dict):
+    client_kwargs: list[dict] = []
+    clients: list = []
+    stubbers: list[Stubber] = []
+    real_client = boto3.client
+
+    def tracking_client(service_name, **kwargs):
+        client_kwargs.append(kwargs)
+        client = real_client(
+            service_name,
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            **kwargs,
+        )
+        clients.append(client)
+        stub = Stubber(client)
         stub.add_response(
             "get_secret_value",
-            {"SecretString": json.dumps(PAYLOAD)},
-            {"SecretId": SECRET_NAME},
+            {"SecretString": json.dumps(payload)},
+            {"SecretId": secret_id},
         )
-        loaded = config.Settings()
-        assert loaded.database_url == PAYLOAD["DATABASE_URL"]
-        assert factory.call_args.kwargs["region_name"] is None
-        stub.assert_no_pending_responses()
+        stub.activate()
+        stubbers.append(stub)
+        return client
+
+    monkeypatch.setattr(config.boto3, "client", tracking_client)
+    return client_kwargs, clients, stubbers
+
+
+def test_secret_name_boto_client_uses_aws_region_env(monkeypatch):
+    monkeypatch.setenv(config.SECRET_ID_ENV, SECRET_NAME)
+    monkeypatch.setenv("AWS_REGION", "ap-southeast-1")
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    client_kwargs, clients, stubbers = _stub_secrets_client(monkeypatch, secret_id=SECRET_NAME, payload=PAYLOAD)
+    loaded = config.Settings()
+    for stub in stubbers:
+        stub.deactivate()
+    assert loaded.database_url == PAYLOAD["DATABASE_URL"]
+    assert client_kwargs[0]["region_name"] == "ap-southeast-1"
+    assert clients[0].meta.region_name == "ap-southeast-1"
+
+
+def test_secret_name_falls_back_to_aws_default_region(monkeypatch):
+    monkeypatch.setenv(config.SECRET_ID_ENV, SECRET_NAME)
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-central-1")
+    client_kwargs, clients, stubbers = _stub_secrets_client(monkeypatch, secret_id=SECRET_NAME, payload=PAYLOAD)
+    config.Settings()
+    for stub in stubbers:
+        stub.deactivate()
+    assert client_kwargs[0]["region_name"] == "eu-central-1"
+    assert clients[0].meta.region_name == "eu-central-1"
+
+
+def test_secret_name_requires_aws_region_env(monkeypatch):
+    monkeypatch.setenv(config.SECRET_ID_ENV, SECRET_NAME)
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    factory = Mock(side_effect=AssertionError("boto3 must not be called without region"))
+    monkeypatch.setattr(config.boto3, "client", factory)
+    with pytest.raises(RuntimeError, match="AWS_REGION or AWS_DEFAULT_REGION"):
+        config.Settings()
+    factory.assert_not_called()
+
+
+def test_config_defaults_are_real_values_not_redacted():
+    config_path = Path(__file__).resolve().parents[1] / "app" / "config.py"
+    compose_path = Path(__file__).resolve().parents[2] / "docker-compose.prod.yml"
+    assert "[REDACTED]" not in config_path.read_text(encoding="utf-8")
+    assert "[REDACTED]" not in compose_path.read_text(encoding="utf-8")
+    assert config.INSECURE_DEFAULT_X_LOCALE_SECRET == "change-me-in-production"  # pragma: allowlist secret
+    fields = config.Settings.model_fields
+    assert fields["aws_region"].default == "us-east-1"  # pragma: allowlist secret
+    assert fields["x_locale_demo_api_key"].default == "demo-local-key"  # pragma: allowlist secret
+    assert fields["oidc_scopes"].default == "openid email profile"  # pragma: allowlist secret
+    assert fields["oidc_redirect_url"].default == "http://localhost:5173/api/auth/callback"  # pragma: allowlist secret
 
 
 def test_aws_mode_env_fills_keys_missing_from_secret(aws, monkeypatch):
@@ -361,5 +416,8 @@ def test_compose_secret_url_matches_bundled_postgres():
     assert "X_LOCALE_SECRET_ID" in readme
     assert "@postgres:5432/xlocale" in docs
     assert "X_LOCALE_SECRET_ID" in compose
+    assert "DATABASE_URL: ${DATABASE_URL:-}" in compose
+    assert "X_LOCALE_SECRET: ${X_LOCALE_SECRET:-}" in compose
     assert "/run/x-locale/secrets-arn" not in compose
+    assert "[REDACTED]" not in compose
     assert url in compose
