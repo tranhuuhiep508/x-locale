@@ -29,7 +29,7 @@ frontend image.
   "DATABASE_URL": "postgresql+psycopg://app:REPLACE_WITH_DB_PASSWORD@db.internal:5432/xlocale",
   "TEST_DATABASE_URL": "",
   "ENV": "production",
-  "AWS_REGION": "[REDACTED]",
+  "AWS_REGION": "ap-southeast-1",
   "OPENAI_API_KEY": "REPLACE_WITH_OPENAI_API_KEY",
   "OPENAI_MODEL": "gpt-6-luna",
   "OPENAI_BASE_URL": "",
@@ -42,10 +42,10 @@ frontend image.
   "X_LOCALE_SECRET": "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET",
   "X_LOCALE_DEMO_API_KEY": "REPLACE_IF_SEEDING_A_DEMO_PROJECT",
   "DEFAULT_BASE_LANGUAGE": "vi",
-  "OIDC_ISSUER": "[REDACTED]",
+  "OIDC_ISSUER": "https://login.microsoftonline.com/common/v2.0", // pragma: allowlist secret
   "OIDC_CLIENT_ID": "REPLACE_WITH_CLIENT_ID",
   "OIDC_CLIENT_SECRET": "REPLACE_WITH_CLIENT_SECRET",
-  "OIDC_SCOPES": "[REDACTED]",
+  "OIDC_SCOPES": "openid email profile", // pragma: allowlist secret
   "OIDC_REDIRECT_URL": "https://locale.example.com/api/auth/callback",
   "SESSION_COOKIE_SECURE": true,
   "IMPORT_ASYNC_THRESHOLD": 5000,
@@ -99,7 +99,7 @@ set. Grant `secretsmanager:GetSecretValue` on the secret ARN, for example:
   "Statement": [{
     "Effect": "Allow",
     "Action": "secretsmanager:GetSecretValue",
-    "Resource": "arn:aws:secretsmanager:[REDACTED]:123456789012:secret:x-locale/production-AbCdEf"
+    "Resource": "arn:aws:secretsmanager:ap-southeast-1:123456789012:secret:x-locale/production-AbCdEf"
   }]
 }
 ```

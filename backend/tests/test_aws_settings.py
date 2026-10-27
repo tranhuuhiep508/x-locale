@@ -178,10 +178,16 @@ def test_secret_name_requires_aws_region_env(monkeypatch):
 
 
 def test_config_defaults_are_real_values_not_redacted():
-    config_path = Path(__file__).resolve().parents[1] / "app" / "config.py"
-    compose_path = Path(__file__).resolve().parents[2] / "docker-compose.prod.yml"
-    assert "[REDACTED]" not in config_path.read_text(encoding="utf-8")
-    assert "[REDACTED]" not in compose_path.read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[2]
+    config_path = root / "backend" / "app" / "config.py"
+    compose_path = root / "docker-compose.prod.yml"
+    doc_paths = (
+        root / "docs" / "aws-secrets-manager.md",
+        root / "README.md",
+        root / ".env.example",
+    )
+    for path in (config_path, compose_path, *doc_paths):
+        assert "[REDACTED]" not in path.read_text(encoding="utf-8"), f"{path.name} must not use placeholders"
     assert config.INSECURE_DEFAULT_X_LOCALE_SECRET == "change-me-in-production"  # pragma: allowlist secret
     fields = config.Settings.model_fields
     assert fields["aws_region"].default == "us-east-1"  # pragma: allowlist secret
