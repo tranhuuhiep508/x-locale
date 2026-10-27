@@ -2,8 +2,9 @@
 # TLS is expected in front of this service (company proxy). Set SESSION_COOKIE_SECURE=true
 # when the browser sees HTTPS, or use an https:// OIDC_REDIRECT_URL.
 #
-# Application secrets and DATABASE_URL load from AWS Secrets Manager when
-# /run/x-locale/secrets-arn is mounted (see .env.example). Other settings use env vars.
+# When X_LOCALE_SECRET_ID is set, application secrets and DATABASE_URL load from AWS
+# Secrets Manager (see .env.example and docs/aws-secrets-manager.md). Other settings
+# use env vars. Omit X_LOCALE_SECRET_ID to use plain env vars (e.g. External Secrets).
 # This file's Postgres is the app database. The secret DATABASE_URL must be
 # postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale
 # (same password as POSTGRES_PASSWORD). A different host migrates the wrong database.
@@ -30,7 +31,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      AWS_REGION: ${AWS_REGION:-us-east-1}
+      X_LOCALE_SECRET_ID: ${X_LOCALE_SECRET_ID:-}
+      AWS_REGION: ${AWS_REGION:-[REDACTED]}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
@@ -44,22 +46,13 @@ services:
       DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
       AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
-      OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}
+      OIDC_ISSUER: ${OIDC_ISSUER:-[REDACTED]}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
       OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
       STATIC_DIR: static
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
-    # Create the ARN file before up. create_host_path: false refuses a missing path
-    # instead of turning it into a directory.
-    volumes:
-      - type: bind
-        source: ${X_LOCALE_SECRETS_ARN_FILE:?set X_LOCALE_SECRETS_ARN_FILE}
-        target: /run/x-locale/secrets-arn
-        read_only: true
-        bind:
-          create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy

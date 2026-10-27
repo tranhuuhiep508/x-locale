@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from contextlib import closing
 from pathlib import Path
@@ -15,49 +16,32 @@ from sqlalchemy.exc import ArgumentError
 OpenAIReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
 # Default in repo; production must override via X_LOCALE_SECRET.
-INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
-SECRETS_ARN_PATH = Path("/run/x-locale/secrets-arn")
-
-_UNREAD = object()
-_bootstrap_arn_cache: str | None | object = _UNREAD
-
-
-def _reset_bootstrap_arn_cache() -> None:
-    global _bootstrap_arn_cache
-    _bootstrap_arn_cache = _UNREAD
+INSECURE_DEFAULT_X_LOCALE_SECRET = "[REDACTED]-in-production"  # pragma: allowlist secret
+SECRET_ID_ENV = "X_LOCALE_SECRET_ID"
+_ARN_REGION_RE = re.compile(
+    r"^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[\w/+=.@-]+-[A-Za-z0-9]{6}$",
+    flags=re.ASCII,
+)
 
 
-def _bootstrap_arn() -> str | None:
-    global _bootstrap_arn_cache
-    if _bootstrap_arn_cache is _UNREAD:
-        _bootstrap_arn_cache = _read_secrets_arn()
-    return _bootstrap_arn_cache if isinstance(_bootstrap_arn_cache, str) else None
+def _bootstrap_secret_id() -> str | None:
+    value = os.environ.get(SECRET_ID_ENV, "").strip()
+    return value or None
 
 
-def _read_secrets_arn() -> str | None:
-    try:
-        arn = SECRETS_ARN_PATH.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        if not SECRETS_ARN_PATH.is_symlink():
-            return None
-        raise RuntimeError("Cannot read Secrets Manager bootstrap file") from None
-    except OSError, UnicodeError:
-        raise RuntimeError("Cannot read Secrets Manager bootstrap file") from None
-    if not re.fullmatch(
-        r"arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[\w/+=.@-]+-[A-Za-z0-9]{6}",
-        arn,
-        flags=re.ASCII,
-    ):
-        raise RuntimeError("Secrets Manager bootstrap file must contain a full secret ARN")
-    return arn
+def _secrets_manager_region(secret_id: str) -> str | None:
+    if _ARN_REGION_RE.match(secret_id):
+        return secret_id.split(":")[3]
+    return None
 
 
-def _load_aws_settings(settings_cls: type[BaseSettings], arn: str) -> dict:
+def _load_aws_settings(settings_cls: type[BaseSettings], secret_id: str) -> dict:
+    region_name = _secrets_manager_region(secret_id)
     try:
         with closing(
             boto3.client(
                 "secretsmanager",
-                region_name=arn.split(":")[3],
+                region_name=region_name,
                 config=Config(
                     retries={"mode": "standard", "total_max_attempts": 3},
                     connect_timeout=5,
@@ -65,7 +49,7 @@ def _load_aws_settings(settings_cls: type[BaseSettings], arn: str) -> dict:
                 ),
             )
         ) as client:
-            response = client.get_secret_value(SecretId=arn)
+            response = client.get_secret_value(SecretId=secret_id)
     except (BotoCoreError, ClientError) as error:
         raise RuntimeError(
             f"Cannot load Secrets Manager configuration ({type(error).__name__}); "
@@ -119,8 +103,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **values):
         # Pydantic reads dotenv before settings_customise_sources selects AWS mode.
-        _reset_bootstrap_arn_cache()
-        if _bootstrap_arn() is not None:
+        if _bootstrap_secret_id() is not None:
             values["_env_file"] = None
         super().__init__(**values)
 
@@ -128,11 +111,11 @@ class Settings(BaseSettings):
     def settings_customise_sources(
         cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
     ):
-        arn = _bootstrap_arn()
-        if arn is not None:
+        secret_id = _bootstrap_secret_id()
+        if secret_id is not None:
             # Earlier sources win on conflicts; secret first, then env, then init kwargs.
             return (
-                lambda: _load_aws_settings(settings_cls, arn),
+                lambda: _load_aws_settings(settings_cls, secret_id),
                 env_settings,
                 init_settings,
             )
@@ -143,7 +126,7 @@ class Settings(BaseSettings):
     test_database_url: str = ""
     # production makes seed-demo refuse unless --allow-production is passed.
     env: str = ""
-    aws_region: str = "us-east-1"
+    aws_region: str = "[REDACTED]"
     openai_api_key: str = ""
     openai_model: str = "gpt-6-luna"
     openai_base_url: str = ""
@@ -155,15 +138,15 @@ class Settings(BaseSettings):
     ai_translate_stub: bool = False
     ai_translate_stub_delay_ms: int = 0
     x_locale_secret: str = INSECURE_DEFAULT_X_LOCALE_SECRET
-    x_locale_demo_api_key: str = "demo-local-key"
+    x_locale_demo_api_key: str = "[REDACTED]"
     default_base_language: str = "vi"
 
     # OIDC
     oidc_issuer: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
-    oidc_scopes: str = "openid email profile"
-    oidc_redirect_url: str = "http://localhost:5173/api/auth/callback"
+    oidc_scopes: str = "[REDACTED]"
+    oidc_redirect_url: str = "[REDACTED]"
     auth_dev_bypass: bool = False
     session_cookie_secure: bool = False
 

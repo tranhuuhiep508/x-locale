@@ -130,9 +130,8 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "POSTGRES_USER: xlocale" in prod
     assert "POSTGRES_DB: xlocale" in prod
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
-    assert "X_LOCALE_SECRETS_ARN_FILE" in prod
-    assert "/run/x-locale/secrets-arn" in prod
-    assert "create_host_path: false" in prod
+    assert "X_LOCALE_SECRET_ID" in prod
+    assert "/run/x-locale/secrets-arn" not in prod
     assert "X_LOCALE_SECRET:" not in prod
     assert "seed-demo" not in prod
     assert "command:" not in prod

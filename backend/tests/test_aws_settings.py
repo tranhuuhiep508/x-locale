@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from app import config
 
 ARN = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:x-locale/production-AbCdEf"
+SECRET_NAME = "x-locale/production"
 PAYLOAD = {
     "DATABASE_URL": "postgresql+psycopg://user:password@localhost/app",
     "X_LOCALE_SECRET": "test-signing-value",
@@ -23,15 +24,13 @@ PAYLOAD = {
 
 
 @pytest.fixture
-def bootstrap(tmp_path, monkeypatch):
-    path = tmp_path / "secrets-arn"
-    monkeypatch.setattr(config, "SECRETS_ARN_PATH", path)
-    return path
+def secret_id(monkeypatch):
+    monkeypatch.setenv(config.SECRET_ID_ENV, ARN)
+    return ARN
 
 
 @pytest.fixture
-def aws(bootstrap, monkeypatch):
-    bootstrap.write_text(ARN + "\n", encoding="utf-8")
+def aws(secret_id, monkeypatch):
     client = boto3.session.Session().client(
         "secretsmanager",
         region_name="eu-west-1",
@@ -45,13 +44,14 @@ def aws(bootstrap, monkeypatch):
         stub.assert_no_pending_responses()
 
 
-def respond(aws, payload):
+def respond(aws, payload, secret_id=ARN):
     aws[0].add_response(
-        "get_secret_value", {"SecretString": json.dumps(payload)}, {"SecretId": ARN}
+        "get_secret_value", {"SecretString": json.dumps(payload)}, {"SecretId": secret_id}
     )
 
 
-def test_local_sources_unchanged_and_no_aws(bootstrap, monkeypatch, tmp_path):
+def test_local_sources_unchanged_and_no_aws(monkeypatch, tmp_path):
+    monkeypatch.delenv(config.SECRET_ID_ENV, raising=False)
     factory = Mock(side_effect=AssertionError("AWS must not be used"))
     monkeypatch.setattr(config.boto3, "client", factory)
     dotenv = tmp_path / ".env"
@@ -85,6 +85,7 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
             "SESSION_COOKIE_SECURE": True,
             "IMPORT_ASYNC_THRESHOLD": 22,
             "OIDC_CLIENT_SECRET": "test-oidc-value",
+            "X_LOCALE_DEMO_API_KEY": "demo-key-from-secret",
             "STATIC_DIR": "static",
             "UNRELATED": "ignored",
             "aws_region": "ignored",
@@ -111,6 +112,29 @@ def test_all_settings_map_and_aws_is_authoritative(aws, monkeypatch, tmp_path):
     aws[1].assert_called_once()
 
 
+def test_secret_name_uses_boto_region_not_app_default(monkeypatch):
+    monkeypatch.setenv(config.SECRET_ID_ENV, SECRET_NAME)
+    monkeypatch.setenv("AWS_REGION", "ap-southeast-1")
+    client = boto3.session.Session().client(
+        "secretsmanager",
+        region_name="ap-southeast-1",
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
+    factory = Mock(return_value=client)
+    monkeypatch.setattr(config.boto3, "client", factory)
+    with Stubber(client) as stub:
+        stub.add_response(
+            "get_secret_value",
+            {"SecretString": json.dumps(PAYLOAD)},
+            {"SecretId": SECRET_NAME},
+        )
+        loaded = config.Settings()
+        assert loaded.database_url == PAYLOAD["DATABASE_URL"]
+        assert factory.call_args.kwargs["region_name"] is None
+        stub.assert_no_pending_responses()
+
+
 def test_aws_mode_env_fills_keys_missing_from_secret(aws, monkeypatch):
     respond(aws, PAYLOAD)
     monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "999")
@@ -125,6 +149,18 @@ def test_aws_mode_secret_beats_env_for_present_keys(aws, monkeypatch):
     respond(aws, {**PAYLOAD, "OPENAI_MAX_OUTPUT_TOKENS": 2048})
     monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "999")
     assert config.Settings().openai_max_output_tokens == 2048
+
+
+def test_database_url_and_signing_secret_must_come_from_secret_not_env(aws, monkeypatch):
+    respond(aws, {k: v for k, v in PAYLOAD.items() if k != "DATABASE_URL"})
+    monkeypatch.setenv("DATABASE_URL", PAYLOAD["DATABASE_URL"])
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        config.Settings()
+
+    respond(aws, {k: v for k, v in PAYLOAD.items() if k != "X_LOCALE_SECRET"})
+    monkeypatch.setenv("X_LOCALE_SECRET", PAYLOAD["X_LOCALE_SECRET"])
+    with pytest.raises(RuntimeError, match="X_LOCALE_SECRET"):
+        config.Settings()
 
 
 def test_secret_rejects_auth_dev_bypass(aws):
@@ -155,26 +191,13 @@ def test_aws_mode_never_reads_dotenv(aws, monkeypatch, tmp_path, explicit_env_fi
     aws[1].assert_called_once()
 
 
-@pytest.mark.parametrize("content", ["", "   ", "name-only", "arn:aws:s3:::bucket", ARN + ":key::"])
-def test_invalid_bootstrap_fails_before_aws(bootstrap, monkeypatch, content):
-    bootstrap.write_text(content)
-    factory = Mock()
+@pytest.mark.parametrize("value", ["", "   "])
+def test_empty_secret_id_skips_aws(monkeypatch, value):
+    monkeypatch.setenv(config.SECRET_ID_ENV, value)
+    factory = Mock(side_effect=AssertionError("AWS must not be used"))
     monkeypatch.setattr(config.boto3, "client", factory)
-    with pytest.raises(RuntimeError, match="full secret ARN"):
-        config.Settings()
+    config.Settings()
     factory.assert_not_called()
-
-
-def test_unreadable_bootstrap_fails(bootstrap):
-    bootstrap.mkdir()
-    with pytest.raises(RuntimeError, match="Cannot read"):
-        config.Settings()
-
-
-def test_dangling_bootstrap_symlink_fails(bootstrap):
-    bootstrap.symlink_to(bootstrap.parent / "missing")
-    with pytest.raises(RuntimeError, match="Cannot read"):
-        config.Settings()
 
 
 @pytest.mark.parametrize(
@@ -197,8 +220,7 @@ def test_aws_service_errors_are_safe_and_never_fall_back(aws, monkeypatch, code)
 @pytest.mark.parametrize(
     "failure", [NoCredentialsError(), EndpointConnectionError(endpoint_url="sensitive-value")]
 )
-def test_credential_and_network_errors_are_safe(bootstrap, monkeypatch, failure):
-    bootstrap.write_text(ARN)
+def test_credential_and_network_errors_are_safe(secret_id, monkeypatch, failure):
     monkeypatch.setattr(config.boto3, "client", Mock(side_effect=failure))
     with pytest.raises(RuntimeError, match="Cannot load Secrets Manager") as error:
         config.Settings()
@@ -285,21 +307,17 @@ def test_unhandled_cli_errors_do_not_print_configuration(payload):
 def _run_entrypoint(entrypoint, payload, *, handled=False):
     script = f"""
 import json
-from pathlib import Path
+import os
 from unittest.mock import patch
 import boto3
 from botocore.stub import Stubber
+os.environ[{config.SECRET_ID_ENV!r}] = {ARN!r}
 client = boto3.client('secretsmanager', region_name='eu-west-1',
                       aws_access_key_id='testing', aws_secret_access_key='testing')
-original_read = Path.read_text
-def read(path, *args, **kwargs):
-    if str(path) == '/run/x-locale/secrets-arn':
-        return {ARN!r}
-    return original_read(path, *args, **kwargs)
 with Stubber(client) as stub:
     stub.add_response('get_secret_value', {{'SecretString': json.dumps({payload!r})}},
                       {{'SecretId': {ARN!r}}})
-    with patch.object(Path, 'read_text', read), patch('boto3.client', return_value=client), \
+    with patch('boto3.client', return_value=client), \\
          patch('sqlalchemy.create_engine', side_effect=AssertionError('Database initialized too early')):
         try:
             {entrypoint}
@@ -320,36 +338,17 @@ with Stubber(client) as stub:
     )
 
 
-def _production_command():
+def test_production_command_runs_migrations_without_bootstrap_check():
     dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile.prod"
     command = next(line for line in dockerfile.read_text().splitlines() if line.startswith("CMD "))
-    return json.loads(command.removeprefix("CMD "))
-
-
-def _run_production_guard(mount: str):
-    args = _production_command()
-    assert "[ ! -f " in args[2]
-    assert "[ ! -r " not in args[2]
-    # Exercise the actual Docker command with a migration sentinel.
-    script = args[2].replace("/run/x-locale/secrets-arn", mount)
-    script = script.replace("alembic upgrade head", "echo MIGRATIONS_STARTED")
-    return subprocess.run([*args[:2], script], capture_output=True, text=True)
-
-
-def test_production_command_requires_bootstrap_before_alembic():
-    result = _run_production_guard("/proc/xlocale-missing-bootstrap")
-    assert result.returncode == 1
-    assert "Production requires" in result.stderr
-    assert "MIGRATIONS_STARTED" not in result.stdout
-
-
-def test_production_command_rejects_bootstrap_directory(tmp_path):
-    mount = tmp_path / "secrets-arn"
-    mount.mkdir()
-    result = _run_production_guard(str(mount))
-    assert result.returncode == 1
-    assert "Production requires" in result.stderr
-    assert "MIGRATIONS_STARTED" not in result.stdout
+    args = json.loads(command.removeprefix("CMD "))
+    script = args[2].split("&& exec uvicorn", 1)[0].replace(
+        "alembic upgrade head", "echo MIGRATIONS_STARTED"
+    )
+    assert "secrets-arn" not in script
+    result = subprocess.run([*args[:2], script], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "MIGRATIONS_STARTED" in result.stdout
 
 
 def test_compose_secret_url_matches_bundled_postgres():
@@ -359,6 +358,8 @@ def test_compose_secret_url_matches_bundled_postgres():
     compose = (root / "docker-compose.prod.yml").read_text(encoding="utf-8")
     url = "postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale"
     assert "export POSTGRES_PASSWORD=" in readme
+    assert "X_LOCALE_SECRET_ID" in readme
     assert "@postgres:5432/xlocale" in docs
+    assert "X_LOCALE_SECRET_ID" in compose
+    assert "/run/x-locale/secrets-arn" not in compose
     assert url in compose
-    assert "create_host_path: false" in compose
