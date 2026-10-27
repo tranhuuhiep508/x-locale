@@ -84,18 +84,20 @@ def translate(
             },
         )
         db.add(job)
+        db.flush()
+        queued_project_id, job_id = project.id, job.id
+        # Keep the request connection released while its background task runs.
         db.commit()
-        db.refresh(job)
         background_tasks.add_task(
             run_translate_job,
-            project.id,
+            queued_project_id,
             entry_ids,
             locales,
             payload.overwrite,
             batch_id,
-            job.id,
+            job_id,
         )
-        return TranslateResult(translated_count=0, locales=locales, job_id=job.id)
+        return TranslateResult(translated_count=0, locales=locales, job_id=job_id)
 
     attach_batch(db, batch_id, "translate")
     try:
@@ -188,21 +190,23 @@ def translate_proposals(
             },
         )
         db.add(job)
+        db.flush()
+        queued_project_id, job_id = project.id, job.id
+        # Keep the request connection released while its background task runs.
         db.commit()
-        db.refresh(job)
         background_tasks.add_task(
             run_propose_job,
-            project.id,
+            queued_project_id,
             entry_ids,
             locales,
             payload.overwrite,
-            job.id,
+            job_id,
             desc_payload,
         )
         return TranslateProposalsResult(
             locales=locales,
             items=[],
-            job_id=job.id,
+            job_id=job_id,
             total=work,
             page=1,
             page_size=max(work, 1),

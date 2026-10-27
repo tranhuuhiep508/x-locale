@@ -137,22 +137,16 @@ def test_worker_owns_job_before_publication(client, session_factory, project, mo
         assert jobs.try_job_lock(db, seen[0])
 
 
-def test_owned_connection_releases_lock_before_pool_reuse(project, monkeypatch):
-    from sqlalchemy import create_engine
+def test_owned_connection_releases_lock_before_pool_reuse():
+    from sqlalchemy.pool import NullPool
 
-    engine = create_engine(jobs.engine.url, pool_size=1, max_overflow=0)
-    monkeypatch.setattr(jobs, "engine", engine)
+    assert jobs.job_lock_engine is not jobs.engine
+    assert isinstance(jobs.job_lock_engine.pool, NullPool)
     job_id = uuid.uuid4()
-    try:
-        with jobs.owned_job_connection(job_id) as conn:
-            pid = conn.scalar(text("SELECT pg_backend_pid()"))
-            conn.rollback()
-        with engine.connect() as reused:
-            assert reused.scalar(text("SELECT pg_backend_pid()")) == pid
-            with jobs.SessionLocal() as observer:
-                assert jobs.try_job_lock(observer, job_id)
-    finally:
-        engine.dispose()
+    with jobs.owned_job_connection(job_id):
+        pass
+    with jobs.SessionLocal() as observer:
+        assert jobs.try_job_lock(observer, job_id)
 
 
 def test_readiness_failure_does_not_publish_job(client, project, monkeypatch):
