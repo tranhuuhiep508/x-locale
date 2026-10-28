@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
-from pydantic import PositiveInt, TypeAdapter
+from pydantic import Field, PositiveInt, TypeAdapter
 from pydantic_settings import AWSSecretsManagerSettingsSource, BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -109,12 +109,22 @@ class Settings(BaseSettings):
     x_locale_demo_api_key: str = "demo-local-key"
     default_base_language: str = "vi"
 
+    # Built frontend directory (e.g. static/). When present, FastAPI serves the SPA from the same origin.
+    static_dir: str = ""
+
     # OIDC
     oidc_issuer: str = "https://login.microsoftonline.com/common/v2.0"
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_scopes: str = "openid email profile"
-    oidc_redirect_url: str = "http://localhost:5173/api/auth/callback"
+    # A bundled frontend uses the backend port; Vite development uses its own port.
+    oidc_redirect_url: str = Field(
+        default_factory=lambda data: (
+            "http://localhost:8000/api/auth/callback"
+            if data["static_dir"].strip()
+            else "http://localhost:5173/api/auth/callback"
+        )
+    )
     auth_dev_bypass: bool = False
     session_cookie_secure: bool = False
 
@@ -127,8 +137,6 @@ class Settings(BaseSettings):
 
     # Optional. Set only when the frontend runs on a different origin (not needed with Vite /api proxy).
     cors_origins: str = ""
-    # Built frontend directory (e.g. static/). When present, FastAPI serves the SPA from the same origin.
-    static_dir: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

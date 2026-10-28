@@ -70,6 +70,12 @@ checks apply even with dev bypass enabled. Required settings may come from env o
 dotenv instead of AWS. Never put `AUTH_DEV_BYPASS` in the secret, in any casing;
 startup rejects it. Keep bypass false in production.
 
+OIDC defaults to the Microsoft common issuer when omitted. When `STATIC_DIR` is
+nonblank (the bundled production frontend), an omitted `OIDC_REDIRECT_URL` defaults
+to `http://localhost:8000/api/auth/callback`; separate frontend development defaults
+to port 5173. Set an explicit public HTTPS callback for hosted deployments. Values
+from environment, dotenv, AWS, or file secrets override this fallback.
+
 ## Secret selection and IAM
 
 Set `SECRET_ENABLE=true` and `X_LOCALE_SECRET_ID` to a secret name or full ARN:
