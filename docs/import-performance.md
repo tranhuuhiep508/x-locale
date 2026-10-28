@@ -122,14 +122,26 @@ separate. Other control characters retain their previous handling.
 
 Ordinary edits and history restores remain outside the import lock.
 
-Before an actual import reads its catalog, it locks existing strings matching
-the submitted keys in ID order, then their translations in ID order. These
-row locks stay held through content, activity snapshots, and commit, so editor
+Before an actual import reads its catalog, it takes shared key locks on referenced
+existing modules, then locks strings matching the submitted keys and their
+translations. Each set is locked in ID order; module references include both
+working and published content. This follows module deletion's lock order and
+avoids a deadlock when an import both updates and creates strings in a module.
+These row locks stay held through content, activity snapshots, and commit, so editor
 saves cannot make import history differ from the committed transition. Editors
 touching those strings wait and then check their expected values against the
 latest saved content. Unrelated keys remain editable, and previews do not take
-these row locks. The lock reads add at most two bulk queries, with no per-row
+these row locks. Module and string locking add two bulk queries; translation
+locking is combined with the existing preload query. There are no per-row
 queries or changes to the statement budgets above.
+
+After loading the catalog and resolving references, imports verify that every
+incoming existing string and referenced existing module is covered by those
+locks. A concurrent rename or module change that introduces an unlocked row
+returns HTTP 409 with `code=concurrent_modification` and `retryable=true`, before
+any string content or history is written. Reference inserts roll back with the
+failed import. The caller may retry; imports do not automatically replay. New
+modules created by the import's own transaction are already protected.
 
 ## Background jobs (XLOCALE-54)
 

@@ -648,17 +648,16 @@ def test_database_policy_change_during_import_returns_retryable_conflict(
     with session_factory() as db:
         activity_count = db.query(Activity).filter(Activity.project_id == pid).count()
     entered, release = Event(), Event()
-    original = import_bulk.insert_rows
+    original = import_bulk._lock_import_modules
     attempts = []
 
-    def pause_before_insert(db, table, new_rows, **kwargs):
-        if table is StringEntry.__table__:
-            attempts.append(True)
-            entered.set()
-            assert release.wait(10)
-        return original(db, table, new_rows, **kwargs)
+    def pause_before_locks(db, *args):
+        attempts.append(True)
+        entered.set()
+        assert release.wait(10)
+        return original(db, *args)
 
-    monkeypatch.setattr(import_bulk, "insert_rows", pause_before_insert)
+    monkeypatch.setattr(import_bulk, "_lock_import_modules", pause_before_locks)
     monkeypatch.setattr(settings, "import_async_threshold", 1)
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(
@@ -672,6 +671,7 @@ def test_database_policy_change_during_import_returns_retryable_conflict(
                 assert future.result(timeout=5).status_code == 202
             assert entered.wait(5)
             # Bypass the API guard to exercise the database safety net for external writes.
+            # Flip before content locks: the policy's cascading FK also updates strings.
             with session_factory() as db:
                 db.get(Project, pid).allow_duplicate_keys = not initial_policy
                 db.commit()
