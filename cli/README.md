@@ -1,22 +1,57 @@
 # x-locale-cli
 
-Sync locale files with an [x-locale](https://github.com/your-org/x-locale) server.
+Sync locale files with an x-locale server.
 
 ## Install
 
-Install [uv](https://docs.astral.sh/uv/) first if you do not have it:
+Install Git, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/). To
+install uv on macOS or Linux:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**From PyPI**
+**From a Git repository**
 
 ```bash
-uv tool install x-locale-cli
+uv tool install 'git+<repository-url>#subdirectory=cli'
 ```
 
-**From this repo**
+Replace `<repository-url>` with the URL of the repository containing x-locale.
+For example, replace `ORG` and `REPO` in one of these commands:
+
+```bash
+# GitHub
+uv tool install 'git+https://github.com/ORG/REPO.git#subdirectory=cli'
+uv tool install 'git+ssh://git@github.com/ORG/REPO.git#subdirectory=cli'
+
+# GitLab (ORG can include nested groups)
+uv tool install 'git+https://gitlab.com/ORG/REPO.git#subdirectory=cli'
+uv tool install 'git+ssh://git@gitlab.com/ORG/REPO.git#subdirectory=cli'
+
+# Bitbucket
+uv tool install 'git+https://bitbucket.org/ORG/REPO.git#subdirectory=cli'
+uv tool install 'git+ssh://git@bitbucket.org/ORG/REPO.git#subdirectory=cli'
+```
+
+For private repositories, configure Git credentials for HTTPS or SSH access
+with your Git host before installing. For self-hosted Git services, use their
+repository URL in the same general command.
+
+To install a branch, tag, or commit, append `@<revision>` before the fragment:
+
+```bash
+uv tool install 'git+<repository-url>@<revision>#subdirectory=cli'
+```
+
+To update an installation, repeat the chosen command with `--reinstall` and
+`--refresh`, for example:
+
+```bash
+uv tool install --reinstall --refresh 'git+<repository-url>#subdirectory=cli'
+```
+
+**From a local checkout**
 
 ```bash
 uv tool install -e ./cli
