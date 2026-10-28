@@ -13,6 +13,15 @@ OpenAIReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 INSECURE_DEFAULT_X_LOCALE_SECRET = "change-me-in-production"  # pragma: allowlist secret
 
 
+def _secure_signing_secret(value: str) -> bool:
+    secret = value.strip()
+    return len(secret.encode("utf-8")) >= 32 and secret not in {
+        INSECURE_DEFAULT_X_LOCALE_SECRET,
+        "change-me",
+        "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET",
+    }
+
+
 class _AWSSettingsSource(AWSSecretsManagerSettingsSource):
     def _load_env_vars(self):
         values = super()._load_env_vars()
@@ -55,10 +64,7 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     "AWS configuration requires a valid Postgres DATABASE_URL"
                 ) from None
-            if (
-                not self.x_locale_secret.strip()
-                or self.x_locale_secret.strip() == INSECURE_DEFAULT_X_LOCALE_SECRET
-            ):
+            if not _secure_signing_secret(self.x_locale_secret):
                 raise RuntimeError("AWS configuration requires a secure X_LOCALE_SECRET")
 
     @classmethod
@@ -168,10 +174,9 @@ class Settings(BaseSettings):
         """Refuse production-like boot with known-insecure defaults."""
         if self.dev_bypass_active:
             return
-        secret = (self.x_locale_secret or "").strip()
-        if not secret or secret == INSECURE_DEFAULT_X_LOCALE_SECRET:
+        if not _secure_signing_secret(self.x_locale_secret):
             raise RuntimeError(
-                "X_LOCALE_SECRET must be set to a long random value when "
+                "X_LOCALE_SECRET must be set to a random value of at least 32 bytes when "
                 "AUTH_DEV_BYPASS is false or OIDC is configured"
             )
 

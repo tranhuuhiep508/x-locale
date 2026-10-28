@@ -47,7 +47,7 @@ def _drop_run_database() -> None:
 
 atexit.register(_drop_run_database)
 os.environ["AUTH_DEV_BYPASS"] = "true"
-os.environ["X_LOCALE_SECRET"] = "test-secret"
+os.environ["X_LOCALE_SECRET"] = "test-signing-secret-at-least-32-bytes"
 os.environ["X_LOCALE_DEMO_API_KEY"] = "test-demo-key"
 os.environ["OIDC_ISSUER"] = ""
 os.environ["OIDC_CLIENT_ID"] = ""
