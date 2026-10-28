@@ -65,7 +65,9 @@ Settings precedence, highest first:
 
 Explicit empty values override lower sources too. The final merged `DATABASE_URL`
 must be a valid Postgres URL with a database name, and `X_LOCALE_SECRET` must be
-nonblank and different from the repository's insecure default. In AWS mode these
+random, at least 32 UTF-8 bytes after trimming, and different from repository
+placeholders. Generate one with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+Replace short or example values before upgrading. In AWS mode these
 checks apply even with dev bypass enabled. Required settings may come from env or
 dotenv instead of AWS. Never put `AUTH_DEV_BYPASS` in the secret, in any casing;
 startup rejects it. Keep bypass false in production.
