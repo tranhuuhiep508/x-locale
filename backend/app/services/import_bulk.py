@@ -64,6 +64,29 @@ class _Catalog:
     tomb_candidates: dict[str, list[dict]] = field(default_factory=dict)
 
 
+def _lock_import_entries(db: Session, project_id: uuid.UUID, keys: list[str]) -> None:
+    # Match the editor's parent-before-children order before reading audit snapshots.
+    ids = db.scalars(
+        select(StringEntry.id)
+        .where(
+            StringEntry.project_id == project_id,
+            StringEntry.key == any_(bindparam("import_keys", keys, type_=ARRAY(String))),
+        )
+        .order_by(StringEntry.id)
+        .with_for_update()
+    ).all()
+    if ids:
+        db.execute(
+            select(Translation.id)
+            .where(
+                Translation.string_id
+                == any_(bindparam("import_ids", ids, type_=ARRAY(StringEntry.id.type)))
+            )
+            .order_by(Translation.id)
+            .with_for_update()
+        ).all()
+
+
 def _load_catalog(db: Session, project_id: uuid.UUID, keys: list[str] | None) -> _Catalog:
     scope = StringEntry.project_id == project_id
     if keys is not None:
@@ -325,9 +348,10 @@ def import_rows(
         from app.services.strings import lock_publication
 
         lock_publication(db, project.id)
-    catalog = _load_catalog(
-        db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
-    )
+    keys = list(dict.fromkeys(row.key for row in rows))
+    if not dry_run:
+        _lock_import_entries(db, project.id, keys)
+    catalog = _load_catalog(db, project.id, keys if partial else None)
     report_progress(db, "validating")
     _validate(
         catalog, rows, reject_deleted=reject_deleted, allow_duplicates=project.allow_duplicate_keys

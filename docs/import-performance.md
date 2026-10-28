@@ -122,6 +122,15 @@ separate. Other control characters retain their previous handling.
 
 Ordinary edits and history restores remain outside the import lock.
 
+Before an actual import reads its catalog, it locks existing strings matching
+the submitted keys in ID order, then their translations in ID order. These
+row locks stay held through content, activity snapshots, and commit, so editor
+saves cannot make import history differ from the committed transition. Editors
+touching those strings wait and then check their expected values against the
+latest saved content. Unrelated keys remain editable, and previews do not take
+these row locks. The lock reads add at most two bulk queries, with no per-row
+queries or changes to the statement budgets above.
+
 ## Background jobs (XLOCALE-54)
 
 A request that sends `Prefer: respond-async` runs as a background job when it is
