@@ -119,9 +119,17 @@ Existing `/health` and `/api/health` endpoints remain basic process checks.
 
 ## CLI
 
-```bash
-uv tool install -e ./cli
+Install the CLI directly from your Git host (Git and Python 3.10+ are required):
 
+```bash
+uv tool install 'git+<repository-url>#subdirectory=cli'
+```
+
+Replace `<repository-url>` with your repository's HTTPS or SSH URL. See the
+[CLI installation guide](cli/README.md#install) for GitHub, GitLab, and
+Bitbucket examples, private repository access, and selecting a revision.
+
+```bash
 loc init
 # or: loc init -k <api-key> -u http://localhost:8000 -o ./locales -y
 loc push
@@ -129,7 +137,8 @@ loc pull
 loc status
 ```
 
-See [cli/README.md](cli/README.md) for modular vs flat layouts and override flags.
+See [cli/README.md](cli/README.md) for local development, modular vs flat
+layouts, and override flags.
 
 ## Auth
 
