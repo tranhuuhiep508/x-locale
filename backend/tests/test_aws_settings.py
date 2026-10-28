@@ -18,7 +18,7 @@ from app import config
 ARN = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:x-locale/production-AbCdEf"
 PAYLOAD = {
     "DATABASE_URL": "postgresql+psycopg://user:password@localhost/app",
-    "X_LOCALE_SECRET": "test-signing-value",
+    "X_LOCALE_SECRET": "test-signing-value-at-least-32-bytes",
 }
 
 
@@ -273,7 +273,10 @@ def test_invalid_payload_is_safe(aws, response):
         ("DATABASE_URL", "postgresql://localhost"),
         ("X_LOCALE_SECRET", None),
         ("X_LOCALE_SECRET", " "),
+        ("X_LOCALE_SECRET", "change-me"),
         ("X_LOCALE_SECRET", config.INSECURE_DEFAULT_X_LOCALE_SECRET),
+        ("X_LOCALE_SECRET", "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET"),
+        ("X_LOCALE_SECRET", "x" * 31),
     ],
 )
 def test_required_values_checked_even_with_dev_bypass(aws, field, value, monkeypatch):
