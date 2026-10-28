@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,46 @@ def test_validate_for_runtime_allows_bypass(monkeypatch):
     monkeypatch.setenv("X_LOCALE_SECRET", INSECURE_DEFAULT_X_LOCALE_SECRET)
     loaded = Settings()
     loaded.validate_for_runtime()
+
+
+@pytest.mark.parametrize(
+    "secret",
+    ["", " ", "change-me", INSECURE_DEFAULT_X_LOCALE_SECRET,
+     "REPLACE_WITH_A_LONG_RANDOM_SIGNING_SECRET", "x" * 31, "é" * 15],
+)
+def test_runtime_rejects_insecure_signing_secrets(secret):
+    loaded = Settings(x_locale_secret=secret, auth_dev_bypass=False, _env_file=None)
+    with pytest.raises(RuntimeError, match="X_LOCALE_SECRET") as error:
+        loaded.validate_for_runtime()
+    if len(secret) > 4:
+        assert secret not in str(error.value)
+
+
+@pytest.mark.parametrize("secret", ["x" * 32, "é" * 16, secrets.token_urlsafe(32)])
+def test_runtime_accepts_long_signing_secrets(secret):
+    Settings(x_locale_secret=secret, auth_dev_bypass=False, _env_file=None).validate_for_runtime()
+
+
+def test_example_env_is_rejected_without_dev_bypass(monkeypatch):
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+    loaded = Settings(_env_file=_BACKEND_ROOT.parent / ".env.example")
+    assert not loaded.dev_bypass_active
+    with pytest.raises(RuntimeError, match="X_LOCALE_SECRET"):
+        loaded.validate_for_runtime()
+
+
+def test_oidc_disables_bypass_for_secret_validation():
+    loaded = Settings(
+        x_locale_secret="change-me",
+        auth_dev_bypass=True,
+        oidc_issuer="https://issuer.example.com",
+        oidc_client_id="client",
+        oidc_client_secret="client-secret",
+        _env_file=None,
+    )
+    with pytest.raises(RuntimeError, match="X_LOCALE_SECRET"):
+        loaded.validate_for_runtime()
 
 
 def test_api_key_query_string_rejected(client, monkeypatch):
@@ -222,7 +263,7 @@ def test_openapi_hidden_when_oidc_configured():
 
     env = os.environ.copy()
     env["AUTH_DEV_BYPASS"] = "false"
-    env["X_LOCALE_SECRET"] = "prod-test-secret-value"
+    env["X_LOCALE_SECRET"] = "prod-test-secret-value-at-least-32-bytes"
     env["OIDC_ISSUER"] = "https://login.example.test/tenant/v2.0"
     env["OIDC_CLIENT_ID"] = "client"
     env["OIDC_CLIENT_SECRET"] = "secret"
