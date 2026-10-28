@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     default_base_language: str = "vi"
 
     # OIDC
-    oidc_issuer: str = ""
+    oidc_issuer: str = "https://login.microsoftonline.com/common/v2.0"
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_scopes: str = "openid email profile"

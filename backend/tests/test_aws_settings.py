@@ -390,3 +390,15 @@ def test_compose_secret_url_matches_bundled_postgres():
     assert url in compose
     assert "secrets-arn" not in compose
     assert "X_LOCALE_SECRET_ID" in compose
+
+
+def test_oidc_issuer_fallback_keeps_auth_configured(aws):
+    respond(aws, {**PAYLOAD, "OIDC_CLIENT_ID": "client", "OIDC_CLIENT_SECRET": "secret"})
+    loaded = config.Settings()
+    assert loaded.oidc_issuer == "https://login.microsoftonline.com/common/v2.0"
+    assert loaded.oidc_configured is True
+
+
+def test_explicit_aws_oidc_issuer_overrides_fallback(aws):
+    respond(aws, {**PAYLOAD, "OIDC_ISSUER": "https://issuer.example.com"})
+    assert config.Settings().oidc_issuer == "https://issuer.example.com"
