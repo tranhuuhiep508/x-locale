@@ -72,11 +72,11 @@ startup rejects it. Keep bypass false in production.
 
 ## Secret selection and IAM
 
-Set `SECRET_ENABLE=true` and `X_LOCALE_AWS_SECRET_ID` to a secret name or full ARN:
+Set `SECRET_ENABLE=true` and `X_LOCALE_SECRET_ID` to a secret name or full ARN:
 
 ```sh
 export SECRET_ENABLE=true
-export X_LOCALE_AWS_SECRET_ID=x-locale/production
+export X_LOCALE_SECRET_ID=x-locale/production
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
@@ -106,7 +106,7 @@ timeout behavior follows SDK defaults, without application overrides.
 ## Startup and changes
 
 The production image validates configuration through Alembic before migrations
-and API startup. With `SECRET_ENABLE=true`, a nonempty `X_LOCALE_AWS_SECRET_ID` is
+and API startup. With `SECRET_ENABLE=true`, a nonempty `X_LOCALE_SECRET_ID` is
 required. With the flag false or unset, production and local commands use standard
 Pydantic behavior and make no AWS calls, even when a secret ID is present.
 
@@ -128,7 +128,7 @@ during a rollout can cause intermittent authentication failures.
 
 `docker-compose.prod.yml` requires `POSTGRES_PASSWORD` and defaults
 `SECRET_ENABLE=false`. To load AWS settings, export `SECRET_ENABLE=true` and
-`X_LOCALE_AWS_SECRET_ID`. It forwards optional environment overrides only when supplied,
+`X_LOCALE_SECRET_ID`. It forwards optional environment overrides only when supplied,
 without injecting empty values or code defaults. Explicit empty overrides still
 win. It sets `STATIC_DIR=static` and defaults `AUTH_DEV_BYPASS=false`.
 

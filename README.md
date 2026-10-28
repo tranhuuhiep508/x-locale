@@ -90,7 +90,7 @@ Production (single origin, SPA served by FastAPI):
 ```bash
 # Effective DATABASE_URL must use postgres:5432/xlocale and match POSTGRES_PASSWORD.
 export SECRET_ENABLE=true
-export X_LOCALE_AWS_SECRET_ID=x-locale/production
+export X_LOCALE_SECRET_ID=x-locale/production
 export AWS_DEFAULT_REGION=us-east-1
 export POSTGRES_PASSWORD='same-as-DATABASE_URL-in-the-secret'
 docker compose -f docker-compose.prod.yml up --build
@@ -254,7 +254,7 @@ See [.env.example](.env.example). Notable vars:
 
 For production configuration stored in AWS Secrets Manager, see
 [the Pydantic AWS settings guide](docs/aws-secrets-manager.md). Set
-`SECRET_ENABLE=true` and `X_LOCALE_AWS_SECRET_ID` to a secret name or full ARN. The backend loads its JSON
+`SECRET_ENABLE=true` and `X_LOCALE_SECRET_ID` to a secret name or full ARN. The backend loads its JSON
 once at startup through Pydantic's built-in AWS source. Settings precedence is
 constructor arguments, environment, `.env`, AWS, file secrets, then defaults.
 Explicit empty values also override AWS. `SECRET_ENABLE` defaults to false; when

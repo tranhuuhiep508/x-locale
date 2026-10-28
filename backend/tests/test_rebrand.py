@@ -131,7 +131,7 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "POSTGRES_DB: xlocale" in prod
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
     assert "SECRET_ENABLE=${SECRET_ENABLE:-false}" in prod
-    assert "      - X_LOCALE_AWS_SECRET_ID\n" in prod
+    assert "      - X_LOCALE_SECRET_ID\n" in prod
     assert "/run/x-locale/secrets-arn" not in prod
     assert "      - X_LOCALE_SECRET\n" in prod
     assert "seed-demo" not in prod

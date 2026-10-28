@@ -24,7 +24,7 @@ class _AWSSettingsSource(AWSSecretsManagerSettingsSource):
                 "configure it with environment variables only"
             )
         # The secret cannot select another secret or disable AWS-mode validation.
-        values.pop("x_locale_aws_secret_id", None)
+        values.pop("x_locale_secret_id", None)
         values.pop("secret_enable", None)
         return values
 
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
         cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
     ):
         sources = (init_settings, env_settings, dotenv_settings)
-        selector = "x_locale_aws_secret_id"
+        selector = "x_locale_secret_id"
         bootstrap = {}
         for source in reversed(sources):
             bootstrap.update(source())
@@ -75,7 +75,7 @@ class Settings(BaseSettings):
         )
         secret_id = bootstrap.get(selector, "")
         if enabled and not secret_id:
-            raise RuntimeError("SECRET_ENABLE=true requires X_LOCALE_AWS_SECRET_ID")
+            raise RuntimeError("SECRET_ENABLE=true requires X_LOCALE_SECRET_ID")
 
         def file_settings():
             values = file_secret_settings()
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
         return (*sources, file_settings)
 
     secret_enable: bool = False
-    x_locale_aws_secret_id: str = ""
+    x_locale_secret_id: str = ""
     database_url: str = ""
     # Bootstrap database for CREATE/DROP. Harnesses connect here, not to postgres.
     test_database_url: str = ""

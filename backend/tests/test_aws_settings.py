@@ -32,7 +32,7 @@ def clean_sources(monkeypatch, tmp_path):
 @pytest.fixture
 def aws(monkeypatch):
     monkeypatch.setenv("SECRET_ENABLE", "true")
-    monkeypatch.setenv("X_LOCALE_AWS_SECRET_ID", ARN)
+    monkeypatch.setenv("X_LOCALE_SECRET_ID", ARN)
     client = boto3.session.Session().client(
         "secretsmanager",
         region_name="eu-west-1",
@@ -106,20 +106,20 @@ def test_precedence_and_types(aws, monkeypatch, tmp_path):
 @pytest.mark.parametrize("source", ["init", "env", "dotenv"])
 @pytest.mark.parametrize("secret_id", [ARN, "x-locale/production"])
 def test_selector_sources(aws, monkeypatch, tmp_path, source, secret_id):
-    monkeypatch.delenv("X_LOCALE_AWS_SECRET_ID")
+    monkeypatch.delenv("X_LOCALE_SECRET_ID")
     kwargs = {}
     if source == "init":
-        kwargs["x_locale_aws_secret_id"] = secret_id
-        monkeypatch.setenv("X_LOCALE_AWS_SECRET_ID", "wrong-env")
+        kwargs["x_locale_secret_id"] = secret_id
+        monkeypatch.setenv("X_LOCALE_SECRET_ID", "wrong-env")
     elif source == "env":
-        monkeypatch.setenv("X_LOCALE_AWS_SECRET_ID", secret_id)
-        (tmp_path / ".env").write_text("X_LOCALE_AWS_SECRET_ID=wrong-dotenv\n")
+        monkeypatch.setenv("X_LOCALE_SECRET_ID", secret_id)
+        (tmp_path / ".env").write_text("X_LOCALE_SECRET_ID=wrong-dotenv\n")
     else:
-        (tmp_path / ".env").write_text(f"X_LOCALE_AWS_SECRET_ID={secret_id}\n")
+        (tmp_path / ".env").write_text(f"X_LOCALE_SECRET_ID={secret_id}\n")
     aws[0].add_response(
         "get_secret_value", {"SecretString": json.dumps(PAYLOAD)}, {"SecretId": secret_id}
     )
-    assert config.Settings(**kwargs).x_locale_aws_secret_id == secret_id
+    assert config.Settings(**kwargs).x_locale_secret_id == secret_id
 
 
 def test_environment_overrides_aws_including_empty_values(aws, monkeypatch):
@@ -147,8 +147,8 @@ def test_secret_rejects_auth_dev_bypass(aws, key):
 
 
 def test_empty_selector_when_enabled_fails_before_aws(aws):
-    with pytest.raises(RuntimeError, match="requires X_LOCALE_AWS_SECRET_ID"):
-        config.Settings(x_locale_aws_secret_id="")
+    with pytest.raises(RuntimeError, match="requires X_LOCALE_SECRET_ID"):
+        config.Settings(x_locale_secret_id="")
     aws[1].assert_not_called()
 
 
@@ -193,9 +193,9 @@ def test_invalid_enable_flag_fails_before_aws(aws, monkeypatch):
 def test_file_secrets_cannot_select_aws(monkeypatch, tmp_path):
     factory = Mock(side_effect=AssertionError("AWS must not be used"))
     monkeypatch.setattr("boto3.client", factory)
-    (tmp_path / "X_LOCALE_AWS_SECRET_ID").write_text(ARN)
+    (tmp_path / "X_LOCALE_SECRET_ID").write_text(ARN)
     (tmp_path / "SECRET_ENABLE").write_text("true")
-    assert config.Settings(_secrets_dir=tmp_path).x_locale_aws_secret_id == ""
+    assert config.Settings(_secrets_dir=tmp_path).x_locale_secret_id == ""
     factory.assert_not_called()
 
 
@@ -211,9 +211,9 @@ def test_invalid_environment_override_is_validated(aws, monkeypatch, key, value)
 
 
 def test_secret_cannot_change_bootstrap_selector(aws):
-    respond(aws, {**PAYLOAD, "X_LOCALE_AWS_SECRET_ID": "", "SECRET_ENABLE": False})
+    respond(aws, {**PAYLOAD, "X_LOCALE_SECRET_ID": "", "SECRET_ENABLE": False})
     loaded = config.Settings()
-    assert loaded.x_locale_aws_secret_id == ARN
+    assert loaded.x_locale_secret_id == ARN
     assert loaded.secret_enable is True
 
 
@@ -239,7 +239,7 @@ def test_aws_service_errors_are_safe_and_never_fall_back(aws, monkeypatch, code)
 )
 def test_credential_and_network_errors_are_safe(monkeypatch, failure):
     monkeypatch.setenv("SECRET_ENABLE", "true")
-    monkeypatch.setenv("X_LOCALE_AWS_SECRET_ID", ARN)
+    monkeypatch.setenv("X_LOCALE_SECRET_ID", ARN)
     monkeypatch.setattr("boto3.client", Mock(side_effect=failure))
     with pytest.raises(RuntimeError, match="Cannot load Secrets Manager") as error:
         config.Settings()
@@ -355,7 +355,7 @@ with Stubber(client) as stub:
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
         text=True,
-        env={**os.environ, "SECRET_ENABLE": "true", "X_LOCALE_AWS_SECRET_ID": ARN},
+        env={**os.environ, "SECRET_ENABLE": "true", "X_LOCALE_SECRET_ID": ARN},
     )
 
 
@@ -369,7 +369,7 @@ def _run_production_guard(secret_id):
     args = _production_command()
     script = args[2].replace("alembic upgrade head", "echo MIGRATIONS_STARTED")
     script = script.replace("exec uvicorn", "echo uvicorn")
-    env = {**os.environ, "X_LOCALE_AWS_SECRET_ID": secret_id}
+    env = {**os.environ, "X_LOCALE_SECRET_ID": secret_id}
     return subprocess.run([*args[:2], script], capture_output=True, text=True, env=env)
 
 
@@ -389,4 +389,4 @@ def test_compose_secret_url_matches_bundled_postgres():
     assert "@postgres:5432/xlocale" in docs
     assert url in compose
     assert "secrets-arn" not in compose
-    assert "X_LOCALE_AWS_SECRET_ID" in compose
+    assert "X_LOCALE_SECRET_ID" in compose

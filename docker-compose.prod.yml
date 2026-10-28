@@ -30,7 +30,7 @@ services:
       - "8000:8000"
     environment:
       - SECRET_ENABLE=${SECRET_ENABLE:-false}
-      - X_LOCALE_AWS_SECRET_ID
+      - X_LOCALE_SECRET_ID
       - AUTH_DEV_BYPASS=${AUTH_DEV_BYPASS:-false}
       - STATIC_DIR=static
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
