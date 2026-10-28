@@ -277,9 +277,13 @@ no longer supported. For AWS with `docker-compose.prod.yml`, export the enable f
 selector, SDK region, and `POSTGRES_PASSWORD`. The effective `DATABASE_URL` must
 use host `postgres`, user `xlocale`, database `xlocale`, and that same password.
 
+Generate a signing secret with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+Set the same value on every instance. Rotating it invalidates existing signed sessions;
+replace short or example values before upgrading.
+
 | Var | Purpose |
 |-----|---------|
-| `X_LOCALE_SECRET` | Signs session JWTs. **Required in production:** set a long random value; the app refuses to start with the repo default when OIDC is configured or `AUTH_DEV_BYPASS=false`. |
+| `X_LOCALE_SECRET` | Signs session JWTs. Use a random value of at least 32 UTF-8 bytes; known placeholders and shorter values are rejected when OIDC is configured or `AUTH_DEV_BYPASS=false`. AWS mode enforces this even with the bypass active. |
 | `SESSION_COOKIE_SECURE` | Set `true` when browsers reach the app over HTTPS (or rely on an `https://` `OIDC_REDIRECT_URL`). |
 | `AUTH_DEV_BYPASS` | Local Dev User when OIDC is unset. Ignored once `OIDC_*` is filled |
 | `OIDC_ISSUER` | Entra discovery base (`https://login.microsoftonline.com/common/v2.0`) |
