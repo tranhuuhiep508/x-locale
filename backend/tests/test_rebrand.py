@@ -130,24 +130,24 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "POSTGRES_USER: xlocale" in prod
     assert "POSTGRES_DB: xlocale" in prod
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}" in prod
-    assert "X_LOCALE_SECRETS_ARN_FILE" in prod
-    assert "/run/x-locale/secrets-arn" in prod
-    assert "create_host_path: false" in prod
-    assert "X_LOCALE_SECRET:" not in prod
+    assert "SECRET_ENABLE=${SECRET_ENABLE:-false}" in prod
+    assert "      - X_LOCALE_SECRET_ID\n" in prod
+    assert "/run/x-locale/secrets-arn" not in prod
+    assert "      - X_LOCALE_SECRET\n" in prod
     assert "seed-demo" not in prod
     assert "command:" not in prod
     assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
-    for text in (dev, prod):
-        for setting, default in (
-            ("OPENAI_API_KEY", ""),
-            ("OPENAI_MODEL", "gpt-6-luna"),
-            ("OPENAI_BASE_URL", ""),
-            ("OPENAI_MAX_OUTPUT_TOKENS", "16000"),
-            ("OPENAI_REASONING_EFFORT", "none"),
-            ("AI_TRANSLATE_BATCH_SIZE", "20"),
-            ("AI_TRANSLATE_MAX_WORKERS", "5"),
-        ):
-            assert f"{setting}: ${{{setting}:-{default}}}" in text
+    for setting, default in (
+        ("OPENAI_API_KEY", ""),
+        ("OPENAI_MODEL", "gpt-6-luna"),
+        ("OPENAI_BASE_URL", ""),
+        ("OPENAI_MAX_OUTPUT_TOKENS", "16000"),
+        ("OPENAI_REASONING_EFFORT", "none"),
+        ("AI_TRANSLATE_BATCH_SIZE", "20"),
+        ("AI_TRANSLATE_MAX_WORKERS", "5"),
+    ):
+        assert f"{setting}: ${{{setting}:-{default}}}" in dev
+        assert f"      - {setting}\n" in prod
 
 
 def test_env_example_scopes_parse_and_dotenv_ignores_inline_comments(monkeypatch):

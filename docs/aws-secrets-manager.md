@@ -1,21 +1,20 @@
 # Production configuration with AWS Secrets Manager
 
-The backend uses the existing boto3 SDK to read one JSON secret containing all
-application settings. Pydantic validates the result. The API, Alembic, seed-demo,
-and maintenance commands all use the same configuration module.
+The backend uses Pydantic's built-in
+[`AWSSecretsManagerSettingsSource`](https://docs.pydantic.dev/latest/concepts/pydantic_settings/#aws-secrets-manager)
+to retrieve one JSON secret. boto3 is an internal dependency of Pydantic's AWS
+integration; application code does not create an SDK client. The API, Alembic,
+seed-demo, and maintenance commands share the same configuration module.
 
-This follows AWS's [Python SDK retrieval guidance](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python-sdk.html).
-Each process retrieves the secret once when importing the configuration module
-and retains the shared settings instance in memory. There are no request-time
-AWS calls or automatic configuration refreshes. Alembic and each API worker are
-separate processes and therefore retrieve their own copy. Configuration updates
-require new processes.
+Each process retrieves the secret once when importing the shared settings instance.
+Alembic and API workers retrieve separate copies. There are no request-time calls
+or automatic refreshes; configuration changes require process restarts.
 
 ## Secret format
 
 Create a separate secret for each application/environment using `SecretString`
-with a JSON object. Use uppercase names matching the settings in
-`backend/app/config.py`. Values may be JSON strings, numbers, or booleans; numeric
+with a JSON object. Use names matching the settings in
+`backend/app/config.py` (case-insensitive; uppercase names are conventional). Values may be JSON strings, numbers, or booleans; numeric
 and boolean strings are also parsed by Pydantic. Unrelated keys are ignored.
 
 The following example lists all current settings. Replace the placeholder
@@ -55,82 +54,73 @@ frontend image.
 }
 ```
 
-AWS mode merges **code defaults, then environment variables, then Secrets Manager**
-for each setting (later sources win). Dotenv and file-secret settings are not
-read. Keys present in the JSON override env for that key; env fills settings
-absent from the secret. `DATABASE_URL` and `X_LOCALE_SECRET` must be present and
-valid in the secret. The signing secret cannot be blank or the repository's
-insecure default, even when dev bypass is enabled. Do not put `AUTH_DEV_BYPASS`
-in the secret; startup rejects it. Set bypass only via environment variables and
-keep `AUTH_DEV_BYPASS=false` in production.
+Settings precedence, highest first:
 
-The SDK and infrastructure retain their own configuration: AWS credential-chain
-variables, proxy settings, `PATH`, and `WEB_CONCURRENCY` are not application
-settings and are not loaded from this JSON. Do not store AWS access keys in the
-application secret; they cannot authenticate the request needed to retrieve it.
+1. Constructor arguments.
+2. Process environment variables.
+3. Dotenv files (`.env`, then `../.env`; later files override earlier ones).
+4. AWS secret JSON.
+5. Pydantic file secrets, when configured.
+6. Code defaults.
 
-## Bootstrap mount and IAM
+Explicit empty values override lower sources too. The final merged `DATABASE_URL`
+must be a valid Postgres URL with a database name, and `X_LOCALE_SECRET` must be
+nonblank and different from the repository's insecure default. In AWS mode these
+checks apply even with dev bypass enabled. Required settings may come from env or
+dotenv instead of AWS. Never put `AUTH_DEV_BYPASS` in the secret, in any casing;
+startup rejects it. Keep bypass false in production.
 
-Mount a read-only UTF-8 file at `/run/x-locale/secrets-arn` containing only the full
-secret ARN, optionally followed by a newline:
+OIDC defaults to the Microsoft common issuer when omitted. When `STATIC_DIR` is
+nonblank (the bundled production frontend), an omitted `OIDC_REDIRECT_URL` defaults
+to `http://localhost:8000/api/auth/callback`; separate frontend development defaults
+to port 5173. Set an explicit public HTTPS callback for hosted deployments. Values
+from environment, dotenv, AWS, or file secrets override this fallback.
 
-```text
-arn:aws:secretsmanager:us-east-1:123456789012:secret:x-locale/production-AbCdEf
+## Secret selection and IAM
+
+Set `SECRET_ENABLE=true` and `X_LOCALE_SECRET_ID` to a secret name or full ARN:
+
+```sh
+export SECRET_ENABLE=true
+export X_LOCALE_SECRET_ID=x-locale/production
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
-This file path is an application convention, not an AWS requirement. Deployment
-must create the mount; no secret values should be baked into the image. The
-retrieval region comes from the ARN, so no bootstrap `AWS_REGION` is needed.
-The JSON's `AWS_REGION` is a separate application setting and is not the region used to fetch this secret.
+The flag and selector use constructor arguments, environment, then dotenv.
+`SECRET_ENABLE` defaults to false; when false, the secret ID is ignored and AWS is
+never contacted. Standard Pydantic booleans such as `true`, `1`, and `on` enable it.
+Enabling the flag without a secret ID aborts startup before AWS is contacted.
+AWS payloads and file secrets cannot change either bootstrap setting. The old `/run/x-locale/secrets-arn` mount and
+`X_LOCALE_SECRETS_ARN_FILE` variable are no longer supported.
 
-Use a workload IAM role through boto3's
+The SDK resolves both region and credentials through its normal configuration
+chain. Set `AWS_DEFAULT_REGION` or configure a region in the selected `AWS_PROFILE`.
+The region is not inferred from an ARN. The application field `AWS_REGION` does
+not configure the SDK. SDK credentials and region must be available before
+retrieval; neither AWS secret JSON nor application dotenv loading configures them.
+Use the process environment, shared AWS configuration, or a workload IAM role.
+Do not store AWS credentials inside the application secret.
+
+Use a workload IAM role through the SDK's
 [default credential chain](https://docs.aws.amazon.com/boto3/latest/guide/credentials.html).
-Both migration jobs and API workloads need access. Grant the following policy,
-substituting the actual complete ARN:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": "secretsmanager:GetSecretValue",
-    "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:x-locale/production-AbCdEf"
-  }]
-}
-```
-
-For a customer-managed KMS key, also grant `kms:Decrypt` on that key and ensure
-its key policy permits the role. No `ListSecrets`, `DescribeSecret`, or write
-permissions are required by this loader. See the
-[GetSecretValue permissions reference](https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html).
-
-Allow HTTPS connectivity to the Secrets Manager endpoint in the ARN's region,
-through appropriate egress or a Secrets Manager VPC interface endpoint. SDK
-standard retries allow three total attempts, with a five-second connection
-timeout and ten-second read timeout. These are SDK attempt limits, not an
-overall process startup deadline.
+Migration jobs and API workloads need `secretsmanager:GetSecretValue` on the selected
+secret. For a customer-managed KMS key, also grant `kms:Decrypt` and ensure its key
+policy permits the role. No list, describe, or write permissions are needed.
+Allow HTTPS connectivity to Secrets Manager in the configured region. Retry and
+timeout behavior follows SDK defaults, without application overrides.
 
 ## Startup and changes
 
-The production image's default command checks that the bootstrap path is a
-regular nonempty file before running `alembic upgrade head`, then starts the API.
-An invalid ARN, inaccessible secret, binary payload, invalid JSON, or invalid
-configuration aborts startup. Errors omit configuration values and raw AWS error
-messages. Do not enable boto3/botocore debug logging or log the settings object:
-SDK debug output and explicit settings dumps can expose secret values.
+The production image validates configuration through Alembic before migrations
+and API startup. With `SECRET_ENABLE=true`, a nonempty `X_LOCALE_SECRET_ID` is
+required. With the flag false or unset, production and local commands use standard
+Pydantic behavior and make no AWS calls, even when a secret ID is present.
 
-When overriding the container command or running a separate production migration
-or maintenance job, require the same mount before invoking Python. For example:
-
-```sh
-test -f /run/x-locale/secrets-arn && test -s /run/x-locale/secrets-arn || exit 1
-alembic upgrade head
-```
-
-The loader itself also rejects unreadable or invalid existing bootstrap files.
-Without the file, ordinary local commands and CI use the existing environment
-and `.env` configuration and make no Secrets Manager requests. Do not bypass the
-production startup guard: an absent file intentionally selects local behavior.
+When secrets are enabled, inaccessible secrets, binary payloads, invalid JSON,
+non-object JSON, forbidden bypass keys, or invalid settings abort startup, even
+when environment variables supply all required values. Retrieval and validation
+errors omit configuration values and raw AWS error messages. Do not enable SDK
+debug logging or log the settings object; both can expose secrets.
 
 Retrieval uses `AWSCURRENT`. After updating the JSON, perform a rolling restart
 of every API process and restart any long-running backend commands. Schedule
@@ -142,25 +132,23 @@ during a rollout can cause intermittent authentication failures.
 
 ## Compose file
 
-`docker-compose.prod.yml` mounts the bootstrap file from the host path in
-`X_LOCALE_SECRETS_ARN_FILE` and uses the image default command (bootstrap check,
-migrations, then uvicorn). Create that file before `up`. Compose does not create
-a missing source path. If an earlier run left a directory there, delete it and
-create the file. A missing path must fail startup; it must not become a directory.
+`docker-compose.prod.yml` requires `POSTGRES_PASSWORD` and defaults
+`SECRET_ENABLE=false`. To load AWS settings, export `SECRET_ENABLE=true` and
+`X_LOCALE_SECRET_ID`. It forwards optional environment overrides only when supplied,
+without injecting empty values or code defaults. Explicit empty overrides still
+win. It sets `STATIC_DIR=static` and defaults `AUTH_DEV_BYPASS=false`.
 
-Non-secret settings stay in Compose `environment`. `DATABASE_URL`,
-`X_LOCALE_SECRET`, and other JSON keys come from Secrets Manager. The sample
-above (`db.internal`) is for a database outside this Compose file. For
-`docker-compose.prod.yml`, the secret `DATABASE_URL` must use host `postgres`,
-user `xlocale`, database `xlocale`, and the same password as `POSTGRES_PASSWORD`:
+For this stack, the effective `DATABASE_URL` must be:
 
 ```text
 postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale
 ```
 
-Export `POSTGRES_PASSWORD` before `up`. The app does not read that variable;
-Postgres does. A URL that points somewhere else migrates that other database
-and leaves the Compose Postgres unused.
+Export `POSTGRES_PASSWORD` to the matching password. The app does not read this
+variable; Postgres does. A URL pointing elsewhere migrates that other database.
 
-`AUTH_DEV_BYPASS` must not appear in the secret; set it only via environment
-variables. The frontend build does not read the backend secret.
+Compose reads host `.env` for interpolation and bare environment forwarding.
+Check inherited values before deploying: local sample values, including empty
+API keys, override secret JSON when forwarded. Host AWS profile files are not
+mounted automatically; provide workload credentials or mount the SDK configuration
+explicitly if using profiles. The frontend build does not read backend secrets.
