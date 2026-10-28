@@ -2,11 +2,10 @@
 # TLS is expected in front of this service (company proxy). Set SESSION_COOKIE_SECURE=true
 # when the browser sees HTTPS, or use an https:// OIDC_REDIRECT_URL.
 #
-# Application secrets and DATABASE_URL load from AWS Secrets Manager when
-# /run/x-locale/secrets-arn is mounted (see .env.example). Other settings use env vars.
-# This file's Postgres is the app database. The secret DATABASE_URL must be
+# Application settings use Pydantic precedence: env overrides AWS, then defaults.
+# Secret DATABASE_URL must be
 # postgresql+psycopg://xlocale:<POSTGRES_PASSWORD>@postgres:5432/xlocale
-# (same password as POSTGRES_PASSWORD). A different host migrates the wrong database.
+# with the same password as POSTGRES_PASSWORD.
 services:
   postgres:
     image: postgres:16-alpine
@@ -30,36 +29,41 @@ services:
     ports:
       - "8000:8000"
     environment:
-      AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-16000}
-      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-none}
-      AI_TRANSLATE_BATCH_SIZE: ${AI_TRANSLATE_BATCH_SIZE:-20}
-      AI_TRANSLATE_MAX_WORKERS: ${AI_TRANSLATE_MAX_WORKERS:-5}
-      DEFAULT_BASE_LANGUAGE: ${DEFAULT_BASE_LANGUAGE:-vi}
-      AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
-      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
-      OIDC_ISSUER: ${OIDC_ISSUER:-https://login.microsoftonline.com/common/v2.0}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
-      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:8000/api/auth/callback}
-      STATIC_DIR: static
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
-    # Create the ARN file before up. create_host_path: false refuses a missing path
-    # instead of turning it into a directory.
-    volumes:
-      - type: bind
-        source: ${X_LOCALE_SECRETS_ARN_FILE:?set X_LOCALE_SECRETS_ARN_FILE}
-        target: /run/x-locale/secrets-arn
-        read_only: true
-        bind:
-          create_host_path: false
+      - SECRET_ENABLE=${SECRET_ENABLE:-false}
+      - X_LOCALE_AWS_SECRET_ID
+      - AUTH_DEV_BYPASS=${AUTH_DEV_BYPASS:-false}
+      - STATIC_DIR=static
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
+      # Bare entries are omitted when unset; explicit empty overrides stay empty.
+      - AWS_DEFAULT_REGION
+      - AWS_PROFILE
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - DATABASE_URL
+      - X_LOCALE_SECRET
+      - X_LOCALE_DEMO_API_KEY
+      - ENV
+      - AWS_REGION
+      - OPENAI_API_KEY
+      - OPENAI_MODEL
+      - OPENAI_BASE_URL
+      - OPENAI_MAX_OUTPUT_TOKENS
+      - OPENAI_REASONING_EFFORT
+      - AI_TRANSLATE_BATCH_SIZE
+      - AI_TRANSLATE_MAX_WORKERS
+      - AI_TRANSLATE_STUB
+      - AI_TRANSLATE_STUB_DELAY_MS
+      - DEFAULT_BASE_LANGUAGE
+      - SESSION_COOKIE_SECURE
+      - OIDC_ISSUER
+      - OIDC_CLIENT_ID
+      - OIDC_CLIENT_SECRET
+      - OIDC_SCOPES
+      - OIDC_REDIRECT_URL
+      - IMPORT_ASYNC_THRESHOLD
+      - ACTIVITY_RETENTION_DAYS
+      - CORS_ORIGINS
     depends_on:
       postgres:
         condition: service_healthy

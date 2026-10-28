@@ -88,11 +88,10 @@ docker compose up --build
 Production (single origin, SPA served by FastAPI):
 
 ```bash
-# Create the ARN file before up. If that path is already a directory, delete it first.
-# Secret DATABASE_URL must be postgresql+psycopg://xlocale:<password>@postgres:5432/xlocale
-# and POSTGRES_PASSWORD must be that same password. Migrations use the secret URL.
-echo 'arn:aws:secretsmanager:REGION:ACCOUNT:secret:NAME-SUFFIX' > secrets-arn
-export X_LOCALE_SECRETS_ARN_FILE=$PWD/secrets-arn
+# Effective DATABASE_URL must use postgres:5432/xlocale and match POSTGRES_PASSWORD.
+export SECRET_ENABLE=true
+export X_LOCALE_AWS_SECRET_ID=x-locale/production
+export AWS_DEFAULT_REGION=us-east-1
 export POSTGRES_PASSWORD='same-as-DATABASE_URL-in-the-secret'
 docker compose -f docker-compose.prod.yml up --build
 ```
@@ -254,16 +253,20 @@ cd frontend && npm run gen:api
 See [.env.example](.env.example). Notable vars:
 
 For production configuration stored in AWS Secrets Manager, see
-[the boto3 setup guide](docs/aws-secrets-manager.md). Mount the full secret ARN at
-`/run/x-locale/secrets-arn`; the backend loads that JSON secret once at startup.
-Keys present in the secret override environment variables; other settings come from
-env (for example `STATIC_DIR`, `AWS_REGION`, `AUTH_DEV_BYPASS`) and code defaults.
-Dotenv is not read in AWS mode. The production image command requires the mount
-before migrations. For `docker-compose.prod.yml`, set `X_LOCALE_SECRETS_ARN_FILE` and
-`POSTGRES_PASSWORD`. The secret `DATABASE_URL` must use host `postgres`, user `xlocale`,
-database `xlocale`, and that same password. Create the ARN file before `up`; if the path
-is a directory, delete it first.
-Local development and CI keep the existing configuration behavior without the mount.
+[the Pydantic AWS settings guide](docs/aws-secrets-manager.md). Set
+`SECRET_ENABLE=true` and `X_LOCALE_AWS_SECRET_ID` to a secret name or full ARN. The backend loads its JSON
+once at startup through Pydantic's built-in AWS source. Settings precedence is
+constructor arguments, environment, `.env`, AWS, file secrets, then defaults.
+Explicit empty values also override AWS. `SECRET_ENABLE` defaults to false; when
+disabled, a configured secret ID is ignored and no AWS calls are made. When enabled,
+a missing secret ID aborts startup.
+
+The AWS SDK resolves region and credentials through its normal chain; configure
+`AWS_DEFAULT_REGION` or an AWS profile. Application `AWS_REGION` does not control
+retrieval. Configuration is checked before migrations; the old ARN file mount is
+no longer supported. For AWS with `docker-compose.prod.yml`, export the enable flag,
+selector, SDK region, and `POSTGRES_PASSWORD`. The effective `DATABASE_URL` must
+use host `postgres`, user `xlocale`, database `xlocale`, and that same password.
 
 | Var | Purpose |
 |-----|---------|
