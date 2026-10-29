@@ -54,6 +54,59 @@ Legacy workbooks without mappings still use worksheet names as module slugs.
 Old exports whose long slugs were already truncated cannot be repaired reliably
 from worksheet names alone; re-export those workbooks after upgrading.
 
+## Excel resource limits
+
+Excel imports validate the archive and stream its XML before openpyxl opens it.
+Preview, apply, and background jobs use the same checks. Resource failures return
+HTTP 400 for synchronous requests, or a failed job with the validation error for
+async requests, before any content or reference rows are written.
+
+The compressed upload limit remains 20 MiB. Fixed Excel limits are:
+
+| Resource | Limit |
+| --- | --- |
+| Total expanded archive | 64 MiB |
+| Single expanded archive member | 32 MiB |
+| Archive entries | 1,024 |
+| Worksheets | 128 |
+| Cumulative row slots | 100,000 |
+| Columns per worksheet | 256 |
+| Cumulative cell slots | 1,000,000 |
+| Cell or shared-string text | 32,768 characters |
+| Shared-string entries | 1,000,000 |
+| Cumulative decoded text budget | 67,108,864 characters |
+| XML nesting depth | 128 |
+| Total XML elements | 8,000,000 |
+
+Validation has three steps: bound the archive and XML, resolve package metadata,
+then check the declared worksheets and shared-string table. Parts are identified
+from the content-type manifest and workbook relationships, never guessed from
+XML element names. ZIP order and worksheet filename extensions do not affect
+validation.
+
+Archive paths must be canonical: no leading slash, backslashes, or `.`/`..`
+segments. Duplicate archive entries, relationship IDs, worksheet names and
+worksheet targets are rejected. Every declared sheet must resolve to an existing
+internal worksheet with the standard `worksheet` root. Renamed elements,
+namespace lookalikes, misplaced row/cell records and ambiguous package metadata
+are rejected rather than interpreted as alternate Excel structures.
+
+Expanded bytes are checked both against ZIP metadata and during chunked reads.
+Only stored and deflate compression are accepted. All XML parts, including
+ignored metadata and external-link caches, receive the global byte, depth,
+element-count and DTD/entity checks. External links are not loaded by the
+importer. Worksheet-specific counters apply to all declared worksheets, including
+hidden `_meta` and notes sheets without a `key` column.
+
+Row and cell slots include declared dimensions, sparse coordinates and repeated
+records. A row may have one trailing `extLst`; it counts as an extra cell slot.
+Rich-text fragments count together. The text budget includes serialized text,
+resolved shared-string references and conservative shared-formula expansion
+bounds. Shared formulas still import as formula text. Multiple shared-string
+tables are rejected. No database content is written until parsing succeeds.
+
+These fixed limits preserve the 20,000-key flat and modular benchmark workloads.
+
 ## Compatibility fixtures
 
 `backend/tests/fixtures/import_golden.json` was captured from the ORM path at

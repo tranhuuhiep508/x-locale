@@ -517,11 +517,13 @@ def test_import_rejects_overlong_translation_without_writes(client, monkeypatch)
     sheet.append(["key", "vi", "en"])
     sheet.append(["ok", "Hello", "English"])
     sheet.append(["bad", "Hello", "English"])
+    raw = io.BytesIO()
+    workbook.save(raw)
     sheet.cell(3, 3)._value = LONG_TEXT
     monkeypatch.setattr("app.excel.load_workbook", lambda *_args, **_kwargs: workbook)
     excel = client.post(
         f"{root}/import",
-        files={"file": ("strings.xlsx", b"placeholder", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={"file": ("strings.xlsx", raw.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert excel.status_code == 400, excel.text
     assert str(TEXT_MAX_LENGTH) in excel.text
@@ -531,6 +533,8 @@ def test_import_rejects_overlong_translation_without_writes(client, monkeypatch)
     described_sheet = described.active
     described_sheet.append(["key", "vi", "description"])
     described_sheet.append(["ok", "Hello", "Context"])
+    raw = io.BytesIO()
+    described.save(raw)
     described_sheet.cell(2, 3)._value = LONG_TEXT
 
     def fail_rows(*_args, **_kwargs):
@@ -540,7 +544,7 @@ def test_import_rejects_overlong_translation_without_writes(client, monkeypatch)
     monkeypatch.setattr("app.excel.import_rows", fail_rows)
     description = client.post(
         f"{root}/import",
-        files={"file": ("described.xlsx", b"placeholder", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={"file": ("described.xlsx", raw.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert description.status_code == 400, description.text
     assert str(TEXT_MAX_LENGTH) in description.text

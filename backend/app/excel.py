@@ -11,6 +11,7 @@ from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
+from app.excel_limits import validate_workbook
 from app.helpers import (
     ensure_max_length,
     key_preview,
@@ -271,8 +272,9 @@ def import_workbook(
     dry_run: bool = False,
     status: TranslationStatus = TranslationStatus.draft,
 ) -> ImportResult:
+    validate_workbook(raw)
     # data_only would replace a formula cell with its cached result, or blank.
-    wb = load_workbook(io.BytesIO(raw), read_only=True)
+    wb = load_workbook(io.BytesIO(raw), read_only=True, keep_links=False)
     rows, groups = [], []
     try:
         modular = _is_modular(project)
