@@ -73,36 +73,39 @@ The compressed upload limit remains 20 MiB. Fixed Excel limits are:
 | Columns per worksheet | 256 |
 | Cumulative cell slots | 1,000,000 |
 | Cell or shared-string text | 32,768 characters |
-| Shared-string entries per archive part | 1,000,000 |
+| Shared-string entries | 1,000,000 |
 | Cumulative decoded text budget | 67,108,864 characters |
 | XML nesting depth | 128 |
 | Total XML elements | 8,000,000 |
 
-Expanded bytes are checked against ZIP metadata and during chunked reads.
-Archive members must use stored or deflate compression, whose decompression
-output can be bounded during reads. Row and cell slots include declared
-dimensions and sparse coordinates, including empty positions. Repeated row/cell
-records also count toward the limits. Hidden
-metadata and ignored worksheets count too. Duplicate archive names and reused
-worksheet relationships/targets are rejected so repeated parsing cannot bypass
-the budgets. Each row may have one trailing `extLst` extension list. It counts
-as one extra cell slot of parsing work; its XML remains subject to the archive,
-element, and nesting limits. Every declared sheet must resolve to an internal
-worksheet relationship; unsupported types and external worksheet targets are rejected.
-Workbook sheet lists must contain `sheet` elements, and relationship references
-use namespaced `r:id` attributes. Renamed elements and unqualified `id`
-attributes are rejected before loading.
-Foreign-namespace extension metadata does not define worksheet coordinates or
-cell text, but still counts toward the global archive and XML limits.
-Rich-text fragments count together toward the text limit. The cumulative text
-budget includes serialized cell/shared-string text, the expanded text of every
-shared-string cell reference, and conservative estimates for every shared-formula
-expansion, including coordinate growth. References are checked after the archive
-scan so ZIP entry order does not matter; multiple string tables cannot reduce
-the bound for any index. Shared formulas within that budget remain supported
-and import as formula text. XML DTD
-and entity declarations are rejected. These limits require no configuration and
-preserve the 20,000-key flat and modular benchmark workloads.
+Validation has three steps: bound the archive and XML, resolve package metadata,
+then check the declared worksheets and shared-string table. Parts are identified
+from the content-type manifest and workbook relationships, never guessed from
+XML element names. ZIP order and worksheet filename extensions do not affect
+validation.
+
+Archive paths must be canonical: no leading slash, backslashes, or `.`/`..`
+segments. Duplicate archive entries, relationship IDs, worksheet names and
+worksheet targets are rejected. Every declared sheet must resolve to an existing
+internal worksheet with the standard `worksheet` root. Renamed elements,
+namespace lookalikes, misplaced row/cell records and ambiguous package metadata
+are rejected rather than interpreted as alternate Excel structures.
+
+Expanded bytes are checked both against ZIP metadata and during chunked reads.
+Only stored and deflate compression are accepted. All XML parts, including
+ignored metadata and external-link caches, receive the global byte, depth,
+element-count and DTD/entity checks. External links are not loaded by the
+importer. Worksheet-specific counters apply to all declared worksheets, including
+hidden `_meta` and notes sheets without a `key` column.
+
+Row and cell slots include declared dimensions, sparse coordinates and repeated
+records. A row may have one trailing `extLst`; it counts as an extra cell slot.
+Rich-text fragments count together. The text budget includes serialized text,
+resolved shared-string references and conservative shared-formula expansion
+bounds. Shared formulas still import as formula text. Multiple shared-string
+tables are rejected. No database content is written until parsing succeeds.
+
+These fixed limits preserve the 20,000-key flat and modular benchmark workloads.
 
 ## Compatibility fixtures
 

@@ -274,7 +274,7 @@ def import_workbook(
 ) -> ImportResult:
     validate_workbook(raw)
     # data_only would replace a formula cell with its cached result, or blank.
-    wb = load_workbook(io.BytesIO(raw), read_only=True)
+    wb = load_workbook(io.BytesIO(raw), read_only=True, keep_links=False)
     rows, groups = [], []
     try:
         modular = _is_modular(project)

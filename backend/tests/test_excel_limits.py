@@ -1,11 +1,12 @@
 """Resource preflight tests; these also run offline with pytest --noconftest."""
 
 import io
+from types import SimpleNamespace
 from xml.sax.saxutils import escape
 from zipfile import ZIP_BZIP2, ZIP_DEFLATED, ZIP_LZMA, ZipFile
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.formula.translate import Translator
 
 from app import excel_limits
@@ -96,42 +97,54 @@ def test_actual_stream_bytes_are_checked(monkeypatch, setting):
         validate_workbook(raw)
 
 
-@pytest.mark.parametrize("kind", ["inline", "shared", "rich", "utf16", "alternate-target"])
-def test_oversized_cell_text_is_rejected_while_streaming(kind):
-    text = "x" * (8 * 1024 * 1024 if kind == "inline" else TEXT_MAX_LENGTH + 1)
-    if kind == "shared":
-        xml = shared_string_table([text])
-    elif kind == "rich":
-        xml = shared_string_table([text], rich=True)
-    else:
-        xml = worksheet(
-            f'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>{text}</t></is></c></row></sheetData>'
+def workbook_parts(sheets=None, shared=None):
+    """Build real package metadata around the supplied worksheet XML."""
+    from xml.etree import ElementTree as ET
+
+    sheets = sheets or {"xl/worksheets/sheet1.xml": worksheet("")}
+    workbook = Workbook()
+    for i in range(1, len(sheets)):
+        workbook.create_sheet(f"sheet{i}")
+    raw = io.BytesIO()
+    workbook.save(raw)
+    with ZipFile(raw) as archive:
+        parts = {n: archive.read(n) for n in archive.namelist()}
+    rel_path = "xl/_rels/workbook.xml.rels"
+    relationships = ET.fromstring(parts[rel_path])
+    sheet_rels = [r for r in relationships if r.get("Type").endswith("/worksheet")]
+    for relationship, path in zip(sheet_rels, sheets, strict=True):
+        old = relationship.get("Target").lstrip("/")
+        del parts[old]
+        relationship.set("Target", "/" + path)
+    parts[rel_path] = ET.tostring(relationships)
+    parts.update(sheets)
+    if shared is not None:
+        parts["xl/sharedStrings.xml"] = shared
+        parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace(
+            b"</Types>",
+            b'<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>',
         )
+    return parts
+
+
+@pytest.mark.parametrize("kind", ["inline", "shared", "rich", "utf16", "alternate-target"])
+def test_oversized_cell_text_is_rejected_before_loading(kind):
+    text = "x" * (TEXT_MAX_LENGTH + 1)
+    shared = (
+        shared_string_table([text], rich=kind == "rich") if kind in {"shared", "rich"} else None
+    )
+    xml = (
+        shared_string_sheet([0])
+        if shared
+        else worksheet(
+            f'<sheetData><row><c t="inlineStr"><is><t>{text}</t></is></c></row></sheetData>'
+        )
+    )
     if kind == "utf16":
         xml = xml.encode("utf-16")
-    raw = archive_bytes({"part.data" if kind == "alternate-target" else "part.xml": xml})
-    assert len(raw) < 20 * 1024
+    path = "xl/worksheet.data" if kind == "alternate-target" else "xl/worksheets/sheet1.xml"
     with pytest.raises(ValueError, match="cell/shared-string characters"):
-        validate_workbook(raw)
-
-
-def test_maximum_length_rich_text_is_allowed():
-    validate_workbook(
-        archive_bytes(
-            {
-                "strings.xml": shared_string_table(
-                    ["x" * 16000 + "y" * (TEXT_MAX_LENGTH - 16000)], rich=True
-                )
-            }
-        )
-    )
-
-
-def test_xml_formatting_whitespace_does_not_reduce_the_text_limit():
-    xml = shared_string_table(["x" * 16000 + "y" * (TEXT_MAX_LENGTH - 16000)], rich=True).replace(
-        "><", ">\n<"
-    )
-    validate_workbook(archive_bytes({"strings.xml": xml}))
+        validate_workbook(archive_bytes(workbook_parts({path: xml}, shared)))
 
 
 @pytest.mark.parametrize(
@@ -147,52 +160,327 @@ def test_xml_formatting_whitespace_does_not_reduce_the_text_limit():
         ('<dimension ref="invalid"/>', "cell coordinate"),
     ],
 )
-def test_dimensions_and_sparse_coordinates_are_bounded(body, message):
+def test_sparse_coordinates_and_dimensions_are_bounded(body, message):
     with pytest.raises(ValueError, match=message):
-        validate_workbook(archive_bytes({"ignored.xml": worksheet(body)}))
+        validate_workbook(archive_bytes(workbook_parts({"sheet.xml": worksheet(body)})))
 
 
-@pytest.mark.parametrize("kind", ["rows", "cells", "sheets", "declarations"])
-def test_budgets_are_cumulative_across_sheets(monkeypatch, kind):
-    if kind == "rows":
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_ROWS", 3)
-        parts = {f"{n}.xml": worksheet('<dimension ref="A1:A2"/>') for n in range(2)}
-    elif kind == "cells":
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 3)
-        parts = {f"{n}.xml": worksheet('<dimension ref="A1:B1"/>') for n in range(2)}
-    elif kind == "sheets":
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_SHEETS", 1)
-        parts = {f"{n}.xml": worksheet("") for n in range(2)}
-    else:
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_SHEETS", 1)
-        parts = {"workbook.xml": "<workbook><sheets><sheet/><sheet/></sheets></workbook>"}
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<row><other><v>1</v></other></row>",
+        "<row><c><row><c/></row></c></row>",
+        '<row><c><f>1</f><f t="shared" si="0">2</f></c></row>',
+        '<row><c t="s"><v>0</v><v>1</v></c></row>',
+        '<row><c t="s"><v><nested>0</nested></v></c></row>',
+        '<row><c><unused><f t="shared" si="0">1</f></unused></c></row>',
+        '<row><c><fake:f xmlns:fake="urn:fake">1</fake:f></c></row>',
+        "<row><c/><extLst/><extLst/></row>",
+        "<row><extLst/><c/></row>",
+    ],
+)
+def test_malformed_worksheet_records_are_rejected(body):
+    with pytest.raises(ValueError):
+        validate_workbook(
+            archive_bytes(
+                workbook_parts({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")})
+            )
+        )
+
+
+@pytest.mark.parametrize("root", ["wrapper", "externalLink"])
+def test_worksheet_root_is_required(root):
+    xml = worksheet("<sheetData><row/></sheetData>").replace("worksheet", root)
+    with pytest.raises(ValueError, match="worksheet root"):
+        validate_workbook(archive_bytes(workbook_parts({"sheet.rels": xml})))
+
+
+@pytest.mark.parametrize("resource", ["rows", "cells", "sheets"])
+def test_budgets_are_cumulative(monkeypatch, resource):
+    setting, limit, body = {
+        "rows": ("EXCEL_MAX_ROWS", 3, '<dimension ref="A1:A2"/>'),
+        "cells": ("EXCEL_MAX_CELLS", 100, '<dimension ref="A1:BH1"/>'),
+        "sheets": ("EXCEL_MAX_SHEETS", 1, ""),
+    }[resource]
+    monkeypatch.setattr(excel_limits, setting, limit)
+    parts = workbook_parts({f"sheet{i}.xml": worksheet(body) for i in range(2)})
     with pytest.raises(ValueError, match="row slots|cell slots|worksheets"):
         validate_workbook(archive_bytes(parts))
 
 
-@pytest.mark.parametrize("kind", ["rows", "cells"])
-def test_repeated_or_implicit_coordinates_do_not_bypass_counts(monkeypatch, kind):
-    if kind == "rows":
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_ROWS", 2)
-        body = '<row r="1"/>' * 3
-    else:
-        monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 2)
-        body = '<row><c r="A1"/><c r="A1"/><c r="A1"/></row>'
+@pytest.mark.parametrize("body", ['<row r="1"/>' * 1001, "<row>" + '<c r="A1"/>' * 1001 + "</row>"])
+def test_repeated_coordinates_count_as_work(monkeypatch, body):
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_ROWS", 1000)
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 1000)
+    parts = workbook_parts({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")})
     with pytest.raises(ValueError, match="total .* slots"):
-        validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize("index", [-1, 1, "bad", "0.0"])
+def test_invalid_shared_string_indices_are_rejected(index):
+    parts = workbook_parts(
+        {"sheet.xml": shared_string_sheet([index])}, shared_string_table(["valid"])
+    )
+    with pytest.raises(ValueError, match="shared-string index"):
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize("table_first", [False, True])
+@pytest.mark.parametrize("rich", [False, True])
+def test_shared_string_expansion_is_bounded(monkeypatch, table_first, rich):
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
+    parts = workbook_parts(
+        {"first.xml": shared_string_sheet([0, 0]), "second.xml": shared_string_sheet([0, 0])},
+        shared_string_table([" " + "x" * 19], rich=rich),
+    )
+    if table_first:
+        parts = dict(reversed(list(parts.items())))
+    with pytest.raises(ValueError, match="decoded characters"):
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize(
+    "formula",
+    ['"literal"', "SUM(A1:B2)", "$A1+A$1+$A$1", "SUM(1:2,A:B)", "'Sheet 1'!A1", "A1", "999"],
+)
+def test_shared_formulas_remain_supported(formula):
+    assert len(
+        Translator("=" + formula, "A1").translate_formula("IV100000")
+    ) <= excel_limits._shared_formula_bound(formula)
+    validate_workbook(
+        archive_bytes(workbook_parts({"sheet.xml": shared_formula_sheet(formula, 3)}))
+    )
+
+
+@pytest.mark.parametrize("redefine", [False, True])
+def test_shared_formula_expansion_is_bounded(monkeypatch, redefine):
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
+    xml = shared_formula_sheet('"' + "x" * 40 + '"', 3)
+    if redefine:
+        xml = xml.replace('<f t="shared" si="0"></f>', '<f t="shared" si="0">1</f>')
+    with pytest.raises(ValueError, match="decoded characters"):
+        validate_workbook(archive_bytes(workbook_parts({"sheet.xml": xml})))
+
+
+@pytest.mark.parametrize("rich", [False, True])
+def test_maximum_length_text_and_formatting_whitespace_are_supported(rich):
+    table = shared_string_table(["x" * TEXT_MAX_LENGTH], rich=rich).replace("><", ">\n<")
+    validate_workbook(archive_bytes(workbook_parts(shared=table)))
 
 
 @pytest.mark.parametrize(
     "xml",
     [
-        '<!DOCTYPE worksheet [<!ENTITY x "expanded">]><worksheet>&x;</worksheet>',
-        '<!DOCTYPE worksheet SYSTEM "file:///etc/passwd"><worksheet/>',
-        "<worksheet>",
+        '<!DOCTYPE a [<!ENTITY x "expanded">]><a>&x;</a>',
+        '<!DOCTYPE a SYSTEM "file:///etc/passwd"><a/>',
+        "<a>",
     ],
 )
-def test_unsafe_or_malformed_xml_is_a_validation_error(xml):
+def test_unsafe_xml_is_rejected_even_in_ignored_parts(xml):
+    parts = workbook_parts()
+    parts["ignored.xml"] = xml
     with pytest.raises(ValueError, match="DTD|archive/XML"):
-        validate_workbook(archive_bytes({"part.xml": xml}))
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize(
+    "path", ["/sheet.xml", "xl/../sheet.xml", "xl/./sheet.xml", "../sheet.xml", "xl\\sheet.xml"]
+)
+def test_noncanonical_archive_paths_are_rejected(path):
+    with pytest.raises(ValueError, match="member path"):
+        validate_workbook(archive_bytes({path: worksheet("")}))
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "name",
+        "relationship",
+        "target",
+        "renamed-rel",
+        "duplicate-rel",
+        "renamed-sheet",
+        "unqualified-id",
+        "nested-rel",
+        "type",
+        "external",
+        "missing-target",
+    ],
+)
+def test_ambiguous_or_unsupported_packages_are_rejected(kind):
+    from xml.etree import ElementTree as ET
+
+    parts = workbook_parts({"first.xml": worksheet(""), "second.xml": worksheet("")})
+    root = ET.fromstring(parts["xl/workbook.xml"])
+    sheets = root.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheets")
+    rel_path = "xl/_rels/workbook.xml.rels"
+    rels = ET.fromstring(parts[rel_path])
+    sheet_rels = [r for r in rels if r.get("Type").endswith("/worksheet")]
+    rid = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    if kind == "name":
+        sheets[1].set("name", sheets[0].get("name"))
+    elif kind == "relationship":
+        sheets[1].set(rid, sheets[0].get(rid))
+    elif kind == "target":
+        sheet_rels[1].set("Target", sheet_rels[0].get("Target"))
+    elif kind == "renamed-rel":
+        sheet_rels[0].tag = "renamed"
+    elif kind == "duplicate-rel":
+        rels.append(ET.fromstring(ET.tostring(sheet_rels[0])))
+    elif kind == "renamed-sheet":
+        sheets[0].tag = "renamed"
+    elif kind == "unqualified-id":
+        sheets[0].set("id", sheets[0].attrib.pop(rid))
+    elif kind == "nested-rel":
+        wrapper = ET.SubElement(rels, "unused")
+        wrapper.append(sheet_rels[0])
+    elif kind == "type":
+        sheet_rels[0].set("Type", "example/styles")
+    elif kind == "external":
+        sheet_rels[0].set("TargetMode", "External")
+    else:
+        del parts["first.xml"]
+    parts["xl/workbook.xml"], parts[rel_path] = ET.tostring(root), ET.tostring(rels)
+    with pytest.raises(ValueError):
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize("layout", ["flat", "modular"])
+def test_twenty_thousand_key_workbooks_fit(layout):
+    workbook = Workbook(write_only=True)
+    sheets = [
+        workbook.create_sheet(name)
+        for name in (["strings"] if layout == "flat" else ["auth", "home", "common"])
+    ]
+    for sheet in sheets:
+        sheet.append(["key", "vi", "en", "fr"])
+    for number in range(20000):
+        sheets[number % len(sheets)].append(
+            [f"key.{number}", f"Source {number}", f"English {number}", f"French {number}"]
+        )
+    raw = io.BytesIO()
+    workbook.save(raw)
+    validate_workbook(raw.getvalue())
+
+
+def workbook_with_external_cache():
+    relationship = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    workbook = Workbook()
+    workbook.active.append(["key", "vi"])
+    workbook.active.append(["hello", "Hello"])
+    raw = io.BytesIO()
+    workbook.save(raw)
+    with ZipFile(raw) as archive:
+        parts = {name: archive.read(name) for name in archive.namelist()}
+    parts["xl/workbook.xml"] = parts["xl/workbook.xml"].replace(
+        b"</workbook>",
+        f'<externalReferences><externalReference xmlns:r="{relationship}" r:id="external"/></externalReferences></workbook>'.encode(),
+    )
+    parts["xl/_rels/workbook.xml.rels"] = parts["xl/_rels/workbook.xml.rels"].replace(
+        b"</Relationships>",
+        f'<Relationship Id="external" Type="{relationship}/externalLink" Target="/xl/externalLinks/externalLink1.xml"/></Relationships>'.encode(),
+    )
+    parts["xl/externalLinks/externalLink1.xml"] = (
+        f'<externalLink xmlns="{namespace}" xmlns:r="{relationship}">'
+        '<externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames>'
+        '<sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1" t="str">'
+        "<v>cached text</v></cell></row></sheetData></sheetDataSet></externalBook></externalLink>"
+    ).encode()
+    parts["xl/externalLinks/_rels/externalLink1.xml.rels"] = (
+        f'<Relationships><Relationship Id="rId1" Type="{relationship}/externalLinkPath" '
+        'Target="file:///example.xlsx" TargetMode="External"/></Relationships>'
+    ).encode()
+    return parts
+
+
+@pytest.mark.parametrize("cell_type", ["str", "s"])
+def test_external_workbook_cache_is_supported(monkeypatch, cell_type):
+    from app import excel
+
+    parts = workbook_with_external_cache()
+    path = "xl/externalLinks/externalLink1.xml"
+    parts[path] = parts[path].replace(b't="str"', f't="{cell_type}"'.encode())
+    raw = archive_bytes(parts)
+    validate_workbook(raw)
+    workbook = load_workbook(io.BytesIO(raw), read_only=True)
+    try:
+        assert list(workbook.active.values) == [("key", "vi"), ("hello", "Hello")]
+        assert len(workbook._external_links) == 1
+    finally:
+        workbook.close()
+
+    def fail_external_link(*_args, **_kwargs):
+        raise AssertionError("Import must not load external workbook caches")
+
+    monkeypatch.setattr("openpyxl.reader.workbook.read_external_link", fail_external_link)
+    monkeypatch.setattr(excel, "import_rows", lambda _db, _project, rows, **_kwargs: rows)
+    rows = excel.import_workbook(None, SimpleNamespace(layout="flat"), raw)
+    assert [(row.key, row.values) for row in rows] == [("hello", {"vi": "Hello"})]
+
+
+@pytest.mark.parametrize("resource", ["elements", "depth", "bytes"])
+def test_external_caches_still_obey_global_limits(monkeypatch, resource):
+    parts = workbook_with_external_cache()
+    path = "xl/externalLinks/externalLink1.xml"
+    if resource == "elements":
+        monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 1)
+        message = "XML elements"
+    elif resource == "depth":
+        parts[path] = parts[path].replace(b"cached text", b"<a>" * 129 + b"</a>" * 129)
+        message = "nesting depth"
+    else:
+        monkeypatch.setattr(excel_limits, "EXCEL_MAX_MEMBER_BYTES", 4096)
+        parts[path] = parts[path].replace(b"cached text", b"x" * 8192)
+        message = "expanded member bytes"
+    with pytest.raises(ValueError, match=message):
+        validate_workbook(archive_bytes({path: parts[path]}))
+
+
+@pytest.mark.parametrize("relationships_first", [False, True])
+def test_external_link_root_cannot_hide_a_worksheet_target(relationships_first):
+    parts = workbook_with_external_cache()
+    parts["xl/_rels/workbook.xml.rels"] = parts["xl/_rels/workbook.xml.rels"].replace(
+        b"/xl/worksheets/sheet1.xml", b"/xl/externalLinks/externalLink1.xml"
+    )
+    if relationships_first:
+        parts = dict(reversed(list(parts.items())))
+    with pytest.raises(ValueError, match="worksheet root"):
+        validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize("suffix", ["xml", "rels"])
+@pytest.mark.parametrize("worksheet_first", [False, True])
+def test_external_cache_classification_cannot_hide_shared_string_expansion(suffix, worksheet_first):
+    parts = workbook_with_external_cache()
+    path = f"xl/worksheets/disguised.{suffix}"
+    namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rows = "".join(
+        f'<row r="{number}"><cell r="A{number}" t="s"><v>0</v></cell></row>'
+        for number in range(1, 5)
+    )
+    parts[path] = (
+        f'<externalLink xmlns="{namespace}"><sheetData>{rows}</sheetData></externalLink>'.encode()
+    )
+    parts["xl/_rels/workbook.xml.rels"] = parts["xl/_rels/workbook.xml.rels"].replace(
+        b"/xl/worksheets/sheet1.xml", f"/{path}".encode()
+    )
+    parts["xl/sharedStrings.xml"] = shared_string_table(["x" * 40]).encode()
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace(
+        b"</Types>",
+        b'<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>',
+    )
+    worksheet = parts.pop(path)
+    parts = {path: worksheet, **parts} if worksheet_first else {**parts, path: worksheet}
+    raw = archive_bytes(parts)
+    workbook = load_workbook(io.BytesIO(raw), read_only=True, keep_links=False)
+    try:
+        assert sum(len(row[0]) for row in workbook.active.values) == 160
+    finally:
+        workbook.close()
+    with pytest.raises(ValueError, match="worksheet root"):
+        validate_workbook(raw)
 
 
 def test_invalid_zip_is_a_validation_error():
@@ -212,328 +500,6 @@ def test_compression_with_unbounded_decoder_output_is_rejected(monkeypatch, comp
     monkeypatch.setattr(ZipFile, "open", fail_open)
     with pytest.raises(ValueError, match="stored or deflate"):
         validate_workbook(raw.getvalue())
-
-
-def test_nonstandard_root_does_not_hide_worksheet_records():
-    xml = worksheet('<sheetData><row r="100001"/></sheetData>')
-    xml = xml.replace("worksheet", "wrapper")
-    with pytest.raises(ValueError, match="row slots"):
-        validate_workbook(archive_bytes({"sheet.xml": xml}))
-
-
-@pytest.mark.parametrize("kind", ["relationship", "target"])
-def test_reused_worksheet_references_cannot_multiply_parsing_work(kind):
-    if kind == "relationship":
-        parts = {
-            "xl/workbook.xml": '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet r:id="rId1"/><sheet r:id="rId1"/></sheets></workbook>'
-        }
-    else:
-        parts = {
-            "xl/_rels/workbook.xml.rels": '<Relationships><Relationship Type="example/worksheet" Target="worksheets/sheet1.xml"/><Relationship Type="example/worksheet" Target="/xl/worksheets/sheet1.xml"/></Relationships>'
-        }
-    with pytest.raises(ValueError, match="distinct"):
-        validate_workbook(archive_bytes(parts))
-
-
-@pytest.mark.parametrize("title", ["strings", "_meta"])
-def test_duplicate_sheet_names_with_distinct_targets_are_rejected(title):
-    workbook = Workbook()
-    workbook.active.title = title
-    workbook.active.append(["key", "vi"])
-    workbook.active.append(["hello", "Source"])
-    workbook.create_sheet("alias")
-    raw = io.BytesIO()
-    workbook.save(raw)
-    validate_workbook(raw.getvalue())
-    with ZipFile(raw) as archive:
-        parts = {name: archive.read(name) for name in archive.namelist()}
-    parts["xl/workbook.xml"] = parts["xl/workbook.xml"].replace(
-        b'name="alias"', f'name="{title}"'.encode()
-    )
-    with pytest.raises(ValueError, match="distinct names"):
-        validate_workbook(archive_bytes(parts))
-
-
-@pytest.mark.parametrize(
-    "type_name,mode", [("styles", ""), ("comments", ""), ("worksheet", 'TargetMode="External"')]
-)
-@pytest.mark.parametrize("relationships_first", [False, True])
-def test_declared_sheet_relationships_cannot_hide_their_type_or_mode(
-    type_name, mode, relationships_first
-):
-    parts = {
-        "xl/custom.data": '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet r:id="rId1"/></sheets></workbook>',
-        "xl/_rels/custom.data.rels": f'<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{type_name}" Target="/xl/worksheets/sheet1.xml" {mode}/></Relationships>',
-        "xl/worksheets/sheet1.xml": worksheet(""),
-    }
-    if relationships_first:
-        parts = dict(reversed(list(parts.items())))
-    with pytest.raises(ValueError, match="internal worksheet relationships"):
-        validate_workbook(archive_bytes(parts))
-
-
-@pytest.mark.parametrize(
-    "declaration",
-    [
-        '<renamed r:id="rId1"/>',
-        '<sheet id="rId1"/>',
-        '<sheet id="alias" r:id="rId1"/>',
-        '<renamed id="rId1"/>',
-    ],
-)
-def test_alternate_sheet_declarations_are_rejected(declaration):
-    xml = f'<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>{declaration}</sheets></workbook>'
-    with pytest.raises(ValueError, match="Invalid Excel worksheet declaration"):
-        validate_workbook(archive_bytes({"xl/workbook.xml": xml}))
-
-
-def test_shared_formula_expansion_is_bounded_before_translation():
-    raw = archive_bytes({"sheet.xml": shared_formula_sheet('"' + "x" * 32000 + '"', 2200)})
-    assert len(raw) < 30_000
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(raw)
-
-
-def test_nested_relationship_cannot_spoof_a_declared_sheet_type():
-    parts = {
-        "xl/workbook.xml": '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet r:id="rId1"/></sheets></workbook>',
-        "xl/_rels/workbook.xml.rels": '<Relationships><Relationship Id="rId1" Type="example/styles" Target="worksheets/sheet1.xml"/><unused><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/spoof.xml"/></unused></Relationships>',
-    }
-    with pytest.raises(ValueError, match="internal worksheet relationships"):
-        validate_workbook(archive_bytes(parts))
-
-
-def test_decoded_text_budget_is_cumulative_across_sheets(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
-    parts = {f"{i}.xml": shared_formula_sheet('"' + "x" * 20 + '"', 3) for i in range(2)}
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes(parts))
-
-
-@pytest.mark.parametrize(
-    "lookalike",
-    [
-        '<fake:f xmlns:fake="urn:fake" t="shared" si="0">1</fake:f>',
-        '<unused><f t="shared" si="0">1</f></unused>',
-    ],
-)
-def test_ignored_formula_elements_cannot_poison_the_expansion_budget(lookalike):
-    sheet = shared_formula_sheet('"' + "x" * 32000 + '"', 2200)
-    sheet = sheet.replace(
-        "<sheetData>", f'<sheetData><row r="1"><c r="A1">{lookalike}<v>0</v></c></row>'
-    )
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes({"sheet.xml": sheet}))
-
-
-@pytest.mark.parametrize(
-    "body,message",
-    [
-        ("<row><other><v>1</v></other></row>", "row element"),
-        ("<row><c><row><c/></row></c></row>", "must not be nested"),
-        ('<row><c><f>1</f><f t="shared" si="0">2</f></c></row>', "at most one formula"),
-    ],
-)
-def test_malformed_row_records_cannot_hide_shared_formula_definitions(body, message):
-    with pytest.raises(ValueError, match=message):
-        validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
-
-
-def test_row_extensions_are_allowed_once_after_each_rows_cells():
-    body = "<row><c><v>1</v></c><extLst/></row>" * 2
-    validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
-
-
-def test_foreign_extension_names_do_not_change_worksheet_state(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_SHEETS", 1)
-    metadata = (
-        '<m:worksheet xmlns:m="urn:metadata">'
-        '<m:row r="custom-row-id"/><m:c r="custom-cell-id"/>'
-        '<m:dimension ref="custom-range"/><m:si><m:t>'
-        + "x"
-        * (TEXT_MAX_LENGTH + 1)
-        + "</m:t></m:si><m:sheets><m:sheet/><m:sheet/></m:sheets>"
-        '<m:Relationship Type="example/worksheet" Target="same"/>'
-        '<m:Relationship Type="example/worksheet" Target="same"/>'
-        "</m:worksheet>"
-    )
-    body = f'<row><c><v>1</v></c><extLst><ext uri="urn:test">{metadata}</ext></extLst></row>'
-    validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
-
-
-def test_foreign_extension_xml_still_counts_toward_global_limits(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 1)
-    metadata = '<m:row xmlns:m="urn:metadata"/>' * 10
-    with pytest.raises(ValueError, match="XML elements"):
-        validate_workbook(
-            archive_bytes(
-                {
-                    "sheet.xml": worksheet(
-                        f'<sheetData><row><extLst><ext uri="urn:test">{metadata}</ext></extLst></row></sheetData>'
-                    )
-                }
-            )
-        )
-
-
-@pytest.mark.parametrize(
-    "body,message",
-    [
-        ("<row><c/><extLst/><extLst/></row>", "at most one extension list"),
-        ("<row><extLst/><c/></row>", "must follow their cells"),
-    ],
-)
-def test_invalid_row_extension_lists_are_rejected(body, message):
-    with pytest.raises(ValueError, match=message):
-        validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
-
-
-def test_row_extensions_count_toward_cell_work_budget(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 2)
-    row = "<row><c/><extLst/></row>"
-    with pytest.raises(ValueError, match="total cell slots"):
-        validate_workbook(
-            archive_bytes(
-                {
-                    "first.xml": worksheet(f"<sheetData>{row}</sheetData>"),
-                    "second.xml": worksheet(f"<sheetData>{row}</sheetData>"),
-                }
-            )
-        )
-
-
-def test_row_extension_xml_still_counts_toward_depth_budget():
-    body = "<row><c/><extLst>" + "<extension>" * 129 + "</extension>" * 129 + "</extLst></row>"
-    with pytest.raises(ValueError, match="nesting depth"):
-        validate_workbook(archive_bytes({"sheet.xml": worksheet(f"<sheetData>{body}</sheetData>")}))
-
-
-@pytest.mark.parametrize(
-    "formula",
-    ['"literal"', "SUM(A1:B2)", "$A1+A$1+$A$1", "SUM(1:2,A:B)", "'Sheet 1'!A1", "A1", "999"],
-)
-def test_shared_formula_bound_covers_coordinate_growth(formula):
-    bound = excel_limits._shared_formula_bound(formula)
-    translated = Translator("=" + formula, "A1").translate_formula("IV100000")
-    assert len(translated) <= bound
-    validate_workbook(archive_bytes({"sheet.xml": shared_formula_sheet(formula, 3)}))
-
-
-def test_shared_formula_redefinitions_keep_the_original_expansion_budget(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
-    sheet = shared_formula_sheet('"' + "x" * 40 + '"', 3)
-    sheet = sheet.replace('<f t="shared" si="0"></f>', '<f t="shared" si="0">1</f>')
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes({"sheet.xml": sheet}))
-
-
-def test_ordinary_cell_text_counts_toward_the_decoded_budget(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 5)
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes({"text.xml": shared_string_table(["abc", "def"])}))
-
-
-@pytest.mark.parametrize("table_first", [False, True])
-@pytest.mark.parametrize("rich", [False, True])
-def test_shared_string_references_are_bounded_before_loading(table_first, rich):
-    parts = {
-        "sheet.xml": shared_string_sheet([0] * 2200),
-        "shared.xml": shared_string_table([" " + "x" * 31999], rich=rich),
-    }
-    if table_first:
-        parts = dict(reversed(list(parts.items())))
-    raw = archive_bytes(parts)
-    assert len(raw) < 30_000
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(raw)
-
-
-def test_shared_string_reference_budget_is_cumulative_across_sheets(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
-    parts = {
-        "_meta.xml": shared_string_sheet([0, 0]),
-        "ignored.xml": shared_string_sheet([0, 0]),
-        "shared.xml": shared_string_table(["x" * 20]),
-    }
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes(parts))
-
-
-def test_later_shorter_string_table_cannot_lower_the_bound(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
-    parts = {
-        "sheet.xml": shared_string_sheet([0, 0, 0, 0]),
-        "first.xml": shared_string_table(["x" * 20]),
-        "second.xml": shared_string_table(["y"]),
-    }
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(archive_bytes(parts))
-
-
-@pytest.mark.parametrize("index", [-1, 1, "bad", "0.0"])
-def test_invalid_shared_string_indices_are_validation_errors(index):
-    with pytest.raises(ValueError, match="shared-string index"):
-        validate_workbook(
-            archive_bytes(
-                {
-                    "sheet.xml": shared_string_sheet([index]),
-                    "shared.xml": shared_string_table(["valid"]),
-                }
-            )
-        )
-
-
-@pytest.mark.parametrize(
-    "cell",
-    [
-        '<c t="s"><v><nested>0</nested></v></c>',
-        '<c t="s"><v>0</v><v>1</v></c>',
-    ],
-)
-def test_malformed_shared_string_indices_cannot_spoof_the_counter(cell):
-    with pytest.raises(ValueError, match="shared-string index"):
-        validate_workbook(
-            archive_bytes({"sheet.xml": worksheet(f"<sheetData><row>{cell}</row></sheetData>")})
-        )
-
-
-def test_nested_shared_strings_cannot_spoof_table_indices():
-    xml = shared_string_table(["valid"]).replace("</si>", "<si><t>nested</t></si></si>")
-    with pytest.raises(ValueError, match="must not be nested"):
-        validate_workbook(archive_bytes({"shared.xml": xml}))
-
-
-def test_foreign_string_entries_cannot_shift_shared_string_indices(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
-    table = shared_string_table(["x" * 20]).replace(
-        "<si>", '<fake:si xmlns:fake="urn:fake"><t>y</t></fake:si><si>', 1
-    )
-    with pytest.raises(ValueError, match="decoded characters"):
-        validate_workbook(
-            archive_bytes({"sheet.xml": shared_string_sheet([0] * 4), "shared.xml": table})
-        )
-
-
-def test_shared_string_metadata_is_bounded_even_for_empty_entries(monkeypatch):
-    monkeypatch.setattr(excel_limits, "EXCEL_MAX_CELLS", 1)
-    with pytest.raises(ValueError, match="shared strings per part"):
-        validate_workbook(archive_bytes({"shared.xml": shared_string_table(["", ""])}))
-
-
-def test_empty_strings_and_absent_values_are_supported():
-    validate_workbook(
-        archive_bytes(
-            {
-                "sheet.xml": shared_string_sheet([0, "", None]),
-                "shared.xml": shared_string_table([""]),
-            }
-        )
-    )
-
-
-def test_formula_cells_do_not_resolve_ignored_shared_string_caches():
-    xml = worksheet('<sheetData><row><c t="s"><f>1+1</f><v>invalid-cache</v></c></row></sheetData>')
-    validate_workbook(archive_bytes({"sheet.xml": xml}))
 
 
 def test_duplicate_archive_member_names_are_rejected():
@@ -559,19 +525,52 @@ def test_xml_element_count_is_bounded_across_parts(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("layout", ["flat", "modular"])
-def test_twenty_thousand_key_workbooks_fit(layout):
-    workbook = Workbook(write_only=True)
-    sheets = [
-        workbook.create_sheet(name)
-        for name in (["strings"] if layout == "flat" else ["auth", "home", "common"])
-    ]
-    for sheet in sheets:
-        sheet.append(["key", "vi", "en", "fr"])
-    for number in range(20000):
-        sheets[number % len(sheets)].append(
-            [f"key.{number}", f"Source {number}", f"English {number}", f"French {number}"]
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "<si><si><t>nested</t></si></si>",
+        '<foreign:si xmlns:foreign="urn:test"><t>text</t></foreign:si>',
+    ],
+)
+def test_malformed_shared_string_entries_are_rejected(entry):
+    table = shared_string_table([]).replace("</sst>", entry + "</sst>")
+    with pytest.raises(ValueError, match="shared-string entry structure"):
+        validate_workbook(archive_bytes(workbook_parts(shared=table)))
+
+
+def test_empty_shared_values_and_ignored_formula_caches_are_supported():
+    sheet = shared_string_sheet([0, "", None]).replace(
+        "</sheetData>", '<row><c t="s"><f>1+1</f><v>invalid-cache</v></c></row></sheetData>'
+    )
+    validate_workbook(
+        archive_bytes(workbook_parts({"sheet.xml": sheet}, shared_string_table([""])))
+    )
+
+
+def test_ignored_binary_parts_do_not_receive_xml_checks():
+    parts = workbook_parts()
+    parts["embedding.bin"] = b"\x00\x01binary data"
+    validate_workbook(archive_bytes(parts))
+
+
+@pytest.mark.parametrize("wrapper", ["is", "extLst"])
+def test_nested_values_cannot_replace_shared_string_indices(monkeypatch, wrapper):
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
+    rows = "".join(
+        f'<row r="{number}"><c r="A{number}" t="s"><v>0</v>'
+        f"<{wrapper}><v>1</v></{wrapper}></c></row>"
+        for number in range(1, 5)
+    )
+    raw = archive_bytes(
+        workbook_parts(
+            {"sheet.xml": worksheet(f"<sheetData>{rows}</sheetData>")},
+            shared_string_table(["x" * 40, "y"]),
         )
-    raw = io.BytesIO()
-    workbook.save(raw)
-    validate_workbook(raw.getvalue())
+    )
+    workbook = load_workbook(io.BytesIO(raw), read_only=True, keep_links=False)
+    try:
+        assert sum(len(row[0]) for row in workbook.active.values) == 160
+    finally:
+        workbook.close()
+    with pytest.raises(ValueError, match="cell value/formula structure"):
+        validate_workbook(raw)

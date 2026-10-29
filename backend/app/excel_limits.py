@@ -1,4 +1,4 @@
-"""Bound XLSX decompression and XML work before openpyxl allocates objects."""
+"""Bound XLSX archives, then validate the parts openpyxl will actually read."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import io
 import posixpath
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from xml.etree import ElementTree as ET
 from xml.parsers import expat
 from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile
 
 from openpyxl.formula.tokenizer import Token, Tokenizer, TokenizerError
+from openpyxl.xml.constants import XLSM, XLSX, XLTM, XLTX
 
 from app.limits import (
     EXCEL_MAX_CELLS,
@@ -24,10 +26,12 @@ from app.limits import (
     TEXT_MAX_LENGTH,
 )
 
+_S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_P = "http://schemas.openxmlformats.org/package/2006/relationships}"
+_CT = "http://schemas.openxmlformats.org/package/2006/content-types}"
 _CHUNK_BYTES = 16 * 1024
 _COORDINATE = re.compile(r"([A-Za-z]{1,3})([1-9][0-9]{0,6})\Z")
-_SHEET_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-_RELATIONSHIP_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
 def _check(value: int, limit: int, label: str) -> None:
@@ -35,69 +39,182 @@ def _check(value: int, limit: int, label: str) -> None:
         raise ValueError(f"Excel {label} must be at most {limit}")
 
 
-def _coordinate(value: str) -> tuple[int, int]:
-    match = _COORDINATE.fullmatch(value)
-    if match is None:
-        raise ValueError("Invalid Excel cell coordinate")
-    column = 0
-    for letter in match[1].upper():
-        column = column * 26 + ord(letter) - ord("A") + 1
-    return int(match[2]), column
+def _require(condition: bool, label: str) -> None:
+    if not condition:
+        raise ValueError(f"Invalid Excel {label}")
 
 
 @dataclass
 class _Budget:
     rows: int = 0
     cells: int = 0
-    sheets: int = 0
-    sheet_declarations: int = 0
     elements: int = 0
-    sheet_targets: set[str] = field(default_factory=set)
-    sheet_relationships: dict[str, set[str]] = field(default_factory=dict)
-    decoded_characters: int = 0
-    shared_strings: dict[int, int] = field(default_factory=dict)
-    shared_string_uses: dict[int, int] = field(default_factory=dict)
+    characters: int = 0
 
     def add_text(self, length: int) -> None:
-        self.decoded_characters += length
-        _check(self.decoded_characters, EXCEL_MAX_DECODED_CHARACTERS, "decoded characters")
-
-    def check_shared_strings(self) -> None:
-        for index, count in self.shared_string_uses.items():
-            length = self.shared_strings.get(index)
-            if length is None:
-                raise ValueError("Invalid Excel shared-string index")
-            self.add_text(length * count)
+        self.characters += length
+        _check(self.characters, EXCEL_MAX_DECODED_CHARACTERS, "decoded characters")
 
 
-def _validate_sheet_relationships(archive: ZipFile, path: str, ids: set[str]) -> None:
-    found = {}
-    depth = 0
+def _reject_declaration(*_args):
+    raise ValueError("Excel XML must not contain DTD or entity declarations")
 
-    def start(name: str, attrs: dict[str, str]) -> None:
-        nonlocal depth
-        depth += 1
-        if depth == 2 and name.rsplit("}", 1)[-1] == "Relationship" and attrs.get("Id") in ids:
-            found[attrs["Id"]] = (attrs.get("Type"), attrs.get("TargetMode"))
 
-    def end(_name: str) -> None:
-        nonlocal depth
-        depth -= 1
+def _archive(archive: ZipFile, budget: _Budget) -> dict[str, str]:
+    members = archive.infolist()
+    _check(len(members), EXCEL_MAX_MEMBERS, "archive entries")
+    names = [member.filename for member in members]
+    _require(len(names) == len(set(names)), "archive: duplicate member names")
+    _check(sum(m.file_size for m in members), EXCEL_MAX_EXPANDED_BYTES, "expanded archive bytes")
+    for member in members:
+        name = member.filename.rstrip("/")
+        _require(
+            bool(name)
+            and not name.startswith("/")
+            and "\\" not in name
+            and posixpath.normpath(name) == name
+            and not name.startswith("../")
+            and name not in {".", ".."},
+            "archive member path",
+        )
+        _check(member.file_size, EXCEL_MAX_MEMBER_BYTES, "expanded member bytes")
+        _require(
+            member.compress_type in {ZIP_STORED, ZIP_DEFLATED}, "compression: use stored or deflate"
+        )
 
-    parser = expat.ParserCreate(namespace_separator="}")
-    parser.StartElementHandler = start
-    parser.EndElementHandler = end
-    if path not in archive.namelist():
-        raise ValueError("Excel worksheet relationships are missing")
-    # These immutable members have already passed the archive and XML checks.
-    with archive.open(path) as stream:
-        while chunk := stream.read(_CHUNK_BYTES):
-            parser.Parse(chunk, False)
-    parser.Parse(b"", True)
-    for relationship_id in ids:
-        kind, mode = found.get(relationship_id, (None, None))
-        if kind != f"{_RELATIONSHIP_NAMESPACE}/worksheet" or mode == "External":
-            raise ValueError("Excel sheets must use internal worksheet relationships")
+    roots = {}
+    total = 0
+    for member in members:
+        depth = 0
+
+        def start(name, _attrs, path=member.filename):
+            nonlocal depth
+            if depth == 0:
+                roots[path] = name
+            depth += 1
+            _check(depth, 128, "XML nesting depth")
+            budget.elements += 1
+            _check(budget.elements, EXCEL_MAX_CELLS * 8, "XML elements")
+
+        def end(_name):
+            nonlocal depth
+            depth -= 1
+
+        parser = expat.ParserCreate(namespace_separator="}")
+        parser.StartElementHandler, parser.EndElementHandler = start, end
+        parser.StartDoctypeDeclHandler = parser.EntityDeclHandler = _reject_declaration
+        parser.ExternalEntityRefHandler = _reject_declaration
+        xml = member.filename.lower().endswith((".xml", ".rels"))
+        sniffed, size = xml, 0
+        with archive.open(member) as stream:
+            while chunk := stream.read(_CHUNK_BYTES):
+                size += len(chunk)
+                total += len(chunk)
+                _check(size, EXCEL_MAX_MEMBER_BYTES, "expanded member bytes")
+                _check(total, EXCEL_MAX_EXPANDED_BYTES, "expanded archive bytes")
+                if not sniffed and (prefix := chunk.lstrip()):
+                    sniffed = True
+                    xml = prefix.startswith(
+                        (
+                            b"<",
+                            b"\xef\xbb\xbf",
+                            b"\xff\xfe",
+                            b"\xfe\xff",
+                            b"\x00<",
+                            b"\x00\x00\xfe\xff",
+                        )
+                    )
+                if xml:
+                    parser.Parse(chunk, False)
+        if xml:
+            parser.Parse(b"", True)
+    return roots
+
+
+def _package(archive: ZipFile, roots: dict[str, str]) -> tuple[list[str], str | None]:
+    def tree(path: str, root: str):
+        _require(roots.get(path) == root, f"{path} root")
+        return ET.fromstring(archive.read(path))
+
+    manifest = tree("[Content_Types].xml", _CT + "Types")
+    overrides = {}
+    for child in manifest:
+        _require(
+            child.tag in {"{" + _CT + "Default", "{" + _CT + "Override"}, "content-type declaration"
+        )
+        if child.tag == "{" + _CT + "Override":
+            part = child.get("PartName", "")
+            _require(part.startswith("/") and part not in overrides, "content-type part")
+            overrides[part] = child.get("ContentType")
+    workbooks = [p[1:] for p, kind in overrides.items() if kind in {XLSX, XLSM, XLTM, XLTX}]
+    strings = [
+        p[1:]
+        for p, kind in overrides.items()
+        if kind == "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+    ]
+    _require(len(workbooks) == 1 and len(strings) <= 1, "workbook/shared-string declarations")
+    workbook = workbooks[0]
+    root = tree(workbook, _S + "workbook")
+    # openpyxl matches workbook child names without their namespaces. Require one
+    # canonical declaration so it cannot select a different sheets list.
+    tags = [child.tag for child in root]
+    _require(
+        all(tag.startswith("{" + _S) for tag in tags) and len(tags) == len(set(tags)),
+        "workbook structure",
+    )
+    sheets = root.find("{" + _S + "sheets")
+    _require(sheets is not None, "worksheet declarations")
+    _check(len(sheets), EXCEL_MAX_SHEETS, "worksheets")
+    folder, filename = posixpath.split(workbook)
+    relationships = tree(posixpath.join(folder, "_rels", filename + ".rels"), _P + "Relationships")
+    rels = {}
+    for rel in relationships:
+        _require(rel.tag == "{" + _P + "Relationship" and len(rel) == 0, "relationship declaration")
+        identity = rel.get("Id")
+        _require(bool(identity) and identity not in rels, "relationships: distinct IDs required")
+        rels[identity] = rel.attrib
+    targets, names, ids = [], set(), set()
+    for sheet in sheets:
+        _require(
+            sheet.tag == "{" + _S + "sheet" and "id" not in sheet.attrib, "worksheet declaration"
+        )
+        title, identity = sheet.get("name"), sheet.get("{" + _R + "}id")
+        _require(bool(title) and title not in names, "worksheets: distinct names required")
+        _require(
+            bool(identity) and identity not in ids, "worksheets: distinct relationships required"
+        )
+        names.add(title)
+        ids.add(identity)
+        rel = rels.get(identity, {})
+        _require(
+            rel.get("Type") == _R + "/worksheet"
+            and rel.get("TargetMode", "Internal") == "Internal",
+            "internal worksheet relationships",
+        )
+        target = rel.get("Target", "")
+        _require(
+            bool(target)
+            and not target.startswith("//")
+            and (not target.startswith("/") or posixpath.normpath(target) == target),
+            "worksheet target path",
+        )
+        path = posixpath.normpath(posixpath.join("/" + folder, target)).lstrip("/")
+        _require(path not in targets, "worksheets: distinct targets required")
+        _require(roots.get(path) == _S + "worksheet", "worksheet root")
+        targets.append(path)
+    shared = strings[0] if strings else None
+    if shared:
+        _require(roots.get(shared) == _S + "sst", "shared-string root")
+    return targets, shared
+
+
+def _coordinate(value: str) -> tuple[int, int]:
+    match = _COORDINATE.fullmatch(value)
+    _require(match is not None, "cell coordinate")
+    column = 0
+    for letter in match[1].upper():
+        column = column * 26 + ord(letter) - ord("A") + 1
+    return int(match[2]), column
 
 
 def _shared_formula_bound(formula: str) -> int:
@@ -105,318 +222,166 @@ def _shared_formula_bound(formula: str) -> int:
         tokens = Tokenizer("=" + formula).items
     except TokenizerError as exc:
         raise ValueError("Invalid Excel shared formula") from exc
-    # A translated coordinate component can grow by at most seven characters.
     growth = sum(
-        7 * sum(1 for _ in re.finditer(r"[A-Za-z]+|[0-9]+", token.value))
+        7 * len(re.findall(r"[A-Za-z]+|[0-9]+", token.value))
         for token in tokens
         if token.type == Token.OPERAND and token.subtype == Token.RANGE
     )
     return len(formula) + 1 + growth
 
 
-class _XmlCheck:
-    def __init__(self, budget: _Budget, part_name: str):
-        self.budget = budget
-        self.depth = 0
-        self.elements: list[str] = []
-        self.worksheet = False
-        self.max_row = self.max_column = 0
-        self.row_count = self.cell_count = 0
-        self.row_has_extension = False
-        self.row_extensions = 0
-        self.row = self.column = 0
-        self.text_depth = self.text_length = 0
-        self.value_depth = 0
-        self.formula_depth = 0
-        self.cell_depth = 0
-        self.cell_has_formula = False
-        self.cell_shared_string = False
-        self.cell_has_value = False
-        self.shared_value_depth = 0
-        self.shared_value_parts: list[str] = []
-        self.shared_string_depth = self.shared_string_length = self.shared_string_count = 0
-        self.formula_parts: list[str] = []
-        self.shared_formula_id: str | None = None
-        self.shared_formulae: dict[str | None, int] = {}
-        self.sheet_ids: set[str] = set()
-        self.sheet_names: set[str] = set()
-        self.relationship_base = "/" + posixpath.dirname(posixpath.dirname(part_name))
-        folder, filename = posixpath.split(part_name)
-        self.relationship_path = posixpath.join(folder, "_rels", filename + ".rels")
-        self.parser = expat.ParserCreate(namespace_separator="}")
-        self.parser.StartElementHandler = self.start
-        self.parser.EndElementHandler = self.end
-        self.parser.CharacterDataHandler = self.text
-        self.parser.StartDoctypeDeclHandler = self.reject_declaration
-        self.parser.EntityDeclHandler = self.reject_declaration
-        self.parser.ExternalEntityRefHandler = self.reject_declaration
+def _content(
+    archive: ZipFile, path: str, budget: _Budget, strings: list[int], *, shared=False
+) -> None:
+    """Check a known worksheet or string table, rejecting misplaced records."""
+    stack = []
+    rows = cells = max_row = max_col = row = column = extensions = 0
+    cell = None
+    entry_length = 0
+    leaf = None
+    text_parts = []
+    formulae = {}
+    row_extension = False
 
-    @staticmethod
-    def reject_declaration(*_args):
-        raise ValueError("Excel XML must not contain DTD or entity declarations")
+    def grid():
+        _check(max_col, EXCEL_MAX_COLUMNS, "columns")
+        slots = max(rows, max_row)
+        _check(budget.rows + slots, EXCEL_MAX_ROWS, "total row slots")
+        _check(
+            budget.cells + max(slots * max_col, cells) + extensions,
+            EXCEL_MAX_CELLS,
+            "total cell slots",
+        )
 
-    def check_grid(self) -> None:
-        _check(self.max_column, EXCEL_MAX_COLUMNS, "columns")
-        rows = max(self.max_row, self.row_count)
-        _check(self.budget.rows + rows, EXCEL_MAX_ROWS, "total row slots")
-        cells = max(rows * self.max_column, self.cell_count) + self.row_extensions
-        _check(self.budget.cells + cells, EXCEL_MAX_CELLS, "total cell slots")
-
-    def start(self, name: str, attrs: dict[str, str]) -> None:
-        parent = self.elements[-1] if self.elements else None
-        if self.shared_value_depth:
-            raise ValueError("Invalid Excel shared-string index")
-        if parent == _SHEET_NAMESPACE + "row":
-            if name == _SHEET_NAMESPACE + "extLst":
-                if self.row_has_extension:
-                    raise ValueError("Excel rows must have at most one extension list")
-                self.row_has_extension = True
-                # openpyxl also processes the extension as an empty cell record.
-                self.row_extensions += 1
-                self.check_grid()
-            elif name != _SHEET_NAMESPACE + "c":
-                raise ValueError("Invalid Excel worksheet row element")
-            elif self.row_has_extension:
-                raise ValueError("Excel row extensions must follow their cells")
-        if name == _SHEET_NAMESPACE + "row":
-            if name in self.elements:
-                raise ValueError("Excel worksheet rows must not be nested")
-            self.row_has_extension = False
-        if name == _SHEET_NAMESPACE + "c" and parent == _SHEET_NAMESPACE + "row":
-            self.cell_depth = self.depth + 1
-            self.cell_has_formula = False
-            self.cell_shared_string = attrs.get("t") == "s"
-            self.cell_has_value = False
-            self.shared_value_parts = []
-        if name == _SHEET_NAMESPACE + "si":
-            if self.shared_string_depth:
-                raise ValueError("Excel shared strings must not be nested")
-            self.shared_string_depth = self.depth + 1
-            self.shared_string_length = 0
-        if (
-            name == _SHEET_NAMESPACE + "v"
-            and self.cell_shared_string
-            and self.cell_depth
-            and self.depth == self.cell_depth
-        ):
-            if self.cell_has_value:
-                raise ValueError("Excel cells must have at most one shared-string index")
-            self.cell_has_value = True
-            self.shared_value_depth = self.depth + 1
-        self.elements.append(name)
-        spreadsheet_element = name.startswith(_SHEET_NAMESPACE)
-        name = name.rsplit("}", 1)[-1]
-        self.depth += 1
-        _check(self.depth, 128, "XML nesting depth")
-        self.budget.elements += 1
-        _check(self.budget.elements, EXCEL_MAX_CELLS * 8, "XML elements")
-        # openpyxl reads worksheet records even under a nonstandard root.
-        if (
-            not self.worksheet
-            and spreadsheet_element
-            and name in {"worksheet", "sheetData", "dimension", "row", "c"}
-        ):
-            self.worksheet = True
-            self.budget.sheets += 1
-            _check(self.budget.sheets, EXCEL_MAX_SHEETS, "worksheets")
-        if self.depth == 3 and parent is not None and parent.rsplit("}", 1)[-1] == "sheets":
-            if name != "sheet" or "id" in attrs:
-                raise ValueError("Invalid Excel worksheet declaration")
-            self.budget.sheet_declarations += 1
-            _check(self.budget.sheet_declarations, EXCEL_MAX_SHEETS, "worksheets")
-            if "name" in attrs:
-                title = attrs["name"]
-                if title in self.sheet_names:
-                    raise ValueError("Excel worksheets must have distinct names")
-                self.sheet_names.add(title)
-            relationship_id = attrs.get(
-                "http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-            )
-            if relationship_id is not None:
-                if relationship_id in self.sheet_ids:
-                    raise ValueError("Excel worksheets must use distinct relationships")
-                self.sheet_ids.add(relationship_id)
-                self.budget.sheet_relationships.setdefault(self.relationship_path, set()).add(
-                    relationship_id
-                )
-        if (
-            name == "Relationship"
-            and self.depth == 2
-            and attrs.get("Type", "").endswith("/worksheet")
-        ):
-            target = posixpath.normpath(
-                posixpath.join(self.relationship_base, attrs.get("Target", ""))
-            )
-            target = "/" + target.lstrip("/")
-            if target in self.budget.sheet_targets:
-                raise ValueError("Excel worksheets must use distinct targets")
-            self.budget.sheet_targets.add(target)
-        if self.worksheet and spreadsheet_element:
+    def start(name, attrs):
+        nonlocal rows, cells, max_row, max_col, row, column, extensions
+        nonlocal cell, entry_length, leaf, text_parts, row_extension
+        parent = stack[-1] if stack else None
+        name = name.removeprefix(_S) if name.startswith(_S) else name
+        _require(leaf is None, "cell/shared-string text structure")
+        if shared:
+            if name == "si":
+                _require(stack == ["sst"], "shared-string entry structure")
+                entry_length = 0
+            if parent == "sst":
+                _require(name == "si", "shared-string entry structure")
+        else:
+            positions = {
+                "dimension": ["worksheet"],
+                "sheetData": ["worksheet"],
+                "row": ["worksheet", "sheetData"],
+                "c": ["worksheet", "sheetData", "row"],
+            }
+            if name in positions:
+                _require(stack == positions[name], "worksheet record structure")
+            if parent == "row":
+                _require(name in {"c", "extLst"} and not row_extension, "worksheet row structure")
+                if name == "extLst":
+                    row_extension = True
+                    extensions += 1
+                    grid()
+            if parent == "c":
+                _require(name in {"f", "v", "is", "extLst"}, "worksheet cell structure")
+                _require(name not in cell["children"], "duplicate cell element")
+                cell["children"].add(name)
             if name == "dimension":
                 for point in attrs.get("ref", "A1").split(":"):
-                    row, column = _coordinate(point)
-                    self.max_row = max(self.max_row, row)
-                    self.max_column = max(self.max_column, column)
+                    r, c = _coordinate(point)
+                    max_row, max_col = max(max_row, r), max(max_col, c)
             elif name == "row":
-                self.row_count += 1
-                self.row = int(attrs.get("r", self.row + 1))
-                if self.row < 1:
-                    raise ValueError("Invalid Excel row coordinate")
-                self.max_row = max(self.max_row, self.row)
-                self.column = 0
+                rows += 1
+                row, column = int(attrs.get("r", row + 1)), 0
+                _require(row > 0, "row coordinate")
+                max_row = max(max_row, row)
+                row_extension = False
             elif name == "c":
-                self.cell_count += 1
-                if "r" in attrs:
-                    row, self.column = _coordinate(attrs["r"])
-                    self.max_row = max(self.max_row, row)
-                else:
-                    self.column += 1
-                self.max_column = max(self.max_column, self.column)
-            if name in {"dimension", "row", "c"}:
-                self.check_grid()
-        # Count all rich-text fragments together without retaining their text.
-        if spreadsheet_element and name in {"c", "si"} and not self.text_depth:
-            self.text_depth = self.depth
-            self.text_length = 0
-        if self.text_depth and not self.value_depth and name in {"t", "v", "f"}:
-            self.value_depth = self.depth
-        if (
-            self.cell_depth
-            and spreadsheet_element
-            and name == "f"
-            and self.depth == self.cell_depth + 1
-        ):
-            if self.cell_has_formula:
-                raise ValueError("Excel cells must have at most one formula")
-            self.cell_has_formula = True
-            if attrs.get("t") == "shared":
-                self.formula_depth = self.depth
-                self.shared_formula_id = attrs.get("si")
-                self.formula_parts = []
+                cells += 1
+                r, column = _coordinate(attrs["r"]) if "r" in attrs else (row, column + 1)
+                max_row, max_col = max(max_row, r), max(max_col, column)
+                cell = {"type": attrs.get("t"), "children": set(), "value": "", "formula": None}
+                entry_length = 0
+            if name in positions:
+                grid()
+            if name in {"f", "v"}:
+                _require(parent == "c", "cell value/formula structure")
+            if name == "f":
+                cell["formula"] = attrs
+        # Text.from_tree also matches rich text by local name. Count those same
+        # leaves, without charging pretty-print whitespace between fragments.
+        if (cell is not None or shared and "si" in stack) and name.rsplit("}", 1)[-1] in {
+            "t",
+            "v",
+            "f",
+        }:
+            leaf, text_parts = name, []
+        stack.append(name)
 
-    def text(self, value: str) -> None:
-        if self.value_depth:
-            self.text_length += len(value)
-            _check(self.text_length, TEXT_MAX_LENGTH, "cell/shared-string characters")
-            self.budget.add_text(len(value))
-            if self.shared_string_depth:
-                self.shared_string_length += len(value)
-            if self.shared_value_depth:
-                self.shared_value_parts.append(value)
-            if self.formula_depth:
-                self.formula_parts.append(value)
+    def text(value):
+        nonlocal entry_length
+        if leaf is not None:
+            entry_length += len(value)
+            _check(entry_length, TEXT_MAX_LENGTH, "cell/shared-string characters")
+            budget.add_text(len(value))
+            if leaf in {"f", "v"}:
+                text_parts.append(value)
 
-    def end(self, _name: str) -> None:
-        if self.depth == self.shared_string_depth:
-            index = self.shared_string_count
-            self.shared_string_count += 1
-            _check(self.shared_string_count, EXCEL_MAX_CELLS, "shared strings per part")
-            # Multiple tables cannot lower the bound for the table openpyxl selects.
-            self.budget.shared_strings[index] = max(
-                self.budget.shared_strings.get(index, 0), self.shared_string_length
-            )
-            self.shared_string_depth = 0
-        if self.depth == self.shared_value_depth:
-            self.shared_value_depth = 0
-        if self.depth == self.formula_depth:
-            formula = "".join(self.formula_parts)
-            index = self.shared_formula_id
-            if index not in self.shared_formulae and formula:
-                self.shared_formulae[index] = _shared_formula_bound(formula)
-            bound = self.shared_formulae.get(index, 1)
-            self.budget.add_text(max(bound - len(formula), 0))
-            self.formula_depth = 0
-            self.formula_parts = []
-        if self.depth == self.value_depth:
-            self.value_depth = 0
-        if self.depth == self.text_depth:
-            self.text_depth = 0
-        if self.depth == self.cell_depth:
-            if self.cell_shared_string and not self.cell_has_formula and self.shared_value_parts:
+    def end(_name):
+        nonlocal leaf, cell
+        name = stack.pop()
+        if name == leaf:
+            value = "".join(text_parts)
+            if not shared and name == "v":
+                cell["value"] = value
+            if not shared and name == "f" and cell["formula"].get("t") == "shared":
+                identity = cell["formula"].get("si")
+                if identity not in formulae and value:
+                    formulae[identity] = _shared_formula_bound(value)
+                budget.add_text(max(formulae.get(identity, 1) - len(value), 0))
+            leaf = None
+        if shared and name == "si":
+            _check(len(strings) + 1, EXCEL_MAX_CELLS, "shared strings per part")
+            strings.append(entry_length)
+        if not shared and name == "c":
+            if cell["type"] == "s" and cell["formula"] is None and cell["value"]:
                 try:
-                    index = int("".join(self.shared_value_parts))
+                    index = int(cell["value"])
                 except ValueError as exc:
                     raise ValueError("Invalid Excel shared-string index") from exc
-                if index < 0:
-                    raise ValueError("Invalid Excel shared-string index")
-                self.budget.shared_string_uses[index] = (
-                    self.budget.shared_string_uses.get(index, 0) + 1
-                )
-            self.shared_value_parts = []
-            self.cell_depth = 0
-        self.elements.pop()
-        self.depth -= 1
+                _require(0 <= index < len(strings), "shared-string index")
+                budget.add_text(strings[index])
+            cell = None
 
-    def finish(self) -> None:
-        self.parser.Parse(b"", True)
-        if self.worksheet:
-            self.check_grid()
-            rows = max(self.max_row, self.row_count)
-            self.budget.rows += rows
-            self.budget.cells += max(rows * self.max_column, self.cell_count) + self.row_extensions
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.StartElementHandler, parser.EndElementHandler, parser.CharacterDataHandler = (
+        start,
+        end,
+        text,
+    )
+    with archive.open(path) as stream:
+        while chunk := stream.read(_CHUNK_BYTES):
+            parser.Parse(chunk, False)
+    parser.Parse(b"", True)
+    if not shared:
+        budget.rows += max(rows, max_row)
+        budget.cells += max(max(rows, max_row) * max_col, cells) + extensions
 
 
 def validate_workbook(raw: bytes) -> None:
-    """Validate every member, including metadata and ignored worksheets."""
+    """Validate the immutable package before openpyxl loads it or imports write."""
     try:
         with ZipFile(io.BytesIO(raw)) as archive:
-            members = archive.infolist()
-            _check(len(members), EXCEL_MAX_MEMBERS, "archive entries")
-            names = [member.filename for member in members]
-            if len(names) != len(set(names)):
-                raise ValueError("Excel archive contains duplicate member names")
-            _check(
-                sum(member.file_size for member in members),
-                EXCEL_MAX_EXPANDED_BYTES,
-                "expanded archive bytes",
-            )
-            for member in members:
-                _check(member.file_size, EXCEL_MAX_MEMBER_BYTES, "expanded member bytes")
-                # zipfile only bounds decompressor output for stored/deflate members.
-                if member.compress_type not in {ZIP_STORED, ZIP_DEFLATED}:
-                    raise ValueError("Excel archive must use stored or deflate compression")
             budget = _Budget()
-            total = 0
-            for member in members:
-                xml = (
-                    _XmlCheck(budget, member.filename)
-                    if member.filename.lower().endswith((".xml", ".rels"))
-                    else None
-                )
-                size = 0
-                sniffed = xml is not None
-                with archive.open(member) as stream:
-                    while chunk := stream.read(_CHUNK_BYTES):
-                        size += len(chunk)
-                        total += len(chunk)
-                        _check(size, EXCEL_MAX_MEMBER_BYTES, "expanded member bytes")
-                        _check(total, EXCEL_MAX_EXPANDED_BYTES, "expanded archive bytes")
-                        if not sniffed:
-                            # Relationship targets may use arbitrary file extensions.
-                            prefix = chunk.lstrip()
-                            if prefix:
-                                sniffed = True
-                                if prefix.startswith(
-                                    (
-                                        b"<",
-                                        b"\xef\xbb\xbf",
-                                        b"\xff\xfe",
-                                        b"\xfe\xff",
-                                        b"\x00<",
-                                        b"\x00\x00\xfe\xff",
-                                    )
-                                ):
-                                    xml = _XmlCheck(budget, member.filename)
-                        if xml is not None:
-                            xml.parser.Parse(chunk, False)
-                if xml is not None:
-                    xml.finish()
-            for path, ids in budget.sheet_relationships.items():
-                _validate_sheet_relationships(archive, path, ids)
-            budget.check_shared_strings()
+            roots = _archive(archive, budget)
+            sheets, shared = _package(archive, roots)
+            strings = []
+            if shared:
+                _content(archive, shared, budget, strings, shared=True)
+            for path in sheets:
+                _content(archive, path, budget, strings)
     except (
         BadZipFile,
         expat.ExpatError,
+        ET.ParseError,
         EOFError,
         RuntimeError,
         NotImplementedError,
