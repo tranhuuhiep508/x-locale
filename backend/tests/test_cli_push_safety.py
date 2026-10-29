@@ -216,5 +216,6 @@ def test_partial_cli_import_loads_only_submitted_keys(client, database_engine, l
     finally:
         event.remove(database_engine, "before_cursor_execute", tracked)
     assert response.status_code == 200, response.text
-    assert loaded == [["key1"]] * 3  # Strings, translations, and tag links.
+    # Module/string lock reads and the three scoped catalog reads stay bounded.
+    assert loaded == [["key1"]] * 5
     assert response.json()["diff"]["orphan_count"] == 0

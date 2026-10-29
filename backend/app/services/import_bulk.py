@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import String, any_, bindparam, delete, select
+from sqlalchemy import String, any_, bindparam, delete, or_, select
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,7 @@ from app.services.activity_bulk import insert_rows, update_rows
 from app.services.activity_events import classify_event
 from app.services.job_progress import report_progress
 from app.services.key_policy import ambiguous_key
+from app.services.write_transactions import retryable_write_conflict
 
 IMPORT_DIFF_SAMPLE = 100
 # Strings and translations, tag links, activities.
@@ -64,7 +65,94 @@ class _Catalog:
     tomb_candidates: dict[str, list[dict]] = field(default_factory=dict)
 
 
-def _load_catalog(db: Session, project_id: uuid.UUID, keys: list[str] | None) -> _Catalog:
+def _lock_import_modules(
+    db: Session, project_id: uuid.UUID, keys: list[str], refs: set[uuid.UUID | str]
+) -> set[uuid.UUID]:
+    scope = (StringEntry.project_id == project_id) & (
+        StringEntry.key == any_(bindparam("import_keys", keys, type_=ARRAY(String)))
+    )
+    referenced = (
+        select(StringEntry.module_id)
+        .where(scope)
+        .union(select(StringEntry.published_module_id).where(scope))
+    )
+    return set(
+        db.scalars(
+            select(Module.id)
+            .where(
+                Module.project_id == project_id,
+                or_(
+                    Module.id.in_(referenced),
+                    Module.id
+                    == any_(
+                        bindparam(
+                            "import_module_ids",
+                            [ref for ref in refs if isinstance(ref, uuid.UUID)],
+                            type_=ARRAY(Module.id.type),
+                        )
+                    ),
+                    Module.slug
+                    == any_(
+                        bindparam(
+                            "import_module_slugs",
+                            [ref for ref in refs if isinstance(ref, str)],
+                            type_=ARRAY(String),
+                        )
+                    ),
+                ),
+            )
+            .order_by(Module.id)
+            .with_for_update(read=True, key_share=True)
+        )
+    )
+
+
+def _lock_import_entries(db: Session, project_id: uuid.UUID, keys: list[str]) -> set[uuid.UUID]:
+    # Parent locks prevent editor saves while the catalog locks and reads children.
+    ids = db.scalars(
+        select(StringEntry.id)
+        .where(
+            StringEntry.project_id == project_id,
+            StringEntry.key == any_(bindparam("import_keys", keys, type_=ARRAY(String))),
+        )
+        .order_by(StringEntry.id)
+        .with_for_update()
+    ).all()
+    return set(ids)
+
+
+def _check_import_locks(
+    catalog: _Catalog,
+    keys: set[str],
+    refs: set[uuid.UUID | str],
+    locked_entries: set[uuid.UUID],
+    locked_modules: set[uuid.UUID],
+) -> None:
+    candidates = [entry for entry in catalog.entries.values() if entry["key"] in keys]
+    modules = _module_ids(catalog)
+    needed_modules = {
+        mid
+        for entry in candidates
+        for mid in (entry["module_id"], entry["published_module_id"])
+        if mid is not None
+    } | {
+        modules[ref] if isinstance(ref, str) else ref
+        for ref in refs
+        if ref in modules or isinstance(ref, uuid.UUID)
+    }
+    if (
+        any(entry["id"] not in locked_entries for entry in candidates)
+        or not needed_modules <= locked_modules
+    ):
+        raise retryable_write_conflict("concurrent_modification")
+
+
+def _load_catalog(
+    db: Session,
+    project_id: uuid.UUID,
+    keys: list[str] | None,
+    locked_entries: set[uuid.UUID] | None = None,
+) -> _Catalog:
     scope = StringEntry.project_id == project_id
     if keys is not None:
         scope &= StringEntry.key == any_(bindparam("import_keys", keys, type_=ARRAY(String)))
@@ -73,7 +161,19 @@ def _load_catalog(db: Session, project_id: uuid.UUID, keys: list[str] | None) ->
         for row in db.execute(select(StringEntry.__table__).where(scope)).mappings()
     }
     translations: dict[uuid.UUID, dict[str, dict]] = {}
-    for row in db.execute(select(Translation.__table__).join(StringEntry).where(scope)).mappings():
+    translation_query = select(Translation.__table__).join(StringEntry).where(scope)
+    if locked_entries is not None:
+        translation_query = (
+            translation_query.where(
+                Translation.string_id
+                == any_(
+                    bindparam("import_ids", list(locked_entries), type_=ARRAY(StringEntry.id.type))
+                )
+            )
+            .order_by(Translation.id)
+            .with_for_update(of=Translation)
+        )
+    for row in db.execute(translation_query).mappings():
         translations.setdefault(row["string_id"], {})[row["locale"]] = dict(row)
     links: dict[uuid.UUID, set[uuid.UUID]] = {}
     for row in db.execute(select(StringTag.__table__).join(StringEntry).where(scope)).mappings():
@@ -232,6 +332,7 @@ def _create_references(
     rows: list[ImportRow],
     groups: list[tuple[uuid.UUID | str | None, str | None, bool]],
     dry_run: bool,
+    locked_modules: set[uuid.UUID] | None = None,
 ) -> dict[str, uuid.UUID]:
     modules = _module_ids(catalog)
     slugs = {ref for ref, _, _scoped in groups if isinstance(ref, str)} | {
@@ -265,6 +366,10 @@ def _create_references(
                     select(Module.__table__).where(Module.project_id == project.id)
                 ).mappings()
             }
+            if locked_modules is not None:
+                locked_modules.update(
+                    row["id"] for row in new_modules if row["id"] in catalog.modules
+                )
         if new_tags:
             insert_rows(db, Tag.__table__, new_tags, ignore_conflicts=True)
             catalog.tags = {
@@ -325,14 +430,33 @@ def import_rows(
         from app.services.strings import lock_publication
 
         lock_publication(db, project.id)
+    keys = list(dict.fromkeys(row.key for row in rows))
+    refs = {row.module for row in rows if row.module is not None} | {
+        ref for ref, _, _ in groups if ref is not None
+    }
+    if not dry_run:
+        locked_modules = _lock_import_modules(db, project.id, keys, refs)
+        locked_entries = _lock_import_entries(db, project.id, keys)
     catalog = _load_catalog(
-        db, project.id, list(dict.fromkeys(row.key for row in rows)) if partial else None
+        db, project.id, keys if partial else None, None if dry_run else locked_entries
     )
+    if not dry_run:
+        _check_import_locks(catalog, set(keys), refs, locked_entries, locked_modules)
     report_progress(db, "validating")
     _validate(
         catalog, rows, reject_deleted=reject_deleted, allow_duplicates=project.allow_duplicate_keys
     )
-    modules = _create_references(db, project, catalog, rows, groups, dry_run)
+    modules = _create_references(
+        db,
+        project,
+        catalog,
+        rows,
+        groups,
+        dry_run,
+        locked_modules=None if dry_run else locked_modules,
+    )
+    if not dry_run:
+        _check_import_locks(catalog, set(keys), refs, locked_entries, locked_modules)
     tag_names = {row["name"]: tid for tid, row in catalog.tags.items()}
     actor_type, actor_id, actor_label, batch_id, batch_kind = _actor_from_session(db)
     now = datetime.now(UTC)
