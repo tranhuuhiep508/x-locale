@@ -97,6 +97,8 @@ def test_decoded_excel_nul_rejects_before_writes(
     last = workbook.create_sheet("last")
     last.append(["key", "vi", "en", "description", "tags"])
     last.append(["bad", "Bad", "English", "Context", "new-tag"])
+    raw = io.BytesIO()
+    workbook.save(raw)
     if field == "module":
         last.title = "last\x00"
     elif field == "locale":
@@ -111,7 +113,7 @@ def test_decoded_excel_nul_rejects_before_writes(
         response = client.post(
             f"/api/projects/{project['id']}/import",
             params={"dry_run": dry_run},
-            files={"file": ("nul.xlsx", b"decoded workbook")},
+            files={"file": ("nul.xlsx", raw.getvalue())},
         )
     assert response.status_code == 400, response.text
     assert "contains a NUL (\\u0000) character" in response.json()["detail"]

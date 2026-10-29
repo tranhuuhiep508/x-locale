@@ -54,6 +54,56 @@ Legacy workbooks without mappings still use worksheet names as module slugs.
 Old exports whose long slugs were already truncated cannot be repaired reliably
 from worksheet names alone; re-export those workbooks after upgrading.
 
+## Excel resource limits
+
+Excel imports validate the archive and stream its XML before openpyxl opens it.
+Preview, apply, and background jobs use the same checks. Resource failures return
+HTTP 400 for synchronous requests, or a failed job with the validation error for
+async requests, before any content or reference rows are written.
+
+The compressed upload limit remains 20 MiB. Fixed Excel limits are:
+
+| Resource | Limit |
+| --- | --- |
+| Total expanded archive | 64 MiB |
+| Single expanded archive member | 32 MiB |
+| Archive entries | 1,024 |
+| Worksheets | 128 |
+| Cumulative row slots | 100,000 |
+| Columns per worksheet | 256 |
+| Cumulative cell slots | 1,000,000 |
+| Cell or shared-string text | 32,768 characters |
+| Shared-string entries per archive part | 1,000,000 |
+| Cumulative decoded text budget | 67,108,864 characters |
+| XML nesting depth | 128 |
+| Total XML elements | 8,000,000 |
+
+Expanded bytes are checked against ZIP metadata and during chunked reads.
+Archive members must use stored or deflate compression, whose decompression
+output can be bounded during reads. Row and cell slots include declared
+dimensions and sparse coordinates, including empty positions. Repeated row/cell
+records also count toward the limits. Hidden
+metadata and ignored worksheets count too. Duplicate archive names and reused
+worksheet relationships/targets are rejected so repeated parsing cannot bypass
+the budgets. Each row may have one trailing `extLst` extension list. It counts
+as one extra cell slot of parsing work; its XML remains subject to the archive,
+element, and nesting limits. Every declared sheet must resolve to an internal
+worksheet relationship; unsupported types and external worksheet targets are rejected.
+Workbook sheet lists must contain `sheet` elements, and relationship references
+use namespaced `r:id` attributes. Renamed elements and unqualified `id`
+attributes are rejected before loading.
+Foreign-namespace extension metadata does not define worksheet coordinates or
+cell text, but still counts toward the global archive and XML limits.
+Rich-text fragments count together toward the text limit. The cumulative text
+budget includes serialized cell/shared-string text, the expanded text of every
+shared-string cell reference, and conservative estimates for every shared-formula
+expansion, including coordinate growth. References are checked after the archive
+scan so ZIP entry order does not matter; multiple string tables cannot reduce
+the bound for any index. Shared formulas within that budget remain supported
+and import as formula text. XML DTD
+and entity declarations are rejected. These limits require no configuration and
+preserve the 20,000-key flat and modular benchmark workloads.
+
 ## Compatibility fixtures
 
 `backend/tests/fixtures/import_golden.json` was captured from the ORM path at
