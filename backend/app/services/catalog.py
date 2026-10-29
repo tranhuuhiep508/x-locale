@@ -280,8 +280,10 @@ def delete_module(db: Session, project: Project, module_id: uuid.UUID) -> None:
     project_id = project.id
 
     def write() -> None:
-        # Undo holds module locks before writing strings. Delete must use the
-        # same order, including when it waits for an undo to commit.
+        from app.services.strings import lock_publication
+
+        # Match undo's publication → module → strings order before moving public keys.
+        lock_publication(db, project_id)
         module = (
             db.query(Module)
             .filter(Module.project_id == project_id, Module.id == module_id)
