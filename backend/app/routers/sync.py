@@ -42,6 +42,7 @@ from app.services.sync import (
     normalize_export_stage,
     resolve_export_locales,
 )
+from app.upload_limits import LimitedImportRoute
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["sync"])
 
@@ -173,7 +174,6 @@ def _import_job_work(
 ASYNC_RESPONSES = {202: {"model": JobAcceptedOut, "description": "Import runs as a background job"}}
 
 
-@router.post("/import", response_model=ImportResult, responses=ASYNC_RESPONSES)
 def import_project(
     project: ProjectAccess,
     db: DbSession,
@@ -227,6 +227,16 @@ def import_project(
         db.commit()
     result.batch_id = batch_id
     return result
+
+
+router.add_api_route(
+    "/import",
+    import_project,
+    methods=["POST"],
+    response_model=ImportResult,
+    responses={**ASYNC_RESPONSES, 413: {"description": "Import request exceeds 21 MiB"}},
+    route_class_override=LimitedImportRoute,
+)
 
 
 @router.post("/strings/import", response_model=ImportResult, responses=ASYNC_RESPONSES)

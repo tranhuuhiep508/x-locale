@@ -9,6 +9,8 @@ KEY_MAX_LENGTH = 512
 # Text columns stay unbounded in the database. These caps reject new writes only.
 TEXT_MAX_LENGTH = 32768
 IMPORT_MAX_BYTES = 20 * 1024 * 1024
+# Allow multipart headers and boundaries in addition to the file itself.
+IMPORT_REQUEST_MAX_BYTES = IMPORT_MAX_BYTES + 1024 * 1024
 EXCEL_MAX_EXPANDED_BYTES = 64 * 1024 * 1024
 EXCEL_MAX_MEMBER_BYTES = 32 * 1024 * 1024
 EXCEL_MAX_MEMBERS = 1024

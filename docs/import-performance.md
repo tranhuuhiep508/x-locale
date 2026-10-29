@@ -54,6 +54,25 @@ Legacy workbooks without mappings still use worksheet names as module slugs.
 Old exports whose long slugs were already truncated cannot be repaired reliably
 from worksheet names alone; re-export those workbooks after upgrading.
 
+## Upload request limits
+
+`POST /api/projects/{project_id}/import` accepts files up to 20 MiB and limits
+the complete request body to 21 MiB, including multipart headers, boundaries,
+extra fields, and extra files. The request limit runs before multipart parsing
+and authentication. An oversized `Content-Length` is rejected without reading
+the body; actual streamed bytes are always counted, including chunked requests
+and requests with a missing or understated length. Crossing the request limit
+returns HTTP 413 with a JSON `detail` and closes partially spooled files. A file
+over 20 MiB within the request cap still returns the existing HTTP 400.
+
+Apply a matching 21 MiB request-body limit at any reverse proxy handling this
+upload endpoint (for example, Nginx `client_max_body_size 21m;`). This is needed
+to bound proxy temporary storage when request buffering is enabled. An
+unbuffered proxy must also enforce the limit while streaming. A proxy limit of
+20 MiB would reject valid near-limit files because multipart overhead counts.
+The upload cap does not apply to the CLI JSON-body `/strings/import` endpoint;
+avoid imposing it globally if that would limit larger CLI pushes.
+
 ## Excel resource limits
 
 Excel imports validate the archive and stream its XML before openpyxl opens it.
