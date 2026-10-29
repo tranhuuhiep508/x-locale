@@ -19,7 +19,7 @@ from app.helpers import (
     validate_locale_code,
     validate_module_slug,
 )
-from app.limits import KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH, TEXT_MAX_LENGTH
+from app.limits import EXCEL_CELL_MAX_LENGTH, KEY_MAX_LENGTH, TAG_NAME_MAX_LENGTH, TEXT_MAX_LENGTH
 from app.models import (
     Project,
     ProjectLayout,
@@ -199,8 +199,17 @@ def _text_value(val: Any) -> str:
 
 def _append_text_row(ws: Worksheet, values: list[Any]) -> None:
     cells = []
-    for value in values:
-        cell = WriteOnlyCell(ws, value=_text_value(value))
+    for column, value in enumerate(values, start=1):
+        text = _text_value(value)
+        # openpyxl silently truncates strings when constructing a cell.
+        if len(text) > EXCEL_CELL_MAX_LENGTH:
+            field = ws.cell(1, column).value or f"column {column}"
+            raise ValueError(
+                f"Excel export: sheet {ws.title!r}, key {key_preview(_text_value(values[0]))}, "
+                f"field {field!r} has {len(text)} characters; maximum is {EXCEL_CELL_MAX_LENGTH}. "
+                "Use JSON to export full source and translation text."
+            )
+        cell = WriteOnlyCell(ws, value=text)
         # Explicit string cells preserve literal text without creating Excel formulas.
         cell.data_type = "s"
         cells.append(cell)
