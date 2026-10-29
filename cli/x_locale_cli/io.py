@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.limits import KEY_MAX_LENGTH, MODULE_SLUG_MAX_LENGTH
@@ -234,11 +238,30 @@ def resolve_under_output(output_dir: Path, *parts: str) -> Path:
     return target
 
 
-def write_locale_file(path: Path, strings: dict[str, str]) -> None:
+def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = None
+    try:
+        # Exclusive creation keeps normal umask permissions without changing the process umask.
+        with open(path.parent / f".{uuid4().hex}.tmp", mode="x", encoding="utf-8") as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+            stream.flush()
+            if path.exists():
+                temporary.chmod(stat.S_IMODE(path.stat().st_mode))
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            # Cleanup must not hide the original write or replacement error.
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+
+
+def write_locale_file(path: Path, strings: dict[str, str]) -> None:
+    _atomic_write_text(
+        path,
         json.dumps(locale_json_from_strings(strings), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
     )
 
 
@@ -455,8 +478,9 @@ def apply_pull_export(plan: PullPlan) -> PullApplyResult:
     manifest_deleted = False
     if plan.manifest_path is not None:
         if plan.manifest is not None:
-            plan.manifest_path.write_text(
-                json.dumps(plan.manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            _atomic_write_text(
+                plan.manifest_path,
+                json.dumps(plan.manifest, ensure_ascii=False, indent=2) + "\n",
             )
             manifest_written = plan.manifest_path
         elif plan.manifest_path.exists():
