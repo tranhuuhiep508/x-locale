@@ -139,7 +139,10 @@ def download_import_template(
     if format == "xlsx":
         from app.excel import build_template_workbook
 
-        data = build_template_workbook(project)
+        try:
+            data = build_template_workbook(project)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         filename = f"{project.slug}-import-template.xlsx"
         return Response(
             content=data,
