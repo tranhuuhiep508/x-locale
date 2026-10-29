@@ -257,6 +257,24 @@ def _content(
         nonlocal rows, cells, max_row, max_col, row, column, extensions
         nonlocal cell, entry_length, leaf, text_parts, row_extension
         parent = stack[-1] if stack else None
+        # Unqualified records must not become indistinguishable from namespaced ones.
+        _require(
+            name
+            not in {
+                "worksheet",
+                "sst",
+                "si",
+                "sheetData",
+                "dimension",
+                "row",
+                "c",
+                "f",
+                "v",
+                "is",
+                "extLst",
+            },
+            "spreadsheet element namespace",
+        )
         name = name.removeprefix(_S) if name.startswith(_S) else name
         _require(leaf is None, "cell/shared-string text structure")
         if shared:

@@ -574,3 +574,36 @@ def test_nested_values_cannot_replace_shared_string_indices(monkeypatch, wrapper
         workbook.close()
     with pytest.raises(ValueError, match="cell value/formula structure"):
         validate_workbook(raw)
+
+
+def test_unqualified_formula_cannot_hide_shared_string_expansion(monkeypatch):
+    monkeypatch.setattr(excel_limits, "EXCEL_MAX_DECODED_CHARACTERS", 100)
+    rows = "".join(
+        f'<row r="{number}"><c r="A{number}" t="s"><f xmlns="">1</f><v>0</v></c></row>'
+        for number in range(1, 5)
+    )
+    raw = archive_bytes(
+        workbook_parts(
+            {"sheet.xml": worksheet(f"<sheetData>{rows}</sheetData>")},
+            shared_string_table([" " + "x" * 39]),
+        )
+    )
+    workbook = load_workbook(io.BytesIO(raw), read_only=True, keep_links=False)
+    try:
+        assert sum(len(row[0]) for row in workbook.active.values) == 160
+    finally:
+        workbook.close()
+    with pytest.raises(ValueError, match="spreadsheet element namespace"):
+        validate_workbook(raw)
+
+
+@pytest.mark.parametrize("element", ["row", "c", "v", "si"])
+def test_unqualified_structural_elements_are_rejected(element):
+    xml = worksheet('<sheetData><row><c t="s"><v>0</v></c></row></sheetData>')
+    table = shared_string_table(["text"])
+    if element == "si":
+        table = table.replace("<si>", '<si xmlns="">')
+    else:
+        xml = xml.replace(f"<{element}", f'<{element} xmlns=""', 1)
+    with pytest.raises(ValueError, match="spreadsheet element namespace"):
+        validate_workbook(archive_bytes(workbook_parts({"sheet.xml": xml}, table)))
