@@ -15,6 +15,7 @@ from app.config import settings
 from app.models import Activity, Project, StringEntry, Translation
 from app.schemas import BatchRequest, StringUpdate
 from app.services import activities as activities_service
+from app.services import catalog as catalog_service
 from app.services import strings as strings_service
 from app.services.sync import import_flat_strings
 from tests.helpers import json_upload, make_project, preview_publish
@@ -383,6 +384,99 @@ def _wait_until_publication_blocks(session_factory, project_id, backend_pid=0) -
             return
         time.sleep(0.01)
     raise AssertionError("writer never waited on the publication lock")
+
+
+@pytest.mark.parametrize("contender", ["delete", "publish"])
+@pytest.mark.parametrize("winner", ["module_delete", "contender"])
+@pytest.mark.parametrize("duplicates", [False, True])
+@pytest.mark.parametrize("pending_delete", [False, True])
+def test_module_deletion_serializes_public_key_claims(
+    client, session_factory, monkeypatch, contender, winner, duplicates, pending_delete
+):
+    project, root = _project(
+        client, "Module deletion race", layout="modular", duplicates=duplicates
+    )
+    auth = _module(client, root, "auth")
+    home = _module(client, root, "home") if contender == "delete" else None
+    first = _occupy_save(client, root, module_id=auth)
+    created = _create(
+        client,
+        root,
+        "save",
+        module_id=home,
+        source="Home",
+        status="public" if contender == "delete" else "draft",
+    )
+    assert created.status_code == 201, created.text
+    second = created.json()
+    if contender == "delete":
+        renamed = client.patch(f"{root}/strings/{second['id']}", json={"key": "home_save"})
+        assert renamed.status_code == 200, renamed.text
+    if pending_delete:
+        deleted = client.delete(f"{root}/strings/{first['id']}")
+        assert deleted.status_code == 204, deleted.text
+    before = [client.get(f"{root}/strings/{row['id']}").json() for row in (first, second)]
+    assert _export(client, root).status_code == 200
+
+    held, resume = Event(), Event()
+    clear = catalog_service._clear_module_refs
+    guard = strings_service.guard_published_keys
+    winning_module = auth if winner == "module_delete" else home
+
+    def clear_refs(db, project_id, module_id):
+        clear(db, project_id, module_id)
+        if str(module_id) == winning_module:
+            held.set()
+            assert resume.wait(7)
+
+    def guard_publication(db, project_row, *args, **kwargs):
+        guard(db, project_row, *args, **kwargs)
+        if winner == "contender" and contender == "publish":
+            held.set()
+            assert resume.wait(7)
+
+    monkeypatch.setattr(catalog_service, "_clear_module_refs", clear_refs)
+    monkeypatch.setattr(strings_service, "guard_published_keys", guard_publication)
+
+    def delete_module():
+        return client.delete(f"{root}/modules/{auth}")
+
+    def contend():
+        if contender == "delete":
+            return client.delete(f"{root}/modules/{home}")
+        return client.patch(f"{root}/strings/{second['id']}", json={"status": "public"})
+
+    winning_request, losing_request = (
+        (delete_module, contend) if winner == "module_delete" else (contend, delete_module)
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        won = pool.submit(winning_request)
+        try:
+            assert held.wait(5), "winner did not reach its public write"
+            lost = pool.submit(losing_request)
+            _wait_until_publication_blocks(session_factory, project["id"])
+        finally:
+            resume.set()
+        success, conflict = won.result(timeout=10), lost.result(timeout=10)
+
+    assert success.status_code == (200 if winning_module is None else 204), success.text
+    loser_is_publisher = winner == "module_delete" and contender == "publish"
+    if loser_is_publisher:
+        _assert_conflict(conflict)
+    else:
+        assert conflict.status_code == 409, conflict.text
+        assert "Published key 'save' already exists in Unassigned" in conflict.json()["detail"]
+        assert "Publish a different key or module" in conflict.json()["detail"]
+    loser_index = 1 if winner == "module_delete" else 0
+    loser = before[loser_index]
+    assert client.get(f"{root}/strings/{loser['id']}").json() == loser
+    remaining = {row["id"] for row in client.get(f"{root}/modules").json()}
+    assert (auth in remaining) == (winner != "module_delete")
+    if home is not None:
+        assert (home in remaining) == (winner == "module_delete")
+    exported = _export(client, root)
+    assert exported.status_code == 200, exported.text
+    assert _save_count(exported.json()) == (1 if loser_is_publisher else 2)
 
 
 @pytest.mark.parametrize("publisher", ["update", "batch"])

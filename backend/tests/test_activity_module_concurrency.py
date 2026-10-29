@@ -275,30 +275,26 @@ def test_undo_and_delete_use_module_before_string_order(
     pids = {}
     load = SnapshotReferences._load_modules
     clear = catalog._clear_module_refs
-    run_delete = catalog.run_write
+    run_write = write_transactions.run_write
     paused = False
 
     def load_modules(self, ids):
         nonlocal paused
         if not self.lock_modules:
             return load(self, ids)
-        if "undo" not in pids:
-            self.db.execute(text("SET LOCAL statement_timeout = '10s'"))
-            pids["undo"] = self.db.scalar(text("SELECT pg_backend_pid()"))
-            if winner == "delete":
-                waiter_started.set()
         load(self, ids)
         if winner == "undo" and not paused:
             paused = True
             held.set()
             assert resume.wait(7)
 
-    def delete_transaction(db, project_id, operation_name, write):
+    def track_transaction(db, project_id, operation_name, write, **kwargs):
+        role = "delete" if operation_name == "delete_module" else "undo"
         db.execute(text("SET LOCAL statement_timeout = '10s'"))
-        pids["delete"] = db.scalar(text("SELECT pg_backend_pid()"))
-        if winner == "undo":
+        pids[role] = db.scalar(text("SELECT pg_backend_pid()"))
+        if role != winner:
             waiter_started.set()
-        return run_delete(db, project_id, operation_name, write)
+        return run_write(db, project_id, operation_name, write, **kwargs)
 
     def clear_refs(db, project_id, module_id):
         clear(db, project_id, module_id)
@@ -307,7 +303,9 @@ def test_undo_and_delete_use_module_before_string_order(
             assert resume.wait(7)
 
     monkeypatch.setattr(SnapshotReferences, "_load_modules", load_modules)
-    monkeypatch.setattr(catalog, "run_write", delete_transaction)
+    monkeypatch.setattr(write_transactions, "run_write", track_transaction)
+    monkeypatch.setattr(activities, "run_write", track_transaction)
+    monkeypatch.setattr(catalog, "run_write", track_transaction)
     monkeypatch.setattr(catalog, "_clear_module_refs", clear_refs)
 
     def undo():
