@@ -516,12 +516,14 @@ class PushIndexTests(unittest.TestCase):
             with (
                 patch("x_locale_cli.ops.api_client", return_value=_Client()),
                 patch("x_locale_cli.ops.request_json", side_effect=_request_json),
-                patch("x_locale_cli.ops.apply_pull_export", side_effect=_boom),
+                patch("x_locale_cli.io.os.fsync", side_effect=_boom),
             ):
                 with self.assertRaises(OSError):
                     pull_translations(config)
             self.assertTrue(push_pending_is_active())
             self.assertEqual(index_file_path().read_bytes(), before)
+            self.assertEqual((locales / "vi.json").read_bytes(), b"{}")
+            self.assertEqual(set(locales.iterdir()), {locales / "vi.json"})
 
     def test_push_5xx_keeps_pending_marker(self) -> None:
         locales = self.root / "locales"
@@ -1029,12 +1031,15 @@ class PushIndexTests(unittest.TestCase):
             ensure_ascii=False,
             indent=2,
         ) + "\n"
-        original_write_text = Path.write_text
+        manifest_path = locales / "manifest.json"
+        manifest_before = b'{"modules": ["old"]}\n'
+        manifest_path.write_bytes(manifest_before)
+        original_replace = os.replace
 
-        def _write_text(self: Path, *args: object, **kwargs: object) -> int:
-            if self.name == "manifest.json":
+        def _replace(source: Path, destination: Path) -> None:
+            if destination.name == "manifest.json":
                 raise OSError("manifest fail")
-            return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
+            original_replace(source, destination)
 
         class _Client:
             def __enter__(self) -> _Client:
@@ -1064,12 +1069,15 @@ class PushIndexTests(unittest.TestCase):
             with (
                 patch("x_locale_cli.ops.api_client", return_value=_Client()),
                 patch("x_locale_cli.ops.request_json", side_effect=_request_json),
-                patch.object(Path, "write_text", _write_text),
+                patch("x_locale_cli.io.os.replace", side_effect=_replace),
             ):
                 with self.assertRaises(OSError):
                     pull_translations(config)
             self.assertTrue(push_pending_is_active())
             self.assertEqual(index_file_path().read_bytes(), before)
+            self.assertEqual(manifest_path.read_bytes(), manifest_before)
+            self.assertEqual(json.loads((auth_dir / "vi.json").read_text()), {"k": "v"})
+            self.assertEqual(set(locales.iterdir()), {auth_dir, manifest_path})
 
     def test_empty_public_modular_pull_does_not_create_pending_marker(self) -> None:
         locales = self.root / "locales"
