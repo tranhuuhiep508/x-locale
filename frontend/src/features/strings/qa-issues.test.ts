@@ -35,7 +35,7 @@ describe('presentQaIssues', () => {
       issue('placeholder_extra', '{price, number, percent}', 0, 1),
       length,
     ])
-    expect(presented.map((item) => item.code)).toEqual(['placeholder changed', 'length'])
+    expect(presented.map((item) => item.code)).toEqual(['placeholder_changed', 'length'])
     expect(presented[0].message).toBe(
       'Placeholder price changed from {price, number} to {price, number, percent}.',
     )
@@ -48,6 +48,7 @@ describe('presentQaIssues', () => {
       issue('placeholder_missing', '{count}', 2, 0),
     ])
     expect(presented).toHaveLength(1)
+    expect(presented[0].code).toBe('placeholder_changed')
     expect(presented[0].message).toBe('Placeholder count changed from {count} to {count, number}.')
   })
 

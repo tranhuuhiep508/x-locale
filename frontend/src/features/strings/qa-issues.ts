@@ -114,7 +114,7 @@ export function presentQaIssues(issues: readonly QaIssue[]): QaIssue[] {
     consumed.add(index)
     consumed.add(extraSlot)
     groupedAt.set(index, {
-      code: 'placeholder changed',
+      code: 'placeholder_changed',
       severity: 'error',
       message: `Placeholder ${missing.name} changed from ${missing.raw} to ${extra.raw}.`,
       start: null,

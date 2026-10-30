@@ -47,6 +47,7 @@ test('review groups a placeholder style change and still allows apply', async ({
   expect(body.issues.map((issue) => issue.code).sort()).toEqual(['placeholder_extra', 'placeholder_missing'])
 
   await expect(dialog.getByText(grouped)).toBeVisible()
+  await expect(dialog.getByText('placeholder_changed')).toBeVisible()
   await expect(dialog.getByText(/Missing placeholder/)).toHaveCount(0)
   await expect(dialog.getByText(/Extra placeholder/)).toHaveCount(0)
   await expect(dialog.getByText('1 QA error. You can still apply.')).toBeVisible()
@@ -71,6 +72,7 @@ test('edit form groups a placeholder style change and still allows save', async 
   expect(response.ok(), await response.text()).toBeTruthy()
 
   await expect(dialog.getByText(grouped)).toBeVisible()
+  await expect(dialog.getByText('placeholder_changed')).toBeVisible()
   await expect(dialog.getByText(/Missing placeholder/)).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   await expect(dialog.locator('#translation-en')).not.toHaveAttribute('aria-invalid')
