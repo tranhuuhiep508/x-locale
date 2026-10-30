@@ -214,6 +214,8 @@ def _walk(nodes: Iterable[object], depth: int, view: _IcuView) -> None:
             continue
         kind = node.get("type")
         if kind == _LITERAL:
+            # A ' immediately before { quotes the brace, so L'{app} is literal
+            # text and counts as a missing placeholder. Use ’ or '' to keep it.
             _add_printf(str(node.get("value") or ""), view.placeholders)
         elif kind in (_ARGUMENT, _NUMBER, _DATE, _TIME):
             token = _placeholder_token(node)

@@ -29,6 +29,16 @@ def test_placeholders_compare_name_and_count():
     ]
 
 
+def test_apostrophe_before_brace_quotes_the_placeholder():
+    # ICU quotes a brace that follows '. L'{app} is the text L{app}, not {app}.
+    issues = check_translation("{app}", "L'{app}", "fr")
+    assert [(issue.code, issue.detail["token"], issue.detail["translation_count"]) for issue in issues] == [
+        ("placeholder_missing", "{app}", 0)
+    ]
+    assert check_translation("{app}", "L''{app}", "fr") == []
+    assert check_translation("{app}", "L’{app}", "fr") == []
+
+
 def test_icu_invalid_syntax():
     issues = check_translation("Hello {name}", "Hello {name", "en")
     assert [issue.code for issue in issues] == ["icu_syntax"]
