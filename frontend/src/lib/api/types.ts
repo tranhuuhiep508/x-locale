@@ -138,12 +138,27 @@ export interface TagUpdate {
 }
 
 // ── Strings ────────────────────────────────────────────────────────────
+export interface TranslationQAIssue {
+  code: string
+  severity: 'error' | 'warning'
+  side: 'source' | 'translation'
+  message: string
+}
+
+export interface TranslationQAResult {
+  issues: TranslationQAIssue[]
+  complete: boolean
+}
+
+export type TranslationQAMap = Record<string, TranslationQAResult>
+
 export interface Translation {
   id: string | null
   locale: string
   value: string
   published_value: string | null
   confidence: number | null
+  qa?: TranslationQAResult | null
   updated_at: string | null
 }
 
@@ -295,6 +310,7 @@ export interface TranslatePreviewRequest {
 export interface TranslatePreviewResult {
   translations: Record<string, string>
   scores: Record<string, number>
+  qa?: TranslationQAMap
 }
 
 export interface TranslateProposalItem {
@@ -305,6 +321,7 @@ export interface TranslateProposalItem {
   description?: string | null
   translations: Record<string, string>
   scores?: Record<string, number>
+  qa?: TranslationQAMap
 }
 
 export interface TranslateProposalsResult {

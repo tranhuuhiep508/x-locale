@@ -305,7 +305,9 @@ AI translation uses the official OpenAI Python SDK's Responses API and strict
 structured output with an object root (`{"items": [...]}`). Sampling retains model
 defaults; `reasoning.effort` defaults to `none` via `OPENAI_REASONING_EFFORT` (override to `low`–`max` when needed).
 Translation context guides glossary, tone, mandatory
-translator notes, and placeholder preservation. Confidence is clamped to 0–100.
+translator notes, and placeholder preservation. Confidence is clamped to 0–100 and displayed as an unverified model estimate.
+Deterministic [translation QA](docs/translation-qa.md) checks placeholders, ICU and
+rich-text structure independently; its findings are advisory and never block publishing.
 
 Each batch gets one generation and at most one gap-filling generation for missing
 cells. Remaining gaps are omitted. Refused, incomplete, invalid, or failed requests
@@ -335,7 +337,6 @@ the actual `TranslationsResponse` schema through `responses.parse()`.
 
 Keep batches at 20 items and five workers until representative benchmarks compare
 20/30/40 items for duration, completeness, truncation, rate limits, and token usage.
-Global limits, shared queues, token-aware batching, stronger placeholder/ICU checks,
-and confidence calibration are separate follow-up work.
+Global limits, shared queues, token-aware batching, and confidence calibration are separate follow-up work.
 
 See the [OpenAI structured output guide](https://developers.openai.com/api/docs/guides/structured-outputs).

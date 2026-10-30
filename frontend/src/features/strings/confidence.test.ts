@@ -1,27 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CONFIDENCE_LOW_MAX,
-  CONFIDENCE_REVIEW_MAX,
   confidenceLabel,
-  confidenceTone,
   dropScore,
   mergeScores,
 } from './confidence'
 
-describe('confidenceTone', () => {
-  it('treats 80+ as high, 50–79 as medium, below as low', () => {
-    expect(confidenceTone(CONFIDENCE_REVIEW_MAX + 1)).toBe('high')
-    expect(confidenceTone(CONFIDENCE_REVIEW_MAX)).toBe('medium')
-    expect(confidenceTone(CONFIDENCE_LOW_MAX + 1)).toBe('medium')
-    expect(confidenceTone(CONFIDENCE_LOW_MAX)).toBe('low')
-  })
-})
-
 describe('confidenceLabel', () => {
-  it('tells the user when to review or re-translate', () => {
-    expect(confidenceLabel(92)).toContain('looks solid')
-    expect(confidenceLabel(70)).toContain('review recommended')
-    expect(confidenceLabel(40)).toContain('re-translate')
+  it('labels every score as an unverified model estimate', () => {
+    for (const score of [92, 70, 40]) {
+      expect(confidenceLabel(score)).toContain(`AI estimate ${score}`)
+      expect(confidenceLabel(score)).toContain('heuristic, not verified')
+    }
   })
 })
 

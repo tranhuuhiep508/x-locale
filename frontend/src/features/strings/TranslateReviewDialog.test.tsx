@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TranslateProposalItem } from '@/lib/api/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -21,6 +21,7 @@ describe('translation description conflict recovery', () => {
       const [conflicts, setConflicts] = useState<DescriptionConflict[]>([])
       const [originals, setOriginals] = useState<Record<string, string | null>>({ a: 'Original' })
       return <TranslateReviewDialog
+        projectId="project"
         open loadingQueue={false} generating={false} applying={false} generated
         error={null} items={items} page={1} pageSize={50} total={1}
         onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={vi.fn()}
@@ -56,4 +57,29 @@ describe('translation description conflict recovery', () => {
       expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('New context')
     }
   })
+})
+
+it('shows structural findings, keeps Apply enabled, and rechecks a manual correction on blur', async () => {
+  const { stringsApi } = await import('@/lib/api/strings')
+  const qa = vi.spyOn(stringsApi, 'translationQA').mockResolvedValue({ qa: { en: { complete: true, issues: [] } } })
+  const applied = vi.fn()
+  const checked: TranslateProposalItem[] = [{
+    ...items[0], source_text: 'Hello {name}', translations: { en: 'Hello' },
+    qa: { en: { complete: true, issues: [{ code: 'placeholder_missing', severity: 'error', side: 'translation', message: 'Missing placeholder {name}' }] } },
+  }]
+  render(<TooltipProvider><TranslateReviewDialog
+    projectId="project" open loadingQueue={false} generating={false} applying={false} generated
+    error={null} items={checked} page={1} pageSize={50} total={1}
+    onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={vi.fn()} onApply={applied}
+  /></TooltipProvider>)
+  expect(screen.getByText('Error: Missing placeholder {name}')).toBeTruthy()
+  expect(screen.getByText(/1 structural errors/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+  expect(applied).toHaveBeenCalledTimes(1)
+  fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Hello {name}' } })
+  expect(screen.queryByText('Error: Missing placeholder {name}')).toBeNull()
+  await act(async () => { fireEvent.blur(screen.getByLabelText('en')) })
+  await waitFor(() => expect(screen.getByText('No structural issues detected')).toBeTruthy())
+  expect(qa).toHaveBeenCalledWith('project', { source_text: 'Hello {name}', translations: { en: 'Hello {name}' } })
+  qa.mockRestore()
 })

@@ -240,12 +240,34 @@ class UpdatedWithinDays(IntEnum):
     thirty = 30
 
 
+class TranslationQAIssue(BaseModel):
+    code: str
+    severity: Literal["error", "warning"]
+    side: Literal["source", "translation"]
+    message: str
+
+
+class TranslationQAResult(BaseModel):
+    issues: list[TranslationQAIssue] = Field(default_factory=list)
+    complete: bool = True
+
+
+class TranslationQARequest(BaseModel):
+    source_text: str = Field(max_length=TEXT_MAX_LENGTH)
+    translations: TextValues
+
+
+class TranslationQAResponse(BaseModel):
+    qa: dict[str, TranslationQAResult] = Field(default_factory=dict)
+
+
 class TranslationOut(BaseModel):
     id: UUID | None = None
     locale: str
     value: str
     published_value: str | None = None
     confidence: int | None = None
+    qa: TranslationQAResult | None = None
     updated_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
@@ -427,6 +449,7 @@ class TranslatePreviewRequest(BaseModel):
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    qa: dict[str, TranslationQAResult] = Field(default_factory=dict)
 
 
 class TranslateProposalItem(BaseModel):
@@ -437,6 +460,7 @@ class TranslateProposalItem(BaseModel):
     description: str | None = None
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    qa: dict[str, TranslationQAResult] = Field(default_factory=dict)
 
 
 class TranslateProposalsResult(BaseModel):

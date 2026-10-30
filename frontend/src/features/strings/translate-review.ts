@@ -34,6 +34,7 @@ export function cloneItem(item: TranslateProposalItem): TranslateProposalItem {
     description: item.description ?? '',
     translations: { ...item.translations },
     scores: { ...(item.scores ?? {}) },
+    qa: { ...(item.qa ?? {}) },
   }
 }
 
@@ -57,12 +58,15 @@ export function updateDraftTranslation(
   if (!row) return drafts
   const scores = { ...(row.scores ?? {}) }
   delete scores[locale]
+  const qa = { ...(row.qa ?? {}) }
+  delete qa[locale]
   return {
     ...drafts,
     [stringId]: {
       ...row,
       translations: { ...row.translations, [locale]: value },
       scores,
+      qa,
     },
   }
 }
@@ -128,6 +132,8 @@ export function mergeProposalResults(
         ...next,
         translations: { ...previousTranslations, ...next.translations },
         scores: { ...(sameSource ? item.scores ?? {} : {}), ...(next.scores ?? {}) },
+        qa: Object.fromEntries(Object.entries({ ...(sameSource ? item.qa ?? {} : {}), ...(next.qa ?? {}) })
+          .filter(([locale]) => !(locale in next.translations) || next.qa?.[locale] != null)),
       })
     } else {
       merged.push(item)

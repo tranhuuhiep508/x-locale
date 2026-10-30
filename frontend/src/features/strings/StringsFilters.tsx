@@ -413,10 +413,10 @@ export function StringsFilters({
   if (search.max_confidence != null) {
     const label =
       confidenceValue(search) === 'low'
-        ? 'Low AI confidence'
+        ? 'Low AI estimate'
         : confidenceValue(search) === 'review'
-          ? 'AI needs review'
-          : `AI confidence ≤ ${search.max_confidence}`
+          ? 'AI estimate ≤ 79'
+          : `AI estimate ≤ ${search.max_confidence}`
     activeChips.push({ id: 'confidence', label, updates: { max_confidence: undefined } })
   }
   if (search.batch_id)
@@ -553,8 +553,8 @@ export function StringsFilters({
         </span>
         <FilterSelect label="AI" value={confidence} onValueChange={applyConfidence}>
           <SelectItem value={CONFIDENCE_ALL}>Any</SelectItem>
-          <SelectItem value="review">Needs review</SelectItem>
-          <SelectItem value="low">Low</SelectItem>
+          <SelectItem value="review">Estimate ≤ 79</SelectItem>
+          <SelectItem value="low">Estimate ≤ 49</SelectItem>
           {confidence.startsWith('threshold:') ? (
             <SelectItem value={confidence}>≤ {search.max_confidence}</SelectItem>
           ) : null}

@@ -27,6 +27,7 @@ vi.mock('@/lib/api/catalog', () => ({
 
 vi.mock('@/lib/api/strings', () => ({
   stringsApi: {
+    translationQA: vi.fn().mockResolvedValue({ qa: {} }),
     create: vi.fn(),
     update: vi.fn(),
     translatePreview: vi.fn(),
@@ -518,4 +519,22 @@ describe('StringFormDialog stale saves', () => {
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Bob English')
     expect(toast.success).not.toHaveBeenCalled()
   })
+})
+
+it('shows saved QA, refreshes after source edits, and allows saving structural errors', async () => {
+  const entry = draftEntry()
+  entry.source_text = 'Hello {name}'
+  entry.translations = [{
+    id: 't', locale: 'en', value: 'Hello', confidence: null, published_value: null, updated_at: null,
+    qa: { complete: true, issues: [{ code: 'placeholder_missing', severity: 'error', side: 'translation', message: 'Missing placeholder {name}' }] },
+  }]
+  vi.mocked(stringsApi.translationQA).mockResolvedValue({ qa: { en: { complete: true, issues: [] } } })
+  vi.mocked(stringsApi.update).mockResolvedValue(entry)
+  renderDialog({ entry })
+  expect(screen.getByText('Error: Missing placeholder {name}')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Hello' } })
+  fireEvent.blur(screen.getByLabelText('Source text'))
+  await waitFor(() => expect(screen.getByText('No structural issues detected')).toBeTruthy())
+  expect(stringsApi.translationQA).toHaveBeenCalledWith('proj-1', expect.objectContaining({ source_text: 'Hello', translations: expect.objectContaining({ en: 'Hello' }) }))
 })

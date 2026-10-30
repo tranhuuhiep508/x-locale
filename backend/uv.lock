@@ -397,6 +397,17 @@ wheels = [
 ]
 
 [[package]]
+name = "icu-messageformat-parser"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/fc/a77cf6f0d3b282d75c7d073bf9a7cf0ce2b76cfb59d3a1b9a9b5be5081e6/icu_messageformat_parser-0.1.0-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:55ccd363392f9d77453f879ce2c122b34f755e0988562e585be8cb9f8ff26dbe", size = 990900, upload-time = "2026-08-30T15:51:32.326Z" },
+    { url = "https://files.pythonhosted.org/packages/20/d6/0fa4e4c2007223780d7d7b918d8d8c971a9be37f93f4a1a2b72e6657dd07/icu_messageformat_parser-0.1.0-cp312-abi3-macosx_11_0_x86_64.whl", hash = "sha256:2fa89884ed8e58f7afa7e52c145da75bce2fa0da875e4a3f581ec7a59633d425", size = 1032405, upload-time = "2026-08-30T15:51:33.934Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/65/cbc4605ddd0ea1c891101b77dce0214dac2eb594716f2165e124b21452ae/icu_messageformat_parser-0.1.0-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:99d7e8091da430873c834d3fe842c53cc0941da513f105698f8515829e3efd93", size = 1115065, upload-time = "2026-08-30T15:51:35.323Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/c4/165f428af10b1b6c8489fe8a025a63924406c5651d65e44127d325c315db/icu_messageformat_parser-0.1.0-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:08c82f96f85d1051b1edd6a5991851d742ad2ec4b42edc27082dc072336ec701", size = 1139170, upload-time = "2026-08-30T15:51:36.96Z" },
+]
+
+[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -1196,6 +1207,7 @@ dependencies = [
     { name = "authlib" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "icu-messageformat-parser" },
     { name = "itsdangerous" },
     { name = "openai" },
     { name = "openpyxl" },
@@ -1222,6 +1234,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.4.0" },
     { name = "fastapi", specifier = ">=0.140" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "icu-messageformat-parser", specifier = "==0.1.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "openai", specifier = ">=3.37.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
