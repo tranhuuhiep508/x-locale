@@ -10,6 +10,7 @@ from app.activity import attach_batch
 from app.ai import AIConfigurationError, log_ai_failure, safe_ai_error
 from app.auth import ProjectAccess
 from app.database import DbSession
+from app.helpers import require_locale_code
 from app.models import Job, JobStatus, Module
 from app.schemas import (
     TranslateApplyRequest,
@@ -19,7 +20,10 @@ from app.schemas import (
     TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
+    TranslationQaRequest,
+    TranslationQaResult,
 )
+from app.services.strings import validate_locales
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
@@ -36,6 +40,7 @@ from app.services.translate import (
     select_entries,
     serialize_descriptions,
 )
+from app.services.translation_qa import check_translation
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
 
@@ -132,7 +137,7 @@ def translate_preview(
             raise HTTPException(status_code=400, detail="Unknown module")
 
     try:
-        translations, scores = preview_translations(
+        translations, scores, issues = preview_translations(
             project,
             module,
             payload.source_text,
@@ -141,7 +146,16 @@ def translate_preview(
         )
     except Exception as exc:
         raise _ai_http_error(exc) from None
-    return TranslatePreviewResult(translations=translations, scores=scores)
+    return TranslatePreviewResult(translations=translations, scores=scores, issues=issues)
+
+
+@router.post("/translate/qa", response_model=TranslationQaResult)
+def translate_qa(payload: TranslationQaRequest, project: ProjectAccess) -> TranslationQaResult:
+    """Read-only check for the edit form. Computes issues and stores nothing."""
+    require_locale_code(payload.locale)
+    validate_locales(project, [payload.locale])
+    issues = check_translation(payload.source_text, payload.translation, payload.locale)
+    return TranslationQaResult(locale=payload.locale, issues=[issue.as_dict() for issue in issues])
 
 
 @router.post("/translate/missing", response_model=TranslateProposalsResult)

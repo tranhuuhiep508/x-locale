@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [[package]]
@@ -57,6 +57,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/36/98/7d93f30d029643c0275dbc0bd6d5a6f670661ee6c9a94d93af7ab4887600/authlib-1.7.2.tar.gz", hash = "sha256:2cea25fefcd4e7173bdf1372c0afc265c8034b23a8cd5dcb6a9164b826c64231", size = 176511, upload-time = "2026-05-06T08:10:23.116Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/95/adcb68e20c34162e9135f370d6e31737719c2b6f94bc953fe7ed1f10fe21/authlib-1.7.2-py2.py3-none-any.whl", hash = "sha256:3e1faedc9d87e7d56a164eca3ccb6ace0d61b94abe83e92242f8dc8bba9b4a9f", size = 259548, upload-time = "2026-05-06T08:10:21.436Z" },
+]
+
+[[package]]
+name = "babel"
+version = "2.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/b2/51899539b6ceeeb420d40ed3cd4b7a40519404f9baf3d4ac99dc413a834b/babel-2.18.0.tar.gz", hash = "sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d", size = 9959554, upload-time = "2026-02-01T12:30:56.078Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl", hash = "sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35", size = 10196845, upload-time = "2026-02-01T12:30:53.445Z" },
 ]
 
 [[package]]
@@ -394,6 +403,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cd/c4/0e5636363151a2a1795e0a77617168b9ca438e1748ec05fc9b5687f93d64/httpx2_jsfetch-1.0.tar.gz", hash = "sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60", size = 6872, upload-time = "2026-08-07T00:13:07.492Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/43/832f631d32e4f1211caa2ba368317739fe71f0b8530e4c9d15dc454bac2a/httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32", size = 6382, upload-time = "2026-08-07T00:13:06.567Z" },
+]
+
+[[package]]
+name = "icu-messageformat-parser"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/fc/a77cf6f0d3b282d75c7d073bf9a7cf0ce2b76cfb59d3a1b9a9b5be5081e6/icu_messageformat_parser-0.1.0-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:55ccd363392f9d77453f879ce2c122b34f755e0988562e585be8cb9f8ff26dbe", size = 990900, upload-time = "2026-08-30T15:51:32.326Z" },
+    { url = "https://files.pythonhosted.org/packages/20/d6/0fa4e4c2007223780d7d7b918d8d8c971a9be37f93f4a1a2b72e6657dd07/icu_messageformat_parser-0.1.0-cp312-abi3-macosx_11_0_x86_64.whl", hash = "sha256:2fa89884ed8e58f7afa7e52c145da75bce2fa0da875e4a3f581ec7a59633d425", size = 1032405, upload-time = "2026-08-30T15:51:33.934Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/65/cbc4605ddd0ea1c891101b77dce0214dac2eb594716f2165e124b21452ae/icu_messageformat_parser-0.1.0-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:99d7e8091da430873c834d3fe842c53cc0941da513f105698f8515829e3efd93", size = 1115065, upload-time = "2026-08-30T15:51:35.323Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/c4/165f428af10b1b6c8489fe8a025a63924406c5651d65e44127d325c315db/icu_messageformat_parser-0.1.0-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:08c82f96f85d1051b1edd6a5991851d742ad2ec4b42edc27082dc072336ec701", size = 1139170, upload-time = "2026-08-30T15:51:36.96Z" },
 ]
 
 [[package]]
@@ -1194,8 +1214,10 @@ source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
     { name = "authlib" },
+    { name = "babel" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "icu-messageformat-parser" },
     { name = "itsdangerous" },
     { name = "openai" },
     { name = "openpyxl" },
@@ -1220,8 +1242,10 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "authlib", specifier = ">=1.4.0" },
+    { name = "babel", specifier = "==2.18.0" },
     { name = "fastapi", specifier = ">=0.140" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "icu-messageformat-parser", specifier = "==0.1.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "openai", specifier = ">=3.37.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },

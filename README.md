@@ -257,6 +257,12 @@ uv run --project cli python -m unittest discover -s cli/tests
 cd frontend && npm run gen:api
 ```
 
+Translation QA uses `icu-messageformat-parser==0.1.0` (the FormatJS parser).
+That release has wheels for Linux (`manylinux_2_28` x86_64 and aarch64, which
+covers `python:3.14-slim`) and macOS only: there is no Windows wheel and no
+source distribution, so `uv sync` on Windows cannot install the backend. Plural
+categories come from `babel==2.18.0` (CLDR).
+
 ## Environment
 
 See [.env.example](.env.example). Notable vars:
