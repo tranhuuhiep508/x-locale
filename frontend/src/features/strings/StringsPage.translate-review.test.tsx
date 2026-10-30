@@ -35,6 +35,7 @@ vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/strings')>(),
   stringsApi: {
     list: vi.fn(), create: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
+    translateQa: vi.fn(),
   },
 }))
 
@@ -67,6 +68,7 @@ beforeEach(() => {
   vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
     ...page, items: [{ ...item, description: 'My context', translations: { en: 'Hello' } }],
   })
+  vi.mocked(stringsApi.translateQa).mockResolvedValue({ locale: 'en', issues: [] })
   vi.mocked(stringsApi.translateApply).mockRejectedValueOnce(new ApiError(409, 'Conflict', {
     detail: { code: 'stale_translation_description', conflicts: [
       { string_id: 'a', key: 'greeting', description: 'New context' },

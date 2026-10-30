@@ -238,6 +238,16 @@ describe('mergeProposalResults', () => {
     expect(merged[0].translations).toEqual({ en: '', ja: '' })
     expect(merged[2].key).toBe('extra')
   })
+
+  it('keeps QA for locales that were not retranslated and replaces the rest', () => {
+    const length = { code: 'length', severity: 'warning' as const, message: 'Long', start: null, end: null, detail: null }
+    const missing = { code: 'placeholder_missing', severity: 'error' as const, message: 'Missing', start: null, end: null, detail: null }
+    const merged = mergeProposalResults(
+      [item({ string_id: 'a', translations: { en: 'Hi', ja: '' }, issues: { en: [length] } })],
+      [item({ string_id: 'a', translations: { ja: 'こんにちは' }, issues: { ja: [missing] } })],
+    )
+    expect(merged[0].issues).toEqual({ en: [length], ja: [missing] })
+  })
 })
 
 describe('reviewStatusDescription', () => {
@@ -343,7 +353,13 @@ describe('source freshness', () => {
 
   it('drops old translations and scores when a new source returns only some locales', () => {
     const previous = [
-      item({ string_id: 'a', source_text: 'Lưu', translations: { en: 'Save', ja: '保存' }, scores: { en: 99, ja: 95 } }),
+      item({
+        string_id: 'a',
+        source_text: 'Lưu',
+        translations: { en: 'Save', ja: '保存' },
+        scores: { en: 99, ja: 95 },
+        issues: { en: [{ code: 'length', severity: 'warning', message: 'Long', start: null, end: null, detail: null }] },
+      }),
       item({ string_id: 'b', translations: { en: 'My draft' } }),
     ]
     const merged = mergeProposalResults(previous, [
@@ -351,6 +367,7 @@ describe('source freshness', () => {
     ])
     expect(merged[0].translations).toEqual({ en: 'Cancel', ja: '' })
     expect(merged[0].scores).toEqual({ en: 90 })
+    expect(merged[0].issues).toEqual({})
     expect(merged[1]).toBe(previous[1])
     expect(applyPayloadFromDrafts(merged, {})[0].expected_source_text).toBe('Hủy')
   })
