@@ -67,6 +67,7 @@ import {
   descriptionsFromDrafts,
   filledStringCount,
   mergeProposalResults,
+  memoryExclusions,
   type MissingReviewRequest,
 } from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
@@ -370,9 +371,13 @@ export function StringsPage() {
       const changedSources = sourceConflicts(error)
       setApplyConflicts(conflicts)
       setApplySourceConflicts(changedSources)
+      const unsafeMemory = error instanceof ApiError
+        && (error.body as { detail?: { code?: string } })?.detail?.code === 'unsafe_translation_memory'
       toast.error(changedSources.length
         ? 'Source text changed. Nothing was saved. Regenerate the changed strings.'
-        : conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.' : 'Failed to save translations')
+        : conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.'
+          : unsafeMemory ? 'Fix structural QA findings before reusing published translations.'
+            : 'Failed to save translations')
     },
   })
 
@@ -824,6 +829,7 @@ export function StringsPage() {
           proposeMut.mutate({
             scope: 'strings',
             string_ids: items.map((item) => item.string_id),
+            exclude_locales_by_string: memoryExclusions(items),
             locales,
             descriptions: descriptionsFromDrafts(items),
           })

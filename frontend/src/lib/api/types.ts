@@ -291,6 +291,7 @@ export interface TranslateRequest extends BatchFilter {
   page?: number
   page_size?: number
   descriptions?: Record<string, string>
+  exclude_locales_by_string?: Record<string, string[]>
 }
 
 export interface TranslateResult {
@@ -313,7 +314,24 @@ export interface TranslatePreviewResult {
   qa?: TranslationQAMap
 }
 
+export interface TranslationMemorySuggestion {
+  string_id: string
+  key: string
+  module_id: string | null
+  module_slug: string | null
+  source_text: string
+  value: string
+  published_at: string
+  match_type: 'exact' | 'fuzzy'
+  similarity: number
+  qa: TranslationQAResult
+  can_accept: boolean
+}
+
 export interface TranslateProposalItem {
+  memory_suggestions?: Record<string, TranslationMemorySuggestion[]>
+  /** Local review provenance; retained through manual edits until cleared. */
+  memory_locales?: string[]
   string_id: string
   key: string
   source_text: string
@@ -337,6 +355,7 @@ export interface TranslateApplyRequest {
   items: Array<{
     string_id: string
     expected_source_text: string
+    memory_locales?: string[]
     translations: Record<string, string>
     scores?: Record<string, number>
     description?: string | null

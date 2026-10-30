@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.postgres_admin import create_database, drop_database
-from tests.pg import new_database_url
+from tests.pg import new_database_url, provision_extensions
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -75,6 +75,7 @@ def _create_all(url: str) -> None:
     from app.database import Base
 
     engine = create_engine(url, poolclass=NullPool)
+    provision_extensions(url)
     Base.metadata.create_all(engine)
     engine.dispose()
 
@@ -175,6 +176,7 @@ def dump_and_restore(url: str) -> None:
             continue
         filtered.append(line)
     reset_public_schema(url)
+    provision_extensions(url)
     restored = subprocess.run(
         ["psql", target, "-v", "ON_ERROR_STOP=1", "-f", "-"],
         input="\n".join(filtered) + "\n",

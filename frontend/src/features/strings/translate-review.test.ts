@@ -3,6 +3,8 @@ import type { TranslateProposalItem } from '@/lib/api/types'
 import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
+  acceptMemorySuggestion,
+  memoryExclusions,
   applySuccessMessage,
   clampPage,
   createMissingReviewRequest,
@@ -369,5 +371,42 @@ describe('proposal QA merging', () => {
     expect(regenerated.qa).toEqual({ fr: qa })
     const changedSource = mergeProposalResults([original], [{ ...original, source_text: 'New', translations: { en: 'Hi' }, qa: {} }])[0]
     expect(changedSource.qa).toEqual({})
+  })
+})
+
+
+describe('accepted memory drafts', () => {
+  const suggestion = {
+    string_id: 'donor', key: 'published', source_text: 'Hello {name}', value: 'Hi {name}',
+    module_id: null, module_slug: null, published_at: '2026-10-30T00:00:00Z',
+    match_type: 'exact' as const, similarity: 1, can_accept: true,
+    qa: { complete: true, issues: [] },
+  }
+  const row: TranslateProposalItem = {
+    string_id: 'a', key: 'a', source_text: suggestion.source_text, status: 'draft',
+    translations: { en: '', ja: '' }, memory_suggestions: { en: [suggestion] },
+  }
+
+  it('preserves provenance after editing and clears it when text is cleared', () => {
+    const accepted = acceptMemorySuggestion(draftsFromItems([row]), 'a', 'en', suggestion)
+    const edited = updateDraftTranslation(accepted, 'a', 'en', 'Edited {name}')
+    expect(memoryExclusions(Object.values(edited))).toEqual({ a: ['en'] })
+    expect(applyPayloadFromDrafts(Object.values(edited), {} as Record<string, string | null>)[0].memory_locales).toEqual(['en'])
+    expect(edited.a.scores).toEqual({})
+    expect(edited.a.qa).toEqual({})
+    const cleared = updateDraftTranslation(edited, 'a', 'en', '')
+    expect(memoryExclusions(Object.values(cleared))).toEqual({})
+    expect(cleared.a.memory_locales).toEqual([])
+  })
+
+  it('preserves accepted cells through AI merges and clears them on source changes', () => {
+    const accepted = Object.values(acceptMemorySuggestion(draftsFromItems([row]), 'a', 'en', suggestion))
+    const merged = mergeProposalResults(accepted, [{ ...row, translations: { ja: 'Japanese' } }])
+    expect(merged[0].translations).toEqual({ en: 'Hi {name}', ja: 'Japanese' })
+    expect(merged[0].memory_locales).toEqual(['en'])
+    const changed = mergeProposalResults(accepted, [{ ...row, source_text: 'Changed', translations: { ja: 'New' }, memory_suggestions: {} }])
+    expect(changed[0].translations).toEqual({ en: '', ja: 'New' })
+    expect(changed[0].memory_locales).toEqual([])
+    expect(changed[0].memory_suggestions).toEqual({})
   })
 })

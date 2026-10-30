@@ -1,4 +1,4 @@
-import type { TranslateProposalItem, TranslateRequest, TranslationSourceConflict } from '@/lib/api/types'
+import type { TranslateProposalItem, TranslateRequest, TranslationMemorySuggestion, TranslationSourceConflict } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
 import { ApiError } from '@/lib/api/client'
 import { searchToBatchFilter } from '@/features/strings/publish-preview'
@@ -65,10 +65,34 @@ export function updateDraftTranslation(
     [stringId]: {
       ...row,
       translations: { ...row.translations, [locale]: value },
+      memory_locales: value.trim() ? row.memory_locales : row.memory_locales?.filter((item) => item !== locale),
       scores,
       qa,
     },
   }
+}
+
+export function acceptMemorySuggestion(
+  drafts: Record<string, TranslateProposalItem>,
+  stringId: string,
+  locale: string,
+  suggestion: TranslationMemorySuggestion,
+): Record<string, TranslateProposalItem> {
+  if (!suggestion.can_accept || !drafts[stringId]) return drafts
+  const updated = updateDraftTranslation(drafts, stringId, locale, suggestion.value)
+  const row = updated[stringId]
+  return { ...updated, [stringId]: {
+    ...row,
+    memory_locales: [...new Set([...(row.memory_locales ?? []), locale])],
+    qa: { ...row.qa, [locale]: suggestion.qa },
+  } }
+}
+
+export function memoryExclusions(items: TranslateProposalItem[]): Record<string, string[]> {
+  return Object.fromEntries(items.flatMap((item) => {
+    const locales = (item.memory_locales ?? []).filter((locale) => item.translations[locale]?.trim())
+    return locales.length ? [[item.string_id, locales]] : []
+  }))
 }
 
 export function updateDraftDescription(
@@ -127,10 +151,14 @@ export function mergeProposalResults(
       const previousTranslations = sameSource
         ? item.translations
         : Object.fromEntries(Object.keys(item.translations).map((locale) => [locale, '']))
+      const memoryLocales = sameSource ? item.memory_locales ?? [] : []
+      const preserved = Object.fromEntries(memoryLocales.map((locale) => [locale, item.translations[locale]]))
       merged.push({
         ...item,
         ...next,
-        translations: { ...previousTranslations, ...next.translations },
+        translations: { ...previousTranslations, ...next.translations, ...preserved },
+        memory_locales: memoryLocales,
+        memory_suggestions: sameSource ? item.memory_suggestions : next.memory_suggestions,
         scores: { ...(sameSource ? item.scores ?? {} : {}), ...(next.scores ?? {}) },
         qa: Object.fromEntries(Object.entries({ ...(sameSource ? item.qa ?? {} : {}), ...(next.qa ?? {}) })
           .filter(([locale]) => !(locale in next.translations) || next.qa?.[locale] != null)),
@@ -210,6 +238,7 @@ export function applyPayloadFromDrafts(
       Object.entries(item.translations).filter(([, value]) => value.trim()),
     ),
     scores: item.scores,
+    memory_locales: item.memory_locales,
     ...((item.description?.trim() || null) !== (originals[item.string_id]?.trim() || null)
       ? { description: item.description?.trim() || null, expected_description: originals[item.string_id] }
       : {}),

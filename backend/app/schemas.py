@@ -423,6 +423,7 @@ class TranslateRequest(BatchFilter):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
     descriptions: OptionalDescriptionValues = None
+    exclude_locales_by_string: dict[UUID, list[str]] = Field(default_factory=dict, max_length=100)
 
 
 class TranslationSourceConflict(BaseModel):
@@ -452,7 +453,22 @@ class TranslatePreviewResult(BaseModel):
     qa: dict[str, TranslationQAResult] = Field(default_factory=dict)
 
 
+class TranslationMemorySuggestion(BaseModel):
+    string_id: UUID
+    key: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    source_text: str
+    value: str
+    published_at: UtcDateTime
+    match_type: Literal["exact", "fuzzy"]
+    similarity: float
+    qa: TranslationQAResult
+    can_accept: bool
+
+
 class TranslateProposalItem(BaseModel):
+    memory_suggestions: dict[str, list[TranslationMemorySuggestion]] = Field(default_factory=dict)
     string_id: UUID
     key: str
     source_text: str
@@ -473,6 +489,7 @@ class TranslateProposalsResult(BaseModel):
 
 
 class TranslateApplyItem(BaseModel):
+    memory_locales: list[str] = Field(default_factory=list)
     string_id: UUID
     expected_source_text: str
     translations: TextValues

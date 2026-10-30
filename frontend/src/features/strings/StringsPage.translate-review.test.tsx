@@ -286,3 +286,36 @@ describe('source conflict recovery', () => {
     expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
+
+
+it.each([false, true])('excludes accepted memory and preserves it through AI (background: %s)', async (background) => {
+  vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+  const queued: TranslateProposalItem = { ...item, translations: { en: '', ja: '' }, memory_suggestions: { en: [{
+    string_id: 'donor', key: 'published', source_text: item.source_text, value: 'Published hello',
+    module_id: null, module_slug: null, published_at: '2026-10-30T00:00:00Z',
+    match_type: 'exact', similarity: 1, can_accept: true, qa: { complete: true, issues: [] },
+  }] } }
+  vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [queued] })
+  const generated = { ...item, translations: { ja: 'Japanese' }, qa: { ja: { complete: true, issues: [] } } }
+  vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValue({
+    ...page, items: background ? [] : [generated], job_id: background ? 'memory-job' : null,
+  })
+  vi.mocked(jobsApi.get).mockResolvedValue({
+    id: 'memory-job', kind: 'translate_proposals', status: 'completed', result: { items: [generated] },
+    error: null, created_at: null, completed_at: null, progress: null,
+  })
+  vi.mocked(stringsApi.translateApply).mockReset().mockResolvedValue({ translated_count: 2, batch_id: 'batch', locales: ['en', 'ja'] })
+  render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Use translation' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+  await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledWith('demo-app', expect.objectContaining({ exclude_locales_by_string: { a: ['en'] } })))
+  await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('Japanese'))
+  expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+  await waitFor(() => expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+  await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledWith('demo-app', {
+    items: [expect.objectContaining({ translations: { en: 'Published hello', ja: 'Japanese' }, memory_locales: ['en'] })],
+  }))
+})

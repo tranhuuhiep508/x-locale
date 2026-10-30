@@ -6,7 +6,7 @@ import {
 } from '@/components/layout/ReviewDialog'
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
-import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict } from '@/lib/api/types'
+import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationMemorySuggestion, TranslationSourceConflict } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import { qaSnapshot, useTranslationQA } from '@/features/strings/use-translation
 import {
   type DescriptionConflict,
   draftsFromItems,
+  acceptMemorySuggestion,
   filledCount,
   localeCount,
   reviewStatusDescription,
@@ -52,6 +53,7 @@ function ProposalTreeNode({
   review,
   disabled,
   onChange,
+  onAcceptMemory,
   onDescriptionChange,
   conflict,
   onResolveConflict,
@@ -63,6 +65,7 @@ function ProposalTreeNode({
   item: TranslateProposalItem
   review: boolean
   disabled: boolean
+  onAcceptMemory: (stringId: string, locale: string, suggestion: TranslationMemorySuggestion) => void
   onChange: (stringId: string, locale: string, value: string) => void
   onDescriptionChange: (stringId: string, description: string) => void
   conflict?: DescriptionConflict
@@ -79,9 +82,13 @@ function ProposalTreeNode({
   const warnings = results.flatMap((result) => result.issues).filter((issue) => issue.severity === 'warning').length
   const affected = results.filter((result) => result.issues.length > 0 || !result.complete).length
   const snapshot = qaSnapshot(item.source_text, item.translations)
+  const memorySafe = (item.memory_locales ?? []).every((locale) => {
+    const result = validation.qa[locale]
+    return validation.status === 'checked' && result?.complete && !result.issues.some((issue) => issue.severity === 'error')
+  })
   useEffect(() => {
-    onQA(item.string_id, { snapshot, errors, warnings, affected })
-  }, [onQA, item.string_id, snapshot, errors, warnings, affected])
+    onQA(item.string_id, { snapshot, errors, warnings, affected, memorySafe })
+  }, [onQA, item.string_id, snapshot, errors, warnings, affected, memorySafe])
   const descriptionId = `proposal-description-${item.string_id}`
 
   return (
@@ -153,7 +160,7 @@ function ProposalTreeNode({
         )}
         aria-label={`Translations for ${item.key}`}
       >
-        {review ? (
+        {review || Object.keys(item.memory_suggestions ?? {}).length > 0 ? (
           locales.map(([locale, value]) => {
             const inputId = `proposal-${item.string_id}-${locale}`
             return (
@@ -162,7 +169,9 @@ function ProposalTreeNode({
                   <FieldLabel htmlFor={inputId} className="uppercase font-mono text-xs font-semibold">
                     {locale}
                   </FieldLabel>
-                  <ConfidenceBadge score={item.scores?.[locale]} />
+                  {item.memory_locales?.includes(locale)
+                    ? <Badge variant="outline">Previously published</Badge>
+                    : <ConfidenceBadge score={item.scores?.[locale]} />}
                 </div>
                 <Textarea
                   id={inputId}
@@ -177,6 +186,21 @@ function ProposalTreeNode({
                   onChange={(e) => onChange(item.string_id, locale, e.target.value)}
                 />
                 <TranslationQA id={`${inputId}-qa`} result={validation.qa[locale]} status={value.trim() ? validation.status : 'unchecked'} />
+                {(item.memory_suggestions?.[locale] ?? []).map((suggestion) => (
+                  <div key={suggestion.string_id} className="mt-2 space-y-2 rounded-md border p-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">Previously published</Badge>
+                      <span>{suggestion.match_type === 'exact' ? 'Exact match' : `Fuzzy match · ${Math.round(suggestion.similarity * 100)}% similarity`}</span>
+                    </div>
+                    <p className="break-all text-muted-foreground">{suggestion.module_slug ?? 'Unassigned'} / {suggestion.key}</p>
+                    <p className="whitespace-pre-wrap wrap-anywhere">{suggestion.source_text}</p>
+                    <p className="whitespace-pre-wrap wrap-anywhere font-medium">{suggestion.value}</p>
+                    <TranslationQA id={`${inputId}-memory-${suggestion.string_id}-qa`} result={suggestion.qa} status="checked" />
+                    {!suggestion.can_accept ? <p className="text-destructive">Structural errors or incomplete QA prevent reuse.</p> : null}
+                    <Button type="button" variant="outline" size="sm" disabled={disabled || !suggestion.can_accept}
+                      onClick={() => onAcceptMemory(item.string_id, locale, suggestion)}>Use translation</Button>
+                  </div>
+                ))}
               </Field>
             )
           })
@@ -194,7 +218,7 @@ function ProposalTreeNode({
   )
 }
 
-type QASummary = { snapshot: string; errors: number; warnings: number; affected: number }
+type QASummary = { snapshot: string; errors: number; warnings: number; affected: number; memorySafe: boolean }
 
 export function TranslateReviewDialog({
   projectId,
@@ -271,10 +295,14 @@ export function TranslateReviewDialog({
   }, { errors: 0, warnings: 0, affected: 0 })
   const missingCount = localeCount(draftList)
   const applyCount = filledCount(draftList)
-  const review = generated && !generating
+  const review = (generated || applyCount > 0) && !generating
   const busy = loadingQueue || generating || applying
   const canTranslate = !busy && draftList.length > 0 && conflicts.length === 0 && sourceConflicts.length === 0
-  const canApply = review && !busy && applyCount > 0 && !error && conflicts.length === 0 && sourceConflicts.length === 0
+  const memorySafe = draftList.every((item) => !(item.memory_locales?.length) || (
+    qaSummaries[item.string_id]?.snapshot === qaSnapshot(item.source_text, item.translations)
+    && qaSummaries[item.string_id]?.memorySafe
+  ))
+  const canApply = memorySafe && review && !busy && applyCount > 0 && !error && conflicts.length === 0 && sourceConflicts.length === 0
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -302,7 +330,7 @@ export function TranslateReviewDialog({
           <DialogDescription>{description}</DialogDescription>
           {review ? <p className="text-xs text-muted-foreground" role="status">
             QA: {qaTotals.affected} translations with findings · {qaTotals.errors} structural errors · {qaTotals.warnings} advisory warnings.
-            {' '}QA is advisory. Applied translations stay in the working copy until published.
+            {' '}QA blocks unsafe memory reuse; other QA findings are advisory. Applied translations stay in the working copy until published.
           </p> : null}
           {generating ? (
             <div className="flex flex-col gap-2" aria-live="polite">
@@ -372,6 +400,9 @@ export function TranslateReviewDialog({
                     }}
                     review={review}
                     disabled={applying || generating || pagingInPlace}
+                    onAcceptMemory={(stringId, locale, suggestion) =>
+                      setDrafts((prev) => acceptMemorySuggestion(prev, stringId, locale, suggestion))
+                    }
                     onChange={(stringId, locale, value) =>
                       setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
                     }

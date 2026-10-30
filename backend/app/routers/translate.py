@@ -185,7 +185,9 @@ def translate_proposals(
     locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
     descriptions = parse_descriptions(payload.descriptions)
-    work = count_work(entries, locales, payload.overwrite)
+    exclusions = {str(key): value for key, value in payload.exclude_locales_by_string.items()}
+    validate_locales(project, [locale for values in exclusions.values() for locale in values])
+    work = count_work(entries, locales, payload.overwrite, exclusions)
     entry_ids = [e.id for e in entries]
     desc_payload = serialize_descriptions(descriptions)
 
@@ -200,6 +202,7 @@ def translate_proposals(
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
                 "descriptions": desc_payload,
+                "exclude_locales_by_string": exclusions,
                 "progress": queued_progress(work),
             },
         )
@@ -216,6 +219,7 @@ def translate_proposals(
             payload.overwrite,
             job_id,
             desc_payload,
+            exclusions,
         )
         return TranslateProposalsResult(
             locales=locales,
@@ -227,7 +231,9 @@ def translate_proposals(
         )
 
     try:
-        items = propose_translations(project, entries, locales, payload.overwrite, descriptions)
+        items = propose_translations(
+            project, entries, locales, payload.overwrite, descriptions, exclusions=exclusions
+        )
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslateProposalsResult(

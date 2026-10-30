@@ -281,6 +281,16 @@ class StringEntry(Base):
     __tablename__ = "strings"
     __table_args__ = (
         Index(
+            "ix_strings_published_source_trgm",
+            "published_source_text",
+            postgresql_using="gin",
+            postgresql_ops={"published_source_text": "gin_trgm_ops"},
+            postgresql_with={"fastupdate": "off"},
+            postgresql_where=text(
+                "status = 'public' AND deleted_at IS NULL AND NOT pending_delete AND published_source_text IS NOT NULL"
+            ),
+        ),
+        Index(
             "uq_project_key_alive",
             "project_id",
             "key",

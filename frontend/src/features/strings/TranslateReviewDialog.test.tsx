@@ -83,3 +83,56 @@ it('shows structural findings, keeps Apply enabled, and rechecks a manual correc
   expect(qa).toHaveBeenCalledWith('project', { source_text: 'Hello {name}', translations: { en: 'Hello {name}' } })
   qa.mockRestore()
 })
+
+
+it('accepts memory before AI, blocks unsafe edits, and rechecks corrections', async () => {
+  const { stringsApi } = await import('@/lib/api/strings')
+  const errorQA = { complete: true, issues: [{ code: 'placeholder_missing', severity: 'error' as const, side: 'translation' as const, message: 'Missing placeholder {name}' }] }
+  const qa = vi.spyOn(stringsApi, 'translationQA').mockImplementation(async (_pid, body) => ({
+    qa: { en: body.translations.en.includes('{name}') ? { complete: true, issues: [] } : errorQA },
+  }))
+  const applied = vi.fn()
+  const queued: TranslateProposalItem[] = [{
+    ...items[0], source_text: 'Hello {name}', translations: { en: '' }, scores: {},
+    memory_suggestions: { en: [{
+      string_id: 'donor', key: 'published', source_text: 'Hello {name}', value: 'Hi {name}',
+      module_id: null, module_slug: null, published_at: '2026-10-30T00:00:00Z',
+      match_type: 'exact', similarity: 1, can_accept: true, qa: { complete: true, issues: [] },
+    }] },
+  }]
+  render(<TooltipProvider><TranslateReviewDialog
+    projectId="project" open loadingQueue={false} generating={false} applying={false} generated={false}
+    error={null} items={queued} page={1} pageSize={50} total={1}
+    onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={vi.fn()} onApply={applied}
+  /></TooltipProvider>)
+  expect(screen.getByText('Previously published')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Use translation' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+  expect(applied.mock.calls[0][0][0]).toMatchObject({ translations: { en: 'Hi {name}' }, memory_locales: ['en'] })
+  expect(qa).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Broken' } })
+  await act(async () => { fireEvent.blur(screen.getByLabelText('en')) })
+  await screen.findByText('Error: Missing placeholder {name}')
+  expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Fixed {name}' } })
+  await act(async () => { fireEvent.blur(screen.getByLabelText('en')) })
+  await waitFor(() => expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false))
+  qa.mockRestore()
+})
+
+it('shows unsafe memory suggestions with acceptance disabled', () => {
+  const unsafe: TranslateProposalItem[] = [{ ...items[0], translations: { en: '' }, memory_suggestions: { en: [{
+    string_id: 'donor', key: 'published', source_text: 'Hello', value: 'Hi',
+    module_id: null, module_slug: null, published_at: '2026-10-30T00:00:00Z',
+    match_type: 'fuzzy', similarity: 0.9, can_accept: false, qa: { complete: false, issues: [] },
+  }] } }]
+  render(<TooltipProvider><TranslateReviewDialog
+    projectId="project" open loadingQueue={false} generating={false} applying={false} generated={false}
+    error={null} items={unsafe} page={1} pageSize={50} total={1}
+    onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={vi.fn()} onApply={vi.fn()}
+  /></TooltipProvider>)
+  expect((screen.getByRole('button', { name: 'Use translation' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByText('Fuzzy match · 90% similarity')).toBeTruthy()
+})

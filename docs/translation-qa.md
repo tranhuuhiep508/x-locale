@@ -2,7 +2,9 @@
 
 QA compares a translation's working copy with its current source using deterministic
 backend checks. It never calls AI, changes translation text, or blocks Save, Apply,
-or Publish. Structural errors describe a finding, not a failed write operation.
+or Publish for ordinary translation writes. Translation Memory Lite requires complete QA
+without structural errors before accepting or applying reused text; warnings remain
+advisory. See [Translation Memory Lite](translation-memory.md).
 
 Results appear beneath translations in review and the string editor. Catalog cells
 show expandable issue counts. Manual edits recheck after 400 ms or on blur. A

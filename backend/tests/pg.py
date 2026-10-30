@@ -233,6 +233,7 @@ def disposable_database(prefix: str = "xltest") -> Iterator[str]:
     name = database_name(url)
     note_database_created_by_this_run(name)
     try:
+        provision_extensions(url)
         yield url
     finally:
         drop_database(url)
@@ -251,4 +252,14 @@ def prepare_session_database(test_url: str) -> str:
     url = new_database_url("xl_test")
     create_database(url, exclusive=True)
     note_database_created_by_this_run(database_name(url))
+    provision_extensions(url)
     return url
+
+
+def provision_extensions(url: str) -> None:
+    engine = open_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+    finally:
+        engine.dispose()
