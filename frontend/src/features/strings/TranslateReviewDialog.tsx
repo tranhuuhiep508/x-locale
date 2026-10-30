@@ -4,7 +4,7 @@ import {
   ReviewDialogFooter,
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, Wand2 } from 'lucide-react'
 import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,8 @@ import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
+import { TranslationQA } from '@/features/strings/TranslationQA'
+import { qaSnapshot, useTranslationQA } from '@/features/strings/use-translation-qa'
 import {
   type DescriptionConflict,
   draftsFromItems,
@@ -44,6 +46,8 @@ export function jobStillRunning(job: Job | undefined): boolean {
 }
 
 function ProposalTreeNode({
+  projectId,
+  onQA,
   item,
   review,
   disabled,
@@ -54,6 +58,8 @@ function ProposalTreeNode({
   sourceConflict,
   onRemove,
 }: {
+  projectId: string
+  onQA: (id: string, summary: QASummary) => void
   item: TranslateProposalItem
   review: boolean
   disabled: boolean
@@ -65,6 +71,17 @@ function ProposalTreeNode({
   onRemove: () => void
 }) {
   const locales = Object.entries(item.translations)
+  const validation = useTranslationQA(projectId, item.source_text, item.translations, {
+    source: item.source_text, translations: item.translations, qa: item.qa,
+  }, review && !disabled)
+  const results = Object.values(validation.qa)
+  const errors = results.flatMap((result) => result.issues).filter((issue) => issue.severity === 'error').length
+  const warnings = results.flatMap((result) => result.issues).filter((issue) => issue.severity === 'warning').length
+  const affected = results.filter((result) => result.issues.length > 0 || !result.complete).length
+  const snapshot = qaSnapshot(item.source_text, item.translations)
+  useEffect(() => {
+    onQA(item.string_id, { snapshot, errors, warnings, affected })
+  }, [onQA, item.string_id, snapshot, errors, warnings, affected])
   const descriptionId = `proposal-description-${item.string_id}`
 
   return (
@@ -155,8 +172,11 @@ function ProposalTreeNode({
                   disabled={disabled}
                   autoComplete="off"
                   spellCheck
+                  aria-describedby={`${inputId}-qa`}
+                  onBlur={validation.flush}
                   onChange={(e) => onChange(item.string_id, locale, e.target.value)}
                 />
+                <TranslationQA id={`${inputId}-qa`} result={validation.qa[locale]} status={value.trim() ? validation.status : 'unchecked'} />
               </Field>
             )
           })
@@ -174,7 +194,10 @@ function ProposalTreeNode({
   )
 }
 
+type QASummary = { snapshot: string; errors: number; warnings: number; affected: number }
+
 export function TranslateReviewDialog({
+  projectId,
   open,
   loadingQueue,
   generating,
@@ -197,6 +220,7 @@ export function TranslateReviewDialog({
   onRegenerate,
   onRemoveFromReview,
 }: {
+  projectId: string
   open: boolean
   loadingQueue: boolean
   generating: boolean
@@ -219,6 +243,10 @@ export function TranslateReviewDialog({
   onRegenerate?: (items: TranslateProposalItem[]) => void
   onRemoveFromReview?: (items: TranslateProposalItem[], stringId: string) => void
 }) {
+  const [qaSummaries, setQASummaries] = useState<Record<string, QASummary>>({})
+  const reportQA = useCallback((id: string, summary: QASummary) => {
+    setQASummaries((previous) => ({ ...previous, [id]: summary }))
+  }, [])
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
     draftsFromItems(items)
   )
@@ -232,6 +260,15 @@ export function TranslateReviewDialog({
     return draft ? [draft] : []
   })
   const publicCount = draftList.filter((item) => item.status === 'public').length
+  const qaTotals = draftList.reduce((totals, item) => {
+    const summary = qaSummaries[item.string_id]
+    if (summary?.snapshot === qaSnapshot(item.source_text, item.translations)) {
+      totals.errors += summary.errors
+      totals.warnings += summary.warnings
+      totals.affected += summary.affected
+    }
+    return totals
+  }, { errors: 0, warnings: 0, affected: 0 })
   const missingCount = localeCount(draftList)
   const applyCount = filledCount(draftList)
   const review = generated && !generating
@@ -263,6 +300,10 @@ export function TranslateReviewDialog({
         <ReviewDialogHeader>
           <DialogTitle>{generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
+          {review ? <p className="text-xs text-muted-foreground" role="status">
+            QA: {qaTotals.affected} translations with findings · {qaTotals.errors} structural errors · {qaTotals.warnings} advisory warnings.
+            {' '}QA is advisory. Applied translations stay in the working copy until published.
+          </p> : null}
           {generating ? (
             <div className="flex flex-col gap-2" aria-live="polite">
               <p className="text-sm text-muted-foreground">{generatingLabel}</p>
@@ -317,6 +358,8 @@ export function TranslateReviewDialog({
                 {draftList.map((item) => (
                   <ProposalTreeNode
                     key={item.string_id}
+                    projectId={projectId}
+                    onQA={reportQA}
                     item={item}
                     conflict={conflicts.find((conflict) => conflict.string_id === item.string_id)}
                     sourceConflict={sourceConflicts.find((conflict) => conflict.string_id === item.string_id)}

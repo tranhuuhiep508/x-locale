@@ -16,6 +16,7 @@ import type {
   TranslateProposalsResult,
   TranslateRequest,
   TranslateResult,
+  TranslationQAMap,
 } from '@/lib/api/types'
 
 export type StringListParams = {
@@ -76,6 +77,8 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  translationQA: (projectId: string, body: { source_text: string; translations: Record<string, string> }) =>
+    api.post<{ qa: TranslationQAMap }>(`/projects/${projectId}/translate/qa`, body),
   list: (projectId: string, params: StringListParams) =>
     api.get<StringListResponse>(`/projects/${projectId}/strings`, params),
   get: (projectId: string, id: string) =>

@@ -24,6 +24,8 @@ import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
+import { TranslationQA } from '@/features/strings/TranslationQA'
+import { type QASeed, useTranslationQA } from '@/features/strings/use-translation-qa'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
 import { useToast } from '@/lib/toast'
@@ -192,6 +194,13 @@ export default function StringFormDialog({
   const [createdModules, setCreatedModules] = useState<Module[]>([])
   const [createdTags, setCreatedTags] = useState<Tag[]>([])
   const [baseline, setBaseline] = useState(entry ?? null)
+  const [qaSeed, setQASeed] = useState<QASeed>(() => ({
+    source: entry?.source_text ?? '',
+    translations: entry ? translationsFromEntry(entry, targetLocales) : {},
+    qa: Object.fromEntries((entry?.translations ?? []).flatMap((translation) =>
+      translation.qa ? [[translation.locale, translation.qa]] : [])),
+  }))
+  const validation = useTranslationQA(projectId, sourceText, translations, qaSeed)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
   // Resolving a locale replaces both its text and its associated confidence.
   const conflictFields = [...new Set(conflict?.fields.flatMap((field) => {
@@ -367,14 +376,18 @@ export default function StringFormDialog({
   })
 
   const translateMut = useMutation({
-    mutationFn: ({ locales }: { locales: string[]; overwrite: boolean }) =>
-      stringsApi.translatePreview(projectId, {
-        source_text: sourceText.trim(),
+    mutationFn: async ({ locales }: { locales: string[]; overwrite: boolean }) => {
+      const qaSource = sourceText.trim()
+      const result = await stringsApi.translatePreview(projectId, {
+        source_text: qaSource,
         description: description.trim() || undefined,
         module_id: moduleId || null,
         locales,
-      }),
+      })
+      return { ...result, qaSource }
+    },
     onSuccess: (res, { overwrite }) => {
+      setQASeed({ source: res.qaSource, translations: res.translations, qa: res.qa })
       setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
       setScores((prev) => mergeScores(prev, res.scores, translations, res.translations, overwrite))
       toast.success('Review AI text, then Save')
@@ -577,6 +590,7 @@ export default function StringFormDialog({
                     onChange={(e) => setSourceText(e.target.value)}
                     rows={3}
                     aria-invalid={errors.source_text ? true : undefined}
+                    onBlur={validation.flush}
                   />
                   <FieldError>{errors.source_text}</FieldError>
                 </Field>
@@ -782,6 +796,8 @@ export default function StringFormDialog({
                           id={`translation-${locale}`}
                           className="min-h-16 resize-none mt-1"
                           value={translations[locale] ?? ''}
+                          aria-describedby={`translation-${locale}-qa`}
+                          onBlur={validation.flush}
                           onChange={(e) => {
                             const value = e.target.value
                             setTranslations((prev) => ({
@@ -794,6 +810,7 @@ export default function StringFormDialog({
                           autoComplete="off"
                           placeholder={`Translation for ${locale}…`}
                         />
+                        <TranslationQA id={`translation-${locale}-qa`} result={validation.qa[locale]} status={translations[locale]?.trim() ? validation.status : 'unchecked'} />
                       </Field>
                     ))}
                   </FieldGroup>

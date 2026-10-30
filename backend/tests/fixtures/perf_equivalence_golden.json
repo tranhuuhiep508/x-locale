@@ -28,6 +28,10 @@
               "id": "translation:buried:en",
               "locale": "en",
               "published_value": null,
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Buried"
             },
@@ -36,6 +40,7 @@
               "id": "translation:buried:ja",
               "locale": "ja",
               "published_value": null,
+              "qa": null,
               "updated_at": "<timestamp>",
               "value": ""
             }
@@ -75,6 +80,10 @@
           "id": "translation:edited:en",
           "locale": "en",
           "published_value": "Old",
+          "qa": {
+            "complete": true,
+            "issues": []
+          },
           "updated_at": "<timestamp>",
           "value": "New"
         },
@@ -83,6 +92,10 @@
           "id": "translation:edited:ja",
           "locale": "ja",
           "published_value": "旧",
+          "qa": {
+            "complete": true,
+            "issues": []
+          },
           "updated_at": "<timestamp>",
           "value": "新"
         }
@@ -119,6 +132,10 @@
               "id": "translation:draft_only:en",
               "locale": "en",
               "published_value": null,
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Draft"
             },
@@ -127,6 +144,7 @@
               "id": "translation:draft_only:ja",
               "locale": "ja",
               "published_value": null,
+              "qa": null,
               "updated_at": "<timestamp>",
               "value": ""
             }
@@ -161,6 +179,10 @@
               "id": "translation:edited:en",
               "locale": "en",
               "published_value": "Old",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "New"
             },
@@ -169,6 +191,10 @@
               "id": "translation:edited:ja",
               "locale": "ja",
               "published_value": "旧",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "新"
             }
@@ -203,6 +229,7 @@
               "id": "translation:empty_targets:en",
               "locale": "en",
               "published_value": null,
+              "qa": null,
               "updated_at": "<timestamp>",
               "value": ""
             },
@@ -211,6 +238,7 @@
               "id": "translation:empty_targets:ja",
               "locale": "ja",
               "published_value": null,
+              "qa": null,
               "updated_at": "<timestamp>",
               "value": ""
             }
@@ -245,6 +273,10 @@
               "id": "translation:loose:en",
               "locale": "en",
               "published_value": null,
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Loose"
             },
@@ -253,6 +285,7 @@
               "id": "translation:loose:ja",
               "locale": "ja",
               "published_value": null,
+              "qa": null,
               "updated_at": "<timestamp>",
               "value": ""
             }
@@ -287,6 +320,10 @@
               "id": "translation:moved:en",
               "locale": "en",
               "published_value": "Move",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Move"
             },
@@ -295,6 +332,10 @@
               "id": "translation:moved:ja",
               "locale": "ja",
               "published_value": "移動",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "移動"
             }
@@ -329,6 +370,10 @@
               "id": "translation:published:en",
               "locale": "en",
               "published_value": "Published",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Published"
             },
@@ -337,6 +382,10 @@
               "id": "translation:published:ja",
               "locale": "ja",
               "published_value": "公開",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "公開"
             }
@@ -371,6 +420,10 @@
               "id": "translation:soon_gone:en",
               "locale": "en",
               "published_value": "Going",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Going"
             },
@@ -379,6 +432,10 @@
               "id": "translation:soon_gone:ja",
               "locale": "ja",
               "published_value": "削除予定",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "削除予定"
             }
@@ -420,6 +477,10 @@
               "id": "translation:tagged:en",
               "locale": "en",
               "published_value": "Tagged",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "Tagged"
             },
@@ -428,6 +489,10 @@
               "id": "translation:tagged:ja",
               "locale": "ja",
               "published_value": "タグ",
+              "qa": {
+                "complete": true,
+                "issues": []
+              },
               "updated_at": "<timestamp>",
               "value": "タグ"
             }
@@ -1304,6 +1369,10 @@
             "id": "translation:draft_only:en",
             "locale": "en",
             "published_value": null,
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Draft"
           },
@@ -1312,6 +1381,7 @@
             "id": "translation:draft_only:ja",
             "locale": "ja",
             "published_value": null,
+            "qa": null,
             "updated_at": "<timestamp>",
             "value": ""
           }
@@ -1346,6 +1416,10 @@
             "id": "translation:edited:en",
             "locale": "en",
             "published_value": "Old",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "New"
           },
@@ -1354,6 +1428,10 @@
             "id": "translation:edited:ja",
             "locale": "ja",
             "published_value": "旧",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "新"
           }
@@ -1388,6 +1466,7 @@
             "id": "translation:empty_targets:en",
             "locale": "en",
             "published_value": null,
+            "qa": null,
             "updated_at": "<timestamp>",
             "value": ""
           },
@@ -1396,6 +1475,7 @@
             "id": "translation:empty_targets:ja",
             "locale": "ja",
             "published_value": null,
+            "qa": null,
             "updated_at": "<timestamp>",
             "value": ""
           }
@@ -1430,6 +1510,10 @@
             "id": "translation:loose:en",
             "locale": "en",
             "published_value": null,
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Loose"
           },
@@ -1438,6 +1522,7 @@
             "id": "translation:loose:ja",
             "locale": "ja",
             "published_value": null,
+            "qa": null,
             "updated_at": "<timestamp>",
             "value": ""
           }
@@ -1472,6 +1557,10 @@
             "id": "translation:moved:en",
             "locale": "en",
             "published_value": "Move",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Move"
           },
@@ -1480,6 +1569,10 @@
             "id": "translation:moved:ja",
             "locale": "ja",
             "published_value": "移動",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "移動"
           }
@@ -1514,6 +1607,10 @@
             "id": "translation:published:en",
             "locale": "en",
             "published_value": "Published",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Published"
           },
@@ -1522,6 +1619,10 @@
             "id": "translation:published:ja",
             "locale": "ja",
             "published_value": "公開",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "公開"
           }
@@ -1556,6 +1657,10 @@
             "id": "translation:soon_gone:en",
             "locale": "en",
             "published_value": "Going",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Going"
           },
@@ -1564,6 +1669,10 @@
             "id": "translation:soon_gone:ja",
             "locale": "ja",
             "published_value": "削除予定",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "削除予定"
           }
@@ -1605,6 +1714,10 @@
             "id": "translation:tagged:en",
             "locale": "en",
             "published_value": "Tagged",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "Tagged"
           },
@@ -1613,6 +1726,10 @@
             "id": "translation:tagged:ja",
             "locale": "ja",
             "published_value": "タグ",
+            "qa": {
+              "complete": true,
+              "issues": []
+            },
             "updated_at": "<timestamp>",
             "value": "タグ"
           }

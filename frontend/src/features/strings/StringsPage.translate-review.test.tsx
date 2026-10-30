@@ -34,6 +34,7 @@ vi.mock('@/lib/api/jobs', async (importOriginal) => ({
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/strings')>(),
   stringsApi: {
+    translationQA: vi.fn().mockResolvedValue({ qa: {} }),
     list: vi.fn(), create: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
   },
 }))
@@ -57,6 +58,7 @@ afterEach(() => {
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(stringsApi.translationQA).mockResolvedValue({ qa: {} })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   vi.mocked(projectsApi.get).mockResolvedValue(project)
   vi.mocked(languagesApi.list).mockResolvedValue([])

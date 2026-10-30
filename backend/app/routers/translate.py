@@ -19,7 +19,10 @@ from app.schemas import (
     TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
+    TranslationQARequest,
+    TranslationQAResponse,
 )
+from app.services.strings import validate_locales
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
@@ -36,8 +39,15 @@ from app.services.translate import (
     select_entries,
     serialize_descriptions,
 )
+from app.services.translation_qa import check_translations
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
+
+
+@router.post("/translate/qa", response_model=TranslationQAResponse)
+def translation_qa(payload: TranslationQARequest, project: ProjectAccess) -> TranslationQAResponse:
+    validate_locales(project, list(payload.translations))
+    return TranslationQAResponse(qa=check_translations(payload.source_text, payload.translations))
 
 
 def _actor_from_session(db: DbSession) -> dict[str, str | None]:
@@ -141,7 +151,11 @@ def translate_preview(
         )
     except Exception as exc:
         raise _ai_http_error(exc) from None
-    return TranslatePreviewResult(translations=translations, scores=scores)
+    return TranslatePreviewResult(
+        translations=translations,
+        scores=scores,
+        qa=check_translations(payload.source_text, translations),
+    )
 
 
 @router.post("/translate/missing", response_model=TranslateProposalsResult)

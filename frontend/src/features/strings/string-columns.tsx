@@ -33,6 +33,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { batchSuccessMessage, unpublishConfirmCopy } from '@/features/strings/batch-feedback'
 import { ConfidenceBadge } from '@/features/strings/confidence'
+import { TranslationQAIndicator } from '@/features/strings/TranslationQA'
 import {
   ChangedValueHint,
   WorkingCopyCell,
@@ -353,6 +354,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
           <ConfidenceBadge
             score={translation?.value?.trim() ? translation.confidence : null}
           />
+          <TranslationQAIndicator result={translation?.qa} />
         </div>
       )
     },

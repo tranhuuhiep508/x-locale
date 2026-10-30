@@ -355,3 +355,19 @@ describe('source freshness', () => {
     expect(applyPayloadFromDrafts(merged, {})[0].expected_source_text).toBe('Hủy')
   })
 })
+
+describe('proposal QA merging', () => {
+  it('drops only the edited locale result and replaces regenerated results', () => {
+    const qa = { complete: true, issues: [] }
+    const original: TranslateProposalItem = {
+      string_id: 'a', key: 'a', source_text: 'Source', status: 'draft',
+      translations: { en: 'Hello', fr: 'Bonjour' }, qa: { en: qa, fr: qa },
+    }
+    const edited = updateDraftTranslation({ a: original }, 'a', 'en', 'Hi').a
+    expect(edited.qa).toEqual({ fr: qa })
+    const regenerated = mergeProposalResults([original], [{ ...original, translations: { en: 'Hi' }, qa: {} }])[0]
+    expect(regenerated.qa).toEqual({ fr: qa })
+    const changedSource = mergeProposalResults([original], [{ ...original, source_text: 'New', translations: { en: 'Hi' }, qa: {} }])[0]
+    expect(changedSource.qa).toEqual({})
+  })
+})

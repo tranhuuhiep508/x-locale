@@ -38,6 +38,7 @@ from app.services.strings import (
     load_string_entries,
     validate_locales,
 )
+from app.services.translation_qa import check_translations
 
 SYNC_THRESHOLD = 20
 
@@ -437,6 +438,7 @@ def proposals_from_results(
                 "source_text": item.source_text,
                 "translations": translations,
                 "scores": _scores_from_cells(locale_map, item.locales),
+                "qa": {locale: result.model_dump() for locale, result in check_translations(item.source_text, translations).items()},
             }
         )
     return proposals

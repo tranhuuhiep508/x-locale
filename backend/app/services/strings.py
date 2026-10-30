@@ -44,6 +44,7 @@ from app.schemas import (
 )
 from app.services.catalog import owned_module, require_module_in_project
 from app.services.key_policy import key_owner
+from app.services.translation_qa import check_translations
 
 PUBLISH_FINGERPRINT_MISMATCH = "publish_fingerprint_mismatch"
 PUBLISH_FINGERPRINT_REQUIRED = "publish_fingerprint_required"
@@ -423,6 +424,7 @@ def _visible_module_ref(
 
 
 def serialize_string(entry: StringEntry) -> StringOut:
+    qa = check_translations(entry.source_text, {t.locale: t.value for t in entry.translations or []})
     module_id, module_slug = _visible_module_ref(entry, entry.module_id, entry.module)
     published_module_id, published_module_slug = _visible_module_ref(
         entry, entry.published_module_id, entry.published_module
@@ -460,6 +462,7 @@ def serialize_string(entry: StringEntry) -> StringOut:
                 value=t.value,
                 published_value=t.published_value,
                 confidence=t.confidence,
+                qa=qa.get(t.locale),
                 updated_at=t.updated_at,
             )
             for t in sorted(entry.translations or [], key=lambda item: item.locale)
