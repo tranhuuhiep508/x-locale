@@ -8,6 +8,7 @@ from pydantic import AfterValidator, BaseModel, Field, field_validator, model_va
 from app.helpers import require_max_length
 from app.limits import (
     KEY_MAX_LENGTH,
+    LOCALE_MAX_LENGTH,
     MODULE_NAME_MAX_LENGTH,
     MODULE_SLUG_MAX_LENGTH,
     TAG_COLOR_MAX_LENGTH,
@@ -424,9 +425,32 @@ class TranslatePreviewRequest(BaseModel):
     locales: list[str] | None = None
 
 
+class QaIssueOut(BaseModel):
+    """Advisory finding. Save, apply, and publish ignore these."""
+
+    code: str
+    severity: Literal["error", "warning"]
+    message: str
+    start: int | None = None
+    end: int | None = None
+    detail: dict[str, Any] | None = None
+
+
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
+
+
+class TranslationQaRequest(BaseModel):
+    source_text: str = Field(max_length=TEXT_MAX_LENGTH)
+    translation: str = Field(max_length=TEXT_MAX_LENGTH)
+    locale: str = Field(min_length=1, max_length=LOCALE_MAX_LENGTH)
+
+
+class TranslationQaResult(BaseModel):
+    locale: str
+    issues: list[QaIssueOut]
 
 
 class TranslateProposalItem(BaseModel):
@@ -437,6 +461,7 @@ class TranslateProposalItem(BaseModel):
     description: str | None = None
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
 
 
 class TranslateProposalsResult(BaseModel):

@@ -24,6 +24,9 @@ import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
+import type { QaBaseline } from '@/features/strings/qa-issues'
+import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
 import { useToast } from '@/lib/toast'
@@ -187,6 +190,7 @@ export default function StringFormDialog({
   const [scores, setScores] = useState<Record<string, number>>(() =>
     entry ? scoresFromEntry(entry, targetLocales) : {},
   )
+  const [qaSeeds, setQaSeeds] = useState<Record<string, QaBaseline>>({})
   const [errors, setErrors] = useState<FormErrors>({})
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [createdModules, setCreatedModules] = useState<Module[]>([])
@@ -342,6 +346,22 @@ export default function StringFormDialog({
     return value == null || value === '' ? '(empty)' : Array.isArray(value) ? value.join(', ') || '(none)' : String(value)
   }
 
+  const savedBaselines: Record<string, QaBaseline> = {}
+  for (const locale of targetLocales) {
+    savedBaselines[locale] = {
+      source: entry?.source_text ?? '',
+      text: entry?.translations.find((item) => item.locale === locale)?.value ?? '',
+    }
+  }
+  const qaRows: QaWatchRow[] = targetLocales.map((locale) => ({
+    id: locale,
+    locale,
+    source: sourceText,
+    text: translations[locale] ?? '',
+    baseline: qaSeeds[locale] ?? savedBaselines[locale],
+  }))
+  const qaViews = useQaWatch(projectId, qaRows)
+
   const saveMut = useMutation({
     mutationFn: async () => {
       if (isEdit && entry) {
@@ -367,16 +387,27 @@ export default function StringFormDialog({
   })
 
   const translateMut = useMutation({
-    mutationFn: ({ locales }: { locales: string[]; overwrite: boolean }) =>
+    mutationFn: ({ locales, source }: { locales: string[]; overwrite: boolean; source: string; current: Record<string, string> }) =>
       stringsApi.translatePreview(projectId, {
-        source_text: sourceText.trim(),
+        source_text: source.trim(),
         description: description.trim() || undefined,
         module_id: moduleId || null,
         locales,
       }),
-    onSuccess: (res, { overwrite }) => {
+    onSuccess: (res, { overwrite, source, current }) => {
       setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
       setScores((prev) => mergeScores(prev, res.scores, translations, res.translations, overwrite))
+      setQaSeeds((prev) => {
+        const next = { ...prev }
+        for (const [locale, text] of Object.entries(res.translations)) {
+          if (!text.trim()) continue
+          if (!overwrite && (current[locale] ?? '').trim()) continue
+          if (res.issues && locale in res.issues) {
+            next[locale] = { source, text, issues: res.issues[locale] }
+          }
+        }
+        return next
+      })
       toast.success('Review AI text, then Save')
     },
     onError: () => toast.error('Translation failed — check AI translation credentials'),
@@ -409,6 +440,7 @@ export default function StringFormDialog({
         setTranslations,
         setScores,
       })
+      setQaSeeds({})
       setErrors({})
       onSuccess()
       toast.success('Working copy discarded')
@@ -503,6 +535,7 @@ export default function StringFormDialog({
                   setTranslations,
                   setScores,
                 })
+                setQaSeeds({})
               }}
             />
           </div>
@@ -736,6 +769,8 @@ export default function StringFormDialog({
                       translateMut.mutate({
                         locales: targetLocales,
                         overwrite: true,
+                        source: sourceText,
+                        current: translations,
                       })
                     }
                   >
@@ -760,8 +795,11 @@ export default function StringFormDialog({
                   </p>
                 ) : (
                   <FieldGroup className="gap-3">
-                    {targetLocales.map((locale) => (
-                      <Field key={locale} className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs transition-colors focus-within:border-primary/40">
+                    {targetLocales.map((locale) => {
+                      const view = qaViews[locale] ?? { status: 'unchecked' as const, issues: [], stale: false }
+                      const issuesId = `qa-edit-${locale}`
+                      return (
+                      <Field key={locale} className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs transition-colors focus-within:border-primary/40" data-qa-status={view.status}>
                         <div className="flex items-center gap-2">
                           <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-semibold tracking-wider">
                             {locale}
@@ -777,6 +815,9 @@ export default function StringFormDialog({
                               released={released}
                             />
                           ) : null}
+                          <span className="ml-auto">
+                            <QaLocaleBadge view={view} locale={locale} footer={QA_SAVE_FOOTER} id={issuesId} />
+                          </span>
                         </div>
                         <Textarea
                           id={`translation-${locale}`}
@@ -793,11 +834,16 @@ export default function StringFormDialog({
                           rows={2}
                           autoComplete="off"
                           placeholder={`Translation for ${locale}…`}
+                          aria-describedby={describedByFor(view, issuesId)}
                         />
                       </Field>
-                    ))}
+                      )
+                    })}
                   </FieldGroup>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  QA re-checks a translation shortly after you stop typing. It never blocks Save.
+                </p>
               </div>
             </div>
           </div>
