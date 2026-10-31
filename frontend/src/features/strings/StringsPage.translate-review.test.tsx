@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
 import { projectsApi } from '@/lib/api/projects'
 import { stringsApi } from '@/lib/api/strings'
-import type { Project, TranslateProposalItem, TranslateProposalsResult } from '@/lib/api/types'
+import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
 import { StringsPage } from './StringsPage'
 
@@ -35,7 +35,7 @@ vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/strings')>(),
   stringsApi: {
     list: vi.fn(), create: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
-    translateQa: vi.fn(),
+    translateQa: vi.fn(), translateMemory: vi.fn(),
   },
 }))
 
@@ -49,6 +49,10 @@ const item: TranslateProposalItem = {
   description: 'Original', translations: { en: '' }, scores: {},
 }
 const page = { locales: ['en'], items: [item], total: 1, page: 1, page_size: 50, job_id: null }
+const publishedMatch: TranslationMemoryMatch = {
+  string_id: 'origin', key: 'published.greeting', module_id: null, module_slug: 'common',
+  matched_source_text: 'Xin chào', translation: 'Published hello', exact: true, similarity: 1, issues: [],
+}
 let client: QueryClient
 
 afterEach(() => {
@@ -77,6 +81,83 @@ beforeEach(() => {
 })
 
 describe('translation review retranslation', () => {
+  it('retries failed memory lookups without blocking the AI action', async () => {
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory_error: 'Memory unavailable' }] })
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: item.source_text, matches: { en: [publishedMatch] } })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 0 matches' }))
+    expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(await screen.findByText('Memory unavailable')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Use published translation from published.greeting' }))
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+    expect(stringsApi.translateProposals).not.toHaveBeenCalled()
+  })
+  it('applies a memory selection before any generation', async () => {
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory: { en: [publishedMatch] } }] })
+    vi.mocked(stringsApi.translateApply).mockReset().mockResolvedValue({ translated_count: 1, batch_id: 'batch', locales: ['en'] })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Use published translation from published.greeting' }))
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+    expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 translation' }))
+    await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledWith('demo-app', { items: [{
+      string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Published hello' }, scores: {},
+    }] }))
+    expect(stringsApi.translateProposals).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('applies accepted memory after AI fails (background: %s)', async (background) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    const row = { ...item, translations: { en: '', ja: '' }, memory: { en: [publishedMatch] } }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, locales: ['en', 'ja'], items: [row] })
+    vi.mocked(stringsApi.translateProposals).mockReset()
+    if (background) {
+      vi.mocked(stringsApi.translateProposals).mockResolvedValue({ ...page, items: [], job_id: 'failed-job' })
+      vi.mocked(jobsApi.get).mockResolvedValue({
+        id: 'failed-job', kind: 'translate_proposals', status: 'failed', result: null,
+        error: 'AI unavailable', created_at: null, completed_at: null, progress: null,
+      })
+    } else {
+      vi.mocked(stringsApi.translateProposals).mockRejectedValue(new Error('AI unavailable'))
+    }
+    vi.mocked(stringsApi.translateApply).mockReset().mockResolvedValue({ translated_count: 1, batch_id: 'batch', locales: ['en'] })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate' }))
+    await screen.findByText('AI unavailable')
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+    expect((screen.getByRole('button', { name: 'Apply 1 translation' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 translation' }))
+    await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledWith('demo-app', { items: [{
+      string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Published hello' }, scores: {},
+    }] }))
+  })
+
+  it('preserves selected and edited memory cells through AI generation for other locales', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    const row = { ...item, translations: { en: '', ja: '' }, memory: { en: [publishedMatch] } }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, locales: ['en', 'ja'], items: [row] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValue({ ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: 'AI Japanese' }, scores: { ja: 80 } }] })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Use published translation from published.greeting' }))
+    fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Edited memory' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Translate' }))
+    await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledWith('demo-app', expect.objectContaining({ exclude_cells: { a: ['en'] } })))
+    await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('AI Japanese'))
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Edited memory')
+    fireEvent.change(screen.getByLabelText('en'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+    await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: {} })))
+  })
+
   it('excludes a legacy base target from AI selections and editor saves', async () => {
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
