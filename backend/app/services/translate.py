@@ -38,6 +38,7 @@ from app.services.strings import (
     load_string_entries,
     validate_locales,
 )
+from app.services.translation_qa import check_translation
 
 SYNC_THRESHOLD = 20
 
@@ -325,7 +326,7 @@ def preview_translations(
     source_text: str,
     locales: list[str],
     description: str | None,
-) -> tuple[dict[str, str], dict[str, int]]:
+) -> tuple[dict[str, str], dict[str, int], dict[str, list[dict[str, Any]]]]:
     validate_locales(project, locales)
     result = translate_batch(
         project.base_language,
@@ -340,7 +341,7 @@ def preview_translations(
     )
     cells = _cell_map(result, "preview")
     translations = {locale: cells[locale].text for locale in locales if locale in cells}
-    return translations, _scores_from_cells(cells, locales)
+    return translations, _scores_from_cells(cells, locales), _qa_by_locale(source_text, translations)
 
 
 def _status_str(entry: StringEntry) -> str:
@@ -437,9 +438,17 @@ def proposals_from_results(
                 "source_text": item.source_text,
                 "translations": translations,
                 "scores": _scores_from_cells(locale_map, item.locales),
+                "issues": _qa_by_locale(item.source_text, translations),
             }
         )
     return proposals
+
+
+def _qa_by_locale(source: str, translations: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
+    return {
+        locale: [issue.as_dict() for issue in check_translation(source, text, locale)]
+        for locale, text in translations.items()
+    }
 
 
 def propose_translations(
