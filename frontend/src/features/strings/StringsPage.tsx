@@ -65,6 +65,7 @@ import {
   applySuccessMessage,
   createMissingReviewRequest,
   descriptionsFromDrafts,
+  excludedMemoryCells,
   filledStringCount,
   mergeProposalResults,
   type MissingReviewRequest,
@@ -826,6 +827,7 @@ export function StringsPage() {
             string_ids: items.map((item) => item.string_id),
             locales,
             descriptions: descriptionsFromDrafts(items),
+            exclude_cells: excludedMemoryCells(items),
           })
         }}
         onApply={(items) => applyMut.mutate(items)}

@@ -18,6 +18,8 @@ import type {
   TranslateResult,
   TranslationQaRequest,
   TranslationQaResult,
+  TranslationMemoryRequest,
+  TranslationMemoryResult,
 } from '@/lib/api/types'
 
 export type StringListParams = {
@@ -78,6 +80,8 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  translateMemory: (projectId: string, body: TranslationMemoryRequest) =>
+    api.post<TranslationMemoryResult>(`/projects/${projectId}/translate/memory`, body),
   list: (projectId: string, params: StringListParams) =>
     api.get<StringListResponse>(`/projects/${projectId}/strings`, params),
   get: (projectId: string, id: string) =>

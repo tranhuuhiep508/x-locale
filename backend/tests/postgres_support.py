@@ -40,6 +40,8 @@ def reset_public_schema(url: str) -> None:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
         conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+        # Schema-only pg_dump omits extensions needed by restored indexes.
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
     engine.dispose()
 
 

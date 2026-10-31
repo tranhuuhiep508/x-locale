@@ -5,8 +5,9 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
+import { stringsApi } from '@/lib/api/strings'
 import { Check, Wand2 } from 'lucide-react'
-import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict } from '@/lib/api/types'
+import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { TranslationMemoryPopover } from '@/features/strings/TranslationMemoryPopover'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { describedByFor, QA_APPLY_FOOTER, QaCountBadges, QaIssueBadge, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import {
@@ -39,6 +41,7 @@ import {
   translateProgressPercent,
   updateDraftDescription,
   updateDraftTranslation,
+  applyMemoryTranslation,
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { cn } from '@/lib/utils'
@@ -121,6 +124,11 @@ function ProposalLocaleField({
   foldClean,
   disabled,
   onChange,
+  memory,
+  memoryError,
+  memoryLoading,
+  onRetryMemory,
+  onUseMemory,
 }: {
   stringId: string
   locale: string
@@ -130,6 +138,11 @@ function ProposalLocaleField({
   foldClean: boolean
   disabled: boolean
   onChange: (value: string) => void
+  memory?: TranslationMemoryMatch[]
+  memoryError?: string | null
+  memoryLoading?: boolean
+  onRetryMemory: () => void
+  onUseMemory: (match: TranslationMemoryMatch) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const inputId = `proposal-${stringId}-${locale}`
@@ -169,13 +182,15 @@ function ProposalLocaleField({
           onChange={(event) => onChange(event.target.value)}
         />
       )}
+      <TranslationMemoryPopover locale={locale} matches={memory} error={memoryError} loading={memoryLoading}
+        onRetry={onRetryMemory} disabled={disabled} onUse={onUseMemory} />
     </Field>
   )
 }
 
 function ProposalTreeNode({
+  projectId,
   item,
-  review,
   disabled,
   qa,
   foldClean,
@@ -185,9 +200,10 @@ function ProposalTreeNode({
   onResolveConflict,
   sourceConflict,
   onRemove,
+  onUseMemory,
 }: {
+  projectId: string
   item: TranslateProposalItem
-  review: boolean
   disabled: boolean
   qa: Record<string, QaView>
   foldClean: boolean
@@ -197,7 +213,25 @@ function ProposalTreeNode({
   onResolveConflict: (conflict: DescriptionConflict, useLatest: boolean) => void
   sourceConflict?: TranslationSourceConflict
   onRemove: () => void
+  onUseMemory: (stringId: string, locale: string, match: TranslationMemoryMatch) => void
 }) {
+  const [retryMemory, setRetryMemory] = useState<{
+    source: string; matches?: Record<string, TranslationMemoryMatch[]>; loading: boolean; error?: string
+  } | null>(null)
+  const retried = retryMemory?.source === item.source_text ? retryMemory : null
+  async function checkMemory() {
+    const source = item.source_text
+    setRetryMemory({ source, loading: true })
+    try {
+      const result = await stringsApi.translateMemory(projectId, {
+        string_id: item.string_id, expected_source_text: source, source_text: source,
+        locales: Object.keys(item.translations),
+      })
+      setRetryMemory({ source, matches: result.matches, loading: false })
+    } catch (error) {
+      setRetryMemory({ source, loading: false, error: error instanceof Error ? error.message : 'Published suggestions are unavailable.' })
+    }
+  }
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
   const rollupIssues = locales.flatMap(([locale]) =>
@@ -211,25 +245,20 @@ function ProposalTreeNode({
   return (
     <li
       id={`proposal-${item.string_id}`}
-      className={cn(
-        'grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all',
-        review && 'sm:grid-cols-2'
-      )}
+      className="grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all sm:grid-cols-2"
     >
       <div className="flex min-w-0 flex-col gap-3.5">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
             <span className="flex items-center gap-1.5">
-              {review ? (
-                <QaIssueBadge
-                  label={item.key}
-                  issues={rollupIssues}
-                  footer={QA_APPLY_FOOTER}
-                  showClean={false}
-                  stale={rollupStale}
-                />
-              ) : null}
+              <QaIssueBadge
+                label={item.key}
+                issues={rollupIssues}
+                footer={QA_APPLY_FOOTER}
+                showClean={false}
+                stale={rollupStale}
+              />
               {item.status === 'public' ? (
                 <Badge variant="outline" className="font-mono text-[10px] uppercase">Public</Badge>
               ) : null}
@@ -283,35 +312,27 @@ function ProposalTreeNode({
       </div>
 
       <FieldGroup
-        className={cn(
-          'min-w-0 gap-3',
-          review && 'border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4.5 sm:border-border/60'
-        )}
+        className="min-w-0 gap-3 border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4.5 sm:border-border/60"
         aria-label={`Translations for ${item.key}`}
       >
-        {review ? (
-          locales.map(([locale, value]) => (
-            <ProposalLocaleField
-              key={locale}
-              stringId={item.string_id}
-              locale={locale}
-              value={value}
-              score={item.scores?.[locale]}
-              view={localeView(qa, item.string_id, locale)}
-              foldClean={foldClean}
-              disabled={disabled}
-              onChange={(next) => onChange(item.string_id, locale, next)}
-            />
-          ))
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {locales.map(([locale]) => (
-              <Badge key={locale} variant="outline" className="uppercase font-mono">
-                {locale}
-              </Badge>
-            ))}
-          </div>
-        )}
+        {locales.map(([locale, value]) => (
+          <ProposalLocaleField
+            key={locale}
+            stringId={item.string_id}
+            locale={locale}
+            value={value}
+            score={item.scores?.[locale]}
+            memory={sourceConflict ? [] : (retried?.matches ?? item.memory)?.[locale]}
+            memoryError={retried ? retried.error : item.memory_error}
+            memoryLoading={retried?.loading}
+            onRetryMemory={() => { void checkMemory() }}
+            onUseMemory={(match) => onUseMemory(item.string_id, locale, match)}
+            view={localeView(qa, item.string_id, locale)}
+            foldClean={foldClean}
+            disabled={disabled}
+            onChange={(next) => onChange(item.string_id, locale, next)}
+          />
+        ))}
       </FieldGroup>
     </li>
   )
@@ -421,12 +442,12 @@ export function TranslateReviewDialog({
     return draft ? [draft] : []
   })
   const publicCount = draftList.filter((item) => item.status === 'public').length
-  const missingCount = localeCount(draftList)
   const applyCount = filledCount(draftList)
-  const review = generated && !generating
+  const missingCount = localeCount(draftList) - applyCount
+  const review = !generating
   const busy = loadingQueue || generating || applying
-  const canTranslate = !busy && draftList.length > 0 && conflicts.length === 0 && sourceConflicts.length === 0
-  const canApply = review && !busy && applyCount > 0 && !error && conflicts.length === 0 && sourceConflicts.length === 0
+  const canTranslate = !busy && draftList.some((item) => Object.keys(item.translations).some((locale) => !item.memory_selected?.includes(locale))) && conflicts.length === 0 && sourceConflicts.length === 0
+  const canApply = !busy && applyCount > 0 && conflicts.length === 0 && sourceConflicts.length === 0
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -440,7 +461,7 @@ export function TranslateReviewDialog({
     applyCount,
     generated,
   })
-  const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && review)
+  const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
   const pageViews = filledViews(draftList, qa)
   const pageCounts = tally(pageViews)
   const checking = pageViews.some((view) => view.status === 'checking')
@@ -568,6 +589,7 @@ export function TranslateReviewDialog({
                 {visible.map((item) => (
                   <ProposalTreeNode
                     key={item.string_id}
+                    projectId={projectId}
                     item={item}
                     qa={qa}
                     foldClean={foldClean}
@@ -580,7 +602,7 @@ export function TranslateReviewDialog({
                       }
                       onResolveConflict?.(conflict)
                     }}
-                    review={review}
+                    onUseMemory={(stringId, locale, match) => setDrafts((prev) => applyMemoryTranslation(prev, stringId, locale, match))}
                     disabled={applying || generating || pagingInPlace}
                     onChange={(stringId, locale, value) =>
                       setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
@@ -634,9 +656,9 @@ export function TranslateReviewDialog({
             onClick={() => onTranslate(draftList)}
           >
             {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
-            {review ? 'Translate again' : 'Translate'}
+            {generated ? 'Translate again' : 'Translate'}
           </Button>
-          {review ? (
+          {applyCount > 0 ? (
             <Button type="button" disabled={!canApply} onClick={() => onApply(draftList)}>
               {applying ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
               Apply {applyCount === 1 ? '1 translation' : `${applyCount} translations`}

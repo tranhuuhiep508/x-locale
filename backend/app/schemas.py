@@ -317,7 +317,7 @@ class StringUpdate(BaseModel):
     tag_ids: list[UUID] | None = None
     status: TranslationStatus | None = None
     translations: OptionalTextValues = None
-    translation_scores: dict[str, ConfidenceScore] | None = None
+    translation_scores: dict[str, ConfidenceScore | None] | None = None
     expected: StringExpected | None = None
 
 
@@ -402,6 +402,7 @@ class TranslateRequest(BatchFilter):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
     descriptions: OptionalDescriptionValues = None
+    exclude_cells: dict[UUID, list[str]] = Field(default_factory=dict, max_length=100)
 
 
 class TranslationSourceConflict(BaseModel):
@@ -436,6 +437,36 @@ class QaIssueOut(BaseModel):
     detail: dict[str, Any] | None = None
 
 
+class TranslationMemoryMatch(BaseModel):
+    string_id: UUID
+    key: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    matched_source_text: str
+    translation: str
+    exact: bool
+    similarity: float
+    issues: list[QaIssueOut] = Field(default_factory=list)
+
+
+class TranslationMemoryRequest(BaseModel):
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    locales: list[str] | None = None
+    string_id: UUID | None = None
+    expected_source_text: str | None = None
+
+    @model_validator(mode="after")
+    def require_source_baseline(self) -> "TranslationMemoryRequest":
+        if self.string_id is not None and self.expected_source_text is None:
+            raise ValueError("Existing string lookups require expected_source_text")
+        return self
+
+
+class TranslationMemoryResult(BaseModel):
+    source_text: str
+    matches: dict[str, list[TranslationMemoryMatch]]
+
+
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
@@ -462,6 +493,8 @@ class TranslateProposalItem(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
+    memory: dict[str, list[TranslationMemoryMatch]] = Field(default_factory=dict)
+    memory_error: str | None = None
 
 
 class TranslateProposalsResult(BaseModel):
