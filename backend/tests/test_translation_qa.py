@@ -41,11 +41,14 @@ def test_apostrophe_before_brace_quotes_the_placeholder():
 
 def test_icu_invalid_syntax():
     issues = check_translation("Hello {name}", "Hello {name", "en")
-    assert [issue.code for issue in issues] == ["icu_syntax"]
+    # The unclosed brace is a syntax error and, because placeholder checks no
+    # longer wait for a successful parse, a missing {name} as well.
+    assert [issue.code for issue in issues] == ["icu_syntax", "placeholder_missing"]
     assert issues[0].severity == "error"
     assert issues[0].start == 11
     assert issues[0].detail["side"] == "translation"
     assert "EXPECT_ARGUMENT_CLOSING_BRACE" in issues[0].message
+    assert issues[1].detail["token"] == "{name}"
 
 
 def test_icu_missing_other_branch():
@@ -132,6 +135,228 @@ def test_length_is_a_warning():
     assert [(issue.code, issue.severity, issue.detail) for issue in issues] == [
         ("length", "warning", {"length": 43, "limit": 42})
     ]
+
+
+def test_double_brace_placeholders_are_not_icu_syntax():
+    pairs = [
+        ("Welcome back, {{ name }}!", "Bon retour, {{name}} !"),
+        ("{{name}}", "{{ name }}"),
+        ("{{ user.name }}", "{{user.name}}"),
+        ("{{val, number}}", "{{val,number}}"),
+        ("{{- name}}", "{{-name}}"),
+        ("{{ 'KEY' | translate }}", "{{'KEY'|translate}}"),
+        ("<b>{{ name }}</b>", "<b>{{name}}</b>"),
+        ('<a href="{{ url }}">Save</a>', '<a href="{{url}}">Sauver</a>'),
+    ]
+    for source, translation in pairs:
+        assert check_translation(source, translation, "fr") == [], (source, translation)
+    assert _codes("{{ name }}", "Hello") == ["placeholder_missing"]
+    assert _codes("Hello", "{{ extra }}") == ["placeholder_extra"]
+    renamed = check_translation("Hi {{ name }}", "Hi {{ user }}", "en")
+    assert {issue.detail["token"] for issue in renamed} == {"{{name}}", "{{user}}"}
+    broken = check_translation("Hi {{ name }}", "Hi {{ name }", "en")
+    assert [issue.code for issue in broken] == ["icu_syntax", "placeholder_missing"]
+    assert broken[0].start == 3
+    assert "unclosed {{ placeholder" in broken[0].message
+    assert _codes("Hi {{name}} %d", "Hi {{name}}") == ["placeholder_missing"]
+    href = check_translation(
+        '<a href="{{ url }}">x</a>',
+        '<a href="{url}">x</a>',
+        "en",
+    )
+    assert {issue.detail["token"] for issue in href} == {"{{url}}", "{url}"}
+
+
+def test_double_brace_mixes_with_icu_plurals():
+    source = "Hello {{ name }}, {count, plural, one {# item} other {# items}}"
+    translation = "Bonjour {{name}}, {count, plural, one {# élément} other {# éléments}}"
+    assert check_translation(source, translation, "fr") == []
+    dropped = check_translation(
+        source,
+        "Bonjour, {count, plural, one {# élément} other {# éléments}}",
+        "fr",
+    )
+    assert [issue.code for issue in dropped] == ["placeholder_missing"]
+    assert dropped[0].detail["token"] == "{{name}}"
+    nested = "{count, plural, one {Hello {{name}}} other {#}}"
+    assert check_translation(nested, nested.replace("Hello", "Bonjour"), "fr") == []
+    # The option brace in other {{name}} is ICU, not an ngx placeholder.
+    assert _codes("{count, plural, other {{name}}}", "{count, plural, other {x}}", "ja") == [
+        "placeholder_missing"
+    ]
+
+
+def test_prose_percent_signs_are_not_printf():
+    samples = [
+        ("50% discount", "en"),
+        ("100% off", "en"),
+        ("50% of users", "en"),
+        ("20% left", "en"),
+        ("50 % de", "fr"),
+        ("50 % de réduction", "fr"),
+        ("50% de descuento", "es"),
+        ("Sconto del 50%", "it"),
+        ("50% de desconto", "pt-BR"),
+        ("Giảm 50% giá", "vi"),
+        ("50% giá", "vi"),
+    ]
+    for text, locale in samples:
+        assert check_translation(text, text, locale) == [], (text, locale)
+    missing = check_translation("50% off, %d left", "50% off", "en")
+    assert [(issue.code, issue.detail["token"]) for issue in missing] == [
+        ("placeholder_missing", "%d")
+    ]
+    assert check_translation("%-10s", "%s", "en") == []
+
+
+def test_romance_plurals_do_not_require_compact_many():
+    source = "{count, plural, one {# item} other {# items}}"
+    for locale in ("fr", "es", "it", "pt-BR"):
+        assert check_translation(source, source, locale) == [], locale
+        missing_one = [
+            issue.detail["category"]
+            for issue in check_translation("{count, plural, other {#}}", "{count, plural, other {#}}", locale)
+            if issue.code == "icu_plural"
+        ]
+        assert missing_one == ["one"], locale
+    # Slavic many is a real category and stays an error.
+    russian = {
+        issue.detail["category"]
+        for issue in check_translation(source, "{count, plural, other {#}}", "ru")
+        if issue.code == "icu_plural"
+    }
+    assert "many" in russian
+    assert "one" in russian
+
+
+def test_apostrophe_quoting_is_only_applied_to_icu():
+    assert check_translation("L'{{ app }}", "L'{{app}}", "fr") == []
+    assert _codes("L'{{ app }}", "Bonjour", "fr") == ["placeholder_missing"]
+    assert check_translation("C'est l'heure", "It's time", "fr") == []
+    assert check_translation("aujourd'hui", "today", "fr") == []
+    assert check_translation("L'{0:C2}", "{0:C2}", "fr") == []
+    assert check_translation("L'{user.name}", "Bonjour {user.name}", "fr") == []
+    # A real ICU argument is still quoted by a preceding apostrophe.
+    assert _codes("{app}", "L'{app}", "fr") == ["placeholder_missing"]
+    assert check_translation("{app}", "L''{app}", "fr") == []
+
+
+def test_non_icu_single_braces_are_placeholders_not_syntax_errors():
+    assert check_translation("{0:C2}", "{0:C2}", "en") == []
+    assert check_translation("{user.name}", "{user.name}", "en") == []
+    assert check_translation("{ '@' }", "{'@'}", "en") == []
+    assert check_translation("{", "{", "en") == []
+    assert check_translation('{"a": 1}', '{"a": 1}', "en") == []
+    assert check_translation("{0,10}", "{0,10}", "en") == []
+    assert check_translation("function() { return 1; }", "function() { return 1; }", "en") == []
+    dropped = check_translation("Price {0:C2}", "Prix", "fr")
+    assert [issue.code for issue in dropped] == ["placeholder_missing"]
+    assert dropped[0].detail["token"] == "{0:C2}"
+    assert "icu_syntax" not in _codes("{user.name}", "nom", "en")
+
+
+def test_ios_i18next_vue_and_rails_tokens():
+    assert check_translation("Hello %@", "Bonjour %@", "fr") == []
+    assert _codes("Hello %@", "Bonjour", "fr") == ["placeholder_missing"]
+    changed_width = check_translation("Count %lld", "Compte %d", "fr")
+    assert {issue.detail["token"] for issue in changed_width} == {"%lld", "%d"}
+    assert check_translation("Use $t(key)", "Utiliser $t(key)", "fr") == []
+    assert check_translation("$t('common.hello')", "$t(common.hello)", "en") == []
+    assert _codes("Hello $t(key)", "Hello", "en") == ["placeholder_missing"]
+    assert check_translation("See @:key", "Voir @:key", "fr") == []
+    assert _codes("See @:message.hello", "Voir", "fr") == ["placeholder_missing"]
+    rails = check_translation("Hi %{name}", "Salut {name}", "fr")
+    assert {issue.detail["token"] for issue in rails} == {"%{name}", "{name}"}
+    assert check_translation("Hi %{ name }", "Salut %{name}", "fr") == []
+
+
+def test_html_attribute_errors_use_the_translation_offset():
+    translation = '<a href="{url">Save {name}</a>'
+    issues = check_translation('<a href="{url}">Save {name}</a>', translation, "en")
+    syntax = next(issue for issue in issues if issue.code == "icu_syntax")
+    assert translation in syntax.message
+    assert syntax.start == translation.index("{url") + len("{url")
+    assert syntax.detail["error"].split(": ", 1)[-1] == translation
+    prefixed = 'Go <a href="{url">now</a>'
+    prefixed_issues = check_translation('<a href="{url}">now</a>', prefixed, "en")
+    prefixed_syntax = next(issue for issue in prefixed_issues if issue.code == "icu_syntax")
+    assert prefixed_syntax.start == prefixed.index("{url") + len("{url")
+    image = '<img alt="{name">'
+    image_issues = check_translation('<img alt="{name}">', image, "en")
+    image_syntax = next(issue for issue in image_issues if issue.code == "icu_syntax")
+    assert image in image_syntax.message
+    assert image_syntax.start == image.index("{name") + len("{name")
+
+
+def test_html_inside_plural_keeps_categories():
+    source = '{count, plural, one {<b class="item"># item</b>} other {# items}}'
+    assert check_translation(source, source, "en") == []
+    missing = check_translation(
+        source,
+        '{count, plural, one {<b class="item"># item</b>}}',
+        "en",
+    )
+    assert [issue.code for issue in missing] == ["icu_other"]
+    anchor = '{count, plural, one {<a href="x"># item</a>} other {<a href="x"># items</a>}}'
+    assert check_translation(anchor, anchor, "en") == []
+    dropped = check_translation(
+        anchor,
+        '{count, plural, one {<a href="x"># item</a>}}',
+        "en",
+    )
+    assert [issue.code for issue in dropped] == ["icu_other", "html_mismatch"]
+
+
+def test_parse_failure_does_not_invent_placeholders():
+    tail = check_translation("Hi {name}", "Chào {name} {", "vi")
+    assert [issue.code for issue in tail] == ["icu_syntax"]
+    assert "Chào {name} {" in tail[0].message
+    assert "·" not in tail[0].message
+    plural = check_translation(
+        "{count, plural, one {# item} other {# items}}",
+        "{count, plural, one {# mục}",
+        "vi",
+    )
+    assert [issue.code for issue in plural] == ["icu_syntax"]
+    assert "{count, plural, one {# mục}" in plural[0].message
+    assert "·" not in plural[0].message
+    assert all(issue.detail.get("token") != "{#mục}" for issue in plural)
+
+
+def test_messages_quote_original_text_not_the_mask():
+    issues = check_translation("{{{ name }}}", "{{ name }}", "en")
+    assert {issue.detail["token"] for issue in issues} == {"{{{name}}}", "{{name}}"}
+    assert all("·" not in issue.message for issue in issues)
+    assert all("·" not in str(issue.detail) for issue in issues)
+
+
+def test_unclosed_brace_before_a_non_ascii_word_is_syntax():
+    issues = check_translation("Nhấn { để bắt đầu", "Nhấn { để bắt đầu", "vi")
+    assert [issue.code for issue in issues] == ["icu_syntax", "icu_syntax"]
+    assert "Nhấn { để bắt đầu" in issues[0].message
+    assert check_translation("{", "{", "en") == []
+
+
+def test_percent_before_a_word_is_not_printf():
+    assert check_translation("50%off", "50%off", "en") == []
+    assert check_translation("50% off", "50%off", "en") == []
+    assert _codes("Save %d", "Save") == ["placeholder_missing"]
+    assert set(_codes("Count %lld", "Compte %d", "fr")) == {
+        "placeholder_missing",
+        "placeholder_extra",
+    }
+
+
+def test_deeply_unclosed_braces_are_rejected_quickly():
+    import time
+
+    samples = ["%{" * 16000, "{ " * 16000, "{{x" * 10000, "{a" * 8000]
+    for sample in samples:
+        started = time.perf_counter()
+        issues = check_translation(sample, "ok", "en")
+        elapsed = time.perf_counter() - started
+        assert elapsed < 1, (sample[:12], elapsed)
+        assert [issue.code for issue in issues] == ["qa_limit"]
 
 
 def test_qa_refuses_oversized_or_deeply_nested_input():

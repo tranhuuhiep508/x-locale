@@ -140,6 +140,7 @@ def test_request_schema_model_tokens_prompt_and_base_url(sdk, monkeypatch):
     assert request.extensions["timeout"] == DEFAULT_TIMEOUT.as_dict()
     assert "Use Save; concise UI tone" in body["input"]
     assert "Preserve placeholders exactly" in body["input"]
+    assert "{{name}}" in body["input"]
     assert "mandatory and win over" in body["input"]
     assert "confidence 0-100" in body["input"]
     fmt = body["text"]["format"]
