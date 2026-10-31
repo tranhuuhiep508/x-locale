@@ -555,9 +555,12 @@ describe('StringFormDialog translation QA', () => {
         locale: 'en',
       })
       fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
-      expect(screen.getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
-      expect(screen.getByText('Advisory only. You can still save.')).toBeTruthy()
+      const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
+      expect(within(popover).getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
+      expect(within(popover).getByText('Advisory only. You can still save.')).toBeTruthy()
       const field = screen.getByLabelText('en') as HTMLTextAreaElement
+      expect(field.getAttribute('aria-describedby')).toBe('qa-edit-en')
+      expect(document.getElementById('qa-edit-en')?.getAttribute('aria-live')).toBe('polite')
       expect(field.getAttribute('aria-invalid')).toBeNull()
       expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
     } finally {
@@ -594,8 +597,9 @@ describe('StringFormDialog translation QA', () => {
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Save {price, number}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
     fireEvent.click(await screen.findByRole('button', { name: /QA for en/ }))
-    expect(screen.getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
-    expect(screen.getByText('Advisory only. You can still save.')).toBeTruthy()
+    const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
+    expect(within(popover).getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    expect(within(popover).getByText('Advisory only. You can still save.')).toBeTruthy()
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(stringsApi.translateQa).not.toHaveBeenCalled()
     expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)

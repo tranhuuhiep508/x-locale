@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { QaIssue, TranslateProposalItem } from '@/lib/api/types'
 import { stringsApi } from '@/lib/api/strings'
@@ -155,8 +155,9 @@ describe('translation QA in review', () => {
       },
     ])
     fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
-    expect(screen.getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
-    expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
+    const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
+    expect(within(popover).getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(screen.queryByText(/Extra placeholder/)).toBeNull()
     expect(screen.getAllByText('No QA issues').length).toBeGreaterThan(0)
@@ -198,8 +199,9 @@ describe('translation QA in review', () => {
       expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
       await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
       fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
-      expect(screen.getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
-      expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
+      const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
+      expect(within(popover).getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
+      expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
       expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
     } finally {
       vi.useRealTimers()
@@ -235,11 +237,54 @@ describe('translation QA in review', () => {
     expect(screen.getByText('2 issues').textContent).toContain('2 issues')
     expect(screen.getAllByRole('button', { name: /QA for promo/ })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: /QA for promo/ }))
-    expect(screen.getByText('Missing placeholder {name}.')).toBeTruthy()
-    expect(screen.getByText('Translation is long.')).toBeTruthy()
-    expect(screen.getByText('placeholder_missing')).toBeTruthy()
-    expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
+    const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
+    expect(within(popover).getByText('Missing placeholder {name}.')).toBeTruthy()
+    expect(within(popover).getByText('Translation is long.')).toBeTruthy()
+    expect(within(popover).getByText('placeholder_missing')).toBeTruthy()
+    expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
     expect(screen.getByText('en', { selector: 'li span' })).toBeTruthy()
     expect(screen.getByText('de', { selector: 'li span' })).toBeTruthy()
+  })
+
+  it('dims the review-card summary badge while its QA result is stale', async () => {
+    vi.useFakeTimers()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({
+      locale: 'en',
+      issues: [{
+        code: 'length',
+        severity: 'warning',
+        message: 'Translation is long.',
+        start: null,
+        end: null,
+        detail: null,
+      }],
+    })
+    try {
+      review([{
+        string_id: 'a',
+        key: 'promo',
+        source_text: 'Hello {name}',
+        status: 'draft',
+        translations: { en: 'Hi' },
+        issues: {
+          en: [{
+            code: 'placeholder_missing',
+            severity: 'error',
+            message: 'Missing placeholder {name}.',
+            start: null,
+            end: null,
+            detail: null,
+          }],
+        },
+      }])
+      const card = () => screen.getByRole('button', { name: /QA for promo/ })
+      expect(card().className).not.toContain('opacity-50')
+      fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Hello there' } })
+      expect(card().className).toContain('opacity-50')
+      await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
+      expect(card().className).not.toContain('opacity-50')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

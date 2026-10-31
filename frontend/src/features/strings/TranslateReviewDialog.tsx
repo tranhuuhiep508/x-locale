@@ -206,6 +206,7 @@ function ProposalTreeNode({
       locale,
     })),
   )
+  const rollupStale = locales.some(([locale]) => localeView(qa, item.string_id, locale).stale)
 
   return (
     <li
@@ -226,6 +227,7 @@ function ProposalTreeNode({
                   issues={rollupIssues}
                   footer={QA_APPLY_FOOTER}
                   showClean={false}
+                  stale={rollupStale}
                 />
               ) : null}
               {item.status === 'public' ? (

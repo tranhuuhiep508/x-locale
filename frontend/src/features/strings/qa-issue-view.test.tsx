@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { QaIssue } from '@/lib/api/types'
-import { QA_APPLY_FOOTER, QA_SAVE_FOOTER, QaIssueBadge, type QaBadgeIssue } from './qa-issue-view'
+import { QA_APPLY_FOOTER, QA_SAVE_FOOTER, QaIssueBadge, QaLocaleBadge, describedByFor, type QaBadgeIssue } from './qa-issue-view'
+import type { QaView } from './qa-issues'
 
 function issue(overrides: Partial<QaIssue> & Pick<QaIssue, 'code' | 'severity' | 'message'>): QaBadgeIssue {
   return { start: null, end: null, detail: null, ...overrides }
@@ -157,15 +159,107 @@ describe('QA badge popover', () => {
     expect(popoverOpen()).toBe(false)
   })
 
-  it('ignores touch hover and opens on tap', () => {
+  it('ignores touch hover', () => {
     renderBadge([missing, length])
-    const button = badgeButton('en')
-    fireEvent.pointerOver(button, { pointerType: 'touch' })
+    fireEvent.pointerOver(badgeButton('en'), { pointerType: 'touch' })
     expect(popoverOpen()).toBe(false)
-    fireEvent.click(button)
+  })
+
+  it('stays open when a touch tap focuses the badge before click', async () => {
+    const { events } = renderTracked([missing, length])
+    const button = badgeButton('en')
+    await userEvent.setup({ delay: null }).pointer([
+      { keys: '[TouchA>]', target: button },
+      { keys: '[/TouchA]' },
+    ])
+    expect(events.indexOf('pointerdown')).toBeGreaterThanOrEqual(0)
+    expect(events.indexOf('focus')).toBeGreaterThan(events.indexOf('pointerdown'))
+    expect(events.indexOf('click')).toBeGreaterThan(events.indexOf('focus'))
     expect(popoverOpen()).toBe(true)
     expect(screen.getByText(QA_SAVE_FOOTER)).toBeTruthy()
-    expect(screen.getByLabelText('Error')).toBeTruthy()
-    expect(screen.getByLabelText('Warning')).toBeTruthy()
+  })
+
+  it('stays open when clicked after hover', async () => {
+    const { events } = renderTracked([missing])
+    const button = badgeButton('en')
+    const user = userEvent.setup({ delay: null })
+    await user.hover(button)
+    expect(popoverOpen()).toBe(true)
+    await user.click(button)
+    expect(events.indexOf('click')).toBeGreaterThan(events.indexOf('focus'))
+    expect(popoverOpen()).toBe(true)
+    await user.keyboard('{Escape}')
+    expect(popoverOpen()).toBe(false)
+  })
+
+  it('opens on Tab and closes on Escape', async () => {
+    render(
+      <>
+        <button type="button">Before</button>
+        <QaIssueBadge label="en" issues={[missing]} footer={QA_SAVE_FOOTER} />
+      </>,
+    )
+    const user = userEvent.setup({ delay: null })
+    await user.tab()
+    expect(document.activeElement?.textContent).toBe('Before')
+    expect(popoverOpen()).toBe(false)
+    await user.tab()
+    expect(document.activeElement).toBe(badgeButton('en'))
+    expect(popoverOpen()).toBe(true)
+    await user.keyboard('{Escape}')
+    expect(popoverOpen()).toBe(false)
+    await user.click(badgeButton('en'))
+    expect(popoverOpen()).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Before' }))
+    expect(popoverOpen()).toBe(false)
+  })
+})
+
+function renderTracked(issues: QaBadgeIssue[]) {
+  const events: string[] = []
+  const { container } = render(<QaIssueBadge label="en" issues={issues} footer={QA_SAVE_FOOTER} />)
+  container.addEventListener('pointerdown', () => { events.push('pointerdown') })
+  container.addEventListener('mousedown', () => { events.push('mousedown') })
+  container.addEventListener('focusin', () => { events.push('focus') })
+  container.addEventListener('pointerup', () => { events.push('pointerup') })
+  container.addEventListener('mouseup', () => { events.push('mouseup') })
+  container.addEventListener('click', () => { events.push('click') })
+  return { events }
+}
+
+describe('QA live region', () => {
+  const ready: QaView = { status: 'ready', issues: [missing], stale: false }
+  const clean: QaView = { status: 'ready', issues: [], stale: false }
+  const failed: QaView = { status: 'failed', issues: [], stale: false }
+  const checking: QaView = { status: 'checking', issues: [], stale: false }
+
+  function field(view: QaView) {
+    return (
+      <>
+        <textarea aria-label="en" aria-describedby={describedByFor(view, 'qa-en')} />
+        <QaLocaleBadge view={view} locale="en" footer={QA_SAVE_FOOTER} id="qa-en" />
+      </>
+    )
+  }
+
+  it('announces issue changes for the textarea', () => {
+    const { rerender } = render(field(ready))
+    const region = document.getElementById('qa-en')
+    expect(region?.getAttribute('aria-live')).toBe('polite')
+    expect(region?.className).toContain('sr-only')
+    expect(region?.textContent).toContain(missing.message)
+    expect(region?.textContent).toContain('placeholder_missing')
+    expect(screen.getByLabelText('en').getAttribute('aria-describedby')).toBe('qa-en')
+
+    rerender(field(clean))
+    expect(document.getElementById('qa-en')?.textContent).toContain('No QA issues')
+
+    rerender(field(failed))
+    expect(document.getElementById('qa-en')?.textContent).toContain('QA check failed.')
+    expect(screen.getByText('QA failed')).toBeTruthy()
+
+    rerender(field(checking))
+    expect(describedByFor(checking, 'qa-en')).toBeUndefined()
+    expect(document.getElementById('qa-en')).toBeNull()
   })
 })

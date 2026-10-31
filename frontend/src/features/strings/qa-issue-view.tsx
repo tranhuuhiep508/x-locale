@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 import { CircleCheck, OctagonX, TriangleAlert } from 'lucide-react'
 import type { QaIssue } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -91,15 +91,20 @@ export function QaLocaleBadge({
 }) {
   if (view.status === 'unchecked') return null
   const issues = presentQaIssues(view.issues)
+  const live = id ? <QaLiveRegion id={id} view={view} /> : null
   if (issues.length === 0 && view.status === 'checking') return <QaChecking />
   if (issues.length === 0 && view.status === 'failed') {
-    return <span className="text-xs text-muted-foreground">QA failed</span>
+    return (
+      <>
+        <span className="text-xs text-muted-foreground">QA failed</span>
+        {live}
+      </>
+    )
   }
   return (
     <span className="inline-flex items-center gap-1.5">
       {view.status === 'checking' ? <QaChecking /> : null}
       <QaIssueBadge
-        id={id}
         label={locale}
         issues={issues}
         footer={footer}
@@ -109,13 +114,32 @@ export function QaLocaleBadge({
       {view.status === 'failed' ? (
         <span className="text-xs text-muted-foreground">QA failed</span>
       ) : null}
+      {live}
     </span>
+  )
+}
+
+/** The textarea's polite announcement. Visually hidden so the badge stays the only QA chrome. */
+function QaLiveRegion({ id, view }: { id: string; view: QaView }) {
+  if (!describedByFor(view, id)) return null
+  const issues = presentQaIssues(view.issues)
+  return (
+    <div id={id} aria-live="polite" className="sr-only">
+      {issues.map((issue, index) => (
+        <span key={`${issue.code}-${index}`}>
+          {issue.message}{' '}
+          <code>{issue.code}</code>
+        </span>
+      ))}
+      {view.status === 'ready' && issues.length === 0 ? <span>No QA issues</span> : null}
+      {view.status === 'failed' ? <span>QA check failed.</span> : null}
+    </div>
   )
 }
 
 /**
  * One badge. Red when any issue is an error, amber for warnings only, grey when clean.
- * Opens on mouse hover, keyboard focus, and click/tap.
+ * Opens on mouse hover, keyboard focus, and click/tap. A click keeps it open.
  */
 export function QaIssueBadge({
   label,
@@ -136,6 +160,7 @@ export function QaIssueBadge({
   const closeTimer = useRef<number | undefined>(undefined)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const fromPointer = useRef(false)
   const { errors, warnings } = issueCounts(issues)
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), [])
@@ -172,6 +197,13 @@ export function QaIssueBadge({
     if (next === 'show') show()
     else hide()
   }
+  const onFocus = () => {
+    if (!fromPointer.current) show()
+  }
+  const onClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    show()
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -186,10 +218,15 @@ export function QaIssueBadge({
             id={id}
             type="button"
             aria-label={`QA for ${label}: ${breakdown(errors, warnings)}. Advisory only.`}
+            onPointerDown={() => { fromPointer.current = true }}
             onPointerEnter={(event) => onPointer(event, 'show')}
             onPointerLeave={(event) => onPointer(event, 'hide')}
-            onFocus={show}
-            onBlur={hide}
+            onFocus={onFocus}
+            onBlur={() => {
+              fromPointer.current = false
+              hide()
+            }}
+            onClick={onClick}
           >
             {errors > 0 ? <OctagonX /> : <TriangleAlert className={warningIconClass} />}
             {countLabel(errors, warnings)}
@@ -245,7 +282,8 @@ export function QaIssueBadge({
 }
 
 export function describedByFor(view: QaView, id: string): string | undefined {
-  if (view.status === 'unchecked') return undefined
-  if (presentQaIssues(view.issues).length === 0 && view.status !== 'ready') return undefined
+  if (view.status === 'unchecked' || view.status === 'checking') {
+    return view.issues.length > 0 ? id : undefined
+  }
   return id
 }
