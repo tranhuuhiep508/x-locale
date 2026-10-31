@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { QaIssue, TranslateProposalItem } from '@/lib/api/types'
 import { stringsApi } from '@/lib/api/strings'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -110,6 +110,27 @@ function review(items: TranslateProposalItem[]) {
 }
 
 describe('translation QA in review', () => {
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
+      configurable: true,
+      value: () => false,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+      configurable: true,
+      value: () => {},
+    })
+    Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', {
+      configurable: true,
+      value: () => {},
+    })
+    class ResizeObserverMock {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  })
+
   it('shows one placeholder-changed item and still allows apply', () => {
     review([
       {
@@ -133,7 +154,9 @@ describe('translation QA in review', () => {
         issues: { en: [] },
       },
     ])
+    fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
     expect(screen.getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(screen.queryByText(/Extra placeholder/)).toBeNull()
     expect(screen.getAllByText('No QA issues').length).toBeGreaterThan(0)
@@ -174,10 +197,49 @@ describe('translation QA in review', () => {
       expect(screen.getAllByText('Checking…').length).toBeGreaterThan(0)
       expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
       await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
+      fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
       expect(screen.getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
+      expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
       expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('summarizes a review card as one badge', () => {
+    review([{
+      string_id: 'a',
+      key: 'promo',
+      source_text: 'Hello {name}',
+      status: 'draft',
+      translations: { en: 'Hi', de: 'Hallo' },
+      issues: {
+        en: [{
+          code: 'placeholder_missing',
+          severity: 'error',
+          message: 'Missing placeholder {name}.',
+          start: null,
+          end: null,
+          detail: null,
+        }],
+        de: [{
+          code: 'length',
+          severity: 'warning',
+          message: 'Translation is long.',
+          start: null,
+          end: null,
+          detail: null,
+        }],
+      },
+    }])
+    expect(screen.getByText('2 issues').textContent).toContain('2 issues')
+    expect(screen.getAllByRole('button', { name: /QA for promo/ })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /QA for promo/ }))
+    expect(screen.getByText('Missing placeholder {name}.')).toBeTruthy()
+    expect(screen.getByText('Translation is long.')).toBeTruthy()
+    expect(screen.getByText('placeholder_missing')).toBeTruthy()
+    expect(screen.getByText('Advisory only. You can still apply.')).toBeTruthy()
+    expect(screen.getByText('en', { selector: 'li span' })).toBeTruthy()
+    expect(screen.getByText('de', { selector: 'li span' })).toBeTruthy()
   })
 })

@@ -25,7 +25,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
 import type { QaBaseline } from '@/features/strings/qa-issues'
-import { describedByFor, QaIssueList, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
@@ -816,7 +816,7 @@ export default function StringFormDialog({
                             />
                           ) : null}
                           <span className="ml-auto">
-                            <QaLocaleBadge view={view} />
+                            <QaLocaleBadge view={view} locale={locale} footer={QA_SAVE_FOOTER} id={issuesId} />
                           </span>
                         </div>
                         <Textarea
@@ -836,7 +836,6 @@ export default function StringFormDialog({
                           placeholder={`Translation for ${locale}…`}
                           aria-describedby={describedByFor(view, issuesId)}
                         />
-                        <QaIssueList view={view} id={issuesId} />
                       </Field>
                       )
                     })}

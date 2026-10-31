@@ -46,10 +46,11 @@ test('review groups a placeholder style change and still allows apply', async ({
   const body = await response.json() as { issues: { code: string }[] }
   expect(body.issues.map((issue) => issue.code).sort()).toEqual(['placeholder_extra', 'placeholder_missing'])
 
-  await expect(dialog.getByText(grouped)).toBeVisible()
-  await expect(dialog.getByText('placeholder_changed')).toBeVisible()
-  await expect(dialog.getByText(/Missing placeholder/)).toHaveCount(0)
-  await expect(dialog.getByText(/Extra placeholder/)).toHaveCount(0)
+  await row.getByRole('button', { name: /QA for en/ }).click()
+  await expect(page.getByText(grouped)).toBeVisible()
+  await expect(page.getByText('placeholder_changed')).toBeVisible()
+  await expect(page.getByText(/Missing placeholder/)).toHaveCount(0)
+  await expect(page.getByText(/Extra placeholder/)).toHaveCount(0)
   await expect(dialog.getByText('1 QA error. You can still apply.')).toBeVisible()
   await expect(dialog.getByRole('button', { name: /^Apply/ })).toBeEnabled()
   await page.screenshot({ path: '/opt/cursor/artifacts/qa-review-placeholder-changed.png' })
@@ -71,9 +72,10 @@ test('edit form groups a placeholder style change and still allows save', async 
   const response = await qa
   expect(response.ok(), await response.text()).toBeTruthy()
 
-  await expect(dialog.getByText(grouped)).toBeVisible()
-  await expect(dialog.getByText('placeholder_changed')).toBeVisible()
-  await expect(dialog.getByText(/Missing placeholder/)).toHaveCount(0)
+  await dialog.getByRole('button', { name: /QA for en/ }).click()
+  await expect(page.getByText(grouped)).toBeVisible()
+  await expect(page.getByText('placeholder_changed')).toBeVisible()
+  await expect(page.getByText(/Missing placeholder/)).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   await expect(dialog.locator('#translation-en')).not.toHaveAttribute('aria-invalid')
   await page.screenshot({ path: '/opt/cursor/artifacts/qa-edit-placeholder-changed.png' })

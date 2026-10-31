@@ -554,7 +554,9 @@ describe('StringFormDialog translation QA', () => {
         translation: 'Hello',
         locale: 'en',
       })
+      fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
       expect(screen.getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
+      expect(screen.getByText('Advisory only. You can still save.')).toBeTruthy()
       const field = screen.getByLabelText('en') as HTMLTextAreaElement
       expect(field.getAttribute('aria-invalid')).toBeNull()
       expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
@@ -591,7 +593,9 @@ describe('StringFormDialog translation QA', () => {
     renderDialog({ entry: { ...draftEntry(), source_text: 'Save {price, number}' } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Save {price, number}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
-    expect(await screen.findByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: /QA for en/ }))
+    expect(screen.getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    expect(screen.getByText('Advisory only. You can still save.')).toBeTruthy()
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(stringsApi.translateQa).not.toHaveBeenCalled()
     expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
