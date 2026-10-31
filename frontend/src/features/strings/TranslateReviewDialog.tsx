@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ConfidenceBadge } from '@/features/strings/confidence'
-import { describedByFor, QaCountBadges, QaIssueList, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import { describedByFor, QA_APPLY_FOOTER, QaCountBadges, QaIssueBadge, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import {
   issueCounts,
   presentQaIssues,
@@ -145,7 +145,7 @@ function ProposalLocaleField({
         </FieldLabel>
         <ConfidenceBadge score={score} />
         <span className="ml-auto">
-          <QaLocaleBadge view={view} />
+          <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
         </span>
       </div>
       {folded ? (
@@ -169,7 +169,6 @@ function ProposalLocaleField({
           onChange={(event) => onChange(event.target.value)}
         />
       )}
-      <QaIssueList view={view} id={issuesId} />
     </Field>
   )
 }
@@ -201,7 +200,13 @@ function ProposalTreeNode({
 }) {
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
-  const rollup = tally(stringViews(item, qa))
+  const rollupIssues = locales.flatMap(([locale]) =>
+    presentQaIssues(localeView(qa, item.string_id, locale).issues).map((issue) => ({
+      ...issue,
+      locale,
+    })),
+  )
+  const rollupStale = locales.some(([locale]) => localeView(qa, item.string_id, locale).stale)
 
   return (
     <li
@@ -216,7 +221,15 @@ function ProposalTreeNode({
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
             <span className="flex items-center gap-1.5">
-              {review ? <QaCountBadges errors={rollup.errors} warnings={rollup.warnings} showClean={false} /> : null}
+              {review ? (
+                <QaIssueBadge
+                  label={item.key}
+                  issues={rollupIssues}
+                  footer={QA_APPLY_FOOTER}
+                  showClean={false}
+                  stale={rollupStale}
+                />
+              ) : null}
               {item.status === 'public' ? (
                 <Badge variant="outline" className="font-mono text-[10px] uppercase">Public</Badge>
               ) : null}
