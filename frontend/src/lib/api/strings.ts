@@ -16,6 +16,8 @@ import type {
   TranslateProposalsResult,
   TranslateRequest,
   TranslateResult,
+  TranslationQaRequest,
+  TranslationQaResult,
 } from '@/lib/api/types'
 
 export type StringListParams = {
@@ -100,4 +102,6 @@ export const stringsApi = {
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/missing`, body),
   translateApply: (projectId: string, body: TranslateApplyRequest) =>
     api.post<TranslateApplyResult>(`/projects/${projectId}/translate/apply`, body),
+  translateQa: (projectId: string, body: TranslationQaRequest) =>
+    api.post<TranslationQaResult>(`/projects/${projectId}/translate/qa`, body),
 }

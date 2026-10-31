@@ -774,6 +774,7 @@ export function StringsPage() {
 
       <TranslateReviewDialog
         open={reviewOpen}
+        projectId={projectId}
         loadingQueue={missingMut.isPending}
         generating={reviewGenerating}
         applying={applyMut.isPending}

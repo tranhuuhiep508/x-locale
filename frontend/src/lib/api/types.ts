@@ -292,9 +292,31 @@ export interface TranslatePreviewRequest {
   locales?: string[]
 }
 
+export interface QaIssue {
+  code: string
+  severity: 'error' | 'warning'
+  message: string
+  start: number | null
+  end: number | null
+  detail: Record<string, unknown> | null
+}
+
 export interface TranslatePreviewResult {
   translations: Record<string, string>
   scores: Record<string, number>
+  /** Key present (even `[]`) means that locale was checked. Missing key means it was not. */
+  issues?: Record<string, QaIssue[]>
+}
+
+export interface TranslationQaRequest {
+  source_text: string
+  translation: string
+  locale: string
+}
+
+export interface TranslationQaResult {
+  locale: string
+  issues: QaIssue[]
 }
 
 export interface TranslateProposalItem {
@@ -305,6 +327,8 @@ export interface TranslateProposalItem {
   description?: string | null
   translations: Record<string, string>
   scores?: Record<string, number>
+  /** Key present (even `[]`) means that locale was checked. Missing key means it was not. */
+  issues?: Record<string, QaIssue[]>
 }
 
 export interface TranslateProposalsResult {

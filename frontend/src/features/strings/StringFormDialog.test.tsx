@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { modulesApi, tagsApi } from '@/lib/api/catalog'
@@ -30,6 +30,7 @@ vi.mock('@/lib/api/strings', () => ({
     create: vi.fn(),
     update: vi.fn(),
     translatePreview: vi.fn(),
+    translateQa: vi.fn().mockResolvedValue({ locale: 'en', issues: [] }),
     get: vi.fn(),
     batch: vi.fn(),
   },
@@ -517,5 +518,82 @@ describe('StringFormDialog stale saves', () => {
     await screen.findByText('Latest saved: Carol English')
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Bob English')
     expect(toast.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('StringFormDialog translation QA', () => {
+  beforeEach(() => {
+    polyfillPointer()
+    vi.mocked(stringsApi.translateQa).mockReset().mockResolvedValue({ locale: 'en', issues: [] })
+  })
+
+  it('checks a manual edit after a pause and leaves Save enabled', async () => {
+    vi.useFakeTimers()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({
+      locale: 'en',
+      issues: [{
+        code: 'placeholder_missing',
+        severity: 'error',
+        message: 'Missing placeholder {name} (source has 1, translation has 0).',
+        start: null,
+        end: null,
+        detail: { token: '{name}', source_count: 1, translation_count: 0 },
+      }],
+    })
+    try {
+      renderDialog({ entry: { ...draftEntry(), source_text: 'Hello {name}' } })
+      expect(screen.queryByText('No QA issues')).toBeNull()
+      expect(screen.getByText('QA re-checks a translation shortly after you stop typing. It never blocks Save.')).toBeTruthy()
+      fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Hello' } })
+      expect(screen.getByText('Checking…')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(499) })
+      expect(stringsApi.translateQa).not.toHaveBeenCalled()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(vi.mocked(stringsApi.translateQa).mock.calls[0][1]).toEqual({
+        source_text: 'Hello {name}',
+        translation: 'Hello',
+        locale: 'en',
+      })
+      expect(screen.getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
+      const field = screen.getByLabelText('en') as HTMLTextAreaElement
+      expect(field.getAttribute('aria-invalid')).toBeNull()
+      expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows preview issues immediately, including a grouped placeholder change', async () => {
+    vi.mocked(stringsApi.translatePreview).mockResolvedValue({
+      translations: { en: 'Save {price, number, percent}' },
+      scores: { en: 88 },
+      issues: {
+        en: [
+          {
+            code: 'placeholder_missing',
+            severity: 'error',
+            message: 'Missing placeholder {price, number} (source has 1, translation has 0).',
+            start: null,
+            end: null,
+            detail: { token: '{price, number}', source_count: 1, translation_count: 0 },
+          },
+          {
+            code: 'placeholder_extra',
+            severity: 'error',
+            message: 'Extra placeholder {price, number, percent} (source has 0, translation has 1).',
+            start: null,
+            end: null,
+            detail: { token: '{price, number, percent}', source_count: 0, translation_count: 1 },
+          },
+        ],
+      },
+    })
+    renderDialog({ entry: { ...draftEntry(), source_text: 'Save {price, number}' } })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Save {price, number}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    expect(await screen.findByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
+    expect(screen.queryByText(/Missing placeholder/)).toBeNull()
+    expect(stringsApi.translateQa).not.toHaveBeenCalled()
+    expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
