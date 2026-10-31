@@ -61,11 +61,12 @@ _VOID_TAGS = frozenset(
     }
 )
 # %% is an escaped percent. Flags and width are ignored so %-10s matches %s.
-# A space is not a flag: "50% discount" must not read as %d. Length stays in the
-# token so %lld and %d are different. @ is the iOS object conversion.
+# A space is not a flag: "50% discount" must not read as %d. A letter after the
+# conversion is prose: "50%off" must not read as %o. Length stays in the token
+# so %lld and %d are different. @ is the iOS object conversion.
 _PRINTF = re.compile(
     r"%%|%(?:(?P<pos>\d+)\$)?[-+0#]*(?:\d+|\*)?(?:\.(?:\d+|\*))?"
-    r"(?P<len>hh|ll|h|l|L|z|j|t)?(?P<conv>[sdifouxXeEgGc@])"
+    r"(?P<len>hh|ll|h|l|L|z|j|t)?(?P<conv>[sdifouxXeEgGc@])(?![A-Za-z])"
 )
 _ICU_COLUMN = re.compile(r"line (\d+), column (\d+)")
 # Plural/select (and typed number/date/time with a style) so {{ }} inside an
@@ -85,7 +86,15 @@ _I18NEXT_T = re.compile(
 _VUE_LINK = re.compile(r"(?<![\w@])@(?P<mod>\.[A-Za-z]+)?:(?P<key>[\w.-]+)")
 _SELECTOR = re.compile(r"(?:=\s*-?\d+|[A-Za-z_][A-Za-z0-9_]*)")
 _OFFSET = re.compile(r"offset\s*:\s*-?\d+\s*")
-# Same-length stand-in so a later syntax column still points at the source text.
+_RAILS = re.compile(r"%\{([^{}]*)\}")
+# Complete {name} / {name, number} left in the text when the ICU parse fails.
+_PLAIN_ARG = re.compile(
+    r"\{\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*|\d+)\s*"
+    r"(?:\}|,\s*(?P<type>number|date|time)\s*(?:,\s*(?P<style>[^}]*))?\s*\})"
+)
+# A lone "{" before a word, including non-ASCII ("Nhấn { để").
+_FOLLOWING_NAME = re.compile(r"\s*(?:[^\W\d_]|_|\d)")
+# Same-length stand-in. Never copied into a token or a user-facing message.
 _DOT = "·"
 
 MAX_NESTING = 20
@@ -190,10 +199,15 @@ def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
         issues.append(_syntax("source", error))
     for error in dst.syntax:
         issues.append(_syntax("translation", error))
+    src_ok = _structure_ok(src)
+    dst_ok = _structure_ok(dst)
     if src.icu is not None and dst.icu is not None:
         issues.extend(_placeholder_issues(src.icu, dst.icu))
-        issues.extend(_variable_issues(src.icu, dst.icu))
-    if dst.icu is not None:
+        # Blocks only exist after a real parse. A failed parse must not report
+        # the plural as a missing variable.
+        if src_ok and dst_ok:
+            issues.extend(_variable_issues(src.icu, dst.icu))
+    if dst_ok and dst.icu is not None:
         issues.extend(_other_issues(dst.icu))
         issues.extend(_plural_issues(dst.icu, locale))
     issues.extend(_html_issues(src.markup, dst.markup))
@@ -203,11 +217,17 @@ def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
     return issues
 
 
+def _structure_ok(side: _Side) -> bool:
+    return side.icu is not None and (bool(side.icu.blocks) or not side.syntax)
+
+
 def _examine(text: str) -> _Side:
+    # Reject deep or unclosed braces before the shield. The shield's brace
+    # matcher is linear, but a nest past MAX_NESTING is not worth scanning.
+    if _brace_depth(text) > MAX_NESTING:
+        return _Side(_scan_markup(text), None, limited="nesting")
     shielded, specials, syntax = _shield(text)
     markup = _scan_markup(shielded)
-    if _brace_depth(text) > MAX_NESTING:
-        return _Side(markup, None, limited="nesting")
     view = _IcuView()
     view.placeholders.update(specials)
     _add_printf(shielded, view.placeholders)
@@ -218,8 +238,12 @@ def _examine(text: str) -> _Side:
         message = str(exc)
         if message.startswith(_TAG_ERRORS):
             syntax.extend(_absorb_markup(markup, text, view))
-        elif _should_report_icu(shielded, message):
-            syntax.append(message)
+        else:
+            if _should_report_icu(shielded, message):
+                syntax.append(_restore_snippet(message, text))
+            # The walk did not run, so count finished {name} arguments here.
+            # Fragments such as "{# mục}" are not arguments.
+            _add_plain_arguments(shielded, view.placeholders)
     else:
         _walk(ast, 1, view)
     if view.too_deep:
@@ -264,7 +288,7 @@ def _walk(nodes: Iterable[object], depth: int, view: _IcuView) -> None:
 
 def _placeholder_token(node: dict) -> str | None:
     name = node.get("value")
-    if not isinstance(name, str) or not name:
+    if not isinstance(name, str) or not name or _DOT in name:
         return None
     type_name = _TYPED.get(node.get("type"))
     if type_name is None:
@@ -306,12 +330,37 @@ def _shield(text: str) -> tuple[str, Counter[str], list[str]]:
     """
     tokens: Counter[str] = Counter()
     syntax: list[str] = []
-    shielded = _shield_span(text, 0, len(text), tokens, syntax)
+    closes = _brace_closes(text)
+    shielded = _shield_span(text, 0, len(text), tokens, syntax, closes)
     return shielded, tokens, syntax
 
 
+def _brace_closes(text: str) -> list[int]:
+    """Match each ``{`` to its ``}`` in one pass. Unmatched opens stay -1."""
+    closes = [-1] * len(text)
+    stack: list[int] = []
+    for index, ch in enumerate(text):
+        if ch == "{":
+            stack.append(index)
+        elif ch == "}" and stack:
+            closes[stack.pop()] = index
+    return closes
+
+
+def _close_at(closes: list[int], open_at: int, end: int) -> int | None:
+    close = closes[open_at]
+    if close < 0 or close >= end:
+        return None
+    return close
+
+
 def _shield_span(
-    text: str, start: int, end: int, tokens: Counter[str], syntax: list[str]
+    text: str,
+    start: int,
+    end: int,
+    tokens: Counter[str],
+    syntax: list[str],
+    closes: list[int],
 ) -> str:
     buf: list[str] = []
     i = start
@@ -319,6 +368,19 @@ def _shield_span(
         if text.startswith("{{", i):
             kind, stop, token = _read_ngx(text, i, end)
             if kind == "nested":
+                inner_kind, inner_stop, inner_token = _read_ngx(text, i + 1, end)
+                # {{{ name }}} is one placeholder, not "{" plus a masked name.
+                if (
+                    inner_kind == "token"
+                    and inner_token
+                    and inner_stop < end
+                    and text[inner_stop] == "}"
+                ):
+                    tokens["{" + inner_token + "}"] += 1
+                    stop = inner_stop + 1
+                    buf.append(_DOT * (stop - i))
+                    i = stop
+                    continue
                 buf.append(text[i])
                 i += 1
                 continue
@@ -338,16 +400,17 @@ def _shield_span(
                 i = stop
                 continue
         if text[i] == "{":
-            taken = _take_complex(text, i, end, tokens, syntax)
+            taken = _take_complex(text, i, end, tokens, syntax, closes)
             if taken is not None:
                 piece, stop = taken
                 buf.append(piece)
                 i = stop
                 continue
-            close = _closing_brace(text, i, end)
+            close = _close_at(closes, i, end)
             if close is not None and not _is_icu_brace(text[i + 1 : close]):
                 body = _compact_unquoted(text[i + 1 : close])
-                if body:
+                # {# mục} is an ICU pound fragment, not a placeholder.
+                if body and "#" not in body:
                     tokens["{" + body + "}"] += 1
                 buf.append(_DOT * (close + 1 - i))
                 i = close + 1
@@ -386,24 +449,29 @@ def _read_ngx(text: str, i: int, end: int) -> tuple[str, int, str | None]:
 
 
 def _read_rails(text: str, i: int, end: int) -> tuple[str, int] | None:
-    match = re.match(r"%\{([^{}]*)\}", text[i:end])
-    if not match:
+    match = _RAILS.match(text, i)
+    if match is None or match.end() > end:
         return None
     body = _compact_unquoted(match.group(1))
     if not body:
         return None
-    return "%{" + body + "}", i + match.end()
+    return "%{" + body + "}", match.end()
 
 
 def _take_complex(
-    text: str, i: int, end: int, tokens: Counter[str], syntax: list[str]
+    text: str,
+    i: int,
+    end: int,
+    tokens: Counter[str],
+    syntax: list[str],
+    closes: list[int],
 ) -> tuple[str, int] | None:
     """Shield ngx placeholders inside one plural/select, preserving length."""
     head = _COMPLEX_HEAD.match(text, i)
     if not head or head.end() > end:
         return None
     if head.group("type") in ("number", "date", "time"):
-        close = _closing_brace(text, i, end)
+        close = _close_at(closes, i, end)
         if close is None:
             return None
         return text[i : close + 1], close + 1
@@ -414,11 +482,10 @@ def _take_complex(
         buf.append(text[j : offset.end()])
         j = offset.end()
     while j < end:
-        ws = re.match(r"\s*", text[j:end])
-        ws_len = ws.end() if ws else 0
-        if ws_len:
-            buf.append(text[j : j + ws_len])
-            j += ws_len
+        nxt = _skip_space(text, j, end)
+        if nxt != j:
+            buf.append(text[j:nxt])
+            j = nxt
         if j >= end:
             return None
         if text[j] == "}":
@@ -429,21 +496,26 @@ def _take_complex(
             return None
         buf.append(text[j : sel.end()])
         j = sel.end()
-        ws = re.match(r"\s*", text[j:end])
-        ws_len = ws.end() if ws else 0
-        if ws_len:
-            buf.append(text[j : j + ws_len])
-            j += ws_len
+        nxt = _skip_space(text, j, end)
+        if nxt != j:
+            buf.append(text[j:nxt])
+            j = nxt
         if j >= end or text[j] != "{":
             return None
-        close = _closing_brace(text, j, end)
+        close = _close_at(closes, j, end)
         if close is None:
             return None
         buf.append("{")
-        buf.append(_shield_span(text, j + 1, close, tokens, syntax))
+        buf.append(_shield_span(text, j + 1, close, tokens, syntax, closes))
         buf.append("}")
         j = close + 1
     return None
+
+
+def _skip_space(text: str, j: int, end: int) -> int:
+    while j < end and text[j].isspace():
+        j += 1
+    return j
 
 
 def _is_icu_brace(body: str) -> bool:
@@ -469,19 +541,6 @@ def _compact_unquoted(body: str) -> str:
         if not ch.isspace():
             out.append(ch)
     return "".join(out)
-
-
-def _closing_brace(text: str, open_at: int, end: int) -> int | None:
-    depth = 0
-    for index in range(open_at, end):
-        ch = text[index]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return index
-    return None
 
 
 def _should_report_icu(text: str, error: str) -> bool:
@@ -512,7 +571,7 @@ def _has_unclosed_named_brace(text: str) -> bool:
     named = False
     for index, ch in enumerate(text):
         if ch == "{":
-            if re.match(r"\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)", text[index + 1 :]):
+            if _FOLLOWING_NAME.match(text, index + 1):
                 named = True
             depth += 1
         elif ch == "}":
@@ -520,15 +579,68 @@ def _has_unclosed_named_brace(text: str) -> bool:
     return named and depth > 0
 
 
+def _add_plain_arguments(text: str, placeholders: Counter[str]) -> None:
+    """Count finished ICU arguments a failed parse did not get to walk.
+
+    An apostrophe immediately before ``{`` quotes the brace, matching the
+    parser. ``{#...}`` is not an argument.
+    """
+    i = 0
+    end = len(text)
+    while i < end:
+        if text.startswith("''", i):
+            i += 2
+            continue
+        if text[i] == "'" and i + 1 < end and text[i + 1] == "{":
+            i = _skip_icu_quote(text, i + 2, end)
+            continue
+        if text[i] == "{":
+            match = _PLAIN_ARG.match(text, i)
+            if match and match.end() <= end:
+                name = match.group("name")
+                type_name = match.group("type")
+                if type_name is None:
+                    placeholders["{" + name + "}"] += 1
+                else:
+                    style = (match.group("style") or "").strip()
+                    if style:
+                        placeholders["{" + f"{name}, {type_name}, {style}" + "}"] += 1
+                    else:
+                        placeholders["{" + f"{name}, {type_name}" + "}"] += 1
+                i = match.end()
+                continue
+        i += 1
+
+
+def _skip_icu_quote(text: str, i: int, end: int) -> int:
+    while i < end:
+        if text.startswith("''", i):
+            i += 2
+            continue
+        if text[i] == "'":
+            return i + 1
+        i += 1
+    return end
+
+
 def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
     """Parse text nodes and attributes the ICU tag parser rejected.
 
-    Syntax columns are shifted back onto ``full`` so an error inside
-    ``href`` is not reported as if the attribute value were the whole string.
+    Text nodes are joined first. ``<b class="item">`` splits a plural into
+    several nodes, and parsing each one reports a false syntax error and
+    drops the plural. Attributes stay separate so an ``href`` error keeps
+    its offset in ``full``.
     """
     errors: list[str] = []
-    pieces = [*zip(markup.part_at, markup.parts, strict=True), *zip(markup.attr_at, markup.attrs, strict=True)]
-    for offset, piece in pieces:
+    joined, origins = _join_parts(markup)
+    if joined and not view.too_deep:
+        try:
+            _walk(parse(joined), 1, view)
+        except ValueError as exc:
+            message = str(exc)
+            if _should_report_icu(joined, message):
+                errors.append(_retarget_joined(message, full, origins))
+    for offset, piece in zip(markup.attr_at, markup.attrs, strict=True):
         if not piece or view.too_deep:
             continue
         try:
@@ -540,12 +652,50 @@ def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
     return errors
 
 
+def _join_parts(markup: _Markup) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    origins: list[int] = []
+    for offset, part in zip(markup.part_at, markup.parts, strict=True):
+        for index, ch in enumerate(part):
+            chars.append(ch)
+            origins.append(offset + index)
+    return "".join(chars), origins
+
+
 def _retarget(error: str, full: str, offset: int) -> str:
     code = error.split(" ", 1)[0]
     found = _ICU_COLUMN.search(error)
     if not found or found.group(1) != "1":
-        return error
+        return _restore_snippet(error, full)
     column = offset + int(found.group(2))
+    return _syntax_error(code, column, full)
+
+
+def _retarget_joined(error: str, full: str, origins: list[int]) -> str:
+    code = error.split(" ", 1)[0]
+    found = _ICU_COLUMN.search(error)
+    if not found or found.group(1) != "1":
+        return _restore_snippet(error, full)
+    local = int(found.group(2))
+    if origins and 1 <= local <= len(origins):
+        column = origins[local - 1] + 1
+    elif origins:
+        column = origins[-1] + 2
+    else:
+        column = local
+    return _syntax_error(code, column, full)
+
+
+def _restore_snippet(error: str, original: str) -> str:
+    """Parser errors quote the shielded text. Show the original instead."""
+    head, sep, _snippet = error.partition(": ")
+    if not sep:
+        return error
+    shown = original if len(original) <= 180 else original[:180]
+    return f"{head}: {shown}"
+
+
+def _syntax_error(code: str, column: int, full: str) -> str:
     shown = full if len(full) <= 180 else full[:180]
     return f"{code} at line 1, column {column}: {shown}"
 

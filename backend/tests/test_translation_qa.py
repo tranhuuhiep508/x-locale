@@ -288,6 +288,77 @@ def test_html_attribute_errors_use_the_translation_offset():
     assert image_syntax.start == image.index("{name") + len("{name")
 
 
+def test_html_inside_plural_keeps_categories():
+    source = '{count, plural, one {<b class="item"># item</b>} other {# items}}'
+    assert check_translation(source, source, "en") == []
+    missing = check_translation(
+        source,
+        '{count, plural, one {<b class="item"># item</b>}}',
+        "en",
+    )
+    assert [issue.code for issue in missing] == ["icu_other"]
+    anchor = '{count, plural, one {<a href="x"># item</a>} other {<a href="x"># items</a>}}'
+    assert check_translation(anchor, anchor, "en") == []
+    dropped = check_translation(
+        anchor,
+        '{count, plural, one {<a href="x"># item</a>}}',
+        "en",
+    )
+    assert [issue.code for issue in dropped] == ["icu_other", "html_mismatch"]
+
+
+def test_parse_failure_does_not_invent_placeholders():
+    tail = check_translation("Hi {name}", "Chào {name} {", "vi")
+    assert [issue.code for issue in tail] == ["icu_syntax"]
+    assert "Chào {name} {" in tail[0].message
+    assert "·" not in tail[0].message
+    plural = check_translation(
+        "{count, plural, one {# item} other {# items}}",
+        "{count, plural, one {# mục}",
+        "vi",
+    )
+    assert [issue.code for issue in plural] == ["icu_syntax"]
+    assert "{count, plural, one {# mục}" in plural[0].message
+    assert "·" not in plural[0].message
+    assert all(issue.detail.get("token") != "{#mục}" for issue in plural)
+
+
+def test_messages_quote_original_text_not_the_mask():
+    issues = check_translation("{{{ name }}}", "{{ name }}", "en")
+    assert {issue.detail["token"] for issue in issues} == {"{{{name}}}", "{{name}}"}
+    assert all("·" not in issue.message for issue in issues)
+    assert all("·" not in str(issue.detail) for issue in issues)
+
+
+def test_unclosed_brace_before_a_non_ascii_word_is_syntax():
+    issues = check_translation("Nhấn { để bắt đầu", "Nhấn { để bắt đầu", "vi")
+    assert [issue.code for issue in issues] == ["icu_syntax", "icu_syntax"]
+    assert "Nhấn { để bắt đầu" in issues[0].message
+    assert check_translation("{", "{", "en") == []
+
+
+def test_percent_before_a_word_is_not_printf():
+    assert check_translation("50%off", "50%off", "en") == []
+    assert check_translation("50% off", "50%off", "en") == []
+    assert _codes("Save %d", "Save") == ["placeholder_missing"]
+    assert set(_codes("Count %lld", "Compte %d", "fr")) == {
+        "placeholder_missing",
+        "placeholder_extra",
+    }
+
+
+def test_deeply_unclosed_braces_are_rejected_quickly():
+    import time
+
+    samples = ["%{" * 16000, "{ " * 16000, "{{x" * 10000, "{a" * 8000]
+    for sample in samples:
+        started = time.perf_counter()
+        issues = check_translation(sample, "ok", "en")
+        elapsed = time.perf_counter() - started
+        assert elapsed < 1, (sample[:12], elapsed)
+        assert [issue.code for issue in issues] == ["qa_limit"]
+
+
 def test_qa_refuses_oversized_or_deeply_nested_input():
     oversized = check_translation("x" * (TEXT_MAX_LENGTH + 1), "y", "en")
     assert [issue.code for issue in oversized] == ["qa_limit"]
