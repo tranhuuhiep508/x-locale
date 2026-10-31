@@ -1,12 +1,19 @@
 """Advisory translation QA. Pure function: no database access.
 
+Placeholder style is detected per string, not per project. ``{{ }}`` (ngx-translate
+and i18next), Rails ``%{name}``, and balanced braces that are not ICU are lifted
+out before parsing. The ICU parser then sees only real MessageFormat, so its
+apostrophe quoting cannot hide a non-ICU placeholder.
+
 ICU syntax comes from ``icu-messageformat-parser==0.1.0`` (FormatJS). That
 alpha ships wheels for Linux (manylinux_2_28 x86_64 and aarch64, including
 ``python:3.14-slim``) and macOS only: there is no Windows wheel and no source
 distribution. ``pyicumessageformat`` was not used; its last release was in 2021.
 
 Plural categories come from ``babel`` (CLDR). ``other`` is not one of Babel's
-tags; a missing ``other`` branch is reported on its own.
+tags; a missing ``other`` branch is reported on its own. Compact ``many``
+(multiples of 1000000 and scientific notation) falls back to ``other`` at
+runtime and is not required.
 """
 
 from __future__ import annotations
@@ -54,11 +61,32 @@ _VOID_TAGS = frozenset(
     }
 )
 # %% is an escaped percent. Flags and width are ignored so %-10s matches %s.
+# A space is not a flag: "50% discount" must not read as %d. Length stays in the
+# token so %lld and %d are different. @ is the iOS object conversion.
 _PRINTF = re.compile(
-    r"%%|%(?:(?P<pos>\d+)\$)?[-+0 #]*(?:\d+|\*)?(?:\.(?:\d+|\*))?"
-    r"(?:hh|h|ll|l|L|z|j|t)?(?P<conv>[sdifouxXeEgGc])"
+    r"%%|%(?:(?P<pos>\d+)\$)?[-+0#]*(?:\d+|\*)?(?:\.(?:\d+|\*))?"
+    r"(?P<len>hh|ll|h|l|L|z|j|t)?(?P<conv>[sdifouxXeEgGc@])"
 )
 _ICU_COLUMN = re.compile(r"line (\d+), column (\d+)")
+# Plural/select (and typed number/date/time with a style) so {{ }} inside an
+# option is not read as an ngx placeholder. selectordinal is before select.
+_COMPLEX_HEAD = re.compile(
+    r"\{\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*,\s*"
+    r"(?P<type>plural|selectordinal|select|number|date|time)\s*,\s*"
+)
+_ICU_SIMPLE = re.compile(r"\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*\Z")
+_ICU_TYPED = re.compile(
+    r"\{\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*,\s*"
+    r"(?:plural|selectordinal|select|number|date|time)\b"
+)
+_I18NEXT_T = re.compile(
+    r"\$t\(\s*(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\"|(?P<bare>[\w:.-]+))\s*(?:,[^)]*)?\)"
+)
+_VUE_LINK = re.compile(r"(?<![\w@])@(?P<mod>\.[A-Za-z]+)?:(?P<key>[\w.-]+)")
+_SELECTOR = re.compile(r"(?:=\s*-?\d+|[A-Za-z_][A-Za-z0-9_]*)")
+_OFFSET = re.compile(r"offset\s*:\s*-?\d+\s*")
+# Same-length stand-in so a later syntax column still points at the source text.
+_DOT = "·"
 
 MAX_NESTING = 20
 MAX_ISSUES = 50
@@ -109,13 +137,15 @@ class _Markup:
     parts: list[str] = field(default_factory=list)
     attrs: list[str] = field(default_factory=list)
     broken: str | None = None
+    part_at: list[int] = field(default_factory=list)
+    attr_at: list[int] = field(default_factory=list)
 
 
 @dataclass
 class _Side:
     markup: _Markup
     icu: _IcuView | None
-    syntax: str | None = None
+    syntax: list[str] = field(default_factory=list)
     limited: str | None = None
 
 
@@ -156,10 +186,10 @@ def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
                 detail={"limit": MAX_NESTING},
             )
         )
-    if src.syntax:
-        issues.append(_syntax("source", src.syntax))
-    if dst.syntax:
-        issues.append(_syntax("translation", dst.syntax))
+    for error in src.syntax:
+        issues.append(_syntax("source", error))
+    for error in dst.syntax:
+        issues.append(_syntax("translation", error))
     if src.icu is not None and dst.icu is not None:
         issues.extend(_placeholder_issues(src.icu, dst.icu))
         issues.extend(_variable_issues(src.icu, dst.icu))
@@ -174,35 +204,27 @@ def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
 
 
 def _examine(text: str) -> _Side:
-    markup = _scan_markup(text)
+    shielded, specials, syntax = _shield(text)
+    markup = _scan_markup(shielded)
     if _brace_depth(text) > MAX_NESTING:
         return _Side(markup, None, limited="nesting")
+    view = _IcuView()
+    view.placeholders.update(specials)
+    _add_printf(shielded, view.placeholders)
+    _add_calls(shielded, view.placeholders)
     try:
-        view = _view_from_ast(parse(text))
+        ast = parse(shielded)
     except ValueError as exc:
         message = str(exc)
-        if not message.startswith(_TAG_ERRORS):
-            return _Side(markup, None, syntax=message)
-        try:
-            view = _view_from_ast(parse("".join(markup.parts)))
-        except ValueError as inner:
-            return _Side(markup, None, syntax=str(inner))
-        for attr in markup.attrs:
-            if view.too_deep:
-                break
-            try:
-                _walk(parse(attr), 1, view)
-            except ValueError as inner:
-                return _Side(markup, None, syntax=str(inner))
+        if message.startswith(_TAG_ERRORS):
+            syntax.extend(_absorb_markup(markup, text, view))
+        elif _should_report_icu(shielded, message):
+            syntax.append(message)
+    else:
+        _walk(ast, 1, view)
     if view.too_deep:
         return _Side(markup, None, limited="nesting")
-    return _Side(markup, view)
-
-
-def _view_from_ast(ast: list) -> _IcuView:
-    view = _IcuView()
-    _walk(ast, 1, view)
-    return view
+    return _Side(markup, view, syntax=syntax)
 
 
 def _walk(nodes: Iterable[object], depth: int, view: _IcuView) -> None:
@@ -214,9 +236,9 @@ def _walk(nodes: Iterable[object], depth: int, view: _IcuView) -> None:
             continue
         kind = node.get("type")
         if kind == _LITERAL:
-            # A ' immediately before { quotes the brace, so L'{app} is literal
-            # text and counts as a missing placeholder. Use ’ or '' to keep it.
-            _add_printf(str(node.get("value") or ""), view.placeholders)
+            # Printf and other literal tokens are collected from the whole string
+            # in _examine, so a failed ICU parse cannot skip them.
+            continue
         elif kind in (_ARGUMENT, _NUMBER, _DATE, _TIME):
             token = _placeholder_token(node)
             if token:
@@ -259,7 +281,273 @@ def _add_printf(text: str, placeholders: Counter[str]) -> None:
         if not conv:
             continue
         pos = match.group("pos")
-        placeholders[f"%{pos}${conv}" if pos else f"%{conv}"] += 1
+        length = match.group("len") or ""
+        placeholders[f"%{pos}${length}{conv}" if pos else f"%{length}{conv}"] += 1
+
+
+def _add_calls(text: str, placeholders: Counter[str]) -> None:
+    for match in _I18NEXT_T.finditer(text):
+        key = match.group("sq") or match.group("dq") or match.group("bare") or ""
+        if key:
+            placeholders[f"$t({key})"] += 1
+    for match in _VUE_LINK.finditer(text):
+        mod = match.group("mod") or ""
+        placeholders[f"@{mod}:{match.group('key')}"] += 1
+
+
+def _shield(text: str) -> tuple[str, Counter[str], list[str]]:
+    """Replace non-ICU placeholders with equal-length dots and count them.
+
+    ``{{name}}`` inside a plural option stays ICU: the option's ``{`` is
+    structural, and the inner ``{name}`` is a normal argument. A ``{{`` at
+    message level is ngx/i18next. Braces that are not valid ICU (``.NET``
+    ``{0:C2}``, Python ``{user.name}``, JSON) are counted here so an
+    apostrophe in front of them cannot quote them away.
+    """
+    tokens: Counter[str] = Counter()
+    syntax: list[str] = []
+    shielded = _shield_span(text, 0, len(text), tokens, syntax)
+    return shielded, tokens, syntax
+
+
+def _shield_span(
+    text: str, start: int, end: int, tokens: Counter[str], syntax: list[str]
+) -> str:
+    buf: list[str] = []
+    i = start
+    while i < end:
+        if text.startswith("{{", i):
+            kind, stop, token = _read_ngx(text, i, end)
+            if kind == "nested":
+                buf.append(text[i])
+                i += 1
+                continue
+            if kind == "token" and token:
+                tokens[token] += 1
+            elif kind == "broken" and not syntax:
+                syntax.append(f"UNCLOSED_PLACEHOLDER at line 1, column {i + 1}")
+            buf.append(_DOT * (stop - i))
+            i = stop
+            continue
+        if text.startswith("%{", i):
+            rails = _read_rails(text, i, end)
+            if rails is not None:
+                token, stop = rails
+                tokens[token] += 1
+                buf.append(_DOT * (stop - i))
+                i = stop
+                continue
+        if text[i] == "{":
+            taken = _take_complex(text, i, end, tokens, syntax)
+            if taken is not None:
+                piece, stop = taken
+                buf.append(piece)
+                i = stop
+                continue
+            close = _closing_brace(text, i, end)
+            if close is not None and not _is_icu_brace(text[i + 1 : close]):
+                body = _compact_unquoted(text[i + 1 : close])
+                if body:
+                    tokens["{" + body + "}"] += 1
+                buf.append(_DOT * (close + 1 - i))
+                i = close + 1
+                continue
+        buf.append(text[i])
+        i += 1
+    return "".join(buf)
+
+
+def _read_ngx(text: str, i: int, end: int) -> tuple[str, int, str | None]:
+    """Classify a ``{{`` at ``i``. ``stop`` is exclusive."""
+    j = i + 2
+    quote: str | None = None
+    while j < end:
+        ch = text[j]
+        if quote:
+            if ch == quote:
+                quote = None
+            j += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            j += 1
+            continue
+        if ch == "{":
+            return "nested", i + 1, None
+        if text.startswith("}}", j):
+            compact = _compact_unquoted(text[i + 2 : j])
+            if not compact:
+                return "empty", j + 2, None
+            return "token", j + 2, "{{" + compact + "}}"
+        if ch == "}":
+            return "broken", j + 1, None
+        j += 1
+    return "broken", end, None
+
+
+def _read_rails(text: str, i: int, end: int) -> tuple[str, int] | None:
+    match = re.match(r"%\{([^{}]*)\}", text[i:end])
+    if not match:
+        return None
+    body = _compact_unquoted(match.group(1))
+    if not body:
+        return None
+    return "%{" + body + "}", i + match.end()
+
+
+def _take_complex(
+    text: str, i: int, end: int, tokens: Counter[str], syntax: list[str]
+) -> tuple[str, int] | None:
+    """Shield ngx placeholders inside one plural/select, preserving length."""
+    head = _COMPLEX_HEAD.match(text, i)
+    if not head or head.end() > end:
+        return None
+    if head.group("type") in ("number", "date", "time"):
+        close = _closing_brace(text, i, end)
+        if close is None:
+            return None
+        return text[i : close + 1], close + 1
+    buf = [text[i : head.end()]]
+    j = head.end()
+    offset = _OFFSET.match(text, j)
+    if offset and offset.end() <= end:
+        buf.append(text[j : offset.end()])
+        j = offset.end()
+    while j < end:
+        ws = re.match(r"\s*", text[j:end])
+        ws_len = ws.end() if ws else 0
+        if ws_len:
+            buf.append(text[j : j + ws_len])
+            j += ws_len
+        if j >= end:
+            return None
+        if text[j] == "}":
+            buf.append("}")
+            return "".join(buf), j + 1
+        sel = _SELECTOR.match(text, j)
+        if not sel or sel.end() > end:
+            return None
+        buf.append(text[j : sel.end()])
+        j = sel.end()
+        ws = re.match(r"\s*", text[j:end])
+        ws_len = ws.end() if ws else 0
+        if ws_len:
+            buf.append(text[j : j + ws_len])
+            j += ws_len
+        if j >= end or text[j] != "{":
+            return None
+        close = _closing_brace(text, j, end)
+        if close is None:
+            return None
+        buf.append("{")
+        buf.append(_shield_span(text, j + 1, close, tokens, syntax))
+        buf.append("}")
+        j = close + 1
+    return None
+
+
+def _is_icu_brace(body: str) -> bool:
+    if _ICU_SIMPLE.fullmatch(body):
+        return True
+    return _ICU_TYPED.match("{" + body) is not None
+
+
+def _compact_unquoted(body: str) -> str:
+    """Drop whitespace outside quotes so ``{{ name }}`` matches ``{{name}}``."""
+    out: list[str] = []
+    quote: str | None = None
+    for ch in body:
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"":
+            quote = ch
+            out.append(ch)
+            continue
+        if not ch.isspace():
+            out.append(ch)
+    return "".join(out)
+
+
+def _closing_brace(text: str, open_at: int, end: int) -> int | None:
+    depth = 0
+    for index in range(open_at, end):
+        ch = text[index]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _should_report_icu(text: str, error: str) -> bool:
+    """False for lone braces and balanced non-ICU text such as ``{0:C2}``."""
+    if error.startswith(_TAG_ERRORS):
+        return False
+    if _ICU_TYPED.search(text):
+        return True
+    if _braces_balanced(text):
+        return False
+    return _has_unclosed_named_brace(text)
+
+
+def _braces_balanced(text: str) -> bool:
+    depth = 0
+    for ch in text:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            if depth == 0:
+                return False
+            depth -= 1
+    return depth == 0
+
+
+def _has_unclosed_named_brace(text: str) -> bool:
+    depth = 0
+    named = False
+    for index, ch in enumerate(text):
+        if ch == "{":
+            if re.match(r"\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)", text[index + 1 :]):
+                named = True
+            depth += 1
+        elif ch == "}":
+            depth = max(0, depth - 1)
+    return named and depth > 0
+
+
+def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
+    """Parse text nodes and attributes the ICU tag parser rejected.
+
+    Syntax columns are shifted back onto ``full`` so an error inside
+    ``href`` is not reported as if the attribute value were the whole string.
+    """
+    errors: list[str] = []
+    pieces = [*zip(markup.part_at, markup.parts, strict=True), *zip(markup.attr_at, markup.attrs, strict=True)]
+    for offset, piece in pieces:
+        if not piece or view.too_deep:
+            continue
+        try:
+            _walk(parse(piece), 1, view)
+        except ValueError as exc:
+            message = str(exc)
+            if _should_report_icu(piece, message):
+                errors.append(_retarget(message, full, offset))
+    return errors
+
+
+def _retarget(error: str, full: str, offset: int) -> str:
+    code = error.split(" ", 1)[0]
+    found = _ICU_COLUMN.search(error)
+    if not found or found.group(1) != "1":
+        return error
+    column = offset + int(found.group(2))
+    shown = full if len(full) <= 180 else full[:180]
+    return f"{code} at line 1, column {column}: {shown}"
 
 
 def _placeholder_issues(src: _IcuView, dst: _IcuView) -> list[QaIssue]:
@@ -370,7 +658,26 @@ def _plural_categories(locale: str, *, ordinal: bool) -> frozenset[str] | None:
     except (UnknownLocaleError, ValueError):
         return None
     rule = parsed.ordinal_form if ordinal else parsed.plural_form
-    return frozenset(rule.tags)
+    tags = set(rule.tags)
+    if not ordinal:
+        tags -= _compact_many(rule)
+    return frozenset(tags)
+
+
+def _compact_many(rule: object) -> frozenset[str]:
+    """Drop CLDR compact ``many``. ICU uses ``other`` when that branch is absent.
+
+    The rule is the Romance one (``e in 0`` and ``i mod 1000000``), shared by
+    fr, es, it, pt, and pt-BR. Slavic ``many`` does not match and stays required.
+    """
+    found = re.search(r"'(.*)'", str(rule))
+    if not found:
+        return frozenset()
+    for clause in re.split(r", (?=[a-z]+:)", found.group(1)):
+        name, sep, expr = clause.partition(":")
+        if sep and name.strip() == "many" and "mod 1000000" in expr and "e in 0" in expr:
+            return frozenset({"many"})
+    return frozenset()
 
 
 def _html_issues(src: _Markup, dst: _Markup) -> list[QaIssue]:
@@ -429,10 +736,15 @@ def _syntax(side: str, error: str) -> QaIssue:
     found = _ICU_COLUMN.search(error)
     if side == "translation" and found and found.group(1) == "1":
         start = max(0, int(found.group(2)) - 1)
+    if error.startswith("UNCLOSED_PLACEHOLDER"):
+        column = found.group(2) if found else "?"
+        message = f"{label} has an unclosed {{{{ placeholder at column {column}."
+    else:
+        message = f"{label} is not valid ICU MessageFormat: {shown}"
     return _issue(
         "icu_syntax",
         "error",
-        f"{label} is not valid ICU MessageFormat: {shown}",
+        message,
         start=start,
         detail={"side": side, "error": shown},
     )
@@ -476,9 +788,12 @@ class _MarkupScanner(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.tags: Counter[str] = Counter()
         self.parts: list[str] = []
+        self.part_at: list[int] = []
         self.attrs: list[str] = []
+        self.attr_at: list[int] = []
         self.stack: list[str] = []
         self.broken: str | None = None
+        self.scan_at = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self._open(tag, attrs, void=tag.lower() in _VOID_TAGS)
@@ -489,9 +804,24 @@ class _MarkupScanner(HTMLParser):
     def _open(self, tag: str, attrs: list[tuple[str, str | None]], *, void: bool) -> None:
         name = tag.lower()
         self.tags[name] += 1
+        raw = self.get_starttag_text() or ""
+        tag_at = self.rawdata.find(raw, self.scan_at) if raw else -1
+        if tag_at < 0:
+            tag_at = self.scan_at
+        cursor = 0
         for _key, value in attrs:
-            if value:
+            if not value:
+                continue
+            found = _attr_value_at(raw, cursor, value)
+            if found is None:
                 self.attrs.append(value)
+                self.attr_at.append(tag_at)
+                continue
+            value_at, cursor = found
+            self.attrs.append(value)
+            self.attr_at.append(tag_at + value_at)
+        if raw:
+            self.scan_at = tag_at + len(raw)
         if not void:
             self.stack.append(name)
 
@@ -514,7 +844,14 @@ class _MarkupScanner(HTMLParser):
                 self.stack.pop()
 
     def handle_data(self, data: str) -> None:
+        if not data:
+            return
+        at = self.rawdata.find(data, self.scan_at)
+        if at < 0:
+            at = self.scan_at
         self.parts.append(data)
+        self.part_at.append(at)
+        self.scan_at = at + len(data)
 
     def close(self) -> None:
         if "<" in self.rawdata and self.broken is None:
@@ -524,7 +861,26 @@ class _MarkupScanner(HTMLParser):
             self.broken = f"Unclosed tag <{self.stack[-1]}>."
 
     def result(self) -> _Markup:
-        return _Markup(self.tags, self.parts, self.attrs, self.broken)
+        return _Markup(
+            self.tags,
+            self.parts,
+            self.attrs,
+            self.broken,
+            self.part_at,
+            self.attr_at,
+        )
+
+
+def _attr_value_at(raw: str, cursor: int, value: str) -> tuple[int, int] | None:
+    """Index of ``value`` inside the raw tag, and the cursor after that occurrence."""
+    for needle in (f'"{value}"', f"'{value}'", value):
+        idx = raw.find(needle, cursor)
+        if idx < 0:
+            continue
+        if needle == value:
+            return idx, idx + len(value)
+        return idx + 1, idx + len(needle)
+    return None
 
 
 def _scan_markup(text: str) -> _Markup:

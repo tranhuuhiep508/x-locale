@@ -193,7 +193,7 @@ def _build_prompt(source_locale: str, items: list[TranslateItem]) -> str:
         "literal translation of the source. Follow glossary terms, tone, length, "
         "and any required output text exactly, even if it is not a normal translation.\n"
         "- Instructions may be written in any language; interpret the intent.\n"
-        "- Preserve placeholders exactly: {name}, {count}, %s, %d, HTML tags, ICU plural/select.\n"
+        "- Preserve placeholders exactly: {name}, {count}, {{name}}, %s, %d, HTML tags, ICU plural/select.\n"
         "- Keep UI tone: concise, natural, same intent, unless instructions say otherwise.\n"
         "- Prefer standard UI wording; use the same terminology for the same concept. "
         "Do not embellish or add information absent from the source.\n"
