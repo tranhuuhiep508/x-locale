@@ -20,10 +20,13 @@ from app.schemas import (
     TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
+    TranslationMemoryRequest,
+    TranslationMemoryResult,
     TranslationQaRequest,
     TranslationQaResult,
+    TranslationSourceConflict,
 )
-from app.services.strings import validate_locales
+from app.services.strings import get_string, validate_locales
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
@@ -40,6 +43,7 @@ from app.services.translate import (
     select_entries,
     serialize_descriptions,
 )
+from app.services.translation_memory import lookup_memory
 from app.services.translation_qa import check_translation
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
@@ -143,10 +147,44 @@ def translate_preview(
             payload.source_text,
             locales,
             payload.description,
+            db=db,
         )
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslatePreviewResult(translations=translations, scores=scores, issues=issues)
+
+
+@router.post("/translate/memory", response_model=TranslationMemoryResult)
+def translate_memory(
+    payload: TranslationMemoryRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslationMemoryResult:
+    locales = resolve_translation_locales(project, payload.locales)
+    if payload.string_id is not None:
+        entry = get_string(db, project.id, payload.string_id)
+        if entry.deleted_at is not None:
+            raise HTTPException(404, detail="String not found")
+        if entry.source_text != payload.expected_source_text:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "stale_translation_source",
+                    "message": "Source text changed. Refresh before using translation memory.",
+                    "conflicts": [
+                        TranslationSourceConflict(
+                            string_id=entry.id,
+                            key=entry.key,
+                            expected_source_text=payload.expected_source_text,
+                            source_text=entry.source_text,
+                        ).model_dump(mode="json")
+                    ],
+                },
+            )
+    matches = lookup_memory(db, project, ((payload.source_text, locale) for locale in locales))
+    return TranslationMemoryResult(
+        source_text=payload.source_text, matches=matches.get(payload.source_text, {})
+    )
 
 
 @router.post("/translate/qa", response_model=TranslationQaResult)
@@ -185,7 +223,7 @@ def translate_proposals(
     locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
     descriptions = parse_descriptions(payload.descriptions)
-    work = count_work(entries, locales, payload.overwrite)
+    work = count_work(entries, locales, payload.overwrite, payload.exclude_cells)
     entry_ids = [e.id for e in entries]
     desc_payload = serialize_descriptions(descriptions)
 
@@ -200,6 +238,7 @@ def translate_proposals(
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
                 "descriptions": desc_payload,
+                "exclude_cells": {str(key): value for key, value in payload.exclude_cells.items()},
                 "progress": queued_progress(work),
             },
         )
@@ -216,6 +255,7 @@ def translate_proposals(
             payload.overwrite,
             job_id,
             desc_payload,
+            {str(key): value for key, value in payload.exclude_cells.items()},
         )
         return TranslateProposalsResult(
             locales=locales,
@@ -227,7 +267,14 @@ def translate_proposals(
         )
 
     try:
-        items = propose_translations(project, entries, locales, payload.overwrite, descriptions)
+        items = propose_translations(
+            project,
+            entries,
+            locales,
+            payload.overwrite,
+            descriptions,
+            exclude_cells=payload.exclude_cells,
+        )
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslateProposalsResult(

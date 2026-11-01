@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Undo2, Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
@@ -10,6 +10,7 @@ import type {
   StringUpdate,
   Tag,
   TranslationStatus,
+  TranslationMemoryMatch,
 } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
@@ -23,6 +24,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
+import { TranslationMemoryPopover } from '@/features/strings/TranslationMemoryPopover'
+import { useTranslationMemory } from '@/features/strings/use-translation-memory'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
 import type { QaBaseline } from '@/features/strings/qa-issues'
 import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
@@ -197,6 +200,20 @@ export default function StringFormDialog({
   const [createdTags, setCreatedTags] = useState<Tag[]>([])
   const [baseline, setBaseline] = useState(entry ?? null)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
+  const memory = useTranslationMemory(projectId, sourceText, targetLocales, entry?.id, baseline?.source_text)
+  const [memorySelection, setMemorySelection] = useState<{ source: string; locales: string[] }>({ source: sourceText, locales: [] })
+  const memoryLocales = memorySelection.source === sourceText ? memorySelection.locales : []
+  const aiLocales = targetLocales.filter((locale) => !memoryLocales.includes(locale))
+  const currentSource = useRef(sourceText)
+  currentSource.current = sourceText
+
+  function choosePublished(locale: string, match: TranslationMemoryMatch) {
+    setTranslations((prev) => ({ ...prev, [locale]: match.translation }))
+    setScores((prev) => dropScore(prev, locale))
+    setQaSeeds((prev) => ({ ...prev, [locale]: { source: sourceText, text: match.translation, issues: match.issues } }))
+    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, locale])] })
+  }
+
   // Resolving a locale replaces both its text and its associated confidence.
   const conflictFields = [...new Set(conflict?.fields.flatMap((field) => {
     if (field.startsWith('translations.') || field.startsWith('translation_scores.')) {
@@ -271,14 +288,15 @@ export default function StringFormDialog({
       if (value === saved && !scoreChanged) continue
       changes.translations = { ...changes.translations, [locale]: value }
       expected.translations = { ...expected.translations, [locale]: saved }
-      if (scores[locale] !== undefined) {
-        changes.translation_scores = { ...changes.translation_scores, [locale]: scores[locale] }
+      if (scores[locale] !== undefined || scoreChanged) {
+        changes.translation_scores = { ...changes.translation_scores, [locale]: scores[locale] ?? null }
         expected.translation_scores = {
           ...expected.translation_scores,
           [locale]: original.translation_scores[locale] ?? null,
         }
       }
     }
+    if (changes.translations) expected.source_text = original.source_text
     return changes
   }
 
@@ -296,6 +314,7 @@ export default function StringFormDialog({
         if (latest) next.translations = [...next.translations, latest]
         if (useLatest) {
           setTranslations((prev) => ({ ...prev, [locale]: latest?.value ?? '' }))
+          setMemorySelection((prev) => ({ ...prev, locales: prev.locales.filter((selected) => selected !== locale) }))
           setScores((prev) => {
             const updated = { ...prev }
             delete updated[locale]
@@ -395,6 +414,7 @@ export default function StringFormDialog({
         locales,
       }),
     onSuccess: (res, { overwrite, source, current }) => {
+      if (currentSource.current !== source) return
       setTranslations((prev) => mergeTranslations(prev, res.translations, overwrite))
       setScores((prev) => mergeScores(prev, res.scores, translations, res.translations, overwrite))
       setQaSeeds((prev) => {
@@ -535,6 +555,7 @@ export default function StringFormDialog({
                   setTranslations,
                   setScores,
                 })
+                setMemorySelection({ source: fresh.source_text, locales: [] })
                 setQaSeeds({})
               }}
             />
@@ -607,7 +628,7 @@ export default function StringFormDialog({
                     id="string-source"
                     className="min-h-20 resize-none"
                     value={sourceText}
-                    onChange={(e) => setSourceText(e.target.value)}
+                    onChange={(e) => { setSourceText(e.target.value); setMemorySelection({ source: e.target.value, locales: [] }) }}
                     rows={3}
                     aria-invalid={errors.source_text ? true : undefined}
                   />
@@ -764,22 +785,23 @@ export default function StringFormDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!canAutoTranslate || busy}
-                    onClick={() =>
+                    disabled={!canAutoTranslate || busy || memory.loading || aiLocales.length === 0}
+                    onClick={() => {
+                      if (!memory.checked) { void memory.load(); return }
                       translateMut.mutate({
-                        locales: targetLocales,
+                        locales: aiLocales,
                         overwrite: true,
                         source: sourceText,
                         current: translations,
                       })
-                    }
+                    }}
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" />
                     ) : (
                       <Wand2 data-icon="inline-start" />
                     )}
-                    Auto-translate
+                    {memory.checked ? 'Generate with AI' : 'Auto-translate'}
                   </Button>
                 </div>
                 {translateMut.isPending || translateMut.isSuccess ? (
@@ -830,11 +852,17 @@ export default function StringFormDialog({
                               [locale]: value,
                             }))
                             setScores((prev) => dropScore(prev, locale))
+                            if (!value.trim()) setMemorySelection((prev) => ({ ...prev, locales: prev.locales.filter((selected) => selected !== locale) }))
                           }}
                           rows={2}
                           autoComplete="off"
                           placeholder={`Translation for ${locale}…`}
                           aria-describedby={describedByFor(view, issuesId)}
+                        />
+                        <TranslationMemoryPopover
+                          locale={locale} matches={memory.matches[locale]} loading={memory.loading}
+                          error={memory.error} stale={memory.stale} disabled={busy || Boolean(entry?.deleted_at)}
+                          onRetry={() => { void memory.load() }} onUse={(match) => choosePublished(locale, match)}
                         />
                       </Field>
                       )

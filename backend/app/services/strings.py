@@ -487,7 +487,7 @@ def apply_translation_values(
     db: Session,
     entry: StringEntry,
     translations: dict[str, str],
-    scores: dict[str, int] | None = None,
+    scores: dict[str, int | None] | None = None,
 ) -> None:
     """Upsert locale values on an entry. Caller must validate locales.
 
@@ -1025,6 +1025,13 @@ def _check_editor_expected(entry: StringEntry, payload: StringUpdate) -> None:
         "translation_scores": {t.locale: t.confidence for t in entry.translations},
     }
     conflicts = []
+    if (
+        payload.translations
+        and payload.source_text is None
+        and "source_text" in expected
+        and entry.source_text != expected["source_text"]
+    ):
+        conflicts.append("source_text")
     for field, desired in changes.items():
         if desired is None and field not in {"description", "module_id"}:
             continue

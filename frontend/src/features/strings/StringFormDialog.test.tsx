@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { modulesApi, tagsApi } from '@/lib/api/catalog'
 import { ApiError } from '@/lib/api/client'
 import { stringsApi } from '@/lib/api/strings'
-import type { Module, StringEntry, Tag } from '@/lib/api/types'
+import type { Module, StringEntry, Tag, TranslationMemoryMatch } from '@/lib/api/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import StringFormDialog from './StringFormDialog'
 
@@ -25,11 +25,18 @@ vi.mock('@/lib/api/catalog', () => ({
   tagsApi: { create: vi.fn() },
 }))
 
+vi.mock('@/features/strings/StringHistoryPanel', () => ({
+  StringHistoryPanel: ({ onRestored }: { onRestored: () => void }) => (
+    <button type="button" onClick={onRestored}>Restore previous version</button>
+  ),
+}))
+
 vi.mock('@/lib/api/strings', () => ({
   stringsApi: {
     create: vi.fn(),
     update: vi.fn(),
     translatePreview: vi.fn(),
+    translateMemory: vi.fn().mockImplementation((_project, body) => Promise.resolve({ source_text: body.source_text, matches: {} })),
     translateQa: vi.fn().mockResolvedValue({ locale: 'en', issues: [] }),
     get: vi.fn(),
     batch: vi.fn(),
@@ -152,6 +159,120 @@ function renderDialog(
   return { onClose, onSuccess }
 }
 
+const memoryMatch: TranslationMemoryMatch = {
+  string_id: 'origin', key: 'published.greeting', module_id: null, module_slug: 'account',
+  matched_source_text: 'Ghi chú', translation: 'Published note', exact: true, similarity: 1, issues: [],
+}
+
+beforeEach(() => {
+  vi.mocked(stringsApi.translateMemory).mockReset().mockImplementation((_project, body) => Promise.resolve({ source_text: body.source_text, matches: {} }))
+})
+
+async function generateAi() {
+  const auto = screen.queryByRole('button', { name: 'Auto-translate' })
+  if (auto) {
+    await waitFor(() => expect((auto as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(auto)
+  }
+  const generate = await screen.findByRole('button', { name: 'Generate with AI' })
+  await waitFor(() => expect((generate as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(generate)
+}
+
+describe('translation memory in the editor', () => {
+  beforeEach(() => {
+    polyfillPointer()
+    vi.mocked(stringsApi.update).mockReset().mockResolvedValue({} as never)
+    vi.mocked(stringsApi.translatePreview).mockReset().mockResolvedValue({ translations: { ja: 'AI Japanese' }, scores: { ja: 88 } })
+  })
+
+  it.each(['', 'Historical translation'])('clears memory selection when History restores %j with the same source', async (restoredText) => {
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
+    vi.mocked(stringsApi.get).mockResolvedValue({
+      ...draftEntry(),
+      translations: [{ id: 't-en', locale: 'en', value: restoredText, confidence: null, published_value: null, updated_at: null }],
+    })
+    vi.mocked(stringsApi.translatePreview).mockResolvedValue({ translations: { en: 'Generated after restore' }, scores: {} })
+    renderDialog({ entry: draftEntry() })
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
+    expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('radio', { name: 'History' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore previous version' }))
+    await waitFor(() => expect(stringsApi.get).toHaveBeenCalledWith('proj-1', 'str-1'))
+    fireEvent.click(screen.getByRole('radio', { name: 'Details' }))
+    await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe(restoredText))
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ locales: ['en'] })))
+    await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Generated after restore'))
+  })
+
+  it('offers memory on open, saves explicitly, and skips just the selected AI locale', async () => {
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
+    renderDialog({ entry: draftEntry(), targetLocales: ['en', 'ja'] })
+    const control = await screen.findByRole('button', { name: 'Previously published for en: 1 matches' })
+    expect(stringsApi.translatePreview).not.toHaveBeenCalled()
+    fireEvent.click(control)
+    expect(await screen.findByText('Exact match')).toBeTruthy()
+    expect(screen.getByText('account', { exact: false })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published note')
+    expect(stringsApi.update).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ locales: ['ja'] })))
+    await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('AI Japanese'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(stringsApi.update).toHaveBeenCalledWith('proj-1', 'str-1', expect.objectContaining({
+      translations: { en: 'Published note', ja: 'AI Japanese' }, translation_scores: { ja: 88 },
+      expected: expect.objectContaining({ source_text: 'Ghi chú' }),
+    })))
+  })
+
+  it('shows QA errors before Use and allows a memory-only save without confidence', async () => {
+    const issue = { code: 'placeholder_missing', severity: 'error' as const, message: 'Missing placeholder {name}', start: null, end: null, detail: null }
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [{ ...memoryMatch, issues: [issue] }] } })
+    const entry = { ...draftEntry(), translations: [{ id: 't', locale: 'en', value: 'Old AI text', confidence: 90, published_value: null, updated_at: null }] }
+    renderDialog({ entry })
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    expect(await screen.findByText('Error: Missing placeholder {name}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
+    expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(stringsApi.update).toHaveBeenCalledWith('proj-1', 'str-1', {
+      translations: { en: 'Published note' }, translation_scores: { en: null },
+      expected: { source_text: 'Ghi chú', translations: { en: 'Old AI text' }, translation_scores: { en: 90 } },
+    }))
+    expect(stringsApi.translatePreview).not.toHaveBeenCalled()
+  })
+
+  it('invalidates memory when the source changes and does not search while typing', async () => {
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
+    renderDialog({ entry: draftEntry() })
+    await screen.findByRole('button', { name: 'Previously published for en: 1 matches' })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'New source' } })
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'New source text' } })
+    expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Previously published for en: 0 matches' })).toBeTruthy()
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'New source text', matches: {} })
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await screen.findByRole('button', { name: 'Generate with AI' })
+    expect(stringsApi.translatePreview).not.toHaveBeenCalled()
+    expect(stringsApi.translateMemory).toHaveBeenLastCalledWith('proj-1', expect.objectContaining({ source_text: 'New source text', expected_source_text: 'Ghi chú' }))
+  })
+
+  it('allows explicit AI after a failed lookup and offers retry', async () => {
+    vi.mocked(stringsApi.translateMemory).mockRejectedValue(new Error('Memory unavailable'))
+    renderDialog({ entry: draftEntry() })
+    await screen.findByRole('button', { name: 'Generate with AI' })
+    fireEvent.click(screen.getByRole('button', { name: 'Previously published for en: 0 matches' }))
+    expect(await screen.findByText('Memory unavailable')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy()
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledTimes(1))
+  })
+})
+
 describe('StringFormDialog inline catalog create', () => {
   beforeEach(() => {
     polyfillPointer()
@@ -197,7 +318,7 @@ describe('StringFormDialog inline catalog create', () => {
       expect(screen.getByRole('combobox').textContent).toContain('Auth')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await generateAi()
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Create string' }) as HTMLButtonElement).disabled).toBe(false))
 
@@ -225,12 +346,12 @@ describe('StringFormDialog inline catalog create', () => {
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Hello' } })
     fireEvent.click(screen.getByLabelText('Module'))
     fireEvent.click(await screen.findByRole('option', { name: 'Auth' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await generateAi()
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenLastCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Auto-translate' }) as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByLabelText('Module'))
     fireEvent.click(await screen.findByRole('option', { name: '— None —' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await generateAi()
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenLastCalledWith('proj-1', expect.objectContaining({ module_id: null })))
     expect(stringsApi.create).not.toHaveBeenCalled()
   })
@@ -378,6 +499,37 @@ describe('StringFormDialog stale saves', () => {
     toast.error.mockReset()
   })
 
+  it.each(['Use latest values', 'Keep my changes'])('updates only conflicting memory markers after %s', async (choice) => {
+    const entry = sharedEntry()
+    const current = { ...entry, translations: [{ ...entry.translations[0], value: '' }, entry.translations[1]] }
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({
+      source_text: entry.source_text,
+      matches: { en: [memoryMatch], fr: [{ ...memoryMatch, translation: 'Published French' }] },
+    })
+    vi.mocked(stringsApi.translatePreview).mockReset().mockResolvedValue({ translations: { en: 'Generated after conflict' }, scores: {} })
+    vi.mocked(stringsApi.update).mockRejectedValueOnce(staleSave(current))
+    renderDialog({ entry, targetLocales: ['en', 'fr'] })
+    for (const locale of ['en', 'fr']) {
+      fireEvent.click(await screen.findByRole('button', { name: `Previously published for ${locale}: 1 matches` }))
+      fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
+    }
+    expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(await screen.findByRole('button', { name: choice }))
+    expect((screen.getByLabelText('fr') as HTMLTextAreaElement).value).toBe('Published French')
+    const useLatest = choice === 'Use latest values'
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe(useLatest ? '' : 'Published note')
+    expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(!useLatest)
+    if (useLatest) {
+      fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+      await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ locales: ['en'] })))
+      await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Generated after conflict'))
+      expect((screen.getByLabelText('fr') as HTMLTextAreaElement).value).toBe('Published French')
+    } else {
+      expect(stringsApi.translatePreview).not.toHaveBeenCalled()
+    }
+  })
+
   it.each(['Use latest values', 'Keep my changes'])('reviews text and confidence together before %s', async (choice) => {
     const entry = sharedEntry()
     entry.translations[0].confidence = 80
@@ -388,7 +540,7 @@ describe('StringFormDialog stale saves', () => {
     vi.mocked(stringsApi.update).mockRejectedValueOnce(staleSave(current, ['translation_scores.en']))
     renderDialog({ entry })
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Bob context' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await generateAi()
     await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Bob new text'))
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await screen.findByText('Another save changed this string')
@@ -405,7 +557,7 @@ describe('StringFormDialog stale saves', () => {
       description: 'Bob context', expected: { description: null },
     } : {
       description: 'Bob context', translations: { en: 'Bob new text' }, translation_scores: { en: 90 },
-      expected: { description: null, translations: { en: 'Hello' }, translation_scores: { en: 95 } },
+      expected: { source_text: 'Ghi chú', description: null, translations: { en: 'Hello' }, translation_scores: { en: 95 } },
     })
   })
 
@@ -449,7 +601,7 @@ describe('StringFormDialog stale saves', () => {
     fireEvent.change(screen.getByLabelText('en'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(stringsApi.update).toHaveBeenCalledWith('proj-1', 'str-1', {
-      translations: { en: '' }, expected: { translations: { en: 'Hello' } },
+      translations: { en: '' }, expected: { source_text: 'Ghi chú', translations: { en: 'Hello' } },
     }))
   })
 
@@ -459,7 +611,7 @@ describe('StringFormDialog stale saves', () => {
     fireEvent.change(screen.getByLabelText('en'), { target: { value: 'New English' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(stringsApi.update).toHaveBeenCalledWith('proj-1', 'str-1', {
-      translations: { en: 'New English' }, expected: { translations: { en: 'Hello' } },
+      translations: { en: 'New English' }, expected: { source_text: ' Source ', translations: { en: 'Hello' } },
     }))
   })
 
@@ -481,7 +633,7 @@ describe('StringFormDialog stale saves', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep my changes' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(stringsApi.update).toHaveBeenLastCalledWith('proj-1', 'str-1', {
-      translations: { en: 'Bob English' }, expected: { translations: { en: 'Alice English' } },
+      translations: { en: 'Bob English' }, expected: { source_text: 'Ghi chú', translations: { en: 'Alice English' } },
     }))
   })
 
@@ -595,7 +747,7 @@ describe('StringFormDialog translation QA', () => {
     })
     renderDialog({ entry: { ...draftEntry(), source_text: 'Save {price, number}' } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Save {price, number}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
+    await generateAi()
     fireEvent.click(await screen.findByRole('button', { name: /QA for en/ }))
     const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
     expect(within(popover).getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()

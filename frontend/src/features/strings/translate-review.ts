@@ -1,4 +1,4 @@
-import type { TranslateProposalItem, TranslateRequest, TranslationSourceConflict } from '@/lib/api/types'
+import type { TranslateProposalItem, TranslateRequest, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
 import { ApiError } from '@/lib/api/client'
 import { searchToBatchFilter } from '@/features/strings/publish-preview'
@@ -35,6 +35,7 @@ export function cloneItem(item: TranslateProposalItem): TranslateProposalItem {
     translations: { ...item.translations },
     scores: { ...(item.scores ?? {}) },
     issues: item.issues ? { ...item.issues } : item.issues,
+    memory_selected: [...(item.memory_selected ?? [])],
   }
 }
 
@@ -65,10 +66,31 @@ export function updateDraftTranslation(
     [stringId]: {
       ...row,
       translations: { ...row.translations, [locale]: value },
+      memory_selected: value.trim() ? row.memory_selected : row.memory_selected?.filter((selected) => selected !== locale),
       scores,
       issues,
     },
   }
+}
+
+export function applyMemoryTranslation(
+  drafts: Record<string, TranslateProposalItem>, stringId: string, locale: string, match: TranslationMemoryMatch,
+): Record<string, TranslateProposalItem> {
+  const next = updateDraftTranslation(drafts, stringId, locale, match.translation)
+  const row = next[stringId]
+  if (!row) return drafts
+  return { ...next, [stringId]: {
+    ...row,
+    memory_selected: [...new Set([...(row.memory_selected ?? []), locale])],
+    issues: { ...row.issues, [locale]: match.issues },
+  } }
+}
+
+export function excludedMemoryCells(items: TranslateProposalItem[]): Record<string, string[]> {
+  return Object.fromEntries(items.flatMap((item) => {
+    const locales = item.memory_selected?.filter((locale) => item.translations[locale]?.trim()) ?? []
+    return locales.length ? [[item.string_id, locales]] : []
+  }))
 }
 
 export function updateDraftDescription(
@@ -127,14 +149,20 @@ export function mergeProposalResults(
       const previousTranslations = sameSource
         ? item.translations
         : Object.fromEntries(Object.keys(item.translations).map((locale) => [locale, '']))
+      const selected = sameSource ? item.memory_selected ?? [] : []
+      const incomingTranslations = Object.fromEntries(Object.entries(next.translations).filter(([locale]) => !selected.includes(locale)))
+      const incomingScores = Object.fromEntries(Object.entries(next.scores ?? {}).filter(([locale]) => !selected.includes(locale)))
+      const incomingIssues = Object.fromEntries(Object.entries(next.issues ?? {}).filter(([locale]) => !selected.includes(locale)))
       merged.push({
         ...item,
         ...next,
-        translations: { ...previousTranslations, ...next.translations },
-        scores: { ...(sameSource ? item.scores ?? {} : {}), ...(next.scores ?? {}) },
+        translations: { ...previousTranslations, ...incomingTranslations },
+        memory_selected: selected,
+        memory: { ...(sameSource ? item.memory : {}), ...next.memory },
+        scores: { ...(sameSource ? item.scores ?? {} : {}), ...incomingScores },
         issues: sameSource
-          ? { ...(item.issues ?? {}), ...(next.issues ?? {}) }
-          : { ...(next.issues ?? {}) },
+          ? { ...(item.issues ?? {}), ...incomingIssues }
+          : { ...incomingIssues },
       })
     } else {
       merged.push(item)

@@ -25,13 +25,14 @@ test('string preview sends the selected module and null after unassigning', asyn
   await page.getByRole('option', { name: module.name, exact: true }).click()
   const selected = page.waitForResponse((res) => res.url().endsWith('/translate/preview'))
   await dialog.getByRole('button', { name: 'Auto-translate' }).click()
+  await dialog.getByRole('button', { name: 'Generate with AI' }).click()
   const preview = await selected
   expect(preview.ok()).toBeTruthy()
   expect(preview.request().postDataJSON().module_id).toBe(module.id)
   await dialog.getByRole('combobox', { name: 'Module' }).click()
   await page.getByRole('option', { name: '— None —', exact: true }).click()
   const unassigned = page.waitForResponse((res) => res.url().endsWith('/translate/preview'))
-  await dialog.getByRole('button', { name: 'Auto-translate' }).click()
+  await dialog.getByRole('button', { name: 'Generate with AI' }).click()
   const noModule = await unassigned
   expect(noModule.ok()).toBeTruthy()
   expect(noModule.request().postDataJSON().module_id).toBeNull()

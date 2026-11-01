@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    DDL,
     JSON,
     Boolean,
     DateTime,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    event,
     func,
     text,
 )
@@ -37,6 +39,13 @@ from app.limits import (
     TAG_COLOR_MAX_LENGTH,
     TAG_NAME_MAX_LENGTH,
     USER_NAME_MAX_LENGTH,
+)
+
+# Tests and benchmarks create metadata directly; production uses Alembic.
+event.listen(
+    Base.metadata,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm").execute_if(dialect="postgresql"),
 )
 
 
@@ -280,6 +289,15 @@ class StringTag(Base):
 class StringEntry(Base):
     __tablename__ = "strings"
     __table_args__ = (
+        Index(
+            "ix_strings_published_source_trgm",
+            "published_source_text",
+            postgresql_using="gin",
+            postgresql_ops={"published_source_text": "gin_trgm_ops"},
+            postgresql_where=text(
+                "status = 'public' AND deleted_at IS NULL AND published_source_text IS NOT NULL"
+            ),
+        ),
         Index(
             "uq_project_key_alive",
             "project_id",

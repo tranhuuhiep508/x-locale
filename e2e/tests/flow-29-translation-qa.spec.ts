@@ -16,7 +16,7 @@ test.beforeAll(() => {
 
 test.use({ viewport: { width: 1280, height: 900 } })
 
-test('review groups a placeholder style change and still allows apply', async ({ page }) => {
+test('review groups a placeholder style change and still allows apply', async ({ page }, testInfo) => {
   await openDemoStrings(page)
   const projectId = projectIdFromUrl(page)
   const created = await page.request.post(`/api/projects/${projectId}/strings`, {
@@ -27,7 +27,7 @@ test('review groups a placeholder style change and still allows apply', async ({
   await searchStrings(page, key)
   await expect(page.getByRole('row').filter({ hasText: key })).toBeVisible()
   await page.getByRole('button', { name: 'Translate missing' }).click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.getByRole('dialog', { name: /^(Missing|Review) Translations$/ })
   await expect(dialog.locator('li').filter({ hasText: key })).toHaveCount(1)
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
@@ -54,15 +54,15 @@ test('review groups a placeholder style change and still allows apply', async ({
   await expect(page.getByText(/Extra placeholder/)).toHaveCount(0)
   await expect(dialog.getByText('1 QA error. You can still apply.')).toBeVisible()
   await expect(dialog.getByRole('button', { name: /^Apply/ })).toBeEnabled()
-  await page.screenshot({ path: '/opt/cursor/artifacts/qa-review-placeholder-changed.png' })
+  await page.screenshot({ path: testInfo.outputPath('qa-review-placeholder-changed.png') })
 
   await dialog.getByRole('button', { name: 'Discard' }).click()
   await expect(dialog).toBeHidden()
 })
 
-test('edit form groups a placeholder style change and still allows save', async ({ page }) => {
+test('edit form groups a placeholder style change and still allows save', async ({ page }, testInfo) => {
   await openStringEditor(page, key)
-  const dialog = page.getByRole('dialog')
+  const dialog = page.getByRole('dialog', { name: 'Edit string', exact: true })
   await expect(dialog.getByText(/It never blocks Save/)).toBeVisible()
   await expect(dialog.getByText('No QA issues')).toHaveCount(0)
 
@@ -80,5 +80,5 @@ test('edit form groups a placeholder style change and still allows save', async 
   await expect(page.getByText(/Missing placeholder/)).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   await expect(dialog.locator('#translation-en')).not.toHaveAttribute('aria-invalid')
-  await page.screenshot({ path: '/opt/cursor/artifacts/qa-edit-placeholder-changed.png' })
+  await page.screenshot({ path: testInfo.outputPath('qa-edit-placeholder-changed.png') })
 })

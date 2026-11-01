@@ -192,7 +192,7 @@ export interface StringUpdate {
   tag_ids?: string[]
   status?: TranslationStatus
   translations?: Record<string, string>
-  translation_scores?: Record<string, number>
+  translation_scores?: Record<string, number | null>
   expected?: Omit<StringUpdate, 'expected' | 'translation_scores'> & {
     translation_scores?: Record<string, number | null>
   }
@@ -276,6 +276,7 @@ export interface TranslateRequest extends BatchFilter {
   page?: number
   page_size?: number
   descriptions?: Record<string, string>
+  exclude_cells?: Record<string, string[]>
 }
 
 export interface TranslateResult {
@@ -319,6 +320,30 @@ export interface TranslationQaResult {
   issues: QaIssue[]
 }
 
+export interface TranslationMemoryMatch {
+  string_id: string
+  key: string
+  module_id: string | null
+  module_slug: string | null
+  matched_source_text: string
+  translation: string
+  exact: boolean
+  similarity: number
+  issues: QaIssue[]
+}
+
+export interface TranslationMemoryRequest {
+  source_text: string
+  locales?: string[]
+  string_id?: string
+  expected_source_text?: string
+}
+
+export interface TranslationMemoryResult {
+  source_text: string
+  matches: Record<string, TranslationMemoryMatch[]>
+}
+
 export interface TranslateProposalItem {
   string_id: string
   key: string
@@ -329,6 +354,10 @@ export interface TranslateProposalItem {
   scores?: Record<string, number>
   /** Key present (even `[]`) means that locale was checked. Missing key means it was not. */
   issues?: Record<string, QaIssue[]>
+  memory?: Record<string, TranslationMemoryMatch[]>
+  memory_error?: string | null
+  /** Local review state, sent as exclude_cells when requesting AI. */
+  memory_selected?: string[]
 }
 
 export interface TranslateProposalsResult {
