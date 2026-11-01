@@ -315,7 +315,7 @@ it('does not open the published-count tooltip when the dialog opens', () => {
 it('focuses the filter when the dialog opens instead of Use exact matches', () => {
   memoryReview()
   expect(document.activeElement).toBe(screen.getByRole('radio', { name: /^All / }))
-  expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Use 1 exact matches on this page' }))
   expect(screen.getAllByText('Description')[0].className).not.toContain('sr-only')
 })
 
@@ -327,6 +327,7 @@ it('hides the AI QA badge and editor while a cell uses a match', () => {
   expect(within(greeting).queryByRole('textbox', { name: 'en' })).toBeNull()
   expect(within(greeting).queryByText('No QA issues')).toBeNull()
   expect(within(greeting).getByText('Skipped · using match')).toBeTruthy()
+  expect(within(greeting).getByText('Skipped · using match').closest('tr')?.className).toContain('bg-public')
   expect(within(greeting).getAllByText('Published hello').length).toBeGreaterThan(1)
   fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   expect(within(greeting).getByRole('textbox', { name: 'en' })).toBeTruthy()
@@ -352,7 +353,7 @@ it('bulk uses exact matches on the current page, excludes them from AI, and undo
   expect(screen.getByLabelText('Previously published: 1 of 2 cells have a match')).toBeTruthy()
   expect(screen.getByRole('radio', { name: 'With matches 1' })).toBeTruthy()
   expect(screen.getByRole('radio', { name: 'Exact 1' })).toBeTruthy()
-  const useExact = screen.getByRole('button', { name: 'Use 1 exact matches' })
+  const useExact = screen.getByRole('button', { name: 'Use 1 exact matches on this page' })
   expect(useExact.getAttribute('data-variant')).toBe('outline')
   fireEvent.click(useExact)
   expect(screen.getByLabelText('1 cells use a match')).toBeTruthy()
@@ -368,7 +369,7 @@ it('bulk uses exact matches on the current page, excludes them from AI, and undo
 
 it('restores AI text, confidence and selection with Undo and the Use match toggle', () => {
   memoryReview()
-  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches on this page' }))
   fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'Keep new context' } })
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
   const greeting = screen.getByRole('group', { name: 'Translations for greeting' })
@@ -448,4 +449,139 @@ it('summarizes a page with no published matches in one line', () => {
   expect(screen.getByText('No previously published matches on this page. Translate fills all 2 cells with AI.')).toBeTruthy()
   expect(screen.queryByText('0/2')).toBeNull()
   expect(screen.queryByLabelText(/cells have a match/)).toBeNull()
+})
+
+function pagedReview(initial: { page?: number; total?: number; items?: TranslateProposalItem[] } = {}) {
+  const onPageChange = vi.fn()
+  const props = {
+    open: true,
+    projectId: 'p',
+    loadingQueue: false,
+    generating: false,
+    applying: false,
+    generated: false,
+    error: null,
+    items: memoryItems,
+    page: 1,
+    pageSize: 50,
+    total: 70,
+    onPageChange,
+    onClose: vi.fn(),
+    onTranslate: vi.fn(),
+    onApply: vi.fn(),
+    ...initial,
+  }
+  const view = (next: Partial<typeof props> = {}) => (
+    <TooltipProvider>
+      <TranslateReviewDialog {...props} {...next} />
+    </TooltipProvider>
+  )
+  const rendered = render(view())
+  return {
+    onPageChange,
+    rerender: (next: Partial<typeof props>) => rendered.rerender(view(next)),
+  }
+}
+
+it('names paged match actions and filter counts as this page only', () => {
+  pagedReview()
+  expect(screen.getByText('on this page')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Use 1 exact matches on this page' })).toBeTruthy()
+  expect(screen.getByText(/1–50 of 70/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('radio', { name: 'With matches 1' }))
+  expect(screen.getByText('Showing 1 of 2 on this page')).toBeTruthy()
+  expect(screen.queryByText('unmatched')).toBeNull()
+})
+
+it('keeps the short exact-match label when the queue fits on one page', () => {
+  pagedReview({ total: 2 })
+  expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Use 1 exact matches' }).textContent).toBe('Use 1 exact matches')
+  expect(screen.queryByText('on this page')).toBeNull()
+})
+
+it('resets the filter when the page changes and keeps it when proposals refresh', () => {
+  const { rerender } = pagedReview()
+  fireEvent.click(screen.getByRole('radio', { name: 'Exact 1' }))
+  expect(screen.queryByText('unmatched')).toBeNull()
+  rerender({
+    items: memoryItems.map((item) => ({ ...item, source_text: `${item.source_text} refreshed` })),
+  })
+  expect(screen.getByRole('radio', { name: 'Exact 1' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.queryByText('unmatched')).toBeNull()
+  rerender({
+    page: 2,
+    items: [{
+      string_id: 'c',
+      key: 'later.key',
+      source_text: 'Later',
+      status: 'draft',
+      translations: { en: '' },
+      memory: { en: [publishedMatch] },
+    }],
+  })
+  expect(screen.getByRole('radio', { name: 'All 1' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByText('later.key')).toBeTruthy()
+  expect(screen.queryByText('No exact matches on this page')).toBeNull()
+})
+
+it('falls back to all when matches disappear and explains an already empty filter', () => {
+  const withoutMemory = memoryItems.map((item) => ({ ...item, memory: undefined }))
+  const { rerender } = pagedReview()
+  fireEvent.click(screen.getByRole('radio', { name: 'Exact 1' }))
+  rerender({ items: withoutMemory })
+  expect(screen.getByRole('radio', { name: 'All 2' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByText('unmatched')).toBeTruthy()
+  expect(screen.queryByText('No exact matches on this page')).toBeNull()
+
+  cleanup()
+  pagedReview({ items: withoutMemory })
+  fireEvent.click(screen.getByRole('radio', { name: 'Exact 0' }))
+  expect(screen.getByText('No exact matches on this page')).toBeTruthy()
+  expect(screen.getByRole('radio', { name: 'Exact 0' }).getAttribute('aria-checked')).toBe('true')
+  fireEvent.click(screen.getByRole('radio', { name: 'With matches 0' }))
+  expect(screen.getByText('No matches on this page')).toBeTruthy()
+  expect(screen.getByRole('radio', { name: 'With matches 0' }).getAttribute('aria-checked')).toBe('true')
+})
+
+it('blocks next and previous while this page has unapplied work', async () => {
+  const blocked = pagedReview()
+  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches on this page' }))
+  const next = screen.getByRole('button', { name: 'Next page' })
+  expect((screen.getByRole('button', { name: 'Previous page' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(next.getAttribute('aria-disabled')).toBe('true')
+  expect((next as HTMLButtonElement).disabled).toBe(false)
+  await act(async () => {
+    next.focus()
+  })
+  expect(document.activeElement).toBe(next)
+  expect((await screen.findByRole('tooltip')).textContent).toBe('Apply or discard this page first')
+  fireEvent.click(next)
+  expect(blocked.onPageChange).not.toHaveBeenCalled()
+  expect(screen.getByText('Skipped · using match')).toBeTruthy()
+
+  cleanup()
+  const middle = pagedReview({ page: 2, total: 150 })
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
+  for (const name of ['Previous page', 'Next page']) {
+    const control = screen.getByRole('button', { name })
+    expect(control.getAttribute('aria-disabled')).toBe('true')
+    expect((control as HTMLButtonElement).disabled).toBe(false)
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+  expect(middle.onPageChange).not.toHaveBeenCalled()
+
+  cleanup()
+  const reverted = pagedReview()
+  const unmatched = screen.getByRole('group', { name: 'Translations for unmatched' })
+  fireEvent.change(within(unmatched).getByLabelText('en'), { target: { value: 'Manual text' } })
+  expect(screen.getByRole('button', { name: 'Next page' }).getAttribute('aria-disabled')).toBe('true')
+  fireEvent.change(within(unmatched).getByLabelText('en'), { target: { value: '' } })
+  fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'Changed context' } })
+  expect(screen.getByRole('button', { name: 'Next page' }).getAttribute('aria-disabled')).toBe('true')
+  fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'Original' } })
+  const unlocked = screen.getByRole('button', { name: 'Next page' })
+  expect(unlocked.getAttribute('aria-disabled')).toBeNull()
+  fireEvent.click(unlocked)
+  expect(reverted.onPageChange).toHaveBeenCalledWith(2)
 })
