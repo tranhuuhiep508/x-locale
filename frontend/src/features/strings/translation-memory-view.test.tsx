@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { MatchBar, TranslationMemoryPanel } from './translation-memory-view'
 import type { TranslationMemoryMatch } from '@/lib/api/types'
 
@@ -75,4 +75,31 @@ it('puts extra matches inline and marks only the chosen match used', () => {
   expect(screen.getByRole('button', { name: 'Use en match from greeting' }).textContent).toBe('Use')
   expect(screen.getByRole('button', { name: 'Use en match from other.greeting' }).textContent).toBe('Used')
   expect(screen.getByRole('button', { name: 'Use en match from greeting' }).getAttribute('data-variant')).toBe('outline')
+})
+
+it('keeps stale matches on screen and refuses Use until they refresh', () => {
+  const onUse = vi.fn()
+  const onUseExact = vi.fn()
+  const { container } = render(
+    <TranslationMemoryPanel
+      {...panel}
+      locales={['en']}
+      matches={{ en: [{ ...match, exact: true }] }}
+      loading={false}
+      stale
+      onUse={onUse}
+      onUseExact={onUseExact}
+    />,
+  )
+  const use = screen.getByRole('button', { name: 'Use en match from greeting' }) as HTMLButtonElement
+  const exact = screen.getByRole('button', { name: 'Use 1 exact' }) as HTMLButtonElement
+  expect(use.disabled).toBe(true)
+  expect(exact.disabled).toBe(true)
+  expect(container.querySelector('.opacity-60')).toBeTruthy()
+  expect(screen.getByText('Bonjour')).toBeTruthy()
+  expect(screen.queryByRole('status', { name: 'Finding published translations…' })).toBeNull()
+  fireEvent.click(use)
+  fireEvent.click(exact)
+  expect(onUse).not.toHaveBeenCalled()
+  expect(onUseExact).not.toHaveBeenCalled()
 })

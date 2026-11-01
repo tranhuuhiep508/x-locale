@@ -312,6 +312,41 @@ it('does not open the published-count tooltip when the dialog opens', () => {
   expect(screen.queryByRole('tooltip')).toBeNull()
 })
 
+it('focuses the filter when the dialog opens instead of Use exact matches', () => {
+  memoryReview()
+  expect(document.activeElement).toBe(screen.getByRole('radio', { name: /^All / }))
+  expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  expect(screen.getAllByText('Description')[0].className).not.toContain('sr-only')
+})
+
+it('hides the AI QA badge and editor while a cell uses a match', () => {
+  memoryReview([{ ...memoryItems[0], issues: { en: [] } }])
+  const greeting = screen.getByRole('group', { name: 'Translations for greeting' })
+  expect(within(greeting).getAllByText('No QA issues').length).toBeGreaterThan(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
+  expect(within(greeting).queryByRole('textbox', { name: 'en' })).toBeNull()
+  expect(within(greeting).queryByText('No QA issues')).toBeNull()
+  expect(within(greeting).getByText('Skipped · using match')).toBeTruthy()
+  expect(within(greeting).getAllByText('Published hello').length).toBeGreaterThan(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
+  expect(within(greeting).getByRole('textbox', { name: 'en' })).toBeTruthy()
+  expect(within(greeting).getAllByText('No QA issues').length).toBeGreaterThan(0)
+})
+
+it('folds clean locales on a page of nine strings until one is opened', () => {
+  review(Array.from({ length: 9 }, (_, index) => ({
+    string_id: `s${index}`,
+    key: `key.${index}`,
+    source_text: 'Hello',
+    status: 'draft' as const,
+    translations: { en: `Hello ${index}` },
+    issues: { en: [] },
+  })))
+  expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Hello 0' }))
+  expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello 0')
+})
+
 it('bulk uses exact matches on the current page, excludes them from AI, and undoes only those cells', () => {
   const { onTranslate, onApply } = memoryReview()
   expect(screen.getByLabelText('Previously published: 1 of 2 cells have a match')).toBeTruthy()
@@ -341,7 +376,9 @@ it('restores AI text, confidence and selection with Undo and the Use match toggl
   expect(within(greeting).getByLabelText(/Model estimate 90\/100/)).toBeTruthy()
   expect((screen.getAllByLabelText('Description')[0] as HTMLTextAreaElement).value).toBe('Keep new context')
   fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
-  expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+  expect(within(greeting).queryByRole('textbox', { name: 'en' })).toBeNull()
+  expect(within(greeting).getAllByText('Published hello').length).toBeGreaterThan(1)
+  expect(within(greeting).getByText('Skipped · using match')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello')
 })
@@ -354,7 +391,9 @@ it('filters strings with matches and opens the AI comparison with individually s
   expect(screen.getByText('99% similar')).toBeTruthy()
   expect(screen.getByText('Source: Xin chào')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
-  expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Another hello')
+  expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
+  expect(screen.getAllByText('Another hello').length).toBeGreaterThan(1)
+  expect(screen.getByText('Skipped · using match')).toBeTruthy()
   fireEvent.click(screen.getByRole('radio', { name: 'All 2' }))
   expect(screen.getByText('unmatched')).toBeTruthy()
 })

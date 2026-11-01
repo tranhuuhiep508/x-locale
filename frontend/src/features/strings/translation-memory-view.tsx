@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, History, type LucideIcon } from 'lucide-react'
+import { CheckCheck, ChevronDown, ChevronUp, History, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
@@ -83,10 +83,23 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
   )
 }
 
+function UpdatingMatches({ stale, children }: { stale?: boolean; children: ReactNode }) {
+  if (!stale) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{children}</span>
+      </TooltipTrigger>
+      <TooltipContent>Updating matches…</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function MemoryMatch({
   locale,
   match,
   disabled,
+  stale,
   used,
   hideUse,
   accessory,
@@ -95,6 +108,7 @@ export function MemoryMatch({
   locale: string
   match: TranslationMemoryMatch
   disabled?: boolean
+  stale?: boolean
   used?: boolean
   hideUse?: boolean
   accessory?: ReactNode
@@ -119,23 +133,27 @@ export function MemoryMatch({
           </p>
         ) : null}
         <p className="text-sm whitespace-pre-wrap wrap-anywhere">{match.translation}</p>
-        <p className="text-xs text-muted-foreground break-words">
-          <span className="font-mono" translate="no">{match.key}</span>
-          {' · '}
-          {match.module_slug ?? 'Unassigned'}
+        <p className="flex min-w-0 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate font-mono" title={match.key} translate="no">{match.key}</span>
+          <span className="shrink-0">{' · '}{match.module_slug ?? 'Unassigned'}</span>
         </p>
       </div>
       {hideUse ? null : (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || used}
-          aria-label={`Use ${locale} match from ${match.key}`}
-          onClick={() => onUse(match)}
-        >
-          {used ? 'Used' : 'Use'}
-        </Button>
+        <UpdatingMatches stale={stale}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || stale || used}
+            aria-label={`Use ${locale} match from ${match.key}`}
+            onClick={() => {
+              if (stale) return
+              onUse(match)
+            }}
+          >
+            {used ? 'Used' : 'Use'}
+          </Button>
+        </UpdatingMatches>
       )}
     </div>
   )
@@ -170,12 +188,14 @@ function MemoryLocale({
   locale,
   matches,
   disabled,
+  stale,
   selected,
   onUse,
 }: {
   locale: string
   matches: TranslationMemoryMatch[]
   disabled?: boolean
+  stale?: boolean
   selected?: string
   onUse: (match: TranslationMemoryMatch) => void
 }) {
@@ -195,6 +215,7 @@ function MemoryLocale({
               locale={locale}
               match={match}
               disabled={disabled}
+              stale={stale}
               used={selected === match.string_id}
               accessory={index === 0 && extra > 0 ? (
                 <MoreMatches
@@ -219,6 +240,7 @@ export function TranslationMemoryPanel({
   locales,
   matches,
   loading,
+  stale,
   error,
   disabled,
   selected,
@@ -229,6 +251,7 @@ export function TranslationMemoryPanel({
   locales: string[]
   matches: Record<string, TranslationMemoryMatch[]>
   loading: boolean
+  stale?: boolean
   error?: string
   disabled?: boolean
   selected: Record<string, string>
@@ -249,31 +272,36 @@ export function TranslationMemoryPanel({
         empty ? 'border border-dashed py-2' : error ? 'py-2' : 'border bg-muted/20',
       )}
     >
+      <TooltipProvider delayDuration={200}>
       {loading || (!empty && !error) ? (
         <div className="flex items-center justify-between gap-2 py-2">
-          <TooltipProvider delayDuration={200}>
-            <MemoryCount
-              icon={History}
-              label={
-                loading
-                  ? 'Finding published translations…'
-                  : `Previously published: ${count} of ${locales.length} locales have a match`
-              }
-            >
-              {loading ? <Spinner aria-hidden="true" /> : `${count}/${locales.length}`}
-            </MemoryCount>
-          </TooltipProvider>
+          <MemoryCount
+            icon={History}
+            label={
+              loading
+                ? 'Finding published translations…'
+                : `Previously published: ${count} of ${locales.length} locales have a match`
+            }
+          >
+            {loading ? <Spinner aria-hidden="true" /> : `${count}/${locales.length}`}
+          </MemoryCount>
           <div className="flex gap-1">
             {exact > 0 && !loading && !error ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={disabled}
-                onClick={onUseExact}
-              >
-                Use {exact} exact
-              </Button>
+              <UpdatingMatches stale={stale}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled || stale}
+                  onClick={() => {
+                    if (stale) return
+                    onUseExact()
+                  }}
+                >
+                  <CheckCheck data-icon="inline-start" />
+                  Use {exact} exact
+                </Button>
+              </UpdatingMatches>
             ) : null}
             {onUndo ? (
               <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={onUndo}>
@@ -302,19 +330,21 @@ export function TranslationMemoryPanel({
           No previously published match for this source text. Generate with AI fills the empty locales.
         </p>
       ) : (
-        <div className="divide-y">
+        <div className={cn('divide-y', stale && 'opacity-60')}>
           {locales.map((locale) => (
             <MemoryLocale
               key={locale}
               locale={locale}
               matches={matches[locale] ?? []}
               disabled={disabled}
+              stale={stale}
               selected={selected[locale]}
               onUse={(match) => onUse(locale, match)}
             />
           ))}
         </div>
       )}
+      </TooltipProvider>
     </section>
   )
 }

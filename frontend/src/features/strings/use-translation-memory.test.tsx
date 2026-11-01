@@ -34,6 +34,7 @@ it('debounces source edits, keeps the first lookup pending, and ignores late res
   })
   expect(result.current.matches).toEqual({})
   expect(result.current.loading).toBe(true)
+  expect(result.current.stale).toBe(false)
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
   vi.mocked(stringsApi.translateMemory).mockResolvedValueOnce({
     source_text: 'New',
@@ -51,18 +52,24 @@ it('debounces source edits, keeps the first lookup pending, and ignores late res
   expect(result.current.matches).toEqual({ en: [] })
 })
 
-it('keeps the current matches and stays idle while a source edit is debounced', async () => {
+it('keeps the current matches visible but stale until the edited source resolves', async () => {
   const published = { string_id: 'origin', key: 'greeting', module_id: null, module_slug: null, matched_source_text: 'Hello', translation: 'Bonjour', exact: true, similarity: 1, issues: [] }
-  vi.mocked(stringsApi.translateMemory).mockResolvedValue({
+  const next = { ...published, string_id: 'next', matched_source_text: 'Hello!' }
+  vi.mocked(stringsApi.translateMemory).mockResolvedValueOnce({
     source_text: 'Hello',
     matches: { en: [published] },
   })
+  let finish!: (result: TranslationMemoryResult) => void
+  vi.mocked(stringsApi.translateMemory).mockImplementationOnce(
+    () => new Promise((resolve) => { finish = resolve }),
+  )
   const { result, rerender } = renderHook(
     ({ source }) => useTranslationMemory('p', source, ['en']),
     { initialProps: { source: 'Hello' } },
   )
   await act(async () => {})
   expect(result.current.loading).toBe(false)
+  expect(result.current.stale).toBe(false)
   expect(result.current.matches.en?.[0]?.string_id).toBe('origin')
   rerender({ source: 'Hello!' })
   await act(async () => {
@@ -70,7 +77,20 @@ it('keeps the current matches and stays idle while a source edit is debounced', 
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
   expect(result.current.loading).toBe(false)
+  expect(result.current.stale).toBe(true)
   expect(result.current.matches.en?.[0]?.string_id).toBe('origin')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(150)
+  })
+  expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
+  expect(result.current.stale).toBe(true)
+  expect(result.current.loading).toBe(false)
+  await act(async () => {
+    finish({ source_text: 'Hello!', matches: { en: [next] } })
+  })
+  expect(result.current.stale).toBe(false)
+  expect(result.current.loading).toBe(false)
+  expect(result.current.matches.en?.[0]?.string_id).toBe('next')
   expect(result.current.error).toBeUndefined()
 })
 
@@ -81,10 +101,14 @@ it('invalidates lookups for locale changes and does not fetch empty sources', as
     { initialProps: { source: 'Source', locales: ['en'] } }
   )
   await act(async () => {})
+  expect(result.current.stale).toBe(false)
   rerender({ source: 'Source', locales: ['ja'] })
+  expect(result.current.stale).toBe(true)
+  expect(result.current.loading).toBe(false)
   await act(async () => {
     await vi.advanceTimersByTimeAsync(350)
   })
+  expect(result.current.stale).toBe(false)
   expect(stringsApi.translateMemory).toHaveBeenLastCalledWith(
     'p',
     expect.objectContaining({ locales: ['ja'] })

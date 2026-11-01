@@ -5,7 +5,7 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronUp, Equal, History, Wand2 } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, ChevronUp, Equal, History, Wand2 } from 'lucide-react'
 import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -25,6 +25,7 @@ import { describedByFor, QA_APPLY_FOOTER, QaCountBadges, QaIssueBadge, QaLocaleB
 import {
   issueCounts,
   presentQaIssues,
+  shouldFoldCleanLocales,
   shouldShowQaIndex,
   type QaBaseline,
   type QaFilter,
@@ -129,6 +130,7 @@ function ProposalLocaleRows({
   aiProposal,
   onToggleMemory,
   onUseMemory,
+  foldClean,
 }: {
   stringId: string
   locale: string
@@ -144,44 +146,56 @@ function ProposalLocaleRows({
   aiProposal?: { text: string; score?: number }
   onToggleMemory: (checked: boolean) => void
   onUseMemory: (match: TranslationMemoryMatch) => void
+  foldClean: boolean
 }) {
   const [compare, setCompare] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const inputId = `proposal-${stringId}-${locale}`
   const issuesId = `qa-${stringId}-${locale}`
   const best = memory?.[0]
   const extra = Math.min(memory?.length ?? 0, 3) - 1
-  const proposal = (
-    <Textarea
-      id={inputId}
-      className={cn(
-        selected
-          ? 'absolute top-0 left-0 h-px w-px overflow-hidden p-0'
-          : 'field-sizing-fixed h-8 min-h-8 w-full min-w-0 max-w-full resize-none border-0 bg-transparent px-0 py-1 text-xs shadow-none focus-visible:ring-0',
-      )}
-      value={value}
-      rows={1}
-      cols={12}
-      disabled={disabled}
-      autoComplete="off"
-      spellCheck
-      aria-label={locale}
-      placeholder="Empty · AI on Translate"
-      aria-describedby={describedByFor(view, issuesId)}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  )
+  const clean = view.status === 'ready' && !view.stale && presentQaIssues(view.issues).length === 0
+  const folded = foldClean && clean && !expanded && !selected
   return (
     <>
       <tr data-qa-status={view.status} className={cn(selected && 'bg-azure-50')}>
         <th scope="row" className="w-12 py-2 pr-2 align-top font-mono text-xs font-semibold uppercase text-muted-foreground">
           {locale}
         </th>
-        <td className="relative min-w-0 overflow-hidden py-2 pr-3 align-top">
+        <td className="relative min-w-0 py-2 pr-3 align-top">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <ConfidenceBadge score={selected ? undefined : score} />
-            <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
+            {selected ? null : <ConfidenceBadge score={score} />}
+            {selected ? null : (
+              <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
+            )}
+            {selected ? (
+              <p className="min-w-0 text-xs whitespace-pre-wrap wrap-anywhere">{value}</p>
+            ) : null}
             {selected ? <p className="text-xs text-muted-foreground">Skipped · using match</p> : null}
-            {proposal}
+            {selected ? null : folded ? (
+              <button
+                type="button"
+                className="block w-full truncate text-left text-xs text-muted-foreground"
+                onClick={() => setExpanded(true)}
+              >
+                {value}
+              </button>
+            ) : (
+              <Textarea
+                id={inputId}
+                className="field-sizing-fixed h-8 min-h-8 w-full min-w-0 max-w-full resize-none border-transparent bg-transparent px-1 py-1 text-xs shadow-none"
+                value={value}
+                rows={1}
+                cols={12}
+                disabled={disabled}
+                autoComplete="off"
+                spellCheck
+                aria-label={locale}
+                placeholder="Empty · AI on Translate"
+                aria-describedby={describedByFor(view, issuesId)}
+                onChange={(event) => onChange(event.target.value)}
+              />
+            )}
           </div>
         </td>
         <td className="min-w-0 overflow-hidden py-2 pr-3 align-top">
@@ -280,6 +294,7 @@ function ProposalTreeNode({
   onUseMemory,
   onToggleMemory,
   cellOriginals,
+  foldClean,
 }: {
   cellOriginals: Record<string, TranslateProposalItem>
   item: TranslateProposalItem
@@ -293,6 +308,7 @@ function ProposalTreeNode({
   onRemove: () => void
   onUseMemory: (stringId: string, locale: string, match: TranslationMemoryMatch) => void
   onToggleMemory: (stringId: string, locale: string, checked: boolean) => void
+  foldClean: boolean
 }) {
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
@@ -334,13 +350,13 @@ function ProposalTreeNode({
               </code>
             </div>
           </div>
-          <Field className="w-56 shrink-0">
-            <FieldLabel htmlFor={descriptionId} className="sr-only">Description</FieldLabel>
+          <Field className="w-72 shrink-0">
+            <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
             <Textarea
               id={descriptionId}
-              className="field-sizing-fixed h-8 min-h-8 resize-none text-xs"
+              className="min-h-16 resize-y text-xs"
               value={item.description ?? ''}
-              rows={1}
+              rows={2}
               disabled={disabled}
               autoComplete="off"
               placeholder="Context for a better translation"
@@ -412,6 +428,7 @@ function ProposalTreeNode({
                 onUseMemory={(match) => onUseMemory(item.string_id, locale, match)}
                 view={localeView(qa, item.string_id, locale)}
                 disabled={disabled}
+                foldClean={foldClean}
                 onChange={(next) => onChange(item.string_id, locale, next)}
               />
             ))}
@@ -659,6 +676,7 @@ export function TranslateReviewDialog({
     generated,
   })
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
+  const foldClean = shouldFoldCleanLocales(draftList.length)
   const pageViews = filledViews(draftList, qa)
   const pageCounts = tally(pageViews)
   const checking = pageViews.some((view) => view.status === 'checking')
@@ -686,13 +704,12 @@ export function TranslateReviewDialog({
       <ReviewDialogContent
         className="sm:max-w-4xl"
         onOpenAutoFocus={(event) => {
+          event.preventDefault()
           const root = event.currentTarget
           if (!(root instanceof HTMLElement)) return
-          const control = [...root.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href]')]
-            .find((el) => !el.closest('[data-memory-count]') && !el.hasAttribute('disabled'))
-          if (!control) return
-          event.preventDefault()
-          control.focus()
+          const filter = root.querySelector<HTMLElement>('[aria-label="Filter translations"] [role="radio"]:not([disabled])')
+          const close = root.querySelector<HTMLElement>('[data-slot="dialog-close"]')
+          ;(filter ?? close)?.focus()
         }}
       >
         <ReviewDialogHeader>
@@ -711,7 +728,12 @@ export function TranslateReviewDialog({
                     <MemoryCount icon={History} label={`Previously published: ${memoryCells.length} of ${localeCount(draftList)} cells have a match`}>{memoryCells.length}/{localeCount(draftList)}</MemoryCount>
                     <MemoryCount icon={Equal} label={`${exactCells.length} cells have an exact match`}>{exactCells.length}</MemoryCount>
                     {usedCount > 0 ? <MemoryCount icon={Check} label={`${usedCount} cells use a match`}>{usedCount}</MemoryCount> : null}
-                    {unusedExact.length > 0 ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={useExactMatches}>Use {unusedExact.length} exact matches</Button> : null}
+                    {unusedExact.length > 0 ? (
+                      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={useExactMatches}>
+                        <CheckCheck data-icon="inline-start" />
+                        Use {unusedExact.length} exact matches
+                      </Button>
+                    ) : null}
                     {memoryUndo ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={undoExactMatches}>Undo</Button> : null}
                   </div>
                 </TooltipProvider>
@@ -827,6 +849,7 @@ export function TranslateReviewDialog({
                     }}
                     onUseMemory={chooseMemory}
                     onToggleMemory={toggleMemory}
+                    foldClean={foldClean}
                     disabled={applying || generating || pagingInPlace}
                     onChange={(stringId, locale, value) => {
                       setMemoryUndo(null)

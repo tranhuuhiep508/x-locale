@@ -209,6 +209,7 @@ export default function StringFormDialog({
   currentSource.current = sourceText
 
   function choosePublished(locale: string, match: TranslationMemoryMatch) {
+    if (memory.stale) return
     setTranslations((prev) => ({ ...prev, [locale]: match.translation }))
     setScores((prev) => dropScore(prev, locale))
     setQaSeeds((prev) => ({ ...prev, [locale]: { source: sourceText, text: match.translation, issues: match.issues } }))
@@ -227,6 +228,7 @@ export default function StringFormDialog({
     selected: typeof memorySelection
   }>(null)
   function useExactMatches() {
+    if (memory.stale) return
     const locales = targetLocales.filter(
       (locale) =>
         !memoryLocales.includes(locale) && memory.matches[locale]?.some((match) => match.exact),
@@ -873,6 +875,7 @@ export default function StringFormDialog({
                     locales={targetLocales}
                     matches={memory.matches}
                     loading={memory.loading}
+                    stale={memory.stale}
                     error={memory.error}
                     disabled={busy || Boolean(entry?.deleted_at)}
                     selected={chosen}

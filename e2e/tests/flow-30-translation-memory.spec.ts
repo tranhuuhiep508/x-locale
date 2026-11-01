@@ -49,7 +49,9 @@ test('batch review shows memory inline before AI and skips only the selected loc
   await expect(dialog.getByRole('meter')).toHaveAttribute('aria-valuenow', '100')
   await use.focus()
   await use.press('Space')
-  await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
+  await expect(dialog.getByLabel('en', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('Published hello {name}').first()).toBeVisible()
+  await expect(dialog.getByText('Skipped · using match')).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Apply 1 translation' })).toBeEnabled()
   const generation = page.waitForResponse((response) =>
     response.url().endsWith('/translate/proposals'),
@@ -59,7 +61,8 @@ test('batch review shows memory inline before AI and skips only the selected loc
   expect(generated.ok(), await generated.text()).toBeTruthy()
   expect(generated.request().postDataJSON().exclude_cells).toEqual({ [destination.id]: ['en'] })
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue(`[ja] ${source}`)
-  await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
+  await expect(dialog.getByLabel('en', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('Published hello {name}').first()).toBeVisible()
   await dialog.getByRole('button', { name: 'Apply 2 translations' }).click()
   await expect(dialog.getByText('Every target locale already has text.').first()).toBeVisible()
   const saved = await (

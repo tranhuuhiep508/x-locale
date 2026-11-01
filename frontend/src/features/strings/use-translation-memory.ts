@@ -13,31 +13,45 @@ export function useTranslationMemory(
   const localeKey = JSON.stringify(locales)
   const [state, setState] = useState<{
     source: string
+    localeKey: string
     loading: boolean
     result?: TranslationMemoryResult
     error?: string
-  }>({ source, loading: false })
-  const latest = useRef({ source, locales, expectedSource })
-  latest.current = { source, locales, expectedSource }
+  }>({ source, localeKey, loading: false })
+  const latest = useRef({ source, locales, localeKey, expectedSource })
+  latest.current = { source, locales, localeKey, expectedSource }
   const generation = useRef(0)
   const load = useCallback(async (token: number) => {
     const input = latest.current
     if (!input.source.trim() || input.locales.length === 0) return
     if (token !== generation.current) return
     // A later keystroke keeps the last result on screen; only the first lookup skeletons.
-    setState((prev) => (prev.result || prev.error ? prev : { ...prev, source: input.source, loading: true }))
+    setState((prev) =>
+      prev.result || prev.error
+        ? prev
+        : { source: input.source, localeKey: input.localeKey, loading: true },
+    )
     try {
       const result = await stringsApi.translateMemory(projectId, {
         source_text: input.source,
         locales: input.locales,
         ...(stringId ? { string_id: stringId, expected_source_text: input.expectedSource } : {}),
       })
-      if (token !== generation.current || latest.current.source !== input.source) return
-      setState({ source: input.source, loading: false, result })
+      if (
+        token !== generation.current
+        || latest.current.source !== input.source
+        || latest.current.localeKey !== input.localeKey
+      ) return
+      setState({ source: input.source, localeKey: input.localeKey, loading: false, result })
     } catch (error) {
-      if (token !== generation.current || latest.current.source !== input.source) return
+      if (
+        token !== generation.current
+        || latest.current.source !== input.source
+        || latest.current.localeKey !== input.localeKey
+      ) return
       setState({
         source: input.source,
+        localeKey: input.localeKey,
         loading: false,
         error: error instanceof Error ? error.message : 'Could not load published translations.',
       })
@@ -47,13 +61,15 @@ export function useTranslationMemory(
   useEffect(() => {
     if (!source.trim() || latest.current.locales.length === 0) {
       generation.current += 1
-      setState({ source, loading: false })
+      setState({ source, localeKey, loading: false })
       return
     }
     const token = ++generation.current
     const delay = initial.current ? 0 : 350
     initial.current = false
-    setState((prev) => (prev.result || prev.error ? prev : { source, loading: true }))
+    setState((prev) =>
+      prev.result || prev.error ? prev : { source, localeKey, loading: true },
+    )
     if (delay === 0) {
       void load(token)
       return () => {
@@ -68,9 +84,13 @@ export function useTranslationMemory(
       if (generation.current === token) generation.current += 1
     }
   }, [load, source, localeKey, expectedSource])
+  // Previous matches stay visible, but they belong to the last request until this one lands.
+  const stale = Boolean(state.result || state.error)
+    && (state.source !== source || state.localeKey !== localeKey)
   return {
     matches: state.result?.matches ?? {},
     loading: state.loading,
     error: state.error,
+    stale,
   }
 }

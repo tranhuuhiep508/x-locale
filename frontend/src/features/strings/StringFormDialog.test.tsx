@@ -253,6 +253,13 @@ describe('translation memory in the editor', () => {
     expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Exact match')).toBeTruthy()
     expect((screen.getByRole('button', { name: /^Generate .*AI$/ }) as HTMLButtonElement).disabled).toBe(false)
+    const use = screen.getByRole('button', { name: 'Use en match from published.greeting' }) as HTMLButtonElement
+    const exact = screen.getByRole('button', { name: 'Use 1 exact' }) as HTMLButtonElement
+    expect(use.disabled).toBe(true)
+    expect(exact.disabled).toBe(true)
+    fireEvent.click(use)
+    fireEvent.click(exact)
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('')
     vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'New source text', matches: {} })
     await waitFor(() => expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByText('Exact match')).toBeNull())
