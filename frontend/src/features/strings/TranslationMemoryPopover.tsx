@@ -35,7 +35,7 @@ export function TranslationMemoryPopover({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          aria-label={`Previously published for ${locale}: ${matches.length} matches`}
+          aria-label={`Previously published for ${locale}: ${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}
         >
           {loading ? <Spinner data-icon="inline-start" /> : null}
           Previously published ({matches.length})

@@ -194,7 +194,7 @@ describe('translation memory in the editor', () => {
     })
     vi.mocked(stringsApi.translatePreview).mockResolvedValue({ translations: { en: 'Generated after restore' }, scores: {} })
     renderDialog({ entry: draftEntry() })
-    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 match' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
     expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('radio', { name: 'History' }))
@@ -210,7 +210,7 @@ describe('translation memory in the editor', () => {
   it('offers memory on open, saves explicitly, and skips just the selected AI locale', async () => {
     vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
     renderDialog({ entry: draftEntry(), targetLocales: ['en', 'ja'] })
-    const control = await screen.findByRole('button', { name: 'Previously published for en: 1 matches' })
+    const control = await screen.findByRole('button', { name: 'Previously published for en: 1 match' })
     expect(stringsApi.translatePreview).not.toHaveBeenCalled()
     fireEvent.click(control)
     expect(await screen.findByText('Exact match')).toBeTruthy()
@@ -233,7 +233,7 @@ describe('translation memory in the editor', () => {
     vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [{ ...memoryMatch, issues: [issue] }] } })
     const entry = { ...draftEntry(), translations: [{ id: 't', locale: 'en', value: 'Old AI text', confidence: 90, published_value: null, updated_at: null }] }
     renderDialog({ entry })
-    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 matches' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Previously published for en: 1 match' }))
     expect(await screen.findByText('Error: Missing placeholder {name}')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
     expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
@@ -248,7 +248,7 @@ describe('translation memory in the editor', () => {
   it('invalidates memory when the source changes and does not search while typing', async () => {
     vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
     renderDialog({ entry: draftEntry() })
-    await screen.findByRole('button', { name: 'Previously published for en: 1 matches' })
+    await screen.findByRole('button', { name: 'Previously published for en: 1 match' })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'New source' } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'New source text' } })
     expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
@@ -510,7 +510,7 @@ describe('StringFormDialog stale saves', () => {
     vi.mocked(stringsApi.update).mockRejectedValueOnce(staleSave(current))
     renderDialog({ entry, targetLocales: ['en', 'fr'] })
     for (const locale of ['en', 'fr']) {
-      fireEvent.click(await screen.findByRole('button', { name: `Previously published for ${locale}: 1 matches` }))
+      fireEvent.click(await screen.findByRole('button', { name: `Previously published for ${locale}: 1 match` }))
       fireEvent.click(screen.getByRole('button', { name: 'Use published translation from published.greeting' }))
     }
     expect((screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement).disabled).toBe(true)
