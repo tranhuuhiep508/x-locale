@@ -24,7 +24,6 @@ test('string preview sends the selected module and null after unassigning', asyn
   await dialog.getByRole('combobox', { name: 'Module' }).click()
   await page.getByRole('option', { name: module.name, exact: true }).click()
   const selected = page.waitForResponse((res) => res.url().endsWith('/translate/preview'))
-  await dialog.getByRole('button', { name: 'Auto-translate' }).click()
   await dialog.getByRole('button', { name: 'Generate with AI' }).click()
   const preview = await selected
   expect(preview.ok()).toBeTruthy()
@@ -67,7 +66,7 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await pagerButtons.first().click()
   await expect(firstKey).toBeVisible()
 
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
   await expect(dialog.getByRole('progressbar')).toBeVisible()
   await expect(paging).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
@@ -108,7 +107,7 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.locator('li').filter({ hasText: prefix })).toHaveCount(2)
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
   const stale = dialog.locator('li').filter({ hasText: rows[0].key })
   const unrelated = dialog.locator('li').filter({ hasText: rows[1].key })
   await expect(stale.getByLabel('en', { exact: true })).toBeVisible()

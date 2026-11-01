@@ -21,6 +21,9 @@ const items: TranslateProposalItem[] = [{
 const conflict: DescriptionConflict = { string_id: 'a', key: 'greeting', description: 'New context' }
 
 afterEach(cleanup)
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+})
 
 describe('translation description conflict recovery', () => {
   it.each(['Use latest', 'Keep mine'])('preserves translations and retries after %s', (choice) => {
@@ -161,7 +164,7 @@ describe('translation QA in review', () => {
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(screen.queryByText(/Extra placeholder/)).toBeNull()
     expect(screen.getAllByText('No QA issues').length).toBeGreaterThan(0)
-    expect(screen.getByText('1 QA error. You can still apply.')).toBeTruthy()
+    expect(screen.queryByText('1 QA error. You can still apply.')).toBeNull()
     const apply = screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement
     expect(apply.disabled).toBe(false)
     const edited = screen.getByLabelText('en', { selector: '#proposal-a-en' }) as HTMLTextAreaElement
@@ -287,4 +290,60 @@ describe('translation QA in review', () => {
       vi.useRealTimers()
     }
   })
+})
+
+const publishedMatch = { string_id: 'origin', key: 'published.greeting', module_id: null, module_slug: 'account', matched_source_text: 'Xin chào', translation: 'Published hello', exact: true, similarity: 1, issues: [] }
+const memoryItems: TranslateProposalItem[] = [
+  { ...items[0], memory: { en: [publishedMatch, { ...publishedMatch, string_id: 'other', key: 'other.greeting', exact: false, similarity: 0.996, translation: 'Another hello' }] } },
+  { string_id: 'b', key: 'unmatched', source_text: 'Other', status: 'draft', translations: { en: '' } },
+]
+function memoryReview() {
+  const onTranslate = vi.fn()
+  const onApply = vi.fn()
+  render(<TooltipProvider><TranslateReviewDialog open projectId="p" loadingQueue={false} generating={false} applying={false} generated error={null}
+    items={memoryItems} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onApply={onApply} /></TooltipProvider>)
+  return { onTranslate, onApply }
+}
+
+it('bulk uses exact matches on the current page, excludes them from AI, and undoes only those cells', () => {
+  const { onTranslate, onApply } = memoryReview()
+  expect(screen.getByLabelText('Previously published: 1 of 2 cells have a match')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  expect(screen.getByLabelText('1 cells use a match')).toBeTruthy()
+  const unmatched = screen.getByRole('group', { name: 'Translations for unmatched' })
+  fireEvent.change(within(unmatched).getByLabelText('en'), { target: { value: 'Manual text' } })
+  // A manual cell edit dismisses Undo so it can never overwrite later work.
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate again · 1 cells' }))
+  expect(onTranslate.mock.calls[0][0][0].memory_selected).toEqual(['en'])
+  fireEvent.click(screen.getByRole('button', { name: 'Apply 2 translations' }))
+  expect(onApply.mock.calls[0][0][1].translations.en).toBe('Manual text')
+})
+
+it('restores AI text, confidence and selection with Undo and the Use match toggle', () => {
+  memoryReview()
+  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'Keep new context' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+  const greeting = screen.getByRole('group', { name: 'Translations for greeting' })
+  expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello')
+  expect(within(greeting).getByLabelText(/Model estimate 90\/100/)).toBeTruthy()
+  expect((screen.getAllByLabelText('Description')[0] as HTMLTextAreaElement).value).toBe('Keep new context')
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello')
+})
+
+it('filters strings with matches and opens the AI comparison with individually selectable alternatives', () => {
+  memoryReview()
+  fireEvent.click(screen.getByRole('radio', { name: 'With matches' }))
+  expect(screen.queryByText('unmatched')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
+  expect(screen.getByText('99% similar')).toBeTruthy()
+  expect(screen.getByText('Source: Xin chào')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
+  expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Another hello')
+  fireEvent.click(screen.getByRole('radio', { name: 'All 2' }))
+  expect(screen.getByText('unmatched')).toBeTruthy()
 })

@@ -29,7 +29,7 @@ test('review groups a placeholder style change and still allows apply', async ({
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog', { name: /^(Missing|Review) Translations$/ })
   await expect(dialog.locator('li').filter({ hasText: key })).toHaveCount(1)
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 
   const row = dialog.locator('li').filter({ hasText: key })

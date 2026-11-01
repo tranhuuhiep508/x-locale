@@ -253,7 +253,7 @@ test('Translate missing honors combined grid filters through generation and Appl
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
   await expect(dialog.locator('li')).toHaveCount(1)
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
   const apply = dialog.getByRole('button', { name: 'Apply 1 translation', exact: true })
   await expect(apply).toBeEnabled()
   const refreshedResponse = page.waitForResponse(

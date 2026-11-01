@@ -49,7 +49,7 @@ for (const filter of [
     expect(secondQueue.items.map((item: { key: string }) => item.key)).toEqual(keys.slice(50))
     await expect(dialog.locator('li')).toHaveCount(5)
 
-    await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+    await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
     const apply = dialog.getByRole('button', { name: /Apply \d+ translations?/ })
     await expect(apply).toBeEnabled()
     await page.clock.setSystemTime(new Date(later + 3_600_000))
