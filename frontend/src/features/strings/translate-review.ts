@@ -36,7 +36,18 @@ export function cloneItem(item: TranslateProposalItem): TranslateProposalItem {
     scores: { ...(item.scores ?? {}) },
     issues: item.issues ? { ...item.issues } : item.issues,
     memory_selected: [...(item.memory_selected ?? [])],
+    memory_choice: item.memory_choice ? { ...item.memory_choice } : item.memory_choice,
   }
+}
+
+function choiceWithout(
+  choice: Record<string, string> | undefined,
+  locale: string,
+): Record<string, string> | undefined {
+  if (!choice || !(locale in choice)) return choice
+  const next = { ...choice }
+  delete next[locale]
+  return next
 }
 
 export function draftsFromItems(
@@ -67,6 +78,7 @@ export function updateDraftTranslation(
       ...row,
       translations: { ...row.translations, [locale]: value },
       memory_selected: value.trim() ? row.memory_selected : row.memory_selected?.filter((selected) => selected !== locale),
+      memory_choice: value.trim() ? row.memory_choice : choiceWithout(row.memory_choice, locale),
       scores,
       issues,
     },
@@ -82,6 +94,7 @@ export function applyMemoryTranslation(
   return { ...next, [stringId]: {
     ...row,
     memory_selected: [...new Set([...(row.memory_selected ?? []), locale])],
+    memory_choice: { ...(row.memory_choice ?? {}), [locale]: match.string_id },
     issues: { ...row.issues, [locale]: match.issues },
   } }
 }
@@ -150,6 +163,9 @@ export function mergeProposalResults(
         ? item.translations
         : Object.fromEntries(Object.keys(item.translations).map((locale) => [locale, '']))
       const selected = sameSource ? item.memory_selected ?? [] : []
+      const choice = sameSource
+        ? Object.fromEntries(Object.entries(item.memory_choice ?? {}).filter(([locale]) => selected.includes(locale)))
+        : undefined
       const incomingTranslations = Object.fromEntries(Object.entries(next.translations).filter(([locale]) => !selected.includes(locale)))
       const incomingScores = Object.fromEntries(Object.entries(next.scores ?? {}).filter(([locale]) => !selected.includes(locale)))
       const incomingIssues = Object.fromEntries(Object.entries(next.issues ?? {}).filter(([locale]) => !selected.includes(locale)))
@@ -158,6 +174,7 @@ export function mergeProposalResults(
         ...next,
         translations: { ...previousTranslations, ...incomingTranslations },
         memory_selected: selected,
+        memory_choice: choice,
         memory: { ...(sameSource ? item.memory : {}), ...next.memory },
         scores: { ...(sameSource ? item.scores ?? {} : {}), ...incomingScores },
         issues: sameSource
