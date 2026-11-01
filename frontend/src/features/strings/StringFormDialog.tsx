@@ -24,7 +24,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
-import { TranslationMemoryPopover } from '@/features/strings/TranslationMemoryPopover'
+import { TranslationMemoryPanel } from '@/features/strings/translation-memory-view'
 import { useTranslationMemory } from '@/features/strings/use-translation-memory'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
 import type { QaBaseline } from '@/features/strings/qa-issues'
@@ -214,6 +214,54 @@ export default function StringFormDialog({
     setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, locale])] })
   }
 
+  const [memoryUndo, setMemoryUndo] = useState<null | {
+    source: string
+    locales: string[]
+    translations: Record<string, string>
+    scores: Record<string, number>
+    seeds: Record<string, QaBaseline>
+    selected: typeof memorySelection
+  }>(null)
+  function useExactMatches() {
+    const locales = targetLocales.filter(
+      (locale) =>
+        !memoryLocales.includes(locale) && memory.matches[locale]?.some((match) => match.exact),
+    )
+    setMemoryUndo({
+      source: sourceText,
+      locales,
+      translations,
+      scores,
+      seeds: qaSeeds,
+      selected: memorySelection,
+    })
+    for (const locale of locales)
+      choosePublished(
+        locale,
+        memory.matches[locale].find((match) => match.exact)!,
+      )
+    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, ...locales])] })
+  }
+  function undoExactMatches() {
+    if (!memoryUndo || memoryUndo.source !== sourceText) return
+    for (const locale of memoryUndo.locales) {
+      setTranslations((prev) => ({ ...prev, [locale]: memoryUndo.translations[locale] ?? '' }))
+      setScores((prev) => {
+        const next = dropScore(prev, locale)
+        if (memoryUndo.scores[locale] !== undefined) next[locale] = memoryUndo.scores[locale]
+        return next
+      })
+      setQaSeeds((prev) => {
+        const next = { ...prev }
+        delete next[locale]
+        if (memoryUndo.seeds[locale]) next[locale] = memoryUndo.seeds[locale]
+        return next
+      })
+    }
+    setMemorySelection(memoryUndo.selected)
+    setMemoryUndo(null)
+  }
+
   // Resolving a locale replaces both its text and its associated confidence.
   const conflictFields = [...new Set(conflict?.fields.flatMap((field) => {
     if (field.startsWith('translations.') || field.startsWith('translation_scores.')) {
@@ -352,6 +400,7 @@ export default function StringFormDialog({
         }
       }
     }
+    setMemoryUndo(null)
     setBaseline(next)
     setConflict(null)
   }
@@ -460,6 +509,8 @@ export default function StringFormDialog({
         setTranslations,
         setScores,
       })
+      setMemoryUndo(null)
+      setMemorySelection({ source: fresh.source_text, locales: [] })
       setQaSeeds({})
       setErrors({})
       onSuccess()
@@ -555,6 +606,7 @@ export default function StringFormDialog({
                   setTranslations,
                   setScores,
                 })
+                setMemoryUndo(null)
                 setMemorySelection({ source: fresh.source_text, locales: [] })
                 setQaSeeds({})
               }}
@@ -628,7 +680,11 @@ export default function StringFormDialog({
                     id="string-source"
                     className="min-h-20 resize-none"
                     value={sourceText}
-                    onChange={(e) => { setSourceText(e.target.value); setMemorySelection({ source: e.target.value, locales: [] }) }}
+                    onChange={(e) => {
+                      setMemoryUndo(null)
+                      setSourceText(e.target.value)
+                      setMemorySelection({ source: e.target.value, locales: [] })
+                    }}
                     rows={3}
                     aria-invalid={errors.source_text ? true : undefined}
                   />
@@ -787,7 +843,7 @@ export default function StringFormDialog({
                     size="sm"
                     disabled={!canAutoTranslate || busy || memory.loading || aiLocales.length === 0}
                     onClick={() => {
-                      if (!memory.checked) { void memory.load(); return }
+                      setMemoryUndo(null)
                       translateMut.mutate({
                         locales: aiLocales,
                         overwrite: true,
@@ -801,9 +857,25 @@ export default function StringFormDialog({
                     ) : (
                       <Wand2 data-icon="inline-start" />
                     )}
-                    {memory.checked ? 'Generate with AI' : 'Auto-translate'}
+                    {memoryLocales.length ? `Generate ${aiLocales.length} with AI` : 'Generate with AI'}
                   </Button>
                 </div>
+                {targetLocales.length > 0 ? (
+                  <TranslationMemoryPanel
+                    locales={targetLocales}
+                    matches={memory.matches}
+                    loading={memory.loading}
+                    error={memory.error}
+                    disabled={busy || Boolean(entry?.deleted_at)}
+                    selected={Object.fromEntries(memoryLocales.map((locale) => [locale, translations[locale]]))}
+                    onUse={(locale, match) => {
+                      setMemoryUndo(null)
+                      choosePublished(locale, match)
+                    }}
+                    onUseExact={useExactMatches}
+                    onUndo={memoryUndo?.source === sourceText ? undoExactMatches : undefined}
+                  />
+                ) : null}
                 {translateMut.isPending || translateMut.isSuccess ? (
                   <p className="text-sm text-muted-foreground">
                     {translateMut.isPending
@@ -846,6 +918,7 @@ export default function StringFormDialog({
                           className="min-h-16 resize-none mt-1"
                           value={translations[locale] ?? ''}
                           onChange={(e) => {
+                            setMemoryUndo(null)
                             const value = e.target.value
                             setTranslations((prev) => ({
                               ...prev,
@@ -858,11 +931,6 @@ export default function StringFormDialog({
                           autoComplete="off"
                           placeholder={`Translation for ${locale}…`}
                           aria-describedby={describedByFor(view, issuesId)}
-                        />
-                        <TranslationMemoryPopover
-                          locale={locale} matches={memory.matches[locale]} loading={memory.loading}
-                          error={memory.error} stale={memory.stale} disabled={busy || Boolean(entry?.deleted_at)}
-                          onRetry={() => { void memory.load() }} onUse={(match) => choosePublished(locale, match)}
                         />
                       </Field>
                       )

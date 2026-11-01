@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { stringsApi } from '@/lib/api/strings'
 import type { TranslationMemoryResult } from '@/lib/api/types'
 
-/** Lookup on open or explicit request, never in response to typing. */
+/** Debounce source edits and ignore responses from obsolete lookups. */
 export function useTranslationMemory(
   projectId: string,
   source: string,
   locales: string[],
   stringId?: string,
-  expectedSource?: string,
+  expectedSource?: string
 ) {
+  const localeKey = JSON.stringify(locales)
   const [state, setState] = useState<{
     source: string
     loading: boolean
@@ -43,22 +44,32 @@ export function useTranslationMemory(
       }
     }
   }, [projectId, stringId])
+  const initial = useRef(true)
   useEffect(() => {
     generation.current += 1
-    setState({ source, loading: false })
-  }, [source])
-  useEffect(() => {
-    void load()
+    setState({ source, loading: Boolean(source.trim() && latest.current.locales.length) })
+    if (initial.current) {
+      initial.current = false
+      void load()
+    } else {
+      const timer = setTimeout(() => {
+        void load()
+      }, 350)
+      return () => {
+        clearTimeout(timer)
+        generation.current += 1
+      }
+    }
     return () => {
       generation.current += 1
     }
-  }, [load])
+  }, [load, source, localeKey, expectedSource])
   const stale =
     state.source !== source ||
     (Boolean(source.trim()) && !state.result && !state.error && !state.loading)
   return {
     matches: stale ? {} : (state.result?.matches ?? {}),
-    loading: !stale && state.loading,
+    loading: Boolean(source.trim() && locales.length) && (stale || state.loading),
     error: stale ? undefined : state.error,
     checked: !stale && (Boolean(state.result) || Boolean(state.error)),
     stale,

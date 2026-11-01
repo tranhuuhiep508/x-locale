@@ -30,7 +30,7 @@ async function create(
   return response.json() as Promise<{ id: string; key: string }>
 }
 
-test('batch review uses a portaled memory popover before AI and skips only the selected locale', async ({
+test('batch review shows memory inline before AI and skips only the selected locale', async ({
   page,
 }) => {
   const project = await setupProject(page)
@@ -43,29 +43,18 @@ test('batch review uses a portaled memory popover before AI and skips only the s
   await expect(page.getByRole('row').filter({ hasText: 'destination' })).toBeVisible()
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.locator('[data-slot="dialog-content"]')
-  const control = dialog.getByRole('button', { name: 'Previously published for en: 1 match' })
-  await expect(control).toBeVisible()
+  const use = dialog.getByRole('switch', { name: 'Use match for en in destination' })
+  await expect(use).toBeVisible()
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('')
-  await control.focus()
-  await control.press('Enter')
-  const popover = page.locator('[data-slot="popover-content"]')
-  await expect(popover.getByText('Exact match')).toBeVisible()
-  expect(
-    await popover.evaluate((node) => node.closest('[data-slot="dialog-content"]') === null),
-  ).toBe(true)
-  const bounds = await popover.boundingBox()
-  expect(bounds!.y).toBeGreaterThanOrEqual(0)
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(900)
-  const use = popover.getByRole('button', { name: 'Use published translation from origin' })
-  await expect(use).toBeFocused()
-  await use.press('Enter')
-  await expect(control).toBeFocused()
+  await expect(dialog.getByRole('meter')).toHaveAttribute('aria-valuenow', '100')
+  await use.focus()
+  await use.press('Space')
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
   await expect(dialog.getByRole('button', { name: 'Apply 1 translation' })).toBeEnabled()
   const generation = page.waitForResponse((response) =>
     response.url().endsWith('/translate/proposals'),
   )
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
   const generated = await generation
   expect(generated.ok(), await generated.text()).toBeTruthy()
   expect(generated.request().postDataJSON().exclude_cells).toEqual({ [destination.id]: ['en'] })
@@ -98,10 +87,10 @@ test('retranslation can reuse its own publication and clear confidence for uncha
   await publishStringsViaApi(page, project.id, [row.id])
   await openStringEditor(page, 'self')
   const dialog = page.locator('[data-slot="dialog-content"]')
-  await dialog.getByRole('button', { name: 'Previously published for en: 1 match' }).click()
-  await page.getByRole('button', { name: 'Use published translation from self' }).click()
+  await expect(page.getByRole('button', { name: 'Use en match from self' })).toBeVisible()
+  await page.getByRole('button', { name: 'Use en match from self' }).click()
   const preview = page.waitForResponse((response) => response.url().endsWith('/translate/preview'))
-  await dialog.getByRole('button', { name: 'Generate with AI' }).click()
+  await dialog.getByRole('button', { name: /^Generate .*AI$/ }).click()
   expect((await preview).request().postDataJSON().locales).toEqual(['ja'])
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published English')
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue('[ja] Nội dung đã phát hành')
@@ -117,7 +106,7 @@ test('retranslation can reuse its own publication and clear confidence for uncha
   expect(ja.published_value).toBe('Published Japanese')
 })
 
-test('fuzzy suggestions show source differences and QA before Use; typing requires a new explicit check', async ({
+test('fuzzy suggestions show source differences and QA before Use; typing refreshes suggestions automatically', async ({
   page,
 }) => {
   const project = await setupProject(page)
@@ -129,12 +118,11 @@ test('fuzzy suggestions show source differences and QA before Use; typing requir
   await create(page, project.id, 'destination', `${prefix} {user}`)
   await openStringEditor(page, 'destination')
   const dialog = page.locator('[data-slot="dialog-content"]')
-  await dialog.getByRole('button', { name: 'Previously published for en: 1 match' }).click()
-  const popover = page.locator('[data-slot="popover-content"]')
-  await expect(popover.getByText(/% similar/)).toBeVisible()
-  await expect(popover.getByText(`Source: ${prefix} {name}`)).toBeVisible()
-  await expect(popover.getByText(/Error: Missing placeholder/)).toBeVisible()
-  await popover.getByRole('button', { name: 'Use published translation from origin' }).click()
+  const panel = dialog.getByRole('region', { name: 'Previously published' })
+  await expect(panel.getByText(/% similar/)).toBeVisible()
+  await expect(panel.getByText(`Source: ${prefix} {name}`)).toBeVisible()
+  await expect(panel.getByRole('button', { name: /en match from origin.*errors/ })).toBeVisible()
+  await panel.getByRole('button', { name: 'Use en match from origin' }).click()
   const lookups: string[] = []
   const previews: string[] = []
   page.on('request', (request) => {
@@ -142,15 +130,10 @@ test('fuzzy suggestions show source differences and QA before Use; typing requir
     if (request.url().endsWith('/translate/preview')) previews.push(request.postData() ?? '')
   })
   await dialog.getByLabel('Source text').fill(`${prefix} {user}!`)
-  await expect(
-    dialog.getByRole('button', { name: 'Previously published for en: 0 matches' }),
-  ).toBeVisible()
-  await page.waitForTimeout(600)
-  expect(lookups).toHaveLength(0)
-  await dialog.getByRole('button', { name: 'Auto-translate' }).click()
-  await expect(dialog.getByRole('button', { name: 'Generate with AI' })).toBeEnabled()
-  expect(lookups).toHaveLength(1)
+  await expect(dialog.getByRole('button', { name: /^Generate .*AI$/ })).toBeDisabled()
+  await expect.poll(() => lookups.length).toBe(1)
+  await expect(dialog.getByRole('button', { name: /^Generate .*AI$/ })).toBeEnabled()
   expect(previews).toHaveLength(0)
-  await dialog.getByRole('button', { name: 'Generate with AI' }).click()
+  await dialog.getByRole('button', { name: /^Generate .*AI$/ }).click()
   await expect.poll(() => previews.length).toBe(1)
 })
