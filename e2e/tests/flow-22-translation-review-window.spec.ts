@@ -39,8 +39,7 @@ for (const filter of [
     await page.clock.setSystemTime(new Date(later))
     const dialog = page.getByRole('dialog')
     const secondResponse = waitForQueue()
-    const paging = dialog.getByText(/\d+–\d+ of \d+/)
-    await paging.locator('..').getByRole('button').last().click()
+    await dialog.getByRole('button', { name: 'Next page' }).click()
     const second = await secondResponse
     const secondBody = second.request().postDataJSON()
     const secondQueue = await second.json()
