@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import event, text
+from sqlalchemy.exc import ProgrammingError
 
 from app.ai import TranslateItem, _build_prompt, _missing_items
 from app.models import Project, StringEntry
@@ -182,13 +183,15 @@ def test_fuzzy_threshold_inclusive_and_qa_uses_destination_source(client, sessio
     assert memory(client, pid, "Lưu thay đổi")[0]["exact"]
 
 
-def test_lookup_batches_duplicate_cells_and_keeps_setting_transaction_local(
+def test_lookup_batches_duplicate_cells_and_restores_setting_before_transaction_end(
     client, session_factory
 ):
     pid = make_project(client)["id"]
     published(client, pid)
     with session_factory() as db:
         project = db.get(Project, uuid.UUID(pid))
+        default = db.execute(text("SHOW pg_trgm.similarity_threshold")).scalar_one()
+        db.execute(text("SET LOCAL pg_trgm.similarity_threshold = 0.57"))
         initial = db.execute(text("SHOW pg_trgm.similarity_threshold")).scalar_one()
         statements = []
 
@@ -204,9 +207,36 @@ def test_lookup_batches_duplicate_cells_and_keeps_setting_transaction_local(
             event.remove(db.get_bind(), "before_cursor_execute", record)
         assert len(result["Save changes"]["en"]) == 1
         assert result["Save changes"]["ja"] == []
-        assert len(statements) == 2  # SET LOCAL and one batched SELECT.
-        db.rollback()
+        assert sum(statement.startswith("SELECT") for statement in statements) == 1
         assert db.execute(text("SHOW pg_trgm.similarity_threshold")).scalar_one() == initial
+        db.rollback()
+        assert db.execute(text("SHOW pg_trgm.similarity_threshold")).scalar_one() == default
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_lookup_restores_setting_and_preserves_pending_writes(
+    client, session_factory, monkeypatch, fail
+):
+    pid = make_project(client)["id"]
+    published(client, pid)
+    with session_factory() as db:
+        project = db.get(Project, uuid.UUID(pid))
+        project.name = "Pending edit"
+        db.execute(text("SET LOCAL pg_trgm.similarity_threshold = 0.57"))
+        if fail:
+
+            def broken_qa(*args):
+                db.execute(text("SELECT missing_translation_memory_function()"))
+
+            monkeypatch.setattr("app.services.translation_memory.check_translation", broken_qa)
+            with pytest.raises(ProgrammingError, match="missing_translation_memory_function"):
+                lookup_memory(db, project, [("Save changes", "en")])
+        else:
+            lookup_memory(db, project, [("Save changes", "en")])
+        assert db.execute(text("SHOW pg_trgm.similarity_threshold")).scalar_one() == "0.57"
+        db.commit()
+        db.refresh(project)
+        assert project.name == "Pending edit"
 
 
 @pytest.mark.parametrize(("batch_size", "source_count"), [(1000, 10_000), (3, 2)])

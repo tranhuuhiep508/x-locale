@@ -18,6 +18,18 @@ and string ID. Trigram scores can be 100% for case or punctuation differences;
 those matches still show as similar rather than exact. Suggestions may come from
 any module or the edited string's own publication, with their published provenance.
 
+The indexed prefilter uses a 0.79 similarity threshold, followed by the inclusive
+0.8 check. A read-only savepoint restores the caller's threshold on success or
+failure without rolling back earlier edits in the transaction.
+
+A PostgreSQL 16 benchmark with 100,000 published strings sharing the prefix
+`Please confirm your account information before continuing ` and an MD5 suffix
+(one published French translation each) reduced median warm lookup time from
+867 ms to 94 ms across five measured runs. The query plan changed from a parallel
+sequential scan to the existing GIN index. These timings are environment-specific;
+catalogs where most strings meet the final 0.8 cutoff still require ranking many
+candidates.
+
 Smart QA checks each candidate against the destination source. Findings appear
 before Use and remain advisory. Memory suggestions have no AI confidence score.
 When there is no exact match, up to three returned suggestions without QA errors

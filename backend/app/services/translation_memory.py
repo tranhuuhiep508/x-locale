@@ -57,67 +57,71 @@ def lookup_memory(
     if not pairs:
         return result
 
-    # A broad indexed prefilter keeps the final 0.8 boundary explicitly inclusive.
-    db.execute(text("SET LOCAL pg_trgm.similarity_threshold = 0.3"))
-    for batch in batched(pairs, LOOKUP_BATCH_SIZE, strict=False):
-        inputs = values(
-            column("source_text", Text), column("locale", String), name="memory_inputs"
-        ).data(batch)
-        exact = StringEntry.published_source_text == inputs.c.source_text
-        similarity = func.similarity(StringEntry.published_source_text, inputs.c.source_text)
-        matches = (
-            select(
-                StringEntry.id.label("string_id"),
-                StringEntry.published_key.label("key"),
-                Module.id.label("module_id"),
-                Module.slug.label("module_slug"),
-                StringEntry.published_source_text.label("matched_source_text"),
-                Translation.published_value.label("translation"),
-                exact.label("exact"),
-                similarity.label("similarity"),
-            )
-            .join(Translation, Translation.string_id == StringEntry.id)
-            .outerjoin(
-                Module,
-                (Module.id == StringEntry.published_module_id) & (Module.project_id == project.id),
-            )
-            .where(
-                StringEntry.project_id == project.id,
-                StringEntry.status == TranslationStatus.public,
-                StringEntry.deleted_at.is_(None),
-                StringEntry.published_source_text.is_not(None),
-                StringEntry.published_key.is_not(None),
-                Translation.locale == inputs.c.locale,
-                func.length(func.btrim(Translation.published_value, _WHITESPACE)) > 0,
-                or_(
-                    exact,
-                    StringEntry.published_source_text.bool_op("%")(inputs.c.source_text)
-                    & (similarity >= 0.8),
-                ),
-            )
-            .order_by(
-                exact.desc(), similarity.desc(), StringEntry.published_at.desc(), StringEntry.id
-            )
-            .limit(3)
-            .correlate(inputs)
-            .lateral("memory_matches")
-        )
-        rows = db.execute(
-            select(inputs.c.source_text, inputs.c.locale, *matches.c).select_from(
-                inputs.join(matches, true())
-            )
-        ).mappings()
-        for row in rows:
-            source, locale = row["source_text"], row["locale"]
-            result[source][locale].append(
-                TranslationMemoryMatch(
-                    **{name: row[name] for name in matches.c.keys()},
-                    issues=[
-                        issue.as_dict()
-                        for issue in check_translation(source, row["translation"], locale)
-                    ],
+    with db.begin_nested() as lookup:
+        # Keep the indexed prefilter just below the inclusive 0.8 match boundary.
+        db.execute(text("SET LOCAL pg_trgm.similarity_threshold = 0.79"))
+        for batch in batched(pairs, LOOKUP_BATCH_SIZE, strict=False):
+            inputs = values(
+                column("source_text", Text), column("locale", String), name="memory_inputs"
+            ).data(batch)
+            exact = StringEntry.published_source_text == inputs.c.source_text
+            similarity = func.similarity(StringEntry.published_source_text, inputs.c.source_text)
+            matches = (
+                select(
+                    StringEntry.id.label("string_id"),
+                    StringEntry.published_key.label("key"),
+                    Module.id.label("module_id"),
+                    Module.slug.label("module_slug"),
+                    StringEntry.published_source_text.label("matched_source_text"),
+                    Translation.published_value.label("translation"),
+                    exact.label("exact"),
+                    similarity.label("similarity"),
                 )
+                .join(Translation, Translation.string_id == StringEntry.id)
+                .outerjoin(
+                    Module,
+                    (Module.id == StringEntry.published_module_id)
+                    & (Module.project_id == project.id),
+                )
+                .where(
+                    StringEntry.project_id == project.id,
+                    StringEntry.status == TranslationStatus.public,
+                    StringEntry.deleted_at.is_(None),
+                    StringEntry.published_source_text.is_not(None),
+                    StringEntry.published_key.is_not(None),
+                    Translation.locale == inputs.c.locale,
+                    func.length(func.btrim(Translation.published_value, _WHITESPACE)) > 0,
+                    or_(
+                        exact,
+                        StringEntry.published_source_text.bool_op("%")(inputs.c.source_text)
+                        & (similarity >= 0.8),
+                    ),
+                )
+                .order_by(
+                    exact.desc(), similarity.desc(), StringEntry.published_at.desc(), StringEntry.id
+                )
+                .limit(3)
+                .correlate(inputs)
+                .lateral("memory_matches")
             )
+            rows = db.execute(
+                select(inputs.c.source_text, inputs.c.locale, *matches.c).select_from(
+                    inputs.join(matches, true())
+                )
+            ).mappings()
+            for row in rows:
+                source, locale = row["source_text"], row["locale"]
+                result[source][locale].append(
+                    TranslationMemoryMatch(
+                        **{name: row[name] for name in matches.c.keys()},
+                        issues=[
+                            issue.as_dict()
+                            for issue in check_translation(source, row["translation"], locale)
+                        ],
+                    )
+                )
+        # This read-only savepoint also restores the caller's similarity setting.
+        lookup.rollback()
     return result
 
 
