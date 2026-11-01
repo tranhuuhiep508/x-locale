@@ -11,7 +11,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-it('debounces source edits, blocks AI while waiting, and ignores late responses', async () => {
+it('debounces source edits, keeps the first lookup pending, and ignores late responses', async () => {
   let finish!: (result: TranslationMemoryResult) => void
   vi.mocked(stringsApi.translateMemory).mockImplementationOnce(
     () =>
@@ -48,7 +48,30 @@ it('debounces source edits, blocks AI while waiting, and ignores late responses'
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.loading).toBe(false)
-  expect(result.current.checked).toBe(true)
+  expect(result.current.matches).toEqual({ en: [] })
+})
+
+it('keeps the current matches and stays idle while a source edit is debounced', async () => {
+  const published = { string_id: 'origin', key: 'greeting', module_id: null, module_slug: null, matched_source_text: 'Hello', translation: 'Bonjour', exact: true, similarity: 1, issues: [] }
+  vi.mocked(stringsApi.translateMemory).mockResolvedValue({
+    source_text: 'Hello',
+    matches: { en: [published] },
+  })
+  const { result, rerender } = renderHook(
+    ({ source }) => useTranslationMemory('p', source, ['en']),
+    { initialProps: { source: 'Hello' } },
+  )
+  await act(async () => {})
+  expect(result.current.loading).toBe(false)
+  expect(result.current.matches.en?.[0]?.string_id).toBe('origin')
+  rerender({ source: 'Hello!' })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200)
+  })
+  expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
+  expect(result.current.loading).toBe(false)
+  expect(result.current.matches.en?.[0]?.string_id).toBe('origin')
+  expect(result.current.error).toBeUndefined()
 })
 
 it('invalidates lookups for locale changes and does not fetch empty sources', async () => {

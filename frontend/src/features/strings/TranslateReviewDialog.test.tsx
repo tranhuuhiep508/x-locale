@@ -305,10 +305,21 @@ function memoryReview(items = memoryItems) {
   return { onTranslate, onApply }
 }
 
+it('does not open the published-count tooltip when the dialog opens', () => {
+  memoryReview()
+  const count = screen.getByLabelText('Previously published: 1 of 2 cells have a match')
+  expect(document.activeElement).not.toBe(count)
+  expect(screen.queryByRole('tooltip')).toBeNull()
+})
+
 it('bulk uses exact matches on the current page, excludes them from AI, and undoes only those cells', () => {
   const { onTranslate, onApply } = memoryReview()
   expect(screen.getByLabelText('Previously published: 1 of 2 cells have a match')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches' }))
+  expect(screen.getByRole('radio', { name: 'With matches 1' })).toBeTruthy()
+  expect(screen.getByRole('radio', { name: 'Exact 1' })).toBeTruthy()
+  const useExact = screen.getByRole('button', { name: 'Use 1 exact matches' })
+  expect(useExact.getAttribute('data-variant')).toBe('outline')
+  fireEvent.click(useExact)
   expect(screen.getByLabelText('1 cells use a match')).toBeTruthy()
   const unmatched = screen.getByRole('group', { name: 'Translations for unmatched' })
   fireEvent.change(within(unmatched).getByLabelText('en'), { target: { value: 'Manual text' } })
@@ -329,15 +340,15 @@ it('restores AI text, confidence and selection with Undo and the Use match toggl
   expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello')
   expect(within(greeting).getByLabelText(/Model estimate 90\/100/)).toBeTruthy()
   expect((screen.getAllByLabelText('Description')[0] as HTMLTextAreaElement).value).toBe('Keep new context')
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Published hello')
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   expect((within(greeting).getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello')
 })
 
 it('filters strings with matches and opens the AI comparison with individually selectable alternatives', () => {
   memoryReview()
-  fireEvent.click(screen.getByRole('radio', { name: 'With matches' }))
+  fireEvent.click(screen.getByRole('radio', { name: /With matches/ }))
   expect(screen.queryByText('unmatched')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
   expect(screen.getByText('99% similar')).toBeTruthy()
@@ -352,8 +363,8 @@ it('switches off an incoming selection even after choosing another match without
   memoryReview([{ ...memoryItems[0], translations: { en: 'Published hello' }, memory_selected: ['en'], scores: {} }])
   fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
   fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
-  expect(screen.getByRole('switch', { name: 'Use match for en in greeting' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
+  expect(screen.getByRole('button', { name: 'Use match for en in greeting' }).getAttribute('aria-pressed')).toBe('false')
 })
 
 it.each(['source change', 'page change'])('discards restore history after a %s', (change) => {
@@ -364,15 +375,38 @@ it.each(['source change', 'page change'])('discards restore history after a %s',
   }
   const view = (items: TranslateProposalItem[]) => <TooltipProvider><TranslateReviewDialog {...props} items={items} /></TooltipProvider>
   const { rerender } = render(view([memoryItems[0]]))
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   if (change === 'page change') rerender(view([]))
   rerender(view([{
     ...memoryItems[0],
     source_text: change === 'source change' ? 'New source' : memoryItems[0].source_text,
     translations: { en: 'New AI text' }, scores: { en: 81 },
   }]))
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
-  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
   expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('New AI text')
   expect(screen.getByLabelText(/Model estimate 81\/100/)).toBeTruthy()
+})
+
+it('marks only the chosen match when two published translations are identical', () => {
+  memoryReview([{
+    ...memoryItems[0],
+    memory: {
+      en: [
+        publishedMatch,
+        { ...publishedMatch, string_id: 'other', key: 'other.greeting', translation: publishedMatch.translation },
+      ],
+    },
+  }])
+  fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
+  expect(screen.getByRole('button', { name: 'Use en match from other.greeting' }).textContent).toBe('Used')
+  expect(screen.getByRole('button', { name: 'Use en match from published.greeting' }).textContent).toBe('Use')
+})
+
+it('summarizes a page with no published matches in one line', () => {
+  memoryReview([{ string_id: 'b', key: 'unmatched', source_text: 'Other', status: 'draft', translations: { en: '', ja: '' } }])
+  expect(screen.getByText('No previously published matches on this page. Translate fills all 2 cells with AI.')).toBeTruthy()
+  expect(screen.queryByText('0/2')).toBeNull()
+  expect(screen.queryByLabelText(/cells have a match/)).toBeNull()
 })

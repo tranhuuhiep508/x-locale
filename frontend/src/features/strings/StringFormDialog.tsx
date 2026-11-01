@@ -201,8 +201,9 @@ export default function StringFormDialog({
   const [baseline, setBaseline] = useState(entry ?? null)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
   const memory = useTranslationMemory(projectId, sourceText, targetLocales, entry?.id, baseline?.source_text)
-  const [memorySelection, setMemorySelection] = useState<{ source: string; locales: string[] }>({ source: sourceText, locales: [] })
-  const memoryLocales = memorySelection.source === sourceText ? memorySelection.locales : []
+  const [memorySelection, setMemorySelection] = useState<{ source: string; chosen: Record<string, string> }>({ source: sourceText, chosen: {} })
+  const chosen = memorySelection.source === sourceText ? memorySelection.chosen : {}
+  const memoryLocales = Object.keys(chosen)
   const aiLocales = targetLocales.filter((locale) => !memoryLocales.includes(locale))
   const currentSource = useRef(sourceText)
   currentSource.current = sourceText
@@ -211,7 +212,10 @@ export default function StringFormDialog({
     setTranslations((prev) => ({ ...prev, [locale]: match.translation }))
     setScores((prev) => dropScore(prev, locale))
     setQaSeeds((prev) => ({ ...prev, [locale]: { source: sourceText, text: match.translation, issues: match.issues } }))
-    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, locale])] })
+    setMemorySelection((prev) => ({
+      source: sourceText,
+      chosen: { ...(prev.source === sourceText ? prev.chosen : {}), [locale]: match.string_id },
+    }))
   }
 
   const [memoryUndo, setMemoryUndo] = useState<null | {
@@ -240,7 +244,6 @@ export default function StringFormDialog({
         locale,
         memory.matches[locale].find((match) => match.exact)!,
       )
-    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, ...locales])] })
   }
   function undoExactMatches() {
     if (!memoryUndo || memoryUndo.source !== sourceText) return
@@ -362,7 +365,12 @@ export default function StringFormDialog({
         if (latest) next.translations = [...next.translations, latest]
         if (useLatest) {
           setTranslations((prev) => ({ ...prev, [locale]: latest?.value ?? '' }))
-          setMemorySelection((prev) => ({ ...prev, locales: prev.locales.filter((selected) => selected !== locale) }))
+          setMemorySelection((prev) => {
+            if (!(locale in prev.chosen)) return prev
+            const next = { ...prev.chosen }
+            delete next[locale]
+            return { ...prev, chosen: next }
+          })
           setScores((prev) => {
             const updated = { ...prev }
             delete updated[locale]
@@ -510,7 +518,7 @@ export default function StringFormDialog({
         setScores,
       })
       setMemoryUndo(null)
-      setMemorySelection({ source: fresh.source_text, locales: [] })
+      setMemorySelection({ source: fresh.source_text, chosen: {} })
       setQaSeeds({})
       setErrors({})
       onSuccess()
@@ -607,7 +615,7 @@ export default function StringFormDialog({
                   setScores,
                 })
                 setMemoryUndo(null)
-                setMemorySelection({ source: fresh.source_text, locales: [] })
+                setMemorySelection({ source: fresh.source_text, chosen: {} })
                 setQaSeeds({})
               }}
             />
@@ -683,7 +691,7 @@ export default function StringFormDialog({
                     onChange={(e) => {
                       setMemoryUndo(null)
                       setSourceText(e.target.value)
-                      setMemorySelection({ source: e.target.value, locales: [] })
+                      setMemorySelection({ source: e.target.value, chosen: {} })
                     }}
                     rows={3}
                     aria-invalid={errors.source_text ? true : undefined}
@@ -867,7 +875,7 @@ export default function StringFormDialog({
                     loading={memory.loading}
                     error={memory.error}
                     disabled={busy || Boolean(entry?.deleted_at)}
-                    selected={Object.fromEntries(memoryLocales.map((locale) => [locale, translations[locale]]))}
+                    selected={chosen}
                     onUse={(locale, match) => {
                       setMemoryUndo(null)
                       choosePublished(locale, match)
@@ -925,7 +933,12 @@ export default function StringFormDialog({
                               [locale]: value,
                             }))
                             setScores((prev) => dropScore(prev, locale))
-                            if (!value.trim()) setMemorySelection((prev) => ({ ...prev, locales: prev.locales.filter((selected) => selected !== locale) }))
+                            if (!value.trim()) setMemorySelection((prev) => {
+                              if (!(locale in prev.chosen)) return prev
+                              const next = { ...prev.chosen }
+                              delete next[locale]
+                              return { ...prev, chosen: next }
+                            })
                           }}
                           rows={2}
                           autoComplete="off"

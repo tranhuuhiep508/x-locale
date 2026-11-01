@@ -358,6 +358,8 @@ export interface TranslateProposalItem {
   memory_error?: string | null
   /** Local review state, sent as exclude_cells when requesting AI. */
   memory_selected?: string[]
+  /** Local review state: locale → id of the match the user chose. */
+  memory_choice?: Record<string, string>
 }
 
 export interface TranslateProposalsResult {
