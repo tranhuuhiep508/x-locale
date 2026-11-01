@@ -297,11 +297,11 @@ const memoryItems: TranslateProposalItem[] = [
   { ...items[0], memory: { en: [publishedMatch, { ...publishedMatch, string_id: 'other', key: 'other.greeting', exact: false, similarity: 0.996, translation: 'Another hello' }] } },
   { string_id: 'b', key: 'unmatched', source_text: 'Other', status: 'draft', translations: { en: '' } },
 ]
-function memoryReview() {
+function memoryReview(items = memoryItems) {
   const onTranslate = vi.fn()
   const onApply = vi.fn()
   render(<TooltipProvider><TranslateReviewDialog open projectId="p" loadingQueue={false} generating={false} applying={false} generated error={null}
-    items={memoryItems} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onApply={onApply} /></TooltipProvider>)
+    items={items} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onApply={onApply} /></TooltipProvider>)
   return { onTranslate, onApply }
 }
 
@@ -346,4 +346,33 @@ it('filters strings with matches and opens the AI comparison with individually s
   expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Another hello')
   fireEvent.click(screen.getByRole('radio', { name: 'All 2' }))
   expect(screen.getByText('unmatched')).toBeTruthy()
+})
+
+it('switches off an incoming selection even after choosing another match without restore history', () => {
+  memoryReview([{ ...memoryItems[0], translations: { en: 'Published hello' }, memory_selected: ['en'], scores: {} }])
+  fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  expect(screen.getByRole('switch', { name: 'Use match for en in greeting' }).getAttribute('aria-checked')).toBe('false')
+})
+
+it.each(['source change', 'page change'])('discards restore history after a %s', (change) => {
+  const props = {
+    open: true, projectId: 'p', loadingQueue: false, generating: false, applying: false, generated: true,
+    error: null, page: 1, pageSize: 50, total: 1,
+    onPageChange: vi.fn(), onClose: vi.fn(), onTranslate: vi.fn(), onApply: vi.fn(),
+  }
+  const view = (items: TranslateProposalItem[]) => <TooltipProvider><TranslateReviewDialog {...props} items={items} /></TooltipProvider>
+  const { rerender } = render(view([memoryItems[0]]))
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  if (change === 'page change') rerender(view([]))
+  rerender(view([{
+    ...memoryItems[0],
+    source_text: change === 'source change' ? 'New source' : memoryItems[0].source_text,
+    translations: { en: 'New AI text' }, scores: { en: 81 },
+  }]))
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+  expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('New AI text')
+  expect(screen.getByLabelText(/Model estimate 81\/100/)).toBeTruthy()
 })

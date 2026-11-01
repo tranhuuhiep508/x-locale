@@ -152,6 +152,37 @@ describe('translation review retranslation', () => {
     await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: {} })))
   })
 
+  it.each([false, true])('restores the AI proposal after retranslation and deselection (alternative match: %s)', async (alternative) => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    const row = { ...item, translations: { en: '', ja: '' }, memory: { en: [
+      publishedMatch,
+      { ...publishedMatch, string_id: 'other', key: 'other.greeting', translation: 'Another hello' },
+    ] } }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, locales: ['en', 'ja'], items: [row] })
+    vi.mocked(stringsApi.translateProposals).mockReset()
+      .mockResolvedValue({ ...page, items: [] })
+      .mockResolvedValueOnce({ ...page, items: [{ ...row, translations: { en: 'AI English', ja: 'AI Japanese' }, scores: { en: 90 } }] })
+      .mockResolvedValueOnce({ ...page, items: [{ ...row, translations: { ja: 'New Japanese' }, scores: { ja: 80 } }] })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate 2 cells' }))
+    await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'))
+    fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again · 1 cells' }))
+    await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese'))
+    expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: { a: ['en'] } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
+    expect(screen.getByText('AI English')).toBeTruthy()
+    if (alternative) fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Use match for en in greeting' }))
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English')
+    expect(screen.getByRole('switch', { name: 'Use match for en in greeting' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getAllByLabelText(/Model estimate 90\/100/).length).toBeGreaterThan(0)
+    expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese')
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again · 2 cells' }))
+    await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: {} })))
+  })
+
   it('excludes a legacy base target from AI selections and editor saves', async () => {
     vi.stubGlobal('ResizeObserver', class {
       observe() {}

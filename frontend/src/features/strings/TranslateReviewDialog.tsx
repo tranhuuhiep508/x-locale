@@ -499,7 +499,14 @@ export function TranslateReviewDialog({
   useEffect(() => {
     setDrafts(draftsFromItems(items))
     setMemoryUndo(null)
-    setCellOriginals({})
+    // Generation refreshes items; keep restore values for unchanged selected cells.
+    setCellOriginals((prev) => Object.fromEntries(items.flatMap((item) =>
+      (item.memory_selected ?? []).flatMap((locale) => {
+        const id = qaId(item.string_id, locale)
+        const original = prev[id]
+        return original?.source_text === item.source_text ? [[id, original]] : []
+      }),
+    )))
   }, [items])
 
   const draftList = items.flatMap((item) => {
@@ -541,8 +548,6 @@ export function TranslateReviewDialog({
     delete next.issues[locale]
     if (original?.scores?.[locale] !== undefined) next.scores[locale] = original.scores[locale]
     if (original?.issues?.[locale]) next.issues[locale] = original.issues[locale]
-    if (original?.memory_selected?.includes(locale))
-      next.memory_selected = [...(next.memory_selected ?? []), locale]
     return next
   }
   function toggleMemory(stringId: string, locale: string, checked: boolean) {
