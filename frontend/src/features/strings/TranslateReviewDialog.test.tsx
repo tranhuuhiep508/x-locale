@@ -544,6 +544,47 @@ it('falls back to all when matches disappear and explains an already empty filte
   expect(screen.getByRole('radio', { name: 'With matches 0' }).getAttribute('aria-checked')).toBe('true')
 })
 
+it('blocks paging while generated translations differ from the loaded page', async () => {
+  const loaded: TranslateProposalItem[] = [
+    { string_id: 'a', key: 'greeting', source_text: 'Xin chào', status: 'draft', description: 'Original', translations: { en: '' } },
+    { string_id: 'b', key: 'unmatched', source_text: 'Other', status: 'draft', translations: { en: '' } },
+  ]
+  const proposals = loaded.map((item) => ({ ...item, translations: { en: `AI ${item.key}` }, scores: { en: 88 } }))
+  const waiting = pagedReview({ items: loaded })
+  const description = screen.getAllByLabelText('Description')[0].closest('[data-slot="field"]')
+  expect(description?.className).toContain('w-full')
+  expect(description?.className).toContain('sm:w-72')
+  expect(description?.parentElement?.className).toContain('flex-col')
+  expect(description?.parentElement?.className).toContain('sm:flex-row')
+  expect(screen.getByRole('button', { name: 'Next page' }).getAttribute('aria-disabled')).toBeNull()
+
+  waiting.rerender({ generated: true, items: proposals })
+  const next = screen.getByRole('button', { name: 'Next page' })
+  expect(next.getAttribute('aria-disabled')).toBe('true')
+  expect((next as HTMLButtonElement).disabled).toBe(false)
+  await act(async () => {
+    next.focus()
+  })
+  expect((await screen.findByRole('tooltip')).textContent).toBe("Apply or undo this page's changes first")
+  fireEvent.click(next)
+  expect(waiting.onPageChange).not.toHaveBeenCalled()
+
+  for (const key of ['greeting', 'unmatched']) {
+    fireEvent.change(within(screen.getByRole('group', { name: `Translations for ${key}` })).getByLabelText('en'), {
+      target: { value: '' },
+    })
+  }
+  expect(screen.getByRole('button', { name: 'Next page' }).getAttribute('aria-disabled')).toBeNull()
+
+  waiting.rerender({ generated: true, items: proposals.map((item) => ({ ...item })) })
+  expect(screen.getByRole('button', { name: 'Next page' }).getAttribute('aria-disabled')).toBe('true')
+  waiting.rerender({ generated: false, items: loaded })
+  const unlocked = screen.getByRole('button', { name: 'Next page' })
+  expect(unlocked.getAttribute('aria-disabled')).toBeNull()
+  fireEvent.click(unlocked)
+  expect(waiting.onPageChange).toHaveBeenCalledWith(2)
+})
+
 it('blocks next and previous while this page has unapplied work', async () => {
   const blocked = pagedReview()
   fireEvent.click(screen.getByRole('button', { name: 'Use 1 exact matches on this page' }))
@@ -555,7 +596,7 @@ it('blocks next and previous while this page has unapplied work', async () => {
     next.focus()
   })
   expect(document.activeElement).toBe(next)
-  expect((await screen.findByRole('tooltip')).textContent).toBe('Apply or discard this page first')
+  expect((await screen.findByRole('tooltip')).textContent).toBe("Apply or undo this page's changes first")
   fireEvent.click(next)
   expect(blocked.onPageChange).not.toHaveBeenCalled()
   expect(screen.getByText('Skipped · using match')).toBeTruthy()

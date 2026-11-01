@@ -59,7 +59,13 @@ export function jobStillRunning(job: Job | undefined): boolean {
 }
 
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
-const PAGE_BLOCKED = 'Apply or discard this page first'
+const PAGE_BLOCKED = "Apply or undo this page's changes first"
+
+function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
+  const left = draft.memory_selected ?? []
+  const right = original.memory_selected ?? []
+  return left.length === right.length && left.every((locale) => right.includes(locale))
+}
 
 function draftDiffers(
   draft: TranslateProposalItem,
@@ -67,6 +73,7 @@ function draftDiffers(
 ): boolean {
   if (!original) return true
   if ((draft.description ?? '') !== (original.description ?? '')) return true
+  if (!sameSelection(draft, original)) return true
   const locales = Object.keys(draft.translations)
   if (locales.length !== Object.keys(original.translations).length) return true
   return locales.some(
@@ -340,7 +347,7 @@ function ProposalTreeNode({
       className="grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all "
     >
       <div className="flex min-w-0 flex-col gap-3.5">
-        <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
@@ -364,7 +371,7 @@ function ProposalTreeNode({
               </code>
             </div>
           </div>
-          <Field className="w-72 shrink-0">
+          <Field className="w-full sm:w-72 sm:shrink-0">
             <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
             <Textarea
               id={descriptionId}
@@ -549,6 +556,9 @@ export function TranslateReviewDialog({
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
   const [filter, setFilter] = useState<QaFilter | 'matches' | 'exact'>('all')
+  // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
+  const loadedPage = useRef(items)
+  const sawGenerated = useRef(false)
 
   useEffect(() => {
     setFilter('all')
@@ -571,6 +581,15 @@ export function TranslateReviewDialog({
     const draft = drafts[item.string_id]
     return draft ? [draft] : []
   })
+  const echoed = items.length === draftList.length && items.every((item) => {
+    const draft = drafts[item.string_id]
+    return draft !== undefined && !draftDiffers(draft, item)
+  })
+  if (generated) sawGenerated.current = true
+  else if (sawGenerated.current) {
+    loadedPage.current = items
+    sawGenerated.current = false
+  } else if (!echoed) loadedPage.current = items
   const memoryCells = draftList.flatMap((item) =>
     Object.keys(item.translations).flatMap((locale) => {
       if (sourceConflicts.some((conflict) => conflict.string_id === item.string_id)) return []
@@ -583,10 +602,6 @@ export function TranslateReviewDialog({
   const exactStringCount = new Set(exactCells.map((cell) => cell.item.string_id)).size
   const unusedExact = exactCells.filter(({ item, locale }) => !item.memory_selected?.includes(locale))
   const usedCount = draftList.reduce((count, item) => count + (item.memory_selected?.length ?? 0), 0)
-  const pageLocked = usedCount > 0 || draftList.some((draft) => {
-    const original = items.find((item) => item.string_id === draft.string_id)
-    return draftDiffers(draft, original)
-  })
   const aiCount = localeCount(draftList) - usedCount
   function chooseMemory(stringId: string, locale: string, match: TranslationMemoryMatch) {
     setMemoryUndo(null)
@@ -681,6 +696,8 @@ export function TranslateReviewDialog({
 
   const publicCount = draftList.filter((item) => item.status === 'public').length
   const applyCount = filledCount(draftList)
+  const loadedById = new Map(loadedPage.current.map((item) => [item.string_id, item]))
+  const pageLocked = draftList.some((draft) => draftDiffers(draft, loadedById.get(draft.string_id)))
   const missingCount = localeCount(draftList) - applyCount
   const review = !generating
   const busy = loadingQueue || generating || applying

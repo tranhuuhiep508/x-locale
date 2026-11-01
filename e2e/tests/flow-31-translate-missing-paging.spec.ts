@@ -93,7 +93,7 @@ test('next stays put while exact matches on this page are unapplied', async ({ p
   await expect(next).toHaveAttribute('aria-disabled', 'true')
   expect(await next.evaluate((element) => (element as HTMLButtonElement).disabled)).toBe(false)
   await next.focus()
-  await expect(page.getByRole('tooltip')).toHaveText('Apply or discard this page first')
+  await expect(page.getByRole('tooltip')).toHaveText("Apply or undo this page's changes first")
 
   let paged = false
   const mark = (request: { url: () => string; method: () => string }) => {
@@ -131,6 +131,98 @@ test('exact filter falls back to all after this page no longer has matches', asy
   await expect(dialog.getByRole('radio', { name: 'All 1' })).toBeChecked()
   await expect(dialog.getByText('tm_apply_b_00')).toBeVisible()
   await expect(dialog.getByText('No exact matches on this page')).toBeHidden()
+})
+
+test('generated translations block the next page until they are discarded', async ({ page }) => {
+  const project = await setupProject(page)
+  const strings: Record<string, string> = {}
+  for (let index = 0; index < 55; index += 1) {
+    strings[`tm_gen_${String(index).padStart(2, '0')}`] = `Generate me ${index}`
+  }
+  await importStringsViaApi(page, project.id, strings)
+
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Translate 50 cells' }).click()
+  await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
+  const next = dialog.getByRole('button', { name: 'Next page' })
+  await expect(next).toHaveAttribute('aria-disabled', 'true')
+  await next.focus()
+  await expect(page.getByRole('tooltip')).toHaveText("Apply or undo this page's changes first")
+
+  let paged = false
+  const mark = (request: { url: () => string; method: () => string }) => {
+    if (request.method() === 'POST' && request.url().includes('/translate/missing')) paged = true
+  }
+  page.on('request', mark)
+  await next.click({ force: true })
+  await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
+  expect(paged).toBe(false)
+  page.off('request', mark)
+
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const reopened = page.getByRole('dialog')
+  await expect(reopened.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
+  const nextAgain = reopened.getByRole('button', { name: 'Next page' })
+  await expect(nextAgain).not.toHaveAttribute('aria-disabled', 'true')
+  const response = page.waitForResponse(
+    (result) => result.request().method() === 'POST' && result.url().includes('/translate/missing'),
+  )
+  await nextAgain.click()
+  expect((await response).ok()).toBeTruthy()
+  await expect(reopened.getByText('tm_gen_50')).toBeVisible()
+})
+
+test('applying generated translations unlocks the next page', async ({ page }) => {
+  const project = await setupProject(page)
+  const strings: Record<string, string> = {}
+  for (let index = 0; index < 101; index += 1) {
+    strings[`tm_applied_${String(index).padStart(3, '0')}`] = `Apply me ${index}`
+  }
+  await importStringsViaApi(page, project.id, strings)
+
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Translate 50 cells' }).click()
+  await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Next page' })).toHaveAttribute('aria-disabled', 'true')
+
+  const reload = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),
+  )
+  await dialog.getByRole('button', { name: 'Apply 50 translations' }).click()
+  expect((await reload).ok()).toBeTruthy()
+  await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
+  const next = dialog.getByRole('button', { name: 'Next page' })
+  await expect(next).not.toHaveAttribute('aria-disabled', 'true')
+  const pageTwo = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),
+  )
+  await next.click()
+  expect((await pageTwo).ok()).toBeTruthy()
+  await expect(dialog.getByText('tm_applied_100')).toBeVisible()
+})
+
+test('description stacks under the source text on a phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  const project = await setupProject(page)
+  const created = await page.request.post(`/api/projects/${project.id}/strings`, {
+    data: { key: 'tm_narrow', source_text: 'A long source sentence that must stay readable on a phone' },
+  })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const dialog = page.getByRole('dialog')
+  const source = dialog.getByText('A long source sentence that must stay readable on a phone')
+  const description = dialog.getByLabel('Description')
+  await expect(source).toBeVisible()
+  const sourceBox = await source.boundingBox()
+  const descriptionBox = await description.boundingBox()
+  expect(sourceBox).toBeTruthy()
+  expect(descriptionBox).toBeTruthy()
+  expect(sourceBox!.width).toBeGreaterThan(120)
+  expect(descriptionBox!.y).toBeGreaterThan(sourceBox!.y + sourceBox!.height - 1)
 })
 
 test('a used match stays on the public color in dark mode', async ({ page }) => {
