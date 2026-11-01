@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import { History, type LucideIcon } from 'lucide-react'
+import { ChevronDown, History, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { QaIssueBadge } from './qa-issue-view'
 import type { TranslationMemoryMatch } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
@@ -18,21 +18,19 @@ export function MemoryCount({
   children: ReactNode
 }) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            aria-label={label}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            <Icon className="size-3.5" aria-hidden="true" />
-            {children}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label={label}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <Icon className="size-3.5" aria-hidden="true" />
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -79,6 +77,7 @@ export function MemoryMatch({
   disabled,
   used,
   hideUse,
+  actions,
   onUse,
 }: {
   locale: string
@@ -86,6 +85,7 @@ export function MemoryMatch({
   disabled?: boolean
   used?: boolean
   hideUse?: boolean
+  actions?: ReactNode
   onUse: (match: TranslationMemoryMatch) => void
 }) {
   return (
@@ -106,14 +106,15 @@ export function MemoryMatch({
           </p>
         ) : null}
         <p className="text-sm whitespace-pre-wrap wrap-anywhere">{match.translation}</p>
-        <p className="text-xs text-muted-foreground break-all">
+        <p className="font-mono text-xs text-muted-foreground break-all">
           <span translate="no">{match.key}</span> · {match.module_slug ?? 'Unassigned'}
         </p>
       </div>
+      {actions}
       {hideUse ? null : (
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
           disabled={disabled || used}
           aria-label={`Use ${locale} match from ${match.key}`}
@@ -147,32 +148,32 @@ function MemoryLocale({
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         {matches.length ? (
-          (expanded ? matches.slice(0, 3) : matches.slice(0, 1)).map((match) => (
+          (expanded ? matches.slice(0, 3) : matches.slice(0, 1)).map((match, index) => (
             <MemoryMatch
               key={match.string_id}
               locale={locale}
               match={match}
               disabled={disabled}
-              used={selected === match.translation}
+              used={selected === match.string_id}
               onUse={onUse}
+              actions={index === 0 && matches.length > 1 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`${expanded ? 'Collapse' : 'More'} matches for ${locale}`}
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded(!expanded)}
+                >
+                  {expanded ? 'Less' : `+${Math.min(matches.length, 3) - 1}`}
+                  <ChevronDown className={cn('size-3', expanded && 'rotate-180')} />
+                </Button>
+              ) : null}
             />
           ))
         ) : (
           <p className="text-xs text-muted-foreground">No match · AI will translate</p>
         )}
-        {matches.length > 1 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="self-start"
-            aria-label={`${expanded ? 'Collapse' : 'More'} matches for ${locale}`}
-            aria-expanded={expanded}
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? 'Show less' : `+${Math.min(matches.length, 3) - 1}`}
-          </Button>
-        ) : null}
       </div>
     </div>
   )
@@ -205,7 +206,7 @@ export function TranslationMemoryPanel({
   ).length
   return (
     <section aria-label="Previously published" className="rounded-xl border bg-muted/20 px-3">
-      <div className="flex items-center justify-between gap-2 py-2">
+      {loading || (!error && count > 0) ? <div className="flex items-center justify-between gap-2 py-2">
         <MemoryCount
           icon={History}
           label={
@@ -220,7 +221,7 @@ export function TranslationMemoryPanel({
           {exact > 0 && !loading && !error ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               disabled={disabled}
               onClick={onUseExact}
@@ -229,12 +230,12 @@ export function TranslationMemoryPanel({
             </Button>
           ) : null}
           {onUndo ? (
-            <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={onUndo}>
+            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onUndo}>
               Undo
             </Button>
           ) : null}
         </div>
-      </div>
+      </div> : null}
       {loading ? (
         <div
           role="status"
@@ -246,8 +247,14 @@ export function TranslationMemoryPanel({
           ))}
         </div>
       ) : error ? (
-        <p role="status" className="pb-3 text-xs text-muted-foreground">
+        <p role="status" className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+          <History className="size-3.5" aria-hidden="true" />
           Could not load published translations.
+        </p>
+      ) : count === 0 ? (
+        <p role="status" className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+          <History className="size-3.5 shrink-0" aria-hidden="true" />
+          No previously published match for this source text. Generate with AI fills the empty locales.
         </p>
       ) : (
         <div className="divide-y">

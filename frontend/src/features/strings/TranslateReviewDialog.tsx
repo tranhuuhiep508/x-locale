@@ -19,13 +19,12 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { MemoryCount, MemoryMatch } from '@/features/strings/translation-memory-view'
-import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { describedByFor, QA_APPLY_FOOTER, QaCountBadges, QaIssueBadge, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import {
   issueCounts,
   presentQaIssues,
-  shouldFoldCleanLocales,
   shouldShowQaIndex,
   type QaBaseline,
   type QaFilter,
@@ -121,14 +120,15 @@ function ProposalLocaleField({
   value,
   score,
   view,
-  foldClean,
   disabled,
   onChange,
   memory,
   selected,
+  selectedMatchId,
+  hasMatches,
   sourceKey,
   aiProposal,
-  onToggleMemory,
+  onUseAi,
   onUseMemory,
 }: {
   stringId: string
@@ -136,127 +136,102 @@ function ProposalLocaleField({
   value: string
   score: number | undefined
   view: QaView
-  foldClean: boolean
   disabled: boolean
   onChange: (value: string) => void
   memory?: TranslationMemoryMatch[]
   selected: boolean
+  selectedMatchId?: string
+  hasMatches: boolean
   sourceKey: string
   aiProposal?: { text: string; score?: number }
-  onToggleMemory: (checked: boolean) => void
+  onUseAi: () => void
   onUseMemory: (match: TranslationMemoryMatch) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
   const [compare, setCompare] = useState(false)
   const inputId = `proposal-${stringId}-${locale}`
   const issuesId = `qa-${stringId}-${locale}`
-  const presented = presentQaIssues(view.issues)
-  const clean = view.status === 'ready' && !view.stale && presented.length === 0
-  const folded = foldClean && clean && !expanded
+  const best = memory?.[0]
   return (
-    <Field
-      className={cn(
-        'rounded-lg border border-border/60 p-2.5',
-        selected ? 'bg-azure-50' : 'bg-muted/20',
-      )}
-      data-qa-status={view.status}
-    >
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+    <div className={cn('min-w-0 border-t p-3', selected && 'bg-azure-50')} data-qa-status={view.status}>
+      <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.4fr)_2rem] items-start gap-3">
+        <FieldLabel htmlFor={inputId} className="pt-1 font-mono text-xs font-semibold uppercase">{locale}</FieldLabel>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <FieldLabel
-              htmlFor={folded ? undefined : inputId}
-              className="uppercase font-mono text-xs font-semibold"
-            >
-              {locale}
-            </FieldLabel>
-            <ConfidenceBadge score={score} />
-            <span className="ml-auto">
-              <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
-            </span>
+          {!compare ? <Input
+            id={inputId}
+            className="h-8 text-xs"
+            value={value}
+            placeholder="Empty · AI on Translate"
+            disabled={disabled}
+            aria-describedby={describedByFor(view, issuesId)}
+            onChange={(event) => onChange(event.target.value)}
+          /> : <p className="text-xs text-muted-foreground">Choose what fills this cell</p>}
+          <div className="flex flex-wrap items-center gap-1">
+            {!compare ? <ConfidenceBadge score={score} /> : null}
+            <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
           </div>
-          {folded ? (
-            <button
-              type="button"
-              className="mt-1 block w-full truncate text-left text-xs text-muted-foreground"
-              onClick={() => setExpanded(true)}
-            >
-              {value}
-            </button>
-          ) : (
+        </div>
+        <div className="min-w-0">
+          {!compare && best ? <MemoryMatch
+            locale={locale}
+            match={best}
+            disabled={disabled}
+            used={selected && selectedMatchId === best.string_id && value === best.translation}
+            onUse={onUseMemory}
+          /> : !compare && hasMatches ? <p className="text-xs text-muted-foreground">No match · AI will translate</p> : null}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Compare ${locale} matches for ${sourceKey}`}
+          aria-expanded={compare}
+          aria-controls={`${inputId}-compare`}
+          onClick={() => setCompare(!compare)}
+        >
+          <ChevronDown className={cn(compare && 'rotate-180')} />
+        </Button>
+      </div>
+      {compare ? (
+        <div id={`${inputId}-compare`} className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 rounded-lg border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">AI proposal</p>
+              {selected ? <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onUseAi}>Use AI</Button> : null}
+            </div>
             <Textarea
               id={inputId}
-              className="mt-1 min-h-12 resize-none text-xs"
-              value={value}
+              className="min-h-16 resize-none text-xs"
+              value={selected ? aiProposal?.text ?? '' : value}
               rows={2}
               disabled={disabled}
               autoComplete="off"
               spellCheck
+              aria-label={locale}
               aria-describedby={describedByFor(view, issuesId)}
-              onChange={(event) => onChange(event.target.value)}
+              onChange={(event) => {
+                if (selected) onUseAi()
+                onChange(event.target.value)
+              }}
             />
-          )}
-        </div>
-        <div className="flex min-w-0 flex-col gap-2">
-          {memory?.length ? (
-            <>
-              <MemoryMatch
-                locale={locale}
-                match={memory[0]}
-                hideUse
-                disabled={disabled}
-                used={selected && value === memory[0].translation}
-                onUse={onUseMemory}
-              />
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={selected}
-                  disabled={disabled}
-                  aria-label={`Use match for ${locale} in ${sourceKey}`}
-                  onCheckedChange={onToggleMemory}
-                />
-                <span className="text-xs">Use match</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Compare ${locale} matches for ${sourceKey}`}
-                  aria-expanded={compare}
-                  onClick={() => setCompare(!compare)}
-                >
-                  <ChevronDown data-icon="inline-start" />
-                  {memory.length > 1 ? `+${Math.min(3, memory.length) - 1}` : 'Compare'}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">No match · AI will translate</p>
-          )}
-        </div>
-      </div>
-      {compare && memory?.length ? (
-        <div className="grid min-w-0 gap-3 border-t pt-3 sm:grid-cols-2">
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">AI proposal</p>
-            <p className="text-sm whitespace-pre-wrap wrap-anywhere">{aiProposal?.text || '—'}</p>
             <ConfidenceBadge score={aiProposal?.score} />
+            {!aiProposal?.text && selected ? <p className="mt-2 text-xs text-muted-foreground">Generated when you click Translate</p> : null}
           </div>
-          <div className="flex min-w-0 flex-col gap-3">
-            <p className="text-xs font-medium text-muted-foreground">Previously published</p>
-            {memory.slice(0, 3).map((match) => (
-              <MemoryMatch
-                key={match.string_id}
-                locale={locale}
-                match={match}
-                disabled={disabled}
-                used={selected && value === match.translation}
-                onUse={onUseMemory}
-              />
-            ))}
+          <div className="flex min-w-0 flex-col gap-2">
+            {memory?.length ? memory.slice(0, 3).map((match) => (
+              <div key={match.string_id} className={cn('rounded-lg border bg-card p-3', selected && selectedMatchId === match.string_id && value === match.translation && 'border-azure-300')}>
+                <MemoryMatch
+                  locale={locale}
+                  match={match}
+                  disabled={disabled}
+                  used={selected && selectedMatchId === match.string_id && value === match.translation}
+                  onUse={onUseMemory}
+                />
+              </div>
+            )) : <p className="text-xs text-muted-foreground">No match</p>}
           </div>
         </div>
       ) : null}
-    </Field>
+    </div>
   )
 }
 
@@ -264,7 +239,6 @@ function ProposalTreeNode({
   item,
   disabled,
   qa,
-  foldClean,
   onChange,
   onDescriptionChange,
   conflict,
@@ -272,14 +246,17 @@ function ProposalTreeNode({
   sourceConflict,
   onRemove,
   onUseMemory,
-  onToggleMemory,
+  onUseAi,
   cellOriginals,
+  selectedMatches,
+  hasMatches,
 }: {
+  selectedMatches: Record<string, { id: string; source: string }>
+  hasMatches: boolean
   cellOriginals: Record<string, TranslateProposalItem>
   item: TranslateProposalItem
   disabled: boolean
   qa: Record<string, QaView>
-  foldClean: boolean
   onChange: (stringId: string, locale: string, value: string) => void
   onDescriptionChange: (stringId: string, description: string) => void
   conflict?: DescriptionConflict
@@ -287,7 +264,7 @@ function ProposalTreeNode({
   sourceConflict?: TranslationSourceConflict
   onRemove: () => void
   onUseMemory: (stringId: string, locale: string, match: TranslationMemoryMatch) => void
-  onToggleMemory: (stringId: string, locale: string, checked: boolean) => void
+  onUseAi: (stringId: string, locale: string) => void
 }) {
   const locales = Object.entries(item.translations)
   const descriptionId = `proposal-description-${item.string_id}`
@@ -304,7 +281,7 @@ function ProposalTreeNode({
       id={`proposal-${item.string_id}`}
       className="grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all "
     >
-      <div className="flex min-w-0 flex-col gap-3.5">
+      <div className="grid min-w-0 gap-3.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)]">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
@@ -330,12 +307,11 @@ function ProposalTreeNode({
         </div>
 
         <Field>
-          <FieldLabel htmlFor={descriptionId} className="text-xs">Description</FieldLabel>
-          <Textarea
+          <FieldLabel htmlFor={descriptionId} className="sr-only">Description</FieldLabel>
+          <Input
             id={descriptionId}
-            className="min-h-12 resize-none text-xs"
+            className="h-8 text-xs"
             value={item.description ?? ''}
-            rows={2}
             disabled={disabled}
             autoComplete="off"
             placeholder="Context for a better translation"
@@ -369,12 +345,12 @@ function ProposalTreeNode({
       </div>
 
       <FieldGroup
-        className="min-w-0 gap-3 border-t pt-4"
+        className="min-w-0 gap-0 overflow-hidden rounded-lg border"
         role="group"
         aria-label={`Translations for ${item.key}`}
       >
-        {item.memory_error ? <p role="status" className="text-xs text-muted-foreground">Could not load published translations.</p> : null}
-        <div className="hidden grid-cols-2 gap-3 text-xs font-medium text-muted-foreground sm:grid"><span>AI proposal</span><span>Best published match</span></div>
+        {item.memory_error && hasMatches ? <p role="status" className="text-xs text-muted-foreground">Could not load published translations.</p> : null}
+        <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1.4fr)_2rem] gap-3 bg-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><span>Loc</span><span>AI proposal</span><span>Best published match</span></div>
         {locales.map(([locale, value]) => (
           <ProposalLocaleField
             key={locale}
@@ -384,12 +360,13 @@ function ProposalTreeNode({
             score={item.scores?.[locale]}
             memory={sourceConflict ? [] : item.memory?.[locale]}
             selected={item.memory_selected?.includes(locale) ?? false}
+            selectedMatchId={selectedMatches[qaId(item.string_id, locale)]?.source === item.source_text ? selectedMatches[qaId(item.string_id, locale)].id : undefined}
+            hasMatches={hasMatches}
             sourceKey={item.key}
             aiProposal={{ text: cellOriginals[qaId(item.string_id, locale)]?.translations[locale] ?? (item.memory_selected?.includes(locale) ? '' : value), score: (cellOriginals[qaId(item.string_id, locale)] ?? item).scores?.[locale] }}
-            onToggleMemory={(checked) => onToggleMemory(item.string_id, locale, checked)}
+            onUseAi={() => onUseAi(item.string_id, locale)}
             onUseMemory={(match) => onUseMemory(item.string_id, locale, match)}
             view={localeView(qa, item.string_id, locale)}
-            foldClean={foldClean}
             disabled={disabled}
             onChange={(next) => onChange(item.string_id, locale, next)}
           />
@@ -494,11 +471,18 @@ export function TranslateReviewDialog({
   )
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
+  const [selectedMatches, setSelectedMatches] = useState<Record<string, { id: string; source: string }>>({})
   const [filter, setFilter] = useState<QaFilter | 'matches' | 'exact'>('all')
 
   useEffect(() => {
     setDrafts(draftsFromItems(items))
     setMemoryUndo(null)
+    setSelectedMatches((prev) => Object.fromEntries(
+      Object.entries(prev).filter(([id, selection]) => items.some((item) =>
+        item.source_text === selection.source &&
+        (item.memory_selected ?? []).some((locale) => qaId(item.string_id, locale) === id),
+      )),
+    ))
     // Generation refreshes items; keep restore values for unchanged selected cells.
     setCellOriginals((prev) => Object.fromEntries(items.flatMap((item) =>
       (item.memory_selected ?? []).flatMap((locale) => {
@@ -525,6 +509,7 @@ export function TranslateReviewDialog({
   const usedCount = draftList.reduce((count, item) => count + (item.memory_selected?.length ?? 0), 0)
   const aiCount = localeCount(draftList) - usedCount
   function chooseMemory(stringId: string, locale: string, match: TranslationMemoryMatch) {
+    setSelectedMatches((prev) => ({ ...prev, [qaId(stringId, locale)]: { id: match.string_id, source: drafts[stringId].source_text } }))
     setMemoryUndo(null)
     setCellOriginals((prev) => ({
       ...prev,
@@ -550,12 +535,7 @@ export function TranslateReviewDialog({
     if (original?.issues?.[locale]) next.issues[locale] = original.issues[locale]
     return next
   }
-  function toggleMemory(stringId: string, locale: string, checked: boolean) {
-    if (checked) {
-      const match = drafts[stringId].memory?.[locale]?.[0]
-      if (match) chooseMemory(stringId, locale, match)
-      return
-    }
+  function restoreAi(stringId: string, locale: string) {
     setMemoryUndo(null)
     setDrafts((prev) => ({
       ...prev,
@@ -572,8 +552,10 @@ export function TranslateReviewDialog({
     setMemoryUndo(drafts)
     let next = drafts
     const originals = { ...cellOriginals }
+    const selections = { ...selectedMatches }
     for (const { item, locale, matches } of unusedExact) {
       originals[qaId(item.string_id, locale)] ??= item
+      selections[qaId(item.string_id, locale)] = { id: matches.find((match) => match.exact)!.string_id, source: item.source_text }
       next = applyMemoryTranslation(
         next,
         item.string_id,
@@ -581,6 +563,7 @@ export function TranslateReviewDialog({
         matches.find((match) => match.exact)!,
       )
     }
+    setSelectedMatches(selections)
     setCellOriginals(originals)
     setDrafts(next)
   }
@@ -647,7 +630,6 @@ export function TranslateReviewDialog({
   })
   const withErrors = draftList.filter((item) => tally(stringViews(item, qa)).errors > 0)
   const visible = filter === 'errors' ? withErrors : filter === 'issues' ? withIssues : filter === 'matches' ? draftList.filter((item) => memoryCells.some((cell) => cell.item.string_id === item.string_id)) : filter === 'exact' ? draftList.filter((item) => exactCells.some((cell) => cell.item.string_id === item.string_id)) : draftList
-  const foldClean = shouldFoldCleanLocales(draftList.length)
 
   useEffect(() => {
     if (filter === 'errors' && withErrors.length === 0) setFilter('all')
@@ -661,22 +643,34 @@ export function TranslateReviewDialog({
         if (!next && !applying && !generating) onClose()
       }}
     >
-      <ReviewDialogContent>
+      <ReviewDialogContent
+        className="sm:max-w-3xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          const content = event.target as HTMLElement
+          const control = Array.from(content.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled):not([type="hidden"]), textarea:not(:disabled), select:not(:disabled)',
+          )).find((element) => !element.closest(
+            '[data-slot="tooltip-trigger"], [hidden], [inert], [aria-hidden="true"], [aria-disabled="true"]',
+          ))
+          const target = control ?? content
+          target.focus({ preventScroll: true })
+        }}
+      >
         <ReviewDialogHeader>
           <DialogTitle>{generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
           {review && draftList.length > 0 ? (
-            <div className="flex flex-col gap-2 pt-1">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className={cn("flex flex-col gap-2 rounded-lg p-3", memoryCells.length > 0 && "border border-azure-200 bg-azure-50/50")}>
+              {memoryCells.length > 0 ? <div className="flex flex-wrap items-center gap-3">
                 <MemoryCount icon={History} label={`Previously published: ${memoryCells.length} of ${localeCount(draftList)} cells have a match`}>{memoryCells.length}/{localeCount(draftList)}</MemoryCount>
                 <MemoryCount icon={Equal} label={`${exactCells.length} cells have an exact match`}>{exactCells.length}</MemoryCount>
                 {usedCount > 0 ? <MemoryCount icon={Check} label={`${usedCount} cells use a match`}>{usedCount}</MemoryCount> : null}
-                {unusedExact.length > 0 ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={useExactMatches}>Use {unusedExact.length} exact matches</Button> : null}
+                {unusedExact.length > 0 ? <Button type="button" variant="outline" size="sm" className="ml-auto" disabled={busy} onClick={useExactMatches}>Use {unusedExact.length} exact matches</Button> : null}
                 {memoryUndo ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={undoExactMatches}>Undo</Button> : null}
-              </div>
+              </div> : <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><History className="size-3.5" aria-hidden="true" />{draftList.some((item) => item.memory_error) ? 'Could not load published translations.' : `No previously published matches on this page. Translate fills all ${localeCount(draftList)} cells with AI.`}</p>}
               <div className="flex flex-wrap items-center gap-2">
                 {generated ? <>
-                <span className="eyebrow">QA</span>
                 {checking ? <span className="text-xs text-muted-foreground">Checking…</span> : null}
                 <QaCountBadges
                   errors={pageCounts.errors}
@@ -689,7 +683,7 @@ export function TranslateReviewDialog({
                     : `in ${withIssues.length} of ${draftList.length} ${draftList.length === 1 ? 'string' : 'strings'}`}
                 </span>
                 </> : null}
-                <ToggleGroup
+                {memoryCells.length > 0 || generated ? <ToggleGroup
                   type="single"
                   variant="outline"
                   size="sm"
@@ -697,12 +691,11 @@ export function TranslateReviewDialog({
                   onValueChange={(value) => {
                     if (value === 'all' || value === 'issues' || value === 'errors' || value === 'matches' || value === 'exact') setFilter(value)
                   }}
-                  className="ml-auto"
                   aria-label="Filter translations"
                 >
                   <ToggleGroupItem value="all">All {draftList.length}</ToggleGroupItem>
-                  <ToggleGroupItem value="matches">With matches</ToggleGroupItem>
-                  <ToggleGroupItem value="exact">Exact</ToggleGroupItem>
+                  <ToggleGroupItem value="matches">With matches {new Set(memoryCells.map((cell) => cell.item.string_id)).size}</ToggleGroupItem>
+                  <ToggleGroupItem value="exact">Exact {new Set(exactCells.map((cell) => cell.item.string_id)).size}</ToggleGroupItem>
                   {generated ? <>
                   <ToggleGroupItem value="issues" disabled={withIssues.length === 0}>
                     With issues {withIssues.length}
@@ -711,7 +704,7 @@ export function TranslateReviewDialog({
                     Errors {withErrors.length}
                   </ToggleGroupItem>
                   </> : null}
-                </ToggleGroup>
+                </ToggleGroup> : null}
               </div>
             </div>
           ) : null}
@@ -774,8 +767,9 @@ export function TranslateReviewDialog({
                     key={item.string_id}
                     item={item}
                     cellOriginals={cellOriginals}
+                    selectedMatches={selectedMatches}
+                    hasMatches={memoryCells.length > 0}
                     qa={qa}
-                    foldClean={foldClean}
                     conflict={conflicts.find((conflict) => conflict.string_id === item.string_id)}
                     sourceConflict={sourceConflicts.find((conflict) => conflict.string_id === item.string_id)}
                     onRemove={() => onRemoveFromReview?.(draftList, item.string_id)}
@@ -786,7 +780,7 @@ export function TranslateReviewDialog({
                       onResolveConflict?.(conflict)
                     }}
                     onUseMemory={chooseMemory}
-                    onToggleMemory={toggleMemory}
+                    onUseAi={restoreAi}
                     disabled={applying || generating || pagingInPlace}
                     onChange={(stringId, locale, value) => {
                       setMemoryUndo(null)

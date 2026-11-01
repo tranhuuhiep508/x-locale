@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
-import { MatchBar } from './translation-memory-view'
+import { afterEach, expect, it, vi } from 'vitest'
+import { MatchBar, TranslationMemoryPanel } from './translation-memory-view'
 import type { TranslationMemoryMatch } from '@/lib/api/types'
 
 afterEach(cleanup)
@@ -33,4 +33,12 @@ it('truncates a near-exact match and reserves 100 for exact matches', () => {
 it('shows the minimum visible fill for an 80% match', () => {
   render(<MatchBar match={{ ...match, similarity: 0.8 }} />)
   expect(screen.getByRole('meter').firstElementChild?.getAttribute('style')).toContain('width: 10%')
+})
+
+it.each([undefined, 'Lookup failed'])('renders one quiet line without counts when empty or failed (%s)', (error) => {
+  render(<TranslationMemoryPanel locales={['en', 'ja']} matches={{}} loading={false} error={error} selected={{}} onUse={vi.fn()} onUseExact={vi.fn()} />)
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+  expect(screen.getByRole('status').textContent).toContain(error ? 'Could not load published translations.' : 'No previously published match for this source text.')
+  expect(screen.queryByText('0/2')).toBeNull()
+  expect(screen.queryByText('No match · AI will translate')).toBeNull()
 })

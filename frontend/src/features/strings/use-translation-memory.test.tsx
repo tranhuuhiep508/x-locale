@@ -48,7 +48,6 @@ it('debounces source edits, blocks AI while waiting, and ignores late responses'
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.loading).toBe(false)
-  expect(result.current.checked).toBe(true)
 })
 
 it('invalidates lookups for locale changes and does not fetch empty sources', async () => {
@@ -72,4 +71,21 @@ it('invalidates lookups for locale changes and does not fetch empty sources', as
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.loading).toBe(false)
+})
+
+it('keeps previous results throughout the debounce and a pending refresh', async () => {
+  const previous = { en: [{ string_id: 'a', key: 'old', module_id: null, module_slug: null, matched_source_text: 'Old', translation: 'Hello', exact: true, similarity: 1, issues: [] }] }
+  vi.mocked(stringsApi.translateMemory).mockResolvedValueOnce({ source_text: 'Old', matches: previous })
+  const { result, rerender } = renderHook(({ source }) => useTranslationMemory('p', source, ['en']), { initialProps: { source: 'Old' } })
+  await act(async () => {})
+  let finish!: (value: TranslationMemoryResult) => void
+  vi.mocked(stringsApi.translateMemory).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+  rerender({ source: 'New' })
+  expect(result.current.matches).toEqual(previous)
+  expect(result.current.loading).toBe(false)
+  await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+  expect(result.current.matches).toEqual(previous)
+  expect(result.current.loading).toBe(false)
+  await act(async () => { finish({ source_text: 'New', matches: {} }) })
+  expect(result.current.matches).toEqual({})
 })

@@ -201,7 +201,7 @@ export default function StringFormDialog({
   const [baseline, setBaseline] = useState(entry ?? null)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
   const memory = useTranslationMemory(projectId, sourceText, targetLocales, entry?.id, baseline?.source_text)
-  const [memorySelection, setMemorySelection] = useState<{ source: string; locales: string[] }>({ source: sourceText, locales: [] })
+  const [memorySelection, setMemorySelection] = useState<{ source: string; locales: string[]; matches?: Record<string, TranslationMemoryMatch> }>({ source: sourceText, locales: [] })
   const memoryLocales = memorySelection.source === sourceText ? memorySelection.locales : []
   const aiLocales = targetLocales.filter((locale) => !memoryLocales.includes(locale))
   const currentSource = useRef(sourceText)
@@ -211,7 +211,7 @@ export default function StringFormDialog({
     setTranslations((prev) => ({ ...prev, [locale]: match.translation }))
     setScores((prev) => dropScore(prev, locale))
     setQaSeeds((prev) => ({ ...prev, [locale]: { source: sourceText, text: match.translation, issues: match.issues } }))
-    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, locale])] })
+    setMemorySelection((prev) => ({ source: sourceText, locales: [...new Set([...prev.locales, locale])], matches: { ...prev.matches, [locale]: match } }))
   }
 
   const [memoryUndo, setMemoryUndo] = useState<null | {
@@ -240,7 +240,6 @@ export default function StringFormDialog({
         locale,
         memory.matches[locale].find((match) => match.exact)!,
       )
-    setMemorySelection({ source: sourceText, locales: [...new Set([...memoryLocales, ...locales])] })
   }
   function undoExactMatches() {
     if (!memoryUndo || memoryUndo.source !== sourceText) return
@@ -867,7 +866,10 @@ export default function StringFormDialog({
                     loading={memory.loading}
                     error={memory.error}
                     disabled={busy || Boolean(entry?.deleted_at)}
-                    selected={Object.fromEntries(memoryLocales.map((locale) => [locale, translations[locale]]))}
+                    selected={Object.fromEntries(memoryLocales.flatMap((locale) => {
+                      const match = memorySelection.matches?.[locale]
+                      return match && translations[locale] === match.translation ? [[locale, match.string_id]] : []
+                    }))}
                     onUse={(locale, match) => {
                       setMemoryUndo(null)
                       choosePublished(locale, match)
