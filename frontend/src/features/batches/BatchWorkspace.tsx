@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, Globe2, RotateCcw, Upload, Wand2 } from 'lucide-react'
+import { ArrowLeft, Check, Globe2, Pencil, RotateCcw, Upload, Wand2 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -228,6 +228,17 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 >
                   Review translations
                 </h2>
+                <div
+                  className="flex items-center gap-4 text-xs text-muted-foreground"
+                  aria-label="Comparison legend"
+                >
+                  <span className="flex items-center gap-1">
+                    <Globe2 aria-hidden="true" className="size-3.5" /> Published
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Pencil aria-hidden="true" className="size-3.5 text-primary" /> To publish
+                  </span>
+                </div>
               </div>
               {visible.map((entry) => (
                 <section
@@ -259,10 +270,14 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                         <p className="eyebrow">Source</p>
                         <Badge variant="secondary">{project?.base_language.toUpperCase()}</Badge>
                       </div>
-                      <div className="flex flex-col gap-1 rounded-md border bg-background p-2">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Published source
-                        </p>
+                      <div
+                        className="flex min-w-0 items-start gap-2 rounded-md border bg-background p-2"
+                        aria-label="Published source"
+                      >
+                        <Globe2
+                          aria-hidden="true"
+                          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                        />
                         <p
                           lang={project?.base_language}
                           className="text-sm whitespace-pre-wrap wrap-anywhere"
@@ -272,12 +287,16 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       </div>
                       <div
                         className={cn(
-                          'flex flex-col gap-1 rounded-md border p-2',
+                          'flex min-w-0 items-start gap-2 rounded-md border p-2',
                           entry.source_text !== entry.published_source_text &&
                             'border-primary/40 bg-primary/5'
                         )}
                       >
-                        <p className="text-xs font-medium text-primary">Source to publish</p>
+                        <Pencil
+                          aria-hidden="true"
+                          className="mt-0.5 size-3.5 shrink-0 text-primary"
+                        />
+                        <span className="sr-only">Source to publish: </span>
                         <p
                           lang={project?.base_language}
                           className="text-sm font-medium whitespace-pre-wrap wrap-anywhere"
@@ -319,8 +338,14 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                 )}
                               </div>
                             </div>
-                            <div className="flex min-w-0 flex-col gap-1 rounded-md border bg-muted/40 px-2.5 py-2">
-                              <p className="text-xs font-medium text-muted-foreground">Published</p>
+                            <div
+                              className="flex min-w-0 items-start gap-2 rounded-md border bg-muted/40 px-2.5 py-2"
+                              aria-label={`${locale.toUpperCase()} published translation`}
+                            >
+                              <Globe2
+                                aria-hidden="true"
+                                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                              />
                               <p
                                 lang={locale}
                                 className="text-sm whitespace-pre-wrap wrap-anywhere"
@@ -330,28 +355,31 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                   : translation.published_value || 'Empty'}
                               </p>
                             </div>
-                            <div className="flex items-center justify-between gap-2 pt-1">
-                              <p className="text-xs font-medium text-primary">To publish</p>
-                              <span className="text-xs text-muted-foreground">
-                                {changed ? 'Changed' : 'No change'}
-                              </span>
+                            <div className="flex min-w-0 items-start gap-2">
+                              <Pencil
+                                aria-hidden="true"
+                                className="mt-3 size-3.5 shrink-0 text-primary"
+                              />
+                              <Textarea
+                                id={id}
+                                lang={locale}
+                                disabled={busy || workspace.stale}
+                                rows={1}
+                                className={cn(
+                                  'min-h-10 py-1.5',
+                                  changed && 'border-primary/60 bg-primary/5'
+                                )}
+                                value={translation?.value ?? ''}
+                                placeholder="Missing translation"
+                                aria-label={`${locale.toUpperCase()} translation for ${entry.key}`}
+                                onChange={(event) =>
+                                  workspace.edit(entry, locale, event.target.value)
+                                }
+                              />
                             </div>
-                            <Textarea
-                              id={id}
-                              lang={locale}
-                              disabled={busy || workspace.stale}
-                              rows={1}
-                              className={cn(
-                                'min-h-10 py-1.5',
-                                changed && 'border-primary/60 bg-primary/5'
-                              )}
-                              value={translation?.value ?? ''}
-                              placeholder="Missing translation"
-                              aria-label={`${locale.toUpperCase()} translation for ${entry.key}`}
-                              onChange={(event) =>
-                                workspace.edit(entry, locale, event.target.value)
-                              }
-                            />
+                            <span className="sr-only">
+                              {changed ? 'Changed from published' : 'No change from published'}
+                            </span>
                           </Field>
                         )
                       })}
