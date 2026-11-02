@@ -31,8 +31,8 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   })
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [qaBaselines, setQaBaselines] = useState<Record<string, QaBaseline>>({})
-  const [selected, setSelected] = useState<string[] | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [action, setAction] = useState<'translate' | 'publish' | null>(null)
+  const [published, setPublished] = useState(false)
   const [started, setStarted] = useState(false)
   const [error, setError] = useState('')
   const [stale, setStale] = useState(false)
@@ -48,14 +48,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     }
   }, [])
   const locales = (project?.target_languages ?? []).filter((l) => l !== project?.base_language)
-  const chosen = (selected ?? locales).filter((l) => locales.includes(l))
-  useBlocker({
-    shouldBlockFn: () =>
-      started &&
-      !window.confirm(
-        'Leave this workflow? Temporary translations will be discarded and you will need to start again.'
-      ),
-    enableBeforeUnload: started,
+  const blocker = useBlocker({
+    shouldBlockFn: () => started || Boolean(action),
+    withResolver: true,
+    enableBeforeUnload: started || Boolean(action),
   })
 
   function stage(items: TranslateProposalItem[]) {
@@ -101,6 +97,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   }
   function edit(entry: StringEntry, locale: string, value: string) {
     setStarted(true)
+    setPublished(false)
     setNotice('')
     setDrafts((previous) => ({
       ...previous,
@@ -139,9 +136,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   }, [job.data])
 
   async function translate() {
-    if (operation.current || !chosen.length || jobId || Object.keys(drafts).length) return
+    if (operation.current || !locales.length || jobId || Object.keys(drafts).length) return
     operation.current = true
-    setBusy(true)
+    setAction('translate')
+    setPublished(false)
     setStarted(true)
     setError('')
     setNotice('')
@@ -152,7 +150,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         deleted: false,
         pending_delete: false,
         overwrite: true,
-        locales: chosen,
+        locales,
       })
       if (!mounted.current) return
       if (result.job_id) setJobId(result.job_id)
@@ -161,16 +159,15 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       if (mounted.current) setError(message(e))
     } finally {
       operation.current = false
-      if (mounted.current) setBusy(false)
+      if (mounted.current) setAction(null)
     }
   }
   async function restart() {
     if (operation.current) return
-    if (started && !window.confirm('Discard temporary translations and start again?')) return
     setDrafts({})
     setQaBaselines({})
     setJobId(null)
-    setSelected(null)
+    setPublished(false)
     setStarted(false)
     setStale(false)
     setError('')
@@ -186,7 +183,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     const snapshot = query.data
     if (!snapshot || operation.current || jobId || stale) return
     operation.current = true
-    setBusy(true)
+    setAction('publish')
     setError('')
     try {
       await stringsApi.publishCliPushBatch(projectRef, batchId, {
@@ -211,6 +208,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       setDrafts({})
       setQaBaselines({})
       setStarted(false)
+      setPublished(true)
       setNotice('Batch saved and published. Available on the next public pull or export.')
       refreshProjectContent(qc, projectRef)
       const next = await stringsApi.cliPushBatch(projectRef, batchId)
@@ -224,7 +222,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       } else setError(message(e))
     } finally {
       operation.current = false
-      if (mounted.current) setBusy(false)
+      if (mounted.current) setAction(null)
     }
   }
   const items =
@@ -249,15 +247,21 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     project,
     query,
     batch: query.data ? { ...query.data, items } : undefined,
-    chosen,
     locales,
     hasDrafts: Object.keys(drafts).length > 0,
-    setSelected,
     edit,
-    busy: busy || Boolean(jobId),
+    busy: Boolean(action) || Boolean(jobId),
+    publishing: action === 'publish',
+    published,
+    blocker,
     error,
     stale,
-    progress: jobId ? 'Generating translations…' : busy ? 'Working…' : '',
+    progress:
+      jobId || action === 'translate'
+        ? 'Generating translations…'
+        : action === 'publish'
+          ? 'Saving and publishing batch…'
+          : '',
     notice,
     started,
     qaBaselines,

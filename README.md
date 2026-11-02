@@ -206,8 +206,9 @@ More detail: [docs/](docs/).
 
 After `loc push`, open **Activity → CLI push → Review this batch**. The batch
 workspace shows the pushed strings, their working translations, and their
-published values. Choose target languages and click **Translate all** to regenerate
-translations for review, including existing text. Generated results and manual edits
+published values. A Translate → Review → Publish stepper tracks the workflow.
+Click **Translate all** to regenerate every project target language for review,
+including existing text. Generated results and manual edits
 stay temporary in this workspace. Review all locales, then click **Publish batch**
 to save and publish the whole batch in one transaction. Leaving or reloading before
 completion discards progress; the workflow must be started again. Public exports

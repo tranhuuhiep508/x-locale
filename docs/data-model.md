@@ -187,11 +187,15 @@ excluded lifecycle counts, and the existing publication fingerprint. An unknown,
 other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
 empty review. No additional workflow state or schema migration is required.
 
-The dashboard generates read-only translation proposals and keeps them, manual
+The dashboard automatically translates all configured project target languages
+(excluding the base language), with no language picker. The stepper shows Translate,
+Review, and Publish. It generates read-only translation proposals and keeps them, manual
 edits, confidence scores, and QA findings in memory only. It does not call
 `/translate/apply`, save on blur, or store resumable jobs. Leaving or reloading
 abandons temporary progress and starts a new review from saved content. Other
-editors retain their existing blur-save behavior.
+editors retain their existing blur-save behavior. In-app leave and restart
+confirmations use the shared shadcn dialog; browser reload/close warnings remain
+controlled by the browser.
 
 Final `POST /api/projects/{project_id}/cli-push-batches/{batch_id}/publish` accepts
 the original review fingerprint and all staged translation changes. The server
@@ -204,6 +208,6 @@ Any validation, stale-content, or publication failure rolls back the entire fina
 request, including translation edits and audit records. A stale workflow must be
 restarted before publication. The original CLI push remains saved as before.
 
-Publication is still per string across all locales, including locales not selected
-for AI. Missing values and QA issues remain advisory. The existing catalog,
+Publication is still per string across all locales, including historical locales
+outside the current project targets. These remain visible for review. Missing values and QA issues remain advisory. The existing catalog,
 translation Apply, audit, Undo, export, and soft-delete semantics are retained.

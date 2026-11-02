@@ -1,3 +1,4 @@
+import { useBlocker } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -110,6 +111,7 @@ async function loaded() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(useBlocker).mockReturnValue({ status: 'idle' } as ReturnType<typeof useBlocker>)
   sessionStorage.clear()
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
   batch = {
@@ -226,7 +228,6 @@ it('requires restarting after a stale final snapshot and discards old temporary 
   vi.mocked(stringsApi.publishCliPushBatch).mockRejectedValueOnce(
     new ApiError(409, 'Changed', { detail: { code: 'publish_fingerprint_mismatch' } })
   )
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
   show()
   await loaded()
   fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
@@ -236,7 +237,9 @@ it('requires restarting after a stale final snapshot and discards old temporary 
   expect(
     (screen.getByRole('button', { name: /Publish batch/ }) as HTMLButtonElement).disabled
   ).toBe(true)
-  fireEvent.click(screen.getAllByRole('button', { name: 'Restart workflow' })[0])
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  await screen.findByRole('alertdialog', { name: 'Restart this workflow?' })
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and restart' }))
   await waitFor(() =>
     expect(
       (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
@@ -315,4 +318,70 @@ it('does not stage a late response after leaving the workflow', async () => {
       .value
   ).toBe('Old')
   expect(stringsApi.translateApply).not.toHaveBeenCalled()
+})
+
+it('uses every project target language automatically and marks the current review step', async () => {
+  show()
+  await loaded()
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(
+    screen.getByText('Translate', { exact: false, selector: 'li[aria-current="step"] span' })
+  ).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ locales: ['en', 'ja'], batch_id: 'push' })
+  )
+  expect(
+    screen.getByText('Review', { exact: true }).closest('li')?.getAttribute('aria-current')
+  ).toBe('step')
+})
+it('keeps temporary edits when restart is cancelled and discards them only after confirmation', async () => {
+  const confirm = vi.spyOn(window, 'confirm')
+  show()
+  await loaded()
+  const field = screen.getByRole('textbox', { name: 'EN translation for login.0' })
+  fireEvent.change(field, { target: { value: 'My review' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  await screen.findByRole('alertdialog', { name: 'Restart this workflow?' })
+  fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }))
+  expect((field as HTMLTextAreaElement).value).toBe('My review')
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and restart' }))
+  await waitFor(() => expect((field as HTMLTextAreaElement).value).toBe('Old'))
+  expect(confirm).not.toHaveBeenCalled()
+})
+it('uses the shadcn leave dialog to cancel or continue blocked navigation', async () => {
+  const reset = vi.fn()
+  const proceed = vi.fn()
+  vi.mocked(useBlocker).mockReturnValue({
+    status: 'blocked',
+    reset,
+    proceed,
+  } as unknown as ReturnType<typeof useBlocker>)
+  show()
+  await screen.findByRole('alertdialog', { name: 'Leave this workflow?' })
+  fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }))
+  expect(reset).toHaveBeenCalledTimes(1)
+  expect(proceed).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }))
+  expect(proceed).toHaveBeenCalledTimes(1)
+})
+it('shows pending translations outside project targets for publication review', async () => {
+  batch.items[0].translations.push({
+    id: null,
+    updated_at: null,
+    locale: 'fr',
+    value: 'En attente',
+    published_value: 'Ancien',
+    confidence: null,
+  })
+  show()
+  await loaded()
+  expect(
+    (screen.getByRole('textbox', { name: 'FR translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('En attente')
+  expect(screen.getByText('Published: Ancien')).toBeDefined()
 })

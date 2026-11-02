@@ -97,12 +97,14 @@ test("real CLI push → batch translation → temporary review → atomic public
   await expect(
     page.getByText("1 new · 2 updated", { exact: false }),
   ).toBeVisible();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Translate all", exact: true })
     .click();
   await expect(
     page.getByText("Translations are ready for review.", { exact: false }),
   ).toBeVisible();
+  await expect(page.locator('[aria-current="step"]')).toContainText("Review");
   const before = await page.request.get(
     `${root}/export?stage=public&locale=en`,
   );
@@ -129,12 +131,29 @@ test("real CLI push → batch translation → temporary review → atomic public
   await expect(
     page.getByText("Translations are ready for review.", { exact: false }),
   ).toBeVisible();
-  // Leaving the workflow also drops all temporary content.
-  page.once("dialog", (dialog) => dialog.accept());
+  // Leaving uses the app dialog; cancelling keeps the temporary content.
+  const generated = await english.inputValue();
   await page
     .getByRole("link", { name: "Activity", exact: true })
     .first()
     .click();
+  const leaveDialog = page.getByRole("alertdialog", {
+    name: "Leave this workflow?",
+  });
+  await expect(leaveDialog).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("batch-leave-dialog.png"),
+  });
+  await expect(
+    leaveDialog.getByRole("button", { name: "Keep reviewing" }),
+  ).toBeFocused();
+  await leaveDialog.getByRole("button", { name: "Keep reviewing" }).click();
+  await expect(english).toHaveValue(generated);
+  await page
+    .getByRole("link", { name: "Activity", exact: true })
+    .first()
+    .click();
+  await leaveDialog.getByRole("button", { name: "Discard and leave" }).click();
   await expect(
     page.getByRole("heading", { name: "Activity", exact: true }),
   ).toBeVisible();
@@ -156,6 +175,9 @@ test("real CLI push → batch translation → temporary review → atomic public
       (t: { locale: string }) => t.locale === "en",
     ).value,
   ).toBe("Log in");
+  await page
+    .getByRole("heading", { name: "CLI push batch", exact: true })
+    .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath("batch-review-light.png"),
     fullPage: true,
@@ -166,6 +188,10 @@ test("real CLI push → batch translation → temporary review → atomic public
     page.getByText("Batch saved and published.", { exact: false }),
   ).toBeVisible();
   expect(await page.getByRole("dialog").count()).toBe(0);
+  await expect(page.locator('[aria-current="step"]')).toHaveCount(0);
+  await expect(
+    page.getByText("Batch published", { exact: true }),
+  ).toBeVisible();
   const after = await page.request.get(`${root}/export?stage=public&locale=en`);
   expect((await after.json()).en["login.title"]).toBe("Log in with email");
 
@@ -188,8 +214,11 @@ test("real CLI push → batch translation → temporary review → atomic public
   );
   expect((await unchanged.json()).en["login.title"]).toBe("Log in with email");
   await expect(publish).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Restart workflow" }).click();
+  await page
+    .getByRole("alertdialog", { name: "Restart this workflow?" })
+    .getByRole("button", { name: "Discard and restart" })
+    .click();
   await expect(english).toHaveValue("Newest edit");
   await expect(publish).toBeEnabled();
   await publish.click();
@@ -201,6 +230,9 @@ test("real CLI push → batch translation → temporary review → atomic public
   );
   expect((await republished.json()).en["login.title"]).toBe("Newest edit");
   // Both appearances and a narrow screen retain usable fields and no horizontal overflow.
+  await page
+    .getByRole("heading", { name: "CLI push batch", exact: true })
+    .scrollIntoViewIfNeeded();
   await page.evaluate(() => document.documentElement.classList.add("dark"));
   await page.screenshot({
     path: testInfo.outputPath("batch-review-dark.png"),
@@ -212,6 +244,13 @@ test("real CLI push → batch translation → temporary review → atomic public
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(overflow).toBe(false);
+  await english.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("batch-review-mobile-fields.png"),
+  });
+  await page
+    .getByRole("heading", { name: "CLI push batch", exact: true })
+    .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath("batch-review-mobile.png"),
     fullPage: true,
