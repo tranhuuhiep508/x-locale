@@ -400,6 +400,18 @@ class CliPushBatchOut(PublishPreviewEntriesOut):
     excluded_count: int
 
 
+class CliPushPublishItem(BaseModel):
+    string_id: UUID
+    expected_source_text: str
+    translations: TextValues
+    scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
+
+
+class CliPushPublishRequest(BaseModel):
+    fingerprint: str = Field(min_length=1)
+    items: list[CliPushPublishItem] = Field(default_factory=list)
+
+
 # ── Translate ─────────────────────────────────────────────────────────
 
 
@@ -500,7 +512,6 @@ class TranslateProposalItem(BaseModel):
     status: str
     description: str | None = None
     translations: dict[str, str]
-    expected_translations: dict[str, str] = Field(default_factory=dict)
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
     memory: dict[str, list[TranslationMemoryMatch]] = Field(default_factory=dict)
@@ -520,7 +531,6 @@ class TranslateApplyItem(BaseModel):
     string_id: UUID
     expected_source_text: str
     translations: TextValues
-    expected_translations: TextValues | None = None
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     # Baseline of the stored description; may exceed TEXT_MAX_LENGTH.
@@ -538,17 +548,6 @@ class TranslateApplyItem(BaseModel):
 
 class TranslateApplyRequest(BaseModel):
     items: list[TranslateApplyItem] = Field(max_length=100)
-    overwrite: bool = False
-
-    @model_validator(mode="after")
-    def require_translation_baselines(self) -> "TranslateApplyRequest":
-        if self.overwrite and any(
-            item.expected_translations is None
-            or not item.translations.keys() <= item.expected_translations.keys()
-            for item in self.items
-        ):
-            raise ValueError("Overwrite requires expected_translations for every translation")
-        return self
 
 
 class TranslateApplyResult(BaseModel):

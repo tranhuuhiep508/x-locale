@@ -207,9 +207,11 @@ More detail: [docs/](docs/).
 After `loc push`, open **Activity → CLI push → Review this batch**. The batch
 workspace shows the pushed strings, their working translations, and their
 published values. Choose target languages and click **Translate all** to regenerate
-those working translations, including existing text. Results save as drafts;
-edit translations on blur, review all locales, then click **Publish batch** once.
-Public exports keep using the previous snapshot until that explicit publication.
+translations for review, including existing text. Generated results and manual edits
+stay temporary in this workspace. Review all locales, then click **Publish batch**
+to save and publish the whole batch in one transaction. Leaving or reloading before
+completion discards progress; the workflow must be started again. Public exports
+and saved working translations remain unchanged until final publication.
 
 This is the default workflow for new CLI push batches, with no automation setting.
 CLI commands/configuration and dashboard import/catalog workflows are unchanged.

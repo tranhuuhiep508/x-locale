@@ -472,7 +472,6 @@ def _proposal_fields(
         "key": entry.key,
         "status": _status_str(entry),
         "description": _description_for(entry, descriptions),
-        "expected_translations": {t.locale: t.value for t in entry.translations},
     }
 
 
@@ -498,10 +497,6 @@ def proposals_from_results(
         proposals.append(
             {
                 **meta,
-                "expected_translations": {
-                    locale: meta.get("expected_translations", {}).get(locale, "")
-                    for locale in translations
-                },
                 "source_text": item.source_text,
                 "translations": translations,
                 "scores": _scores_from_cells(locale_map, item.locales),
@@ -542,8 +537,6 @@ def commit_proposals(
     db: Session,
     project: Project,
     items: list[TranslateApplyItem],
-    *,
-    overwrite: bool = False,
 ) -> tuple[int, list[str]]:
     if not items:
         return 0, []
@@ -570,33 +563,6 @@ def commit_proposals(
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
-    if overwrite:
-        conflicts = []
-        for item in items:
-            entry = by_id.get(item.string_id)
-            if entry is None or entry.pending_delete:
-                conflicts.append({"string_id": str(item.string_id), "reason": "unavailable"})
-                continue
-            current = {t.locale: t.value for t in entry.translations}
-            for locale, value in item.translations.items():
-                expected = (item.expected_translations or {}).get(locale)
-                if expected is None or current.get(locale, "") not in (expected, value):
-                    conflicts.append(
-                        {
-                            "string_id": str(item.string_id),
-                            "locale": locale,
-                            "value": current.get(locale, ""),
-                        }
-                    )
-        if conflicts:
-            raise HTTPException(
-                409,
-                detail={
-                    "code": "stale_translation_target",
-                    "message": "Translations changed or strings are unavailable. Review before retrying.",
-                    "conflicts": conflicts,
-                },
-            )
     source_conflicts = [
         TranslationSourceConflict(
             string_id=entry.id,
@@ -655,9 +621,7 @@ def commit_proposals(
             if not value or not value.strip():
                 continue
             translation = _ensure_translation(db, entry, locale)
-            if translation.value.strip() and not overwrite:
-                continue
-            if translation.value == value:
+            if translation.value.strip():
                 continue
             translation.value = value
             translation.confidence = item.scores.get(locale)

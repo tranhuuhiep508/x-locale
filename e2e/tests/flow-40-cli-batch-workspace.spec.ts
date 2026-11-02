@@ -11,7 +11,7 @@ const repo = path.resolve(
   "../..",
 );
 
-test("real CLI push → batch translation → checked edit → one-click publication", async ({
+test("real CLI push → batch translation → temporary review → atomic publication", async ({
   page,
 }, testInfo) => {
   await page.goto("/");
@@ -101,7 +101,7 @@ test("real CLI push → batch translation → checked edit → one-click publica
     .getByRole("button", { name: "Translate all", exact: true })
     .click();
   await expect(
-    page.getByText("Translations saved to working copy.", { exact: false }),
+    page.getByText("Translations are ready for review.", { exact: false }),
   ).toBeVisible();
   const before = await page.request.get(
     `${root}/export?stage=public&locale=en`,
@@ -111,11 +111,51 @@ test("real CLI push → batch translation → checked edit → one-click publica
     name: "EN translation for login.title",
     exact: true,
   });
-  await english.fill("Log in with email");
-  await english.blur();
+  const savedBefore = await page.request.get(
+    `${root}/strings/${existing[0].id}`,
+  );
+  expect(
+    (await savedBefore.json()).translations.find(
+      (t: { locale: string }) => t.locale === "en",
+    ).value,
+  ).toBe("Log in");
+  // Abandon generation through reload: nothing is saved or resumed.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.reload();
+  await expect(english).toHaveValue("Log in");
+  await page
+    .getByRole("button", { name: "Translate all", exact: true })
+    .click();
   await expect(
-    page.getByText("Saved to working copy.", { exact: false }),
+    page.getByText("Translations are ready for review.", { exact: false }),
   ).toBeVisible();
+  // Leaving the workflow also drops all temporary content.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("link", { name: "Activity", exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Activity", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Review this batch" }).first().click();
+  await expect(english).toHaveValue("Log in");
+  await page
+    .getByRole("button", { name: "Translate all", exact: true })
+    .click();
+  await expect(
+    page.getByText("Translations are ready for review.", { exact: false }),
+  ).toBeVisible();
+  await english.fill("Log in with email");
+  await page.keyboard.press("Tab");
+  const stillSaved = await page.request.get(
+    `${root}/strings/${existing[0].id}`,
+  );
+  expect(
+    (await stillSaved.json()).translations.find(
+      (t: { locale: string }) => t.locale === "en",
+    ).value,
+  ).toBe("Log in");
   await page.screenshot({
     path: testInfo.outputPath("batch-review-light.png"),
     fullPage: true,
@@ -123,7 +163,7 @@ test("real CLI push → batch translation → checked edit → one-click publica
   const publish = page.getByRole("button", { name: /Publish batch/ });
   await publish.click();
   await expect(
-    page.getByText("Batch published.", { exact: false }),
+    page.getByText("Batch saved and published.", { exact: false }),
   ).toBeVisible();
   expect(await page.getByRole("dialog").count()).toBe(0);
   const after = await page.request.get(`${root}/export?stage=public&locale=en`);
@@ -141,17 +181,20 @@ test("real CLI push → batch translation → checked edit → one-click publica
   });
   await publish.click();
   await expect(
-    page.getByText("The working copy changed.", { exact: false }),
+    page.getByText("The batch changed. Nothing was saved.", { exact: false }),
   ).toBeVisible();
   const unchanged = await page.request.get(
     `${root}/export?stage=public&locale=en`,
   );
   expect((await unchanged.json()).en["login.title"]).toBe("Log in with email");
+  await expect(publish).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Restart workflow" }).click();
   await expect(english).toHaveValue("Newest edit");
   await expect(publish).toBeEnabled();
   await publish.click();
   await expect(
-    page.getByText("Batch published.", { exact: false }),
+    page.getByText("Batch saved and published.", { exact: false }),
   ).toBeVisible();
   const republished = await page.request.get(
     `${root}/export?stage=public&locale=en`,

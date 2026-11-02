@@ -16,6 +16,7 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/lib/api/strings', () => ({
   stringsApi: {
     cliPushBatch: vi.fn(),
+    publishCliPushBatch: vi.fn(),
     update: vi.fn(),
     translateProposals: vi.fn(),
     translateApply: vi.fn(),
@@ -90,7 +91,6 @@ const proposal = (i = 0): TranslateProposalItem => ({
   source_text: 'Nguồn mới',
   status: 'public',
   translations: { en: 'Generated' },
-  expected_translations: { en: 'Old' },
   scores: { en: 90 },
 })
 let batch: CliPushBatch
@@ -123,7 +123,6 @@ beforeEach(() => {
     excluded_count: 0,
   }
   vi.mocked(stringsApi.cliPushBatch).mockImplementation(async () => structuredClone(batch))
-  vi.mocked(stringsApi.update).mockResolvedValue(entry())
   vi.mocked(stringsApi.translateProposals).mockResolvedValue({
     items: [proposal()],
     locales: ['en'],
@@ -132,122 +131,122 @@ beforeEach(() => {
     page: 1,
     page_size: 50,
   })
-  vi.mocked(stringsApi.translateApply).mockResolvedValue({
-    translated_count: 1,
-    locales: ['en'],
-    batch_id: 'translation',
+  vi.mocked(stringsApi.publishCliPushBatch).mockResolvedValue({
+    affected: 1,
+    batch_id: 'publication',
   })
-  vi.mocked(stringsApi.batch).mockResolvedValue({ affected: 1, batch_id: 'published' })
 })
 afterEach(() => {
   cleanup()
   qc.clear()
 })
 
-it('shows working and published values for all locales without automatic publication', async () => {
+it('keeps generated translations temporary and never calls intermediate write APIs', async () => {
   show()
   await loaded()
-  expect(screen.getByText('Nguồn cũ')).toBeTruthy()
-  expect(screen.getByRole('textbox', { name: 'EN translation for login.0' })).toBeTruthy()
-  expect(screen.getByRole('textbox', { name: 'JA translation for login.0' })).toBeTruthy()
-  expect(stringsApi.batch).not.toHaveBeenCalled()
-})
-it('regenerates selected languages within the original batch and applies baselines automatically', async () => {
-  show()
-  await loaded()
-  fireEvent.click(screen.getByRole('checkbox', { name: 'JA' }))
   fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
-  await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledTimes(1))
-  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
-    'demo',
-    expect.objectContaining({
-      batch_id: 'push',
-      overwrite: true,
-      locales: ['en'],
-      pending_delete: false,
-      deleted: false,
-    })
-  )
-  expect(stringsApi.translateApply).toHaveBeenCalledWith('demo', {
-    overwrite: true,
-    items: [
-      expect.objectContaining({
-        string_id: 's0',
-        expected_translations: { en: 'Old' },
-        translations: { en: 'Generated' },
-      }),
-    ],
-  })
-  expect(stringsApi.batch).not.toHaveBeenCalled()
+  await screen.findByText(/Translations are ready for review/)
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Generated')
+  expect(stringsApi.update).not.toHaveBeenCalled()
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+  expect(batch.items[0].translations[0].value).toBe('Old')
 })
-it('saves on blur with original source and target checks, then publishes without a second dialog', async () => {
+it('keeps blur edits local and sends one atomic publication request', async () => {
   show()
   await loaded()
   const field = screen.getByRole('textbox', { name: 'EN translation for login.0' })
   fireEvent.change(field, { target: { value: 'Human edit' } })
-  expect(
-    (screen.getByRole('button', { name: /Publish batch/ }) as HTMLButtonElement).disabled
-  ).toBe(true)
   fireEvent.blur(field)
-  await waitFor(() =>
-    expect(stringsApi.update).toHaveBeenCalledWith('demo', 's0', {
-      translations: { en: 'Human edit' },
-      expected: { source_text: 'Nguồn mới', translations: { en: 'Old' } },
-    })
-  )
-  await screen.findByText(/Saved to working copy/)
+  expect(stringsApi.update).not.toHaveBeenCalled()
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
   await waitFor(() =>
-    expect(stringsApi.batch).toHaveBeenCalledWith('demo', {
-      action: 'publish',
+    expect(stringsApi.publishCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
       fingerprint: 'reviewed',
-      filter: { batch_id: 'push', deleted: false, pending_delete: false },
+      items: [
+        {
+          string_id: 's0',
+          expected_source_text: 'Nguồn mới',
+          translations: { en: 'Human edit' },
+          scores: { en: null },
+        },
+      ],
     })
   )
-  expect(screen.queryByRole('dialog')).toBeNull()
 })
-it('retains text after a failed save and keeps publish disabled', async () => {
-  vi.mocked(stringsApi.update).mockRejectedValue(new ApiError(409, 'Competing translation'))
+it('discards temporary translations when the workflow is left and reopened', async () => {
+  const view = show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  view.unmount()
   show()
   await loaded()
-  const field = screen.getByRole('textbox', {
-    name: 'EN translation for login.0',
-  }) as HTMLTextAreaElement
-  fireEvent.change(field, { target: { value: 'My text' } })
-  fireEvent.blur(field)
-  await screen.findByText('Competing translation')
-  expect(field.value).toBe('My text')
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Old')
+  expect(jobsApi.get).not.toHaveBeenCalled()
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+})
+it('does not resume previously stored jobs after reloading', async () => {
+  sessionStorage.setItem('x-locale-batch-job:demo:push', 'abandoned-job')
+  show()
+  await loaded()
+  expect(jobsApi.get).not.toHaveBeenCalled()
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Old')
+})
+it('retains all temporary edits after a failed final transaction and can retry it', async () => {
+  vi.mocked(stringsApi.publishCliPushBatch)
+    .mockRejectedValueOnce(new Error('Publication failed'))
+    .mockResolvedValue({ affected: 1, batch_id: 'b' })
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
+  await screen.findByText('Publication failed')
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Generated')
+  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
+  await waitFor(() => expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(2))
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
+})
+it('requires restarting after a stale final snapshot and discards old temporary values', async () => {
+  vi.mocked(stringsApi.publishCliPushBatch).mockRejectedValueOnce(
+    new ApiError(409, 'Changed', { detail: { code: 'publish_fingerprint_mismatch' } })
+  )
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
+  await screen.findByText(/The batch changed. Nothing was saved/)
   expect(
     (screen.getByRole('button', { name: /Publish batch/ }) as HTMLButtonElement).disabled
   ).toBe(true)
-})
-it('rejects stale publication, displays fresh values, and requires another explicit click', async () => {
-  vi.mocked(stringsApi.batch)
-    .mockImplementationOnce(async () => {
-      batch.fingerprint = 'fresh'
-      batch.items[0].source_text = 'Latest source'
-      throw new ApiError(409, 'Changed', { detail: { code: 'publish_fingerprint_mismatch' } })
-    })
-    .mockResolvedValue({ affected: 1, batch_id: 'publication' })
-  show()
-  await loaded()
-  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
-  await screen.findByText('Latest source')
-  expect(stringsApi.batch).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getAllByRole('button', { name: 'Restart workflow' })[0])
   await waitFor(() =>
     expect(
-      (screen.getByRole('button', { name: /Publish batch/ }) as HTMLButtonElement).disabled
-    ).toBe(false)
+      (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+        .value
+    ).toBe('Old')
   )
-  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
-  await waitFor(() =>
-    expect(stringsApi.batch).toHaveBeenLastCalledWith(
-      'demo',
-      expect.objectContaining({ fingerprint: 'fresh' })
-    )
-  )
+  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
 })
-it('applies in chunks and retries only the remaining chunk after a failure', async () => {
+it('publishes over 100 staged strings in a single final request across pages', async () => {
+  batch.items = Array.from({ length: 101 }, (_, i) => entry(i))
   vi.mocked(stringsApi.translateProposals).mockResolvedValue({
     items: Array.from({ length: 101 }, (_, i) => proposal(i)),
     locales: ['en'],
@@ -256,45 +255,21 @@ it('applies in chunks and retries only the remaining chunk after a failure', asy
     page: 1,
     page_size: 101,
   })
-  vi.mocked(stringsApi.translateApply)
-    .mockResolvedValueOnce({ translated_count: 100, locales: ['en'], batch_id: 'a' })
-    .mockRejectedValueOnce(new Error('Temporary failure'))
-    .mockResolvedValue({ translated_count: 1, locales: ['en'], batch_id: 'b' })
   show()
-  await loaded()
+  await screen.findByText('101 strings in this batch')
   fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry saving 1 remaining strings' }))
-  await waitFor(() => expect(stringsApi.translateApply).toHaveBeenCalledTimes(3))
-  expect(
-    vi.mocked(stringsApi.translateApply).mock.calls.map((call) => call[1].items.length)
-  ).toEqual([100, 1, 1])
-  expect(stringsApi.batch).not.toHaveBeenCalled()
-})
-it('keeps concurrent human translations when resolving generated-result conflicts', async () => {
-  vi.mocked(stringsApi.translateApply).mockRejectedValueOnce(
-    new ApiError(409, 'Changed translation', {
-      detail: { conflicts: [{ string_id: 's0' }] },
-    })
-  )
-  show()
-  await loaded()
-  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Keep latest for changed strings' }))
-  await screen.findByText(/Kept the latest translations/)
-  expect(stringsApi.translateApply).toHaveBeenCalledTimes(1)
-})
-it('does not limit translation to the currently displayed page', async () => {
-  batch.items = Array.from({ length: 51 }, (_, i) => entry(i))
-  show()
-  await screen.findByText('51 strings in this batch')
+  await screen.findByText(/Translations are ready for review/)
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-  expect(screen.getByText('login.50')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
-  await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalled())
-  expect(vi.mocked(stringsApi.translateProposals).mock.calls[0][1].string_ids).toBeUndefined()
-  expect(vi.mocked(stringsApi.translateProposals).mock.calls[0][1].batch_id).toBe('push')
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.50' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Generated')
+  fireEvent.click(screen.getByRole('button', { name: /Publish batch/ }))
+  await waitFor(() => expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(stringsApi.publishCliPushBatch).mock.calls[0][2].items.length).toBe(101)
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
 })
-it('reports failed background generation without applying or publishing', async () => {
+it('stages successful async results in memory only', async () => {
   vi.mocked(stringsApi.translateProposals).mockResolvedValue({
     items: [],
     job_id: 'job',
@@ -306,26 +281,6 @@ it('reports failed background generation without applying or publishing', async 
   vi.mocked(jobsApi.get).mockResolvedValue({
     id: 'job',
     kind: 'translate_proposals',
-    status: 'failed',
-    result: null,
-    error: 'AI unavailable',
-    created_at: null,
-    completed_at: null,
-    progress: null,
-  })
-  show()
-  await loaded()
-  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
-  await screen.findByText('AI unavailable')
-  expect(stringsApi.translateApply).not.toHaveBeenCalled()
-  expect(stringsApi.batch).not.toHaveBeenCalled()
-})
-
-it('resumes a completed background job and applies its baselines exactly once', async () => {
-  sessionStorage.setItem('x-locale-batch-job:demo:push', 'resumed-job')
-  vi.mocked(jobsApi.get).mockResolvedValue({
-    id: 'resumed-job',
-    kind: 'translate_proposals',
     status: 'completed',
     result: { items: [proposal()] },
     error: null,
@@ -334,9 +289,30 @@ it('resumes a completed background job and applies its baselines exactly once', 
     progress: null,
   })
   show()
-  await screen.findByText(/Translations saved to working copy/)
-  expect(stringsApi.translateApply).toHaveBeenCalledTimes(1)
-  expect(stringsApi.translateProposals).not.toHaveBeenCalled()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
   expect(sessionStorage.getItem('x-locale-batch-job:demo:push')).toBeNull()
-  expect(stringsApi.batch).not.toHaveBeenCalled()
+})
+it('does not stage a late response after leaving the workflow', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof stringsApi.translateProposals>>) => void
+  vi.mocked(stringsApi.translateProposals).mockReturnValue(
+    new Promise((done) => {
+      resolve = done
+    })
+  )
+  const view = show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  view.unmount()
+  resolve({ items: [proposal()], job_id: null, locales: ['en'], total: 1, page: 1, page_size: 1 })
+  show()
+  await loaded()
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Old')
+  expect(stringsApi.translateApply).not.toHaveBeenCalled()
 })

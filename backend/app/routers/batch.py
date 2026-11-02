@@ -12,10 +12,15 @@ from app.schemas import (
     BatchRequest,
     BatchResult,
     CliPushBatchOut,
+    CliPushPublishRequest,
     PublishPreviewEntriesOut,
     PublishPreviewRequest,
 )
-from app.services.publish_preview import cli_push_batch, list_publish_preview_entries
+from app.services.publish_preview import (
+    cli_push_batch,
+    list_publish_preview_entries,
+    publish_cli_push_batch,
+)
 from app.services.strings import apply_batch
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["batch"])
@@ -42,3 +47,10 @@ def batch_strings(
     db: DbSession,
 ) -> BatchResult:
     return apply_batch(db, project, payload)
+
+
+@router.post("/cli-push-batches/{batch_id}/publish")
+def complete_cli_push_batch(
+    batch_id: UUID, payload: CliPushPublishRequest, project: ProjectAccess, db: DbSession
+) -> BatchResult:
+    return publish_cli_push_batch(db, project, batch_id, payload)

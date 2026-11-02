@@ -2,22 +2,32 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Activity, BatchKind, Project
+from app.activity import attach_batch
+from app.models import Activity, BatchKind, Project, StringEntry, Translation
 from app.schemas import (
+    BatchResult,
     CliPushBatchOut,
+    CliPushPublishRequest,
     PublishPreviewEntriesOut,
     PublishPreviewRequest,
 )
 from app.services.strings import (
+    PUBLISH_FINGERPRINT_MISMATCH,
+    apply_translation_values,
     compute_publish_fingerprint,
+    fingerprints_match,
+    guard_published_keys,
     load_string_entries,
+    lock_publication,
+    promote_string,
     resolve_string_ids,
     serialize_string,
+    validate_locales,
 )
 
 
@@ -55,7 +65,7 @@ def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatc
     active.sort(key=lambda entry: (entry.key, str(entry.id)))
     return CliPushBatchOut(
         items=[serialize_string(entry) for entry in active],
-        fingerprint=compute_publish_fingerprint(active),
+        fingerprint=compute_publish_fingerprint(active, include_unchanged=True),
         batch_id=batch_id,
         actor_label=activities[0].actor_label,
         created_at=activities[0].created_at,
@@ -63,3 +73,61 @@ def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatc
         updated_count=len(members - created),
         excluded_count=len(members) - len(active),
     )
+
+
+def publish_cli_push_batch(
+    db: Session, project: Project, batch_id: UUID, payload: CliPushPublishRequest
+) -> BatchResult:
+    from app.services.write_transactions import run_write
+
+    def write() -> BatchResult:
+        lock_publication(db, project.id)
+        db.refresh(project, with_for_update={"read": True})
+        members = (
+            db.query(Activity.string_id)
+            .filter(
+                Activity.project_id == project.id,
+                Activity.batch_id == batch_id,
+                Activity.batch_kind == BatchKind.cli_push,
+                Activity.string_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        )
+        ids = [row[0] for row in members]
+        db.query(StringEntry.id).filter(
+            StringEntry.project_id == project.id,
+            StringEntry.id.in_(ids),
+        ).order_by(StringEntry.id).with_for_update().all()
+        db.query(Translation.id).filter(Translation.string_id.in_(ids)).order_by(
+            Translation.id
+        ).with_for_update().all()
+        entries = load_string_entries(db, project.id, ids, refresh=True)
+        entries = [entry for entry in entries if not entry.deleted_at and not entry.pending_delete]
+        # Validate provenance even for an empty batch; never accept a generic import id.
+        snapshot = cli_push_batch(db, project, batch_id)
+        if not fingerprints_match(snapshot.fingerprint, payload.fingerprint):
+            raise HTTPException(409, detail={"code": PUBLISH_FINGERPRINT_MISMATCH})
+        by_id = {entry.id: entry for entry in entries}
+        seen = set()
+        for item in payload.items:
+            entry = by_id.get(item.string_id)
+            if entry is None or item.string_id in seen:
+                raise HTTPException(
+                    400, detail="Translations must belong to this active CLI push batch"
+                )
+            seen.add(item.string_id)
+            if entry.source_text != item.expected_source_text:
+                raise HTTPException(409, detail={"code": PUBLISH_FINGERPRINT_MISMATCH})
+            validate_locales(project, item.translations)
+        publication_id = uuid4()
+        attach_batch(db, publication_id, "batch")
+        for item in payload.items:
+            apply_translation_values(db, by_id[item.string_id], item.translations, item.scores)
+        for entry in entries:
+            promote_string(entry)
+        db.flush()
+        guard_published_keys(db, project)
+        return BatchResult(affected=len(entries), batch_id=publication_id)
+
+    return run_write(db, project.id, "publish_cli_push_batch", write)

@@ -23,9 +23,9 @@ import { formatRelativeTime } from '@/lib/utils'
 export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; batchId: string }) {
   const workspace = useBatchWorkspace(projectRef, batchId)
   const [page, setPage] = useState(1)
-  const { query, project, busy, saving, edits, chosen, locales, preview } = workspace
-  const batch = query.data
-  const blocked = busy || saving
+  const { query, project, busy, chosen, locales, preview } = workspace
+  const batch = workspace.batch
+  const blocked = busy
   const publishable = preview.publishableIds.length
   const activePage = Math.min(page, Math.max(1, Math.ceil((batch?.items.length ?? 0) / 50)))
   const visible = batch?.items.slice((activePage - 1) * 50, activePage * 50) ?? []
@@ -49,8 +49,14 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
           id,
           locale,
           source: entry.source_text,
-          text: edits[id]?.value ?? value,
-          baseline: { source: entry.source_text, text: value, issues: workspace.issues[id] },
+          text: value,
+          baseline: workspace.qaBaselines[id] ?? {
+            source: entry.source_text,
+            text:
+              query.data?.items
+                .find((item) => item.id === entry.id)
+                ?.translations.find((t) => t.locale === locale)?.value ?? '',
+          },
         }
       })
     ),
@@ -129,19 +135,13 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
             </div>
             <Button
               onClick={() => void workspace.translate()}
-              disabled={
-                blocked ||
-                workspace.dirty ||
-                workspace.remaining.length > 0 ||
-                !chosen.length ||
-                !batch.items.length
-              }
+              disabled={blocked || workspace.hasDrafts || !chosen.length || !batch.items.length}
             >
               <Wand2 data-icon="inline-start" /> Translate all
             </Button>
           </div>
           {locales.length > 0 && (
-            <FieldSet disabled={blocked || workspace.remaining.length > 0}>
+            <FieldSet disabled={blocked}>
               <FieldLegend variant="label">Languages to translate</FieldLegend>
               <FieldGroup className="flex-row flex-wrap gap-4">
                 {locales.map((locale) => (
@@ -164,52 +164,20 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
             </FieldSet>
           )}
           <p className="text-sm text-muted-foreground">
-            Translate all replaces working translations in the selected languages. Publishing
-            includes every locale shown below.
+            Translations and edits are temporary until Publish batch saves the entire batch. Leaving
+            or reloading discards progress and starts the workflow again.
           </p>
-          {(workspace.error || workspace.remaining.length > 0) && (
+          {workspace.error && (
             <Alert variant="destructive">
-              <AlertTitle>Review needed</AlertTitle>
+              <AlertTitle>Workflow could not complete</AlertTitle>
               <AlertDescription className="flex flex-col items-start gap-2">
                 <p>{workspace.error}</p>
-                {workspace.remaining.length > 0 && (
-                  <Button
-                    variant="outline"
-                    disabled={blocked}
-                    onClick={() => void workspace.retryApply()}
-                  >
-                    Retry saving {workspace.remaining.length} remaining strings
-                  </Button>
-                )}
-                {workspace.conflicted.length > 0 && (
-                  <Button
-                    variant="outline"
-                    disabled={blocked}
-                    onClick={() => void workspace.keepLatest()}
-                  >
-                    Keep latest for changed strings
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   disabled={blocked}
-                  onClick={() => void workspace.refresh()}
+                  onClick={() => void workspace.restart()}
                 >
-                  Refresh review
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
-          {workspace.needsReview && (
-            <Alert>
-              <AlertDescription>
-                Review the latest content, then refresh review to enable publishing.
-                <Button
-                  variant="outline"
-                  disabled={blocked}
-                  onClick={() => void workspace.refresh()}
-                >
-                  Refresh review
+                  Restart workflow
                 </Button>
               </AlertDescription>
             </Alert>
@@ -295,14 +263,13 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   <FieldGroup className="grid min-w-0 gap-4 sm:grid-cols-2">
                     {locales.map((locale) => {
                       const translation = entry.translations.find((t) => t.locale === locale)
-                      const id = `${entry.id}:${locale}`,
-                        draft = edits[id]
+                      const id = `${entry.id}:${locale}`
                       return (
-                        <Field key={locale} data-invalid={Boolean(draft?.error)}>
+                        <Field key={locale}>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <FieldLabel htmlFor={id}>{locale.toUpperCase()}</FieldLabel>
                             <div className="flex flex-wrap items-center gap-2">
-                              <ConfidenceBadge score={draft ? null : translation?.confidence} />
+                              <ConfidenceBadge score={translation?.confidence} />
                               {qa[id] && (
                                 <QaLocaleBadge
                                   view={qa[id]}
@@ -317,34 +284,14 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                             lang={locale}
                             disabled={blocked}
                             rows={2}
-                            value={draft?.value ?? translation?.value ?? ''}
+                            value={translation?.value ?? ''}
                             placeholder="Missing translation"
-                            aria-invalid={Boolean(draft?.error)}
                             aria-label={`${locale.toUpperCase()} translation for ${entry.key}`}
                             onChange={(event) => workspace.edit(entry, locale, event.target.value)}
-                            onBlur={() => void workspace.save(entry, locale)}
                           />
                           <p className="text-xs text-muted-foreground whitespace-pre-wrap wrap-anywhere">
                             Published: {translation?.published_value || '—'}
                           </p>
-                          {draft?.error && (
-                            <div
-                              role="alert"
-                              className="flex flex-col items-start gap-2 text-xs text-destructive"
-                            >
-                              <p>{draft.error}</p>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => void workspace.retryEdit(id)}
-                              >
-                                Load latest baseline
-                              </Button>
-                            </div>
-                          )}
-                          {draft && !draft.error && (
-                            <p className="text-xs text-muted-foreground">Unsaved · saves on blur</p>
-                          )}
                         </Field>
                       )
                     })}
@@ -358,7 +305,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
             pageSize={50}
             total={batch.items.length}
             onPageChange={setPage}
-            disabled={blocked || workspace.dirty}
+            disabled={blocked}
           />
           {missing > 0 && (
             <p className="text-sm text-muted-foreground">
@@ -366,7 +313,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
             </p>
           )}
           <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-            {saving ? 'Saving…' : workspace.notice}
+            {workspace.notice}
           </p>
           <Separator />
           <footer className="flex flex-wrap items-center justify-between gap-4 pb-4">
@@ -377,21 +324,26 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   : 'Batch is in sync with public.'}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Existing public translations stay live until you publish.
+                Publish saves all reviewed translations and public snapshots together.
               </p>
             </div>
-            <Button
-              disabled={
-                blocked ||
-                workspace.dirty ||
-                workspace.needsReview ||
-                workspace.remaining.length > 0 ||
-                !publishable
-              }
-              onClick={() => void workspace.publish()}
-            >
-              <Upload data-icon="inline-start" /> Publish batch · {publishable} strings
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {workspace.started && (
+                <Button
+                  variant="outline"
+                  disabled={blocked}
+                  onClick={() => void workspace.restart()}
+                >
+                  Restart workflow
+                </Button>
+              )}
+              <Button
+                disabled={blocked || workspace.stale || !publishable}
+                onClick={() => void workspace.publish()}
+              >
+                <Upload data-icon="inline-start" /> Publish batch · {publishable} strings
+              </Button>
+            </div>
           </footer>
         </>
       ) : null}

@@ -187,20 +187,23 @@ excluded lifecycle counts, and the existing publication fingerprint. An unknown,
 other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
 empty review. No additional workflow state or schema migration is required.
 
-The dashboard workspace generates proposals with `overwrite=true`, then saves
-successful proposals through `/translate/apply` in chunks of at most 100 strings.
-Apply's optional `overwrite` defaults to false for compatibility. Overwrite requires
-`expected_translations` for every submitted locale; generated proposals capture
-those baselines before synchronous or background generation. Source/target
-conflicts and unavailable strings reject the entire Apply request. Earlier chunks
-may remain saved working copies after a later failure; retries handle only the
-remaining proposals and never publish implicitly. A conflicting result can be
-skipped in favor of the latest saved human translation.
+The dashboard generates read-only translation proposals and keeps them, manual
+edits, confidence scores, and QA findings in memory only. It does not call
+`/translate/apply`, save on blur, or store resumable jobs. Leaving or reloading
+abandons temporary progress and starts a new review from saved content. Other
+editors retain their existing blur-save behavior.
 
-Manual fields use checked editor writes and save on blur. Publishing uses the
-original CLI batch filter with `deleted=false` and `pending_delete=false`, and the
-fingerprint of the displayed review. A 409 fingerprint mismatch writes nothing,
-refreshes the review, and requires a renewed explicit publication. Publication is
-still per string across all locales, including locales not selected for AI.
-Missing values and QA issues remain advisory. The existing audit, Undo, export,
-and soft-delete semantics are retained.
+Final `POST /api/projects/{project_id}/cli-push-batches/{batch_id}/publish` accepts
+the original review fingerprint and all staged translation changes. The server
+locks publication, batch strings, and their translations; verifies batch membership,
+source text, locales, and the full review fingerprint (including unchanged public
+strings); applies translations; promotes the snapshots; validates public-key
+collisions; and commits the content and audit batch together. More than 100 rows
+can complete in this one transaction; there are no independently committed chunks.
+Any validation, stale-content, or publication failure rolls back the entire final
+request, including translation edits and audit records. A stale workflow must be
+restarted before publication. The original CLI push remains saved as before.
+
+Publication is still per string across all locales, including locales not selected
+for AI. Missing values and QA issues remain advisory. The existing catalog,
+translation Apply, audit, Undo, export, and soft-delete semantics are retained.

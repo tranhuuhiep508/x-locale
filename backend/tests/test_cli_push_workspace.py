@@ -126,83 +126,150 @@ def test_noop_and_dry_run_pushes_have_no_workspace(client):
         )
 
 
-def proposal(client, monkeypatch, count=1):
+def atomic_payload(batch, value="Reviewed"):
+    return {
+        "fingerprint": batch["fingerprint"],
+        "items": [
+            {
+                "string_id": row["id"],
+                "expected_source_text": row["source_text"],
+                "translations": {"en": value},
+                "scores": {"en": 91},
+            }
+            for row in batch["items"]
+        ],
+    }
+
+
+def test_atomic_completion_saves_and_publishes_more_than_one_apply_chunk(client):
     pid = make_project(client)["id"]
     root = f"/api/projects/{pid}"
-    push(client, pid, {f"key{i}": f"Nguồn {i}" for i in range(count)})
-    items = client.get(f"{root}/strings").json()["items"]
-    for item in items:
-        client.patch(f"{root}/strings/{item['id']}", json={"translations": {"en": "Old"}})
-    publish_strings(client, pid, [i["id"] for i in items])
+    pushed = push(client, pid, {f"key{i}": "Source" for i in range(101)})
+    batch = workspace(client, pid, pushed["batch_id"])
+    assert all(t["value"] == "" for row in batch["items"] for t in row["translations"])
+    result = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=atomic_payload(batch)
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["affected"] == 101
+    current = workspace(client, pid, pushed["batch_id"])
+    assert all(row["status"] == "public" for row in current["items"])
+    assert all(
+        t["value"] == t["published_value"] == "Reviewed"
+        for row in current["items"]
+        for t in row["translations"]
+    )
+    reverted = client.post(f"{root}/activities/batch/{result.json()['batch_id']}/revert")
+    assert reverted.status_code == 200, reverted.text
+    after = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        row["status"] == "draft" and all(t["value"] == "" for t in row["translations"])
+        for row in after["items"]
+    )
 
-    def fake_batch(source_locale, rows, on_progress=None):
-        return {row.id: {locale: "Generated" for locale in row.locales} for row in rows}
 
-    monkeypatch.setattr("app.services.translate.translate_batch", fake_batch)
+@pytest.mark.parametrize("problem", ["source", "outside", "duplicate", "deleted"])
+def test_atomic_completion_validates_entire_request_before_writing(client, problem):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"a": "A", "b": "B"})
+    batch = workspace(client, pid, pushed["batch_id"])
+    payload = atomic_payload(batch)
+    if problem == "source":
+        payload["items"][-1]["expected_source_text"] = "Unreviewed source"
+    elif problem == "outside":
+        payload["items"][-1]["string_id"] = str(uuid.uuid4())
+    elif problem == "duplicate":
+        payload["items"].append(payload["items"][0])
+    else:
+        client.delete(f"{root}/strings/{batch['items'][-1]['id']}")
+    before = client.get(f"{root}/activities").json()["total"]
+    response = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=payload)
+    assert response.status_code in (400, 409), response.text
+    row = client.get(f"{root}/strings/{batch['items'][0]['id']}").json()
+    assert row["status"] == "draft"
+    assert all(t["value"] == "" and t["published_value"] is None for t in row["translations"])
+    assert client.get(f"{root}/activities").json()["total"] == before
+
+
+def test_collision_rolls_back_translations_publication_and_audit(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    owner = client.post(
+        f"{root}/strings", json={"key": "conflict", "source_text": "Original", "status": "public"}
+    ).json()
+    client.patch(f"{root}/strings/{owner['id']}", json={"key": "renamed"})
+    pushed = push(client, pid, {"conflict": "Replacement", "other": "Other"})
+    batch = workspace(client, pid, pushed["batch_id"])
+    before = client.get(f"{root}/activities").json()["total"]
+    response = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=atomic_payload(batch)
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "published_key_conflict"
+    after = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        row["status"] == "draft" and all(t["value"] == "" for t in row["translations"])
+        for row in after["items"]
+    )
+    assert client.get(f"{root}/activities").json()["total"] == before
+
+
+def test_review_fingerprint_protects_previously_unchanged_public_strings(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"a": "A"})
+    batch = workspace(client, pid, pushed["batch_id"])
+    publish_strings(client, pid, [batch["items"][0]["id"]])
+    snapshot = workspace(client, pid, pushed["batch_id"])
+    row = snapshot["items"][0]
+    client.patch(f"{root}/strings/{row['id']}", json={"translations": {"en": "Concurrent"}})
+    publish_strings(client, pid, [row["id"]])
+    response = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=atomic_payload(snapshot)
+    )
+    assert response.status_code == 409
+    current = client.get(f"{root}/strings/{row['id']}").json()
+    assert current["translations"][0]["value"] == "Concurrent"
+
+
+def test_temporary_generation_does_not_save_catalog_content(client, monkeypatch):
+    monkeypatch.setattr(settings, "ai_translate_stub", True)
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {f"key{i}": "Source" for i in range(21)})
+    before = workspace(client, pid, pushed["batch_id"])
+    count = client.get(f"{root}/activities").json()["total"]
     generated = client.post(
         f"{root}/translate/proposals",
         json={
+            "batch_id": pushed["batch_id"],
             "scope": "strings",
-            "string_ids": [i["id"] for i in items],
-            "locales": ["en"],
             "overwrite": True,
+            "locales": ["en"],
         },
-    ).json()
-    if generated.get("job_id"):
-        generated = client.get(f"/api/jobs/{generated['job_id']}").json()["result"]
-    payload = {
-        "overwrite": True,
-        "items": [
-            {
-                "string_id": row["string_id"],
-                "expected_source_text": row["source_text"],
-                "translations": row["translations"],
-                "expected_translations": row["expected_translations"],
-                "scores": {"en": 92},
-            }
-            for row in generated["items"]
-        ],
-    }
-    return root, payload
+    )
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["job_id"]
+    after = workspace(client, pid, pushed["batch_id"])
+    assert before == after
+    assert client.get(f"{root}/activities").json()["total"] == count
 
 
-@pytest.mark.parametrize("count", [1, 21])
-def test_generated_baselines_sync_and_async_overwrite_only_working_copy(client, monkeypatch, count):
-    root, payload = proposal(client, monkeypatch, count)
-    assert all(item["expected_translations"] == {"en": "Old"} for item in payload["items"])
-    response = client.post(f"{root}/translate/apply", json=payload)
-    assert response.status_code == 200, response.text
-    assert response.json()["translated_count"] == count
-    row = client.get(f"{root}/strings/{payload['items'][0]['string_id']}").json()
-    assert row["translations"][0]["value"] == "Generated"
-    assert row["translations"][0]["published_value"] == "Old"
-    assert row["translations"][0]["confidence"] == 92
-    assert client.post(f"{root}/translate/apply", json=payload).json()["translated_count"] == 0
-
-
-@pytest.mark.parametrize("change", ["target", "source", "pending_delete", "deleted"])
-def test_guarded_apply_conflicts_are_atomic(client, monkeypatch, change):
-    root, payload = proposal(client, monkeypatch, 2)
-    sid = payload["items"][0]["string_id"]
-    if change == "target":
-        client.patch(f"{root}/strings/{sid}", json={"translations": {"en": "Human"}})
-    elif change == "source":
-        client.patch(f"{root}/strings/{sid}", json={"source_text": "Changed"})
-    else:
-        client.delete(f"{root}/strings/{sid}")
-        if change == "deleted":
-            publish_strings(client, root.split("/")[-1], [sid])
-    response = client.post(f"{root}/translate/apply", json=payload)
-    assert response.status_code == 409, response.text
-    untouched = client.get(f"{root}/strings/{payload['items'][1]['string_id']}").json()
-    assert untouched["translations"][0]["value"] == "Old"
-
-
-def test_overwrite_requires_baselines_and_legacy_apply_still_skips_existing(client, monkeypatch):
-    root, payload = proposal(client, monkeypatch)
-    payload["items"][0].pop("expected_translations")
-    assert client.post(f"{root}/translate/apply", json=payload).status_code == 422
-    payload.pop("overwrite")
-    response = client.post(f"{root}/translate/apply", json=payload)
-    assert response.status_code == 200, response.text
-    assert response.json()["translated_count"] == 0
+def test_final_completion_can_clear_a_translation_without_early_save(client):
+    pid = make_project(client)["id"]
+    pushed = push(client, pid, {"a": "A"})
+    before = workspace(client, pid, pushed["batch_id"])
+    row = before["items"][0]
+    root = f"/api/projects/{pid}"
+    client.patch(f"{root}/strings/{row['id']}", json={"translations": {"en": "Old"}})
+    publish_strings(client, pid, [row["id"]])
+    snapshot = workspace(client, pid, pushed["batch_id"])
+    payload = atomic_payload(snapshot, "")
+    payload["items"][0]["scores"] = {"en": None}
+    result = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=payload)
+    assert result.status_code == 200, result.text
+    current = client.get(f"{root}/strings/{row['id']}").json()
+    assert (
+        current["translations"][0]["value"] == current["translations"][0]["published_value"] == ""
+    )
