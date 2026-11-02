@@ -269,13 +269,17 @@ describe('translation memory in the editor', () => {
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
   })
 
-  it('allows AI after a quiet lookup error without a retry button', async () => {
-    vi.mocked(stringsApi.translateMemory).mockRejectedValue(new Error('Memory unavailable'))
+  it('retries a failed lookup without blocking AI', async () => {
+    vi.mocked(stringsApi.translateMemory)
+      .mockRejectedValueOnce(new Error('Memory unavailable'))
+      .mockResolvedValue({ source_text: 'Ghi chú', matches: { en: [memoryMatch] } })
     renderDialog({ entry: draftEntry() })
     expect(await screen.findByText('Could not load published translations.')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /^Generate .*AI$/ }))
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await screen.findByText('Exact match')
+    expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   })
 
   it('uses all exact locales and undoes their text and confidence without changing description', async () => {
