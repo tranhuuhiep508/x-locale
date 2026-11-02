@@ -4,7 +4,7 @@ import {
   ReviewDialogFooter,
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, CheckCheck, ChevronDown, ChevronUp, Equal, History, Wand2 } from 'lucide-react'
 import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
@@ -59,6 +59,27 @@ export function jobStillRunning(job: Job | undefined): boolean {
 }
 
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
+const PAGE_BLOCKED = "Apply or undo this page's changes first"
+
+function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
+  const left = draft.memory_selected ?? []
+  const right = original.memory_selected ?? []
+  return left.length === right.length && left.every((locale) => right.includes(locale))
+}
+
+function draftDiffers(
+  draft: TranslateProposalItem,
+  original: TranslateProposalItem | undefined,
+): boolean {
+  if (!original) return true
+  if ((draft.description ?? '') !== (original.description ?? '')) return true
+  if (!sameSelection(draft, original)) return true
+  const locales = Object.keys(draft.translations)
+  if (locales.length !== Object.keys(original.translations).length) return true
+  return locales.some(
+    (locale) => (draft.translations[locale] ?? '') !== (original.translations[locale] ?? ''),
+  )
+}
 
 function qaId(stringId: string, locale: string): string {
   return `${stringId}:${locale}`
@@ -158,7 +179,7 @@ function ProposalLocaleRows({
   const folded = foldClean && clean && !expanded && !selected
   return (
     <>
-      <tr data-qa-status={view.status} className={cn(selected && 'bg-azure-50')}>
+      <tr data-qa-status={view.status} className={cn(selected && 'bg-public')}>
         <th scope="row" className="w-12 py-2 pr-2 align-top font-mono text-xs font-semibold uppercase text-muted-foreground">
           {locale}
         </th>
@@ -326,7 +347,7 @@ function ProposalTreeNode({
       className="grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all "
     >
       <div className="flex min-w-0 flex-col gap-3.5">
-        <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
@@ -350,7 +371,7 @@ function ProposalTreeNode({
               </code>
             </div>
           </div>
-          <Field className="w-72 shrink-0">
+          <Field className="w-full sm:w-72 sm:shrink-0">
             <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
             <Textarea
               id={descriptionId}
@@ -535,6 +556,13 @@ export function TranslateReviewDialog({
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
   const [filter, setFilter] = useState<QaFilter | 'matches' | 'exact'>('all')
+  // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
+  const loadedPage = useRef(items)
+  const sawGenerated = useRef(false)
+
+  useEffect(() => {
+    setFilter('all')
+  }, [page])
 
   useEffect(() => {
     setDrafts(draftsFromItems(items))
@@ -553,6 +581,15 @@ export function TranslateReviewDialog({
     const draft = drafts[item.string_id]
     return draft ? [draft] : []
   })
+  const echoed = items.length === draftList.length && items.every((item) => {
+    const draft = drafts[item.string_id]
+    return draft !== undefined && !draftDiffers(draft, item)
+  })
+  if (generated) sawGenerated.current = true
+  else if (sawGenerated.current) {
+    loadedPage.current = items
+    sawGenerated.current = false
+  } else if (!echoed) loadedPage.current = items
   const memoryCells = draftList.flatMap((item) =>
     Object.keys(item.translations).flatMap((locale) => {
       if (sourceConflicts.some((conflict) => conflict.string_id === item.string_id)) return []
@@ -561,6 +598,8 @@ export function TranslateReviewDialog({
     }),
   )
   const exactCells = memoryCells.filter(({ matches }) => matches.some((match) => match.exact))
+  const matchStringCount = new Set(memoryCells.map((cell) => cell.item.string_id)).size
+  const exactStringCount = new Set(exactCells.map((cell) => cell.item.string_id)).size
   const unusedExact = exactCells.filter(({ item, locale }) => !item.memory_selected?.includes(locale))
   const usedCount = draftList.reduce((count, item) => count + (item.memory_selected?.length ?? 0), 0)
   const aiCount = localeCount(draftList) - usedCount
@@ -657,6 +696,8 @@ export function TranslateReviewDialog({
 
   const publicCount = draftList.filter((item) => item.status === 'public').length
   const applyCount = filledCount(draftList)
+  const loadedById = new Map(loadedPage.current.map((item) => [item.string_id, item]))
+  const pageLocked = draftList.some((draft) => draftDiffers(draft, loadedById.get(draft.string_id)))
   const missingCount = localeCount(draftList) - applyCount
   const review = !generating
   const busy = loadingQueue || generating || applying
@@ -689,10 +730,24 @@ export function TranslateReviewDialog({
   })
   const withErrors = draftList.filter((item) => tally(stringViews(item, qa)).errors > 0)
   const visible = filter === 'errors' ? withErrors : filter === 'issues' ? withIssues : filter === 'matches' ? draftList.filter((item) => memoryCells.some((cell) => cell.item.string_id === item.string_id)) : filter === 'exact' ? draftList.filter((item) => exactCells.some((cell) => cell.item.string_id === item.string_id)) : draftList
+  const seenMatchCount = useRef(matchStringCount)
+  const seenExactCount = useRef(exactStringCount)
   useEffect(() => {
-    if (filter === 'errors' && withErrors.length === 0) setFilter('all')
-    else if (filter === 'issues' && withIssues.length === 0) setFilter('all')
-  }, [filter, withErrors.length, withIssues.length])
+    // Opening Exact/Matches on a page that already has none keeps the empty state.
+    // A count that drops to zero while that filter is on falls back, same as issues.
+    const matchesFellEmpty = filter === 'matches' && matchStringCount === 0 && seenMatchCount.current > 0
+    const exactFellEmpty = filter === 'exact' && exactStringCount === 0 && seenExactCount.current > 0
+    if (
+      (filter === 'errors' && withErrors.length === 0) ||
+      (filter === 'issues' && withIssues.length === 0) ||
+      matchesFellEmpty ||
+      exactFellEmpty
+    ) {
+      setFilter('all')
+    }
+    seenMatchCount.current = matchStringCount
+    seenExactCount.current = exactStringCount
+  }, [filter, withErrors.length, withIssues.length, matchStringCount, exactStringCount])
 
   return (
     <Dialog
@@ -731,7 +786,9 @@ export function TranslateReviewDialog({
                     {unusedExact.length > 0 ? (
                       <Button type="button" variant="outline" size="sm" disabled={busy} onClick={useExactMatches}>
                         <CheckCheck data-icon="inline-start" />
-                        Use {unusedExact.length} exact matches
+                        {canPage
+                          ? `Use ${unusedExact.length} exact matches on this page`
+                          : `Use ${unusedExact.length} exact matches`}
                       </Button>
                     ) : null}
                     {memoryUndo ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={undoExactMatches}>Undo</Button> : null}
@@ -752,6 +809,12 @@ export function TranslateReviewDialog({
                     : `in ${withIssues.length} of ${draftList.length} ${draftList.length === 1 ? 'string' : 'strings'}`}
                 </span>
                 </> : null}
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  {canPage ? (
+                    <span id="missing-filter-scope" className="text-xs text-muted-foreground">
+                      on this page
+                    </span>
+                  ) : null}
                 <ToggleGroup
                   type="single"
                   variant="outline"
@@ -760,12 +823,12 @@ export function TranslateReviewDialog({
                   onValueChange={(value) => {
                     if (value === 'all' || value === 'issues' || value === 'errors' || value === 'matches' || value === 'exact') setFilter(value)
                   }}
-                  className="ml-auto"
                   aria-label="Filter translations"
+                  aria-describedby={canPage ? 'missing-filter-scope' : undefined}
                 >
                   <ToggleGroupItem value="all">All {draftList.length}</ToggleGroupItem>
-                  <ToggleGroupItem value="matches">With matches {new Set(memoryCells.map((cell) => cell.item.string_id)).size}</ToggleGroupItem>
-                  <ToggleGroupItem value="exact">Exact {new Set(exactCells.map((cell) => cell.item.string_id)).size}</ToggleGroupItem>
+                  <ToggleGroupItem value="matches">With matches {matchStringCount}</ToggleGroupItem>
+                  <ToggleGroupItem value="exact">Exact {exactStringCount}</ToggleGroupItem>
                   {generated ? <>
                   <ToggleGroupItem value="issues" disabled={withIssues.length === 0}>
                     With issues {withIssues.length}
@@ -775,6 +838,7 @@ export function TranslateReviewDialog({
                   </ToggleGroupItem>
                   </> : null}
                 </ToggleGroup>
+                </div>
               </div>
             </div>
           ) : null}
@@ -826,6 +890,11 @@ export function TranslateReviewDialog({
               {shouldShowQaIndex(draftList.length, filter === 'matches' || filter === 'exact' ? 'all' : filter) ? (
                 <QaIndex items={visible} qa={qa} />
               ) : null}
+              {visible.length === 0 && (filter === 'exact' || filter === 'matches') ? (
+                <EmptyState
+                  title={filter === 'exact' ? 'No exact matches on this page' : 'No matches on this page'}
+                />
+              ) : (
               <ul
                 className={cn(
                   'flex min-w-0 flex-col gap-3 overflow-x-clip',
@@ -868,6 +937,7 @@ export function TranslateReviewDialog({
                   />
                 ))}
               </ul>
+              )}
             </div>
           )}
         </ReviewDialogBody>
@@ -879,6 +949,8 @@ export function TranslateReviewDialog({
               pageSize={pageSize}
               total={total}
               disabled={busy}
+              blockedReason={pageLocked ? PAGE_BLOCKED : undefined}
+              note={filter === 'all' ? undefined : `Showing ${visible.length} of ${draftList.length} on this page`}
               onPageChange={onPageChange}
             />
           </div>

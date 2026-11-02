@@ -58,12 +58,11 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   const firstKey = dialog.locator('li').filter({ hasText: pagingPrefix }).first()
   await expect(firstKey).toBeVisible()
 
-  const pagerButtons = paging.locator('..').getByRole('button')
-  await pagerButtons.last().click()
+  await dialog.getByRole('button', { name: 'Next page' }).click()
   await expect(paging).toBeVisible()
   await expect(firstKey).toBeHidden()
 
-  await pagerButtons.first().click()
+  await dialog.getByRole('button', { name: 'Previous page' }).click()
   await expect(firstKey).toBeVisible()
 
   await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
