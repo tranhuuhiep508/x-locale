@@ -345,6 +345,7 @@ export interface TranslationMemoryResult {
 }
 
 export interface TranslateProposalItem {
+  expected_translations?: Record<string, string>
   string_id: string
   key: string
   source_text: string
@@ -371,10 +372,21 @@ export interface TranslateProposalsResult {
   page_size: number
 }
 
+export interface CliPushBatch extends PublishPreviewEntries {
+  batch_id: string
+  actor_label: string
+  created_at: string | null
+  created_count: number
+  updated_count: number
+  excluded_count: number
+}
+
 export interface TranslateApplyRequest {
+  overwrite?: boolean
   items: Array<{
     string_id: string
     expected_source_text: string
+    expected_translations?: Record<string, string>
     translations: Record<string, string>
     scores?: Record<string, number>
     description?: string | null

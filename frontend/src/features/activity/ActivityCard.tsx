@@ -272,13 +272,17 @@ export function ActivityCard({
         ) : null}
         {reviewBatch ? (
           <Button variant="ghost" size="sm" asChild>
-            <Link
-              to="/projects/$projectRef/strings"
-              params={{ projectRef: projectId }}
-              search={{ batch_id: reviewBatch.batchId, batch_kind: reviewBatch.batchKind }}
-            >
-              Review this batch
-            </Link>
+            {reviewBatch.batchKind === 'cli_push' ? (
+              <Link to="/projects/$projectRef/batches/$batchId"
+                params={{ projectRef: projectId, batchId: reviewBatch.batchId }}>
+                Review this batch
+              </Link>
+            ) : (
+              <Link to="/projects/$projectRef/strings" params={{ projectRef: projectId }}
+                search={{ batch_id: reviewBatch.batchId, batch_kind: reviewBatch.batchKind }}>
+                Review this batch
+              </Link>
+            )}
           </Button>
         ) : null}
         {!isBatch && card.string_key ? (

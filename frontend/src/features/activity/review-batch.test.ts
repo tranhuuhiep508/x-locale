@@ -36,6 +36,7 @@ describe('reviewBatchTarget', () => {
       'excel_import',
     )
     expect(reviewBatchTarget(card({ batch_kind: 'translate' }))?.batchKind).toBe('translate')
+    expect(reviewBatchTarget(card({ batch_kind: 'cli_push' }))?.batchKind).toBe('cli_push')
   })
 
   it('skips revert, publish batches, empty cards, and singles', () => {

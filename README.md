@@ -202,6 +202,21 @@ commit client IDs or secrets.
 
 More detail: [docs/](docs/).
 
+### CLI push batch review
+
+After `loc push`, open **Activity → CLI push → Review this batch**. The batch
+workspace shows the pushed strings, their working translations, and their
+published values. Choose target languages and click **Translate all** to regenerate
+those working translations, including existing text. Results save as drafts;
+edit translations on blur, review all locales, then click **Publish batch** once.
+Public exports keep using the previous snapshot until that explicit publication.
+
+This is the default workflow for new CLI push batches, with no automation setting.
+CLI commands/configuration and dashboard import/catalog workflows are unchanged.
+Older import batches retain their catalog review links. Deleted and pending-delete
+strings are excluded from this workspace. Competing edits require renewed review;
+generation or save failures never publish content.
+
 ### String filters
 
 The strings list, filtered publish preview, and filtered batch actions share the

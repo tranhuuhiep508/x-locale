@@ -175,3 +175,32 @@ with zero translations. Comparison is exact, including whitespace; restoring the
 identical source makes an existing proposal valid again. AI writes still affect
 only the working copy. Deploy backend and frontend together; custom Apply clients
 must send the baseline, and older browser tabs may need a reload.
+
+
+## CLI push batch workspace
+
+New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports keep
+`import`/`excel_import`. Historical batches are not reclassified. The endpoint
+`GET /api/projects/{project_id}/cli-push-batches/{batch_id}` resolves unique activity
+members within the project and returns metadata, active working/published rows,
+excluded lifecycle counts, and the existing publication fingerprint. An unknown,
+other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
+empty review. No additional workflow state or schema migration is required.
+
+The dashboard workspace generates proposals with `overwrite=true`, then saves
+successful proposals through `/translate/apply` in chunks of at most 100 strings.
+Apply's optional `overwrite` defaults to false for compatibility. Overwrite requires
+`expected_translations` for every submitted locale; generated proposals capture
+those baselines before synchronous or background generation. Source/target
+conflicts and unavailable strings reject the entire Apply request. Earlier chunks
+may remain saved working copies after a later failure; retries handle only the
+remaining proposals and never publish implicitly. A conflicting result can be
+skipped in favor of the latest saved human translation.
+
+Manual fields use checked editor writes and save on blur. Publishing uses the
+original CLI batch filter with `deleted=false` and `pending_delete=false`, and the
+fingerprint of the displayed review. A 409 fingerprint mismatch writes nothing,
+refreshes the review, and requires a renewed explicit publication. Publication is
+still per string across all locales, including locales not selected for AI.
+Missing values and QA issues remain advisory. The existing audit, Undo, export,
+and soft-delete semantics are retained.

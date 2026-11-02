@@ -1,7 +1,7 @@
 import type { ActivityFeedCard } from '@/lib/api/types'
 
 /** Import, Excel/file import, and translate batches can open the catalog. */
-const REVIEWABLE_BATCH_KINDS = new Set(['import', 'excel_import', 'translate'])
+const REVIEWABLE_BATCH_KINDS = new Set(['cli_push', 'import', 'excel_import', 'translate'])
 
 export type ReviewBatchTarget = {
   batchId: string

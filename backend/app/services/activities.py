@@ -325,8 +325,8 @@ def _apply_feed_filters(
         q = q.filter(Activity.created_at <= until)
     if event_type:
         if event_type == "import":
-            q = q.filter(Activity.batch_kind.in_([BatchKind.import_, BatchKind.excel_import]))
-        elif event_type in {"excel_import", "translate", "batch", "revert"}:
+            q = q.filter(Activity.batch_kind.in_([BatchKind.import_, BatchKind.cli_push, BatchKind.excel_import]))
+        elif event_type in {"cli_push", "excel_import", "translate", "batch", "revert"}:
             q = q.filter(Activity.batch_kind == event_type)
         else:
             q = q.filter(Activity.event_type == event_type)

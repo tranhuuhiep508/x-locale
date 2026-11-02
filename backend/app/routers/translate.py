@@ -294,7 +294,7 @@ def translate_apply(
 ) -> TranslateApplyResult:
     batch_id = uuid.uuid4()
     attach_batch(db, batch_id, "translate")
-    translated, locales = commit_proposals(db, project, payload.items)
+    translated, locales = commit_proposals(db, project, payload.items, overwrite=payload.overwrite)
     db.commit()
     return TranslateApplyResult(
         translated_count=translated,
