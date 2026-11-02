@@ -8,11 +8,10 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { PageBody } from '@/components/layout/PageHeader'
 import { useQaWatch } from '@/features/strings/use-qa-watch'
 import { QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import { ConfidenceBadge } from '@/features/strings/confidence'
@@ -79,34 +78,41 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
 
   return (
     <PageBody className="gap-3 py-4 sm:py-5">
-      <div className="flex flex-col gap-2">
-        <div>
-          <Button variant="link" asChild>
-            <Link to="/projects/$projectRef/activity" params={{ projectRef }} search={{}}>
-              <ArrowLeft data-icon="inline-start" /> Activity
-            </Link>
-          </Button>
+      <header className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col gap-2 border-b bg-background px-4 py-2 sm:-mx-6 sm:-mt-5 sm:px-6">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button variant="ghost" size="icon" asChild>
+              <Link
+                to="/projects/$projectRef/activity"
+                params={{ projectRef }}
+                search={{}}
+                aria-label="Back to Activity"
+              >
+                <ArrowLeft />
+              </Link>
+            </Button>
+            <div className="min-w-0">
+              <h1 className="font-heading text-lg font-semibold tracking-tight">CLI push batch</h1>
+              {batch && (
+                <p className="text-xs text-muted-foreground">
+                  {batch.actor_label} ·{' '}
+                  {batch.created_at ? formatRelativeTime(batch.created_at) : 'CLI push'}
+                </p>
+              )}
+            </div>
+          </div>
+          {batch && (
+            <Badge variant={workspace.published || !publishable ? 'secondary' : 'outline'}>
+              {workspace.published
+                ? 'Published'
+                : publishable
+                  ? 'Unpublished changes'
+                  : 'In sync with public'}
+            </Badge>
+          )}
         </div>
-        <PageHeader
-          title="CLI push batch"
-          description={
-            batch
-              ? `${batch.actor_label} · ${batch.created_at ? formatRelativeTime(batch.created_at) : 'CLI push'}`
-              : 'Translate, review, and publish this push.'
-          }
-          actions={
-            batch && (
-              <Badge variant={workspace.published || !publishable ? 'secondary' : 'outline'}>
-                {workspace.published
-                  ? 'Published'
-                  : publishable
-                    ? 'Unpublished changes'
-                    : 'In sync with public'}
-              </Badge>
-            )
-          }
-        />
-      </div>
+        {batch && <BatchStepper current={currentStep} />}
+      </header>
       {query.isPending ? (
         <Skeleton className="h-64 w-full" />
       ) : query.isError ? (
@@ -122,10 +128,6 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
       ) : batch ? (
         <>
           <div className="overflow-hidden rounded-xl border bg-card shadow-2xs">
-            <div className="px-3 py-3 sm:px-6">
-              <BatchStepper current={currentStep} />
-            </div>
-            <Separator />
             <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/30 px-4 py-2 sm:px-5">
               <div className="flex min-w-0 flex-col gap-1">
                 <h2 className="font-heading text-base font-semibold">
@@ -226,9 +228,6 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 >
                   Review translations
                 </h2>
-                <p className="text-xs text-muted-foreground">
-                  Compare with published content, then edit below.
-                </p>
               </div>
               {visible.map((entry) => (
                 <section
@@ -361,7 +360,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
                 {workspace.published
                   ? 'Available on the next public pull or export.'
-                  : 'Nothing is saved until you publish. Leaving or reloading discards your progress.'}
+                  : 'Edits are temporary until published.'}
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto">

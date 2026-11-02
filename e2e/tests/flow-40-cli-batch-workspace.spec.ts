@@ -134,7 +134,7 @@ test("real CLI push → batch translation → temporary review → atomic public
   // Leaving uses the app dialog; cancelling keeps the temporary content.
   const generated = await english.inputValue();
   await page
-    .getByRole("link", { name: "Activity", exact: true })
+    .getByRole("link", { name: "Back to Activity", exact: true })
     .first()
     .click();
   const leaveDialog = page.getByRole("alertdialog", {
@@ -150,7 +150,7 @@ test("real CLI push → batch translation → temporary review → atomic public
   await leaveDialog.getByRole("button", { name: "Keep reviewing" }).click();
   await expect(english).toHaveValue(generated);
   await page
-    .getByRole("link", { name: "Activity", exact: true })
+    .getByRole("link", { name: "Back to Activity", exact: true })
     .first()
     .click();
   await leaveDialog.getByRole("button", { name: "Discard and leave" }).click();
@@ -164,6 +164,17 @@ test("real CLI push → batch translation → temporary review → atomic public
     .click();
   await expect(
     page.getByText("Translations are ready for review.", { exact: false }),
+  ).toBeVisible();
+  const workspaceHeader = page
+    .locator("header")
+    .filter({ has: page.getByRole("heading", { name: "CLI push batch" }) });
+  const initialHeaderTop = (await workspaceHeader.boundingBox())!.y;
+  await english.scrollIntoViewIfNeeded();
+  expect(
+    Math.abs((await workspaceHeader.boundingBox())!.y - initialHeaderTop),
+  ).toBeLessThan(2);
+  await expect(
+    workspaceHeader.getByRole("list", { name: "Batch progress" }),
   ).toBeVisible();
   await english.fill("Log in with email");
   await page.keyboard.press("Tab");
