@@ -355,10 +355,10 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                   : translation.published_value || 'Empty'}
                               </p>
                             </div>
-                            <div className="flex min-w-0 items-start gap-2">
+                            <div className="relative min-w-0">
                               <Pencil
                                 aria-hidden="true"
-                                className="mt-3 size-3.5 shrink-0 text-primary"
+                                className="pointer-events-none absolute top-3 left-2.5 size-3.5 text-primary"
                               />
                               <Textarea
                                 id={id}
@@ -366,7 +366,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                 disabled={busy || workspace.stale}
                                 rows={1}
                                 className={cn(
-                                  'min-h-10 py-1.5',
+                                  'min-h-10 py-1.5 pl-8',
                                   changed && 'border-primary/60 bg-primary/5'
                                 )}
                                 value={translation?.value ?? ''}
