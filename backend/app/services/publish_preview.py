@@ -22,6 +22,7 @@ from app.services.strings import (
     compute_publish_fingerprint,
     fingerprints_match,
     guard_published_keys,
+    is_publishable_entry,
     load_string_entries,
     lock_publication,
     promote_string,
@@ -83,32 +84,34 @@ def publish_cli_push_batch(
     def write() -> BatchResult:
         lock_publication(db, project.id)
         db.refresh(project, with_for_update={"read": True})
-        members = (
+        activities = (
             db.query(Activity.string_id)
             .filter(
                 Activity.project_id == project.id,
                 Activity.batch_id == batch_id,
                 Activity.batch_kind == BatchKind.cli_push,
-                Activity.string_id.isnot(None),
             )
-            .distinct()
             .all()
         )
-        ids = [row[0] for row in members]
-        db.query(StringEntry.id).filter(
-            StringEntry.project_id == project.id,
-            StringEntry.id.in_(ids),
-        ).order_by(StringEntry.id).with_for_update().all()
-        db.query(Translation.id).filter(Translation.string_id.in_(ids)).order_by(
-            Translation.id
-        ).with_for_update().all()
+        if not activities:
+            raise HTTPException(404, detail="CLI push batch not found")
+        ids = sorted({row[0] for row in activities if row[0] is not None})
+        if ids:
+            db.query(StringEntry.id).filter(
+                StringEntry.project_id == project.id,
+                StringEntry.id.in_(ids),
+            ).order_by(StringEntry.id).with_for_update().all()
+            db.query(Translation.id).filter(Translation.string_id.in_(ids)).order_by(
+                Translation.id
+            ).with_for_update().all()
         entries = load_string_entries(db, project.id, ids, refresh=True)
-        entries = [entry for entry in entries if not entry.deleted_at and not entry.pending_delete]
+        active = [entry for entry in entries if not entry.deleted_at and not entry.pending_delete]
+        active.sort(key=lambda entry: (entry.key, str(entry.id)))
         # Validate provenance even for an empty batch; never accept a generic import id.
-        snapshot = cli_push_batch(db, project, batch_id)
-        if not fingerprints_match(snapshot.fingerprint, payload.fingerprint):
+        current_fingerprint = compute_publish_fingerprint(active, include_unchanged=True)
+        if not fingerprints_match(current_fingerprint, payload.fingerprint):
             raise HTTPException(409, detail={"code": PUBLISH_FINGERPRINT_MISMATCH})
-        by_id = {entry.id: entry for entry in entries}
+        by_id = {entry.id: entry for entry in active}
         seen = set()
         for item in payload.items:
             entry = by_id.get(item.string_id)
@@ -124,10 +127,12 @@ def publish_cli_push_batch(
         attach_batch(db, publication_id, "batch")
         for item in payload.items:
             apply_translation_values(db, by_id[item.string_id], item.translations, item.scores)
-        for entry in entries:
+        publishable = [entry for entry in active if is_publishable_entry(entry)]
+        for entry in publishable:
             promote_string(entry)
         db.flush()
-        guard_published_keys(db, project)
-        return BatchResult(affected=len(entries), batch_id=publication_id)
+        if publishable:
+            guard_published_keys(db, project)
+        return BatchResult(affected=len(publishable), batch_id=publication_id)
 
     return run_write(db, project.id, "publish_cli_push_batch", write)

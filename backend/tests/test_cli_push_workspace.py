@@ -304,3 +304,32 @@ def test_large_proposal_retry_excludes_all_reviewed_cells(client, monkeypatch):
     assert len(items) == 101
     assert all(set(item["translations"]) == {"ja"} for item in items)
     assert workspace(client, pid, pushed["batch_id"]) == before
+
+
+def test_publish_omits_unchanged_public_strings_from_activity_and_count(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"a": "A", "b": "B"})
+    batch = workspace(client, pid, pushed["batch_id"])
+    a_id = next(item["id"] for item in batch["items"] if item["key"] == "a")
+    publish_strings(client, pid, [a_id])
+
+    snapshot = workspace(client, pid, pushed["batch_id"])
+    b_row = next(item for item in snapshot["items"] if item["key"] == "b")
+    payload = {
+        "fingerprint": snapshot["fingerprint"],
+        "items": [
+            {
+                "string_id": b_row["id"],
+                "expected_source_text": b_row["source_text"],
+                "translations": {"en": "B translated"},
+            }
+        ],
+    }
+    before_count = client.get(f"{root}/activities").json()["total"]
+    result = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=payload)
+    assert result.status_code == 200, result.text
+    assert result.json()["affected"] == 1
+    after_activities = client.get(f"{root}/activities").json()["items"]
+    new_activities = after_activities[: len(after_activities) - before_count]
+    assert not any(act.get("string_id") == a_id for act in new_activities)

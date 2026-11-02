@@ -1,0 +1,19 @@
+{
+  "welcome": "Chào mừng bạn đến ứng dụng!",
+  "subtitle": "Quản lý bản dịch dễ dàng.",
+  "get_started": "Bắt đầu",
+  "learn_more": "Tìm hiểu thêm",
+  "hero_title": "Địa phương hóa đơn giản hơn",
+  "hero_description": "Ra mắt sản phẩm đa ngôn ngữ nhanh hơn với một nguồn dữ liệu duy nhất cho tất cả chuỗi văn bản.",
+  "feature_translate": "Dịch thuật bằng AI",
+  "feature_translate_desc": "Dịch sang hàng chục ngôn ngữ chỉ với một cú nhấp chuột.",
+  "feature_sync": "Đồng bộ CLI",
+  "feature_sync_desc": "Đẩy và kéo tệp ngôn ngữ từ mã nguồn của bạn.",
+  "feature_collab": "Cộng tác nhóm",
+  "feature_collab_desc": "Xem xét, phê duyệt và xuất bản bản dịch cùng nhau.",
+  "cta_primary": "Dùng thử miễn phí",
+  "cta_secondary": "Xem tài liệu",
+  "stats_users": "{count} người dùng đang hoạt động",
+  "stats_languages": "Hỗ trợ {count} ngôn ngữ",
+  "stats_strings": "Quản lý {count} chuỗi"
+}

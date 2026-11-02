@@ -217,10 +217,10 @@ A push that creates or updates strings prints one absolute review link when a
 web origin can be resolved:
 
 ```
-Review: http://localhost:5173/projects/demo-app/strings?batch_id=<batch_id>&batch_kind=import
+Review: http://localhost:5173/projects/demo-app/batches/<batch_id>
 ```
 
-The link opens the strings catalog filtered to that import batch. Dry runs and
+The link opens the batch workspace to review, translate, and publish the push. Dry runs and
 pushes that do not create or update strings omit the line.
 
 ```

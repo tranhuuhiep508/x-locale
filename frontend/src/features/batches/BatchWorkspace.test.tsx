@@ -448,6 +448,32 @@ it('retries only unresolved AI cells without replacing human edits', async () =>
     (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
   ).toBe(false)
 })
+
+it('allows manual edits to satisfy remaining unresolved cells', async () => {
+  vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
+    items: [{ ...proposal(), translations: { en: 'Generated', ja: '' } }],
+    locales: ['en', 'ja'],
+    job_id: null,
+    total: 1,
+    page: 1,
+    page_size: 50,
+  })
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/1 translations still need review/)
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  const japanese = screen.getByRole('textbox', {
+    name: 'JA translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(japanese, { target: { value: 'Manual JA' } })
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(false)
+})
+
 it('keeps historical locales read-only and excludes them from publication edits', async () => {
   batch.items[0].translations.push({
     id: null,

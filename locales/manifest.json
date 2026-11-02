@@ -1,14 +1,31 @@
 {
   "modules": [
-    "checkout",
+    "admin",
+    "analytics",
+    "api",
+    "auth",
+    "billing",
+    "common",
+    "dashboard",
+    "errors",
+    "help",
+    "homepage",
+    "integrations",
+    "inventory",
+    "marketing",
     "notifications",
-    "settings"
+    "onboarding",
+    "orders",
+    "products",
+    "profile",
+    "reports",
+    "search",
+    "settings",
+    "users",
+    "validation"
   ],
   "locales": [
-    "vi",
-    "en",
-    "ja"
+    "vi"
   ],
-  "base_language": "vi",
-  "content_hash": "5d4a81b0fbb9c050543f2b327baba6e54a531a15ecc9cd8d1d86d7138d109279"
+  "base_language": "vi"
 }

@@ -32,6 +32,8 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     gcTime: 0,
   })
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
   const [qaBaselines, setQaBaselines] = useState<Record<string, QaBaseline>>({})
   const [action, setAction] = useState<'translate' | 'publish' | null>(null)
   const [published, setPublished] = useState(false)
@@ -75,25 +77,25 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       setJobId(null)
       return
     }
+    const currentDrafts = draftsRef.current
     const successful = items.flatMap((item) =>
       Object.entries(item.translations)
         .filter(
           ([locale, value]) =>
             requested.current.has(`${item.string_id}:${locale}`) &&
             value.trim() &&
-            !drafts[`${item.string_id}:${locale}`]
+            !currentDrafts[`${item.string_id}:${locale}`]
         )
         .map(([locale, value]) => ({ item, locale, value }))
     )
-    setDrafts((previous) => ({
-      ...previous,
-      ...Object.fromEntries(
-        successful.map(({ item, locale, value }) => [
-          `${item.string_id}:${locale}`,
-          { value, source: item.source_text, score: item.scores?.[locale] ?? null },
-        ])
-      ),
-    }))
+    const newDrafts = Object.fromEntries(
+      successful.map(({ item, locale, value }) => [
+        `${item.string_id}:${locale}`,
+        { value, source: item.source_text, score: item.scores?.[locale] ?? null },
+      ])
+    )
+    draftsRef.current = { ...currentDrafts, ...newDrafts }
+    setDrafts((previous) => ({ ...previous, ...newDrafts }))
     setQaBaselines((previous) => ({
       ...previous,
       ...Object.fromEntries(
@@ -104,7 +106,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       ),
     }))
     setJobId(null)
-    const remaining = requested.current.size - successful.length
+    const staged = new Set(successful.map(({ item, locale }) => `${item.string_id}:${locale}`))
+    const remaining = [...requested.current].filter(
+      (cell) => !currentDrafts[cell] && !staged.has(cell)
+    ).length
     setNotice(
       remaining
         ? `${remaining} translations still need review. Retry unresolved translations or edit them manually.`
@@ -116,9 +121,14 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setStarted(true)
     setPublished(false)
     setNotice('')
+    const next = { value, source: entry.source_text, score: null }
+    draftsRef.current = {
+      ...draftsRef.current,
+      [`${entry.id}:${locale}`]: next,
+    }
     setDrafts((previous) => ({
       ...previous,
-      [`${entry.id}:${locale}`]: { value, source: entry.source_text, score: null },
+      [`${entry.id}:${locale}`]: next,
     }))
   }
   const job = useQuery({
@@ -211,6 +221,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   }
   async function restart() {
     if (operation.current) return
+    draftsRef.current = {}
     setDrafts({})
     setQaBaselines({})
     setJobId(null)
@@ -253,6 +264,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         fingerprint: snapshot.fingerprint,
         items: buildBatchPublishItems(snapshot.items, drafts),
       })
+      draftsRef.current = {}
       setDrafts({})
       setQaBaselines({})
       setStarted(false)
