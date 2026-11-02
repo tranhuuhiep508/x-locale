@@ -1,0 +1,23 @@
+{
+  "demo_memory_published": "Please confirm your email address.",
+  "demo_qa_extra_placeholder": "Welcome, {{name}}!",
+  "demo_settings_accessible_label": "Open account menu for {{name}}",
+  "demo_settings_delete_account": "Delete account",
+  "demo_settings_delete_warning": "This action cannot be undone. Your data will be permanently deleted.",
+  "demo_settings_display_name": "Display name",
+  "demo_settings_email_invalid": "Enter a valid email address.",
+  "demo_settings_file_size": "Maximum file size: {{size}} MB",
+  "demo_settings_html_code": "Enter the code <code>{{code}}</code> to confirm.",
+  "demo_settings_html_help": "Your password must be at least <strong>{{min}}</strong> characters.",
+  "demo_settings_html_nested": "<p><strong>Important:</strong> Read the <a href=\"/privacy\">privacy policy</a>.</p>",
+  "demo_settings_language": "Display language",
+  "demo_settings_privacy_description": "Choose how we use your data.",
+  "demo_settings_profile": "Profile",
+  "demo_settings_quoted_text": "Select “Save” to apply your changes.",
+  "demo_settings_save_success": "Your changes have been saved.",
+  "demo_settings_timezone": "Time zone",
+  "demo_settings_title": "Account settings",
+  "demo_settings_two_factor": "Two-factor authentication",
+  "demo_settings_two_factor_help": "Add a layer of security with a verification code when signing in.",
+  "demo_settings_unsaved_changes": "You have unsaved changes. Are you sure you want to leave?"
+}
