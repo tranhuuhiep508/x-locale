@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.auth import get_or_create_dev_user, hash_api_key
 from app.config import settings
 from app.database import SessionLocal
@@ -73,6 +75,7 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
             base_language="vi",
             target_languages=["en", "ja"],
             layout=ProjectLayout.modular,
+            translation_context="Use a friendly, concise tone for an online shopping app.",
             created_by=dev_user.id,
         )
         db.add(project)
@@ -129,6 +132,14 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
                 promote_string(entry)
             if pending:
                 entry.source_text += " (đã cập nhật)"
+            if key == "demo_pending_delete":
+                entry.pending_delete = True
+            elif key == "demo_deleted":
+                entry.deleted_at = datetime.now(UTC)
+            elif key == "demo_unassigned":
+                entry.module_id = None
+            elif key == "demo_translation_edit":
+                entry.translations[0].value = "Thanks for shopping with us."
 
         db.commit()
         db.refresh(project)
