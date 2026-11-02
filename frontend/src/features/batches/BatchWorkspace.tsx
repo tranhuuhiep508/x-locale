@@ -18,7 +18,7 @@ import { ConfidenceBadge } from '@/features/strings/confidence'
 import { contentFieldChanges } from '@/features/strings/publish-preview'
 import { useBatchWorkspace } from '@/features/batches/use-batch-workspace'
 import { BatchStepper } from '@/features/batches/BatchStepper'
-import { formatRelativeTime } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 
 export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; batchId: string }) {
   const workspace = useBatchWorkspace(projectRef, batchId)
@@ -259,27 +259,36 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                         <p className="eyebrow">Source</p>
                         <Badge variant="secondary">{project?.base_language.toUpperCase()}</Badge>
                       </div>
-                      <p
-                        className="text-sm leading-relaxed font-medium whitespace-pre-wrap wrap-anywhere"
-                        lang={project?.base_language}
+                      <div className="flex flex-col gap-1 rounded-md border bg-background p-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Published source
+                        </p>
+                        <p
+                          lang={project?.base_language}
+                          className="text-sm whitespace-pre-wrap wrap-anywhere"
+                        >
+                          {entry.published_source_text ?? 'Not published yet'}
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          'flex flex-col gap-1 rounded-md border p-2',
+                          entry.source_text !== entry.published_source_text &&
+                            'border-primary/40 bg-primary/5'
+                        )}
                       >
-                        {entry.source_text}
-                      </p>
+                        <p className="text-xs font-medium text-primary">Source to publish</p>
+                        <p
+                          lang={project?.base_language}
+                          className="text-sm font-medium whitespace-pre-wrap wrap-anywhere"
+                        >
+                          {entry.source_text}
+                        </p>
+                      </div>
                       {entry.description && (
                         <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
                           {entry.description}
                         </p>
-                      )}
-                      {entry.published_source_text != null && (
-                        <div className="flex flex-col gap-1 text-xs leading-relaxed text-muted-foreground">
-                          <p className="font-medium">Currently published</p>
-                          <p
-                            lang={project?.base_language}
-                            className="whitespace-pre-wrap wrap-anywhere"
-                          >
-                            {entry.published_source_text}
-                          </p>
-                        </div>
                       )}
                       {(entry.published_key == null ? [] : contentFieldChanges(entry))
                         .filter((change) => change.field === 'key' || change.field === 'module')
@@ -293,6 +302,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {reviewLocales.map((locale) => {
                         const translation = entry.translations.find((t) => t.locale === locale)
                         const id = `${entry.id}:${locale}`
+                        const changed =
+                          (translation?.value ?? '') !== (translation?.published_value ?? '')
                         return (
                           <Field key={locale} className="gap-1">
                             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -308,12 +319,32 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                 )}
                               </div>
                             </div>
+                            <div className="flex min-w-0 flex-col gap-1 rounded-md border bg-muted/40 px-2.5 py-2">
+                              <p className="text-xs font-medium text-muted-foreground">Published</p>
+                              <p
+                                lang={locale}
+                                className="text-sm whitespace-pre-wrap wrap-anywhere"
+                              >
+                                {translation?.published_value == null
+                                  ? 'Not published yet'
+                                  : translation.published_value || 'Empty'}
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                              <p className="text-xs font-medium text-primary">To publish</p>
+                              <span className="text-xs text-muted-foreground">
+                                {changed ? 'Changed' : 'No change'}
+                              </span>
+                            </div>
                             <Textarea
                               id={id}
                               lang={locale}
                               disabled={busy || workspace.stale}
                               rows={1}
-                              className="min-h-10 py-1.5"
+                              className={cn(
+                                'min-h-10 py-1.5',
+                                changed && 'border-primary/60 bg-primary/5'
+                              )}
                               value={translation?.value ?? ''}
                               placeholder="Missing translation"
                               aria-label={`${locale.toUpperCase()} translation for ${entry.key}`}
@@ -321,9 +352,6 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                 workspace.edit(entry, locale, event.target.value)
                               }
                             />
-                            <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap wrap-anywhere">
-                              Published: {translation?.published_value || '—'}
-                            </p>
                           </Field>
                         )
                       })}

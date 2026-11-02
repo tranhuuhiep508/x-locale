@@ -383,5 +383,19 @@ it('shows pending translations outside project targets for publication review', 
     (screen.getByRole('textbox', { name: 'FR translation for login.0' }) as HTMLTextAreaElement)
       .value
   ).toBe('En attente')
-  expect(screen.getByText('Published: Ancien')).toBeDefined()
+  expect(screen.getByText('Ancien')).toBeDefined()
+})
+
+it('distinguishes published values from changes to publish', async () => {
+  show()
+  await loaded()
+  expect(screen.getByText('Published source')).toBeDefined()
+  expect(screen.getByText('Nguồn cũ')).toBeDefined()
+  expect(screen.getByText('Source to publish')).toBeDefined()
+  expect(screen.getAllByText('No change')).toHaveLength(2)
+  fireEvent.change(screen.getByRole('textbox', { name: 'EN translation for login.0' }), {
+    target: { value: 'New text' },
+  })
+  expect(screen.getAllByText('Changed')).toHaveLength(2)
+  expect(screen.getByText('Old')).toBeDefined()
 })
