@@ -55,8 +55,11 @@ test('translate missing: paging stays mounted, progress while generating, apply 
 
   const paging = dialog.getByText(/\d+–\d+ of \d+/)
   await expect(paging).toBeVisible()
-  const firstKey = dialog.locator('li').filter({ hasText: pagingPrefix }).first()
-  await expect(firstKey).toBeVisible()
+  const firstRow = dialog.locator('li').filter({ hasText: pagingPrefix }).first()
+  await expect(firstRow).toBeVisible()
+  const firstRowId = await firstRow.getAttribute('id')
+  expect(firstRowId).toBeTruthy()
+  const firstKey = dialog.locator(`li[id="${firstRowId}"]`)
 
   await dialog.getByRole('button', { name: 'Next page' }).click()
   await expect(paging).toBeVisible()
