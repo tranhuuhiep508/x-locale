@@ -267,3 +267,54 @@ test("real CLI push → batch translation → temporary review → atomic public
     fullPage: true,
   });
 });
+
+test("translates and publishes a CLI batch larger than 100 strings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const created = await page.request.post("/api/projects", {
+    data: {
+      name: `Large CLI batch ${Date.now()}`,
+      base_language: "vi",
+      target_languages: ["en"],
+      layout: "flat",
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const project = await created.json();
+  const root = `/api/projects/${project.slug}`;
+  const pushed = await page.request.post(`${root}/strings/import`, {
+    data: {
+      strings: Object.fromEntries(
+        Array.from({ length: 101 }, (_, i) => [`key${i}`, `Nguồn ${i}`]),
+      ),
+    },
+  });
+  expect(pushed.ok(), await pushed.text()).toBeTruthy();
+  const { batch_id } = await pushed.json();
+  await page.goto(`/projects/${project.slug}/batches/${batch_id}`);
+  await expect(page.getByText("101 strings in this batch")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Translate all", exact: true })
+    .click();
+  await expect(
+    page.getByText("Translations are ready for review.", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Publish batch", exact: true })
+    .click();
+  await expect(
+    page.getByText("Batch saved and published.", { exact: false }),
+  ).toBeVisible();
+  const exported = await page.request.get(
+    `${root}/export?stage=public&locale=en`,
+  );
+  expect(exported.ok()).toBeTruthy();
+  const values = (await exported.json()).en;
+  expect(Object.keys(values)).toHaveLength(101);
+  expect(
+    Object.values(values).every(
+      (value) => typeof value === "string" && value.length > 0,
+    ),
+  ).toBeTruthy();
+});

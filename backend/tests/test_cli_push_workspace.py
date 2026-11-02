@@ -273,3 +273,34 @@ def test_final_completion_can_clear_a_translation_without_early_save(client):
     assert (
         current["translations"][0]["value"] == current["translations"][0]["published_value"] == ""
     )
+
+
+def test_large_proposal_retry_excludes_all_reviewed_cells(client, monkeypatch):
+    monkeypatch.setattr(settings, "ai_translate_stub", True)
+    pid = make_project(client, targets=["en", "ja"])["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {f"key{i}": "Source" for i in range(101)})
+    before = workspace(client, pid, pushed["batch_id"])
+    response = client.post(
+        f"{root}/translate/proposals",
+        json={
+            "scope": "strings",
+            "batch_id": pushed["batch_id"],
+            "locales": ["en", "ja"],
+            "overwrite": True,
+            "exclude_cells": {row["id"]: ["en"] for row in before["items"]},
+        },
+    )
+    assert response.status_code == 200, response.text
+    job_id = response.json()["job_id"]
+    assert job_id
+    for _ in range(200):
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    assert job["status"] == "completed", job
+    items = job["result"]["items"]
+    assert len(items) == 101
+    assert all(set(item["translations"]) == {"ja"} for item in items)
+    assert workspace(client, pid, pushed["batch_id"]) == before

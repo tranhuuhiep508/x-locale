@@ -262,6 +262,10 @@ it('publishes over 100 staged strings in a single final request across pages', a
   await screen.findByText('101 strings in this batch')
   fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
   await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ exclude_cells: {} })
+  )
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
   expect(
     (screen.getByRole('textbox', { name: 'EN translation for login.50' }) as HTMLTextAreaElement)

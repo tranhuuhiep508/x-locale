@@ -12,7 +12,9 @@ import {
   isPublishFingerprintMismatch,
 } from '@/features/strings/publish-preview'
 
-type Draft = { value: string; score: number | null; source: string }
+import { buildBatchPublishItems, type BatchDraft } from './batch-publication'
+
+type Draft = BatchDraft
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Operation failed. Please retry.'
 
@@ -191,10 +193,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         overwrite: true,
         locales,
         exclude_cells: Object.fromEntries(
-          (query.data?.items ?? []).map((entry) => [
-            entry.id,
-            locales.filter((locale) => Boolean(drafts[`${entry.id}:${locale}`])),
-          ])
+          (query.data?.items ?? []).flatMap((entry) => {
+            const excluded = locales.filter((locale) => Boolean(drafts[`${entry.id}:${locale}`]))
+            return excluded.length ? [[entry.id, excluded]] : []
+          })
         ),
       })
       if (!mounted.current) return
@@ -249,22 +251,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     try {
       await stringsApi.publishCliPushBatch(projectRef, batchId, {
         fingerprint: snapshot.fingerprint,
-        items: snapshot.items.flatMap((entry) => {
-          const changes = Object.entries(drafts).filter(([id]) => id.startsWith(`${entry.id}:`))
-          if (!changes.length) return []
-          return [
-            {
-              string_id: entry.id,
-              expected_source_text: changes[0][1].source,
-              translations: Object.fromEntries(
-                changes.map(([id, draft]) => [id.slice(entry.id.length + 1), draft.value])
-              ),
-              scores: Object.fromEntries(
-                changes.map(([id, draft]) => [id.slice(entry.id.length + 1), draft.score])
-              ),
-            },
-          ]
-        }),
+        items: buildBatchPublishItems(snapshot.items, drafts),
       })
       setDrafts({})
       setQaBaselines({})

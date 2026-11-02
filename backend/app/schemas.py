@@ -423,7 +423,7 @@ class TranslateRequest(BatchFilter):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
     descriptions: OptionalDescriptionValues = None
-    exclude_cells: dict[UUID, list[str]] = Field(default_factory=dict, max_length=100)
+    exclude_cells: dict[UUID, list[str]] = Field(default_factory=dict)
 
 
 class TranslationSourceConflict(BaseModel):
