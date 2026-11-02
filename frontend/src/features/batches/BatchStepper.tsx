@@ -17,13 +17,13 @@ export function BatchStepper({ current }: { current: number }) {
           <li
             key={step.label}
             aria-current={active ? 'step' : undefined}
-            className="relative flex min-w-0 flex-col items-center gap-3 text-center"
+            className="relative flex min-w-0 flex-col items-center gap-1.5 text-center"
           >
             {index < steps.length - 1 && (
               <span
                 aria-hidden="true"
                 className={cn(
-                  'absolute top-4 left-[calc(50%+1.25rem)] h-px w-[calc(100%-2.5rem)] bg-border',
+                  'absolute top-3 left-[calc(50%+1rem)] h-px w-[calc(100%-2rem)] bg-border',
                   complete && 'bg-primary'
                 )}
               />
@@ -31,13 +31,13 @@ export function BatchStepper({ current }: { current: number }) {
             <span
               aria-hidden="true"
               className={cn(
-                'flex size-8 items-center justify-center rounded-full border bg-card font-mono text-xs text-muted-foreground',
+                'flex size-6 items-center justify-center rounded-full border bg-card font-mono text-xs text-muted-foreground',
                 active &&
                   'border-primary bg-primary text-primary-foreground ring-4 ring-primary/10',
                 complete && 'border-primary bg-primary/10 text-primary'
               )}
             >
-              {complete ? <Check className="size-4" /> : index + 1}
+              {complete ? <Check className="size-3" /> : index + 1}
             </span>
             <div className="flex flex-col gap-1">
               <span
@@ -51,9 +51,7 @@ export function BatchStepper({ current }: { current: number }) {
                   {complete ? ', complete' : active ? ', current step' : ', upcoming'}
                 </span>
               </span>
-              <span className="hidden text-xs text-muted-foreground sm:block">
-                {step.description}
-              </span>
+              <span className="sr-only">{step.description}</span>
             </div>
           </li>
         )

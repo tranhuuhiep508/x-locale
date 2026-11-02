@@ -78,7 +78,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
   )
 
   return (
-    <PageBody className="gap-5">
+    <PageBody className="gap-3 py-4 sm:py-5">
       <div className="flex flex-col gap-2">
         <div>
           <Button variant="link" asChild>
@@ -122,12 +122,12 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
       ) : batch ? (
         <>
           <div className="overflow-hidden rounded-xl border bg-card shadow-2xs">
-            <div className="px-3 py-5 sm:px-6">
+            <div className="px-3 py-3 sm:px-6">
               <BatchStepper current={currentStep} />
             </div>
             <Separator />
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-muted/30 p-4 sm:px-5">
-              <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/30 px-4 py-2 sm:px-5">
+              <div className="flex min-w-0 flex-col gap-1">
                 <h2 className="font-heading text-base font-semibold">
                   {batch.items.length} strings in this batch
                 </h2>
@@ -193,7 +193,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               </AlertDescription>
             </Alert>
           )}
-          <div role="status" aria-live="polite" className="text-sm text-muted-foreground">
+          <div
+            role="status"
+            aria-live="polite"
+            className="text-sm text-muted-foreground empty:hidden"
+          >
             {busy ? (
               <div className="flex flex-wrap items-center gap-2">
                 <Spinner /> {workspace.progress}
@@ -214,7 +218,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               description="All strings in this batch are deleted or pending deletion."
             />
           ) : (
-            <section aria-labelledby="batch-review-title" className="flex flex-col gap-4">
+            <section aria-labelledby="batch-review-title" className="flex flex-col gap-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2
                   id="batch-review-title"
@@ -232,7 +236,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   aria-label={`Review ${entry.key}`}
                   className="overflow-hidden rounded-xl border bg-card shadow-2xs"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
                     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
                       <span className="text-muted-foreground">
                         {entry.module_slug ?? 'Unassigned'}
@@ -251,7 +255,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                     </Badge>
                   </div>
                   <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                    <div className="flex min-w-0 flex-col gap-4 border-b bg-muted/30 p-5 lg:border-r lg:border-b-0">
+                    <div className="flex min-w-0 flex-col gap-2 border-b bg-muted/30 p-3 lg:border-r lg:border-b-0">
                       <div className="flex items-center justify-between gap-2">
                         <p className="eyebrow">Source</p>
                         <Badge variant="secondary">{project?.base_language.toUpperCase()}</Badge>
@@ -286,12 +290,12 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                           </p>
                         ))}
                     </div>
-                    <FieldGroup className="min-w-0 gap-5 p-5">
+                    <FieldGroup className="grid min-w-0 gap-3 p-3 xl:grid-cols-2">
                       {reviewLocales.map((locale) => {
                         const translation = entry.translations.find((t) => t.locale === locale)
                         const id = `${entry.id}:${locale}`
                         return (
-                          <Field key={locale}>
+                          <Field key={locale} className="gap-1">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <FieldLabel htmlFor={id}>{locale.toUpperCase()}</FieldLabel>
                               <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +313,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               id={id}
                               lang={locale}
                               disabled={busy || workspace.stale}
-                              rows={2}
+                              rows={1}
+                              className="min-h-10 py-1.5"
                               value={translation?.value ?? ''}
                               placeholder="Missing translation"
                               aria-label={`${locale.toUpperCase()} translation for ${entry.key}`}
@@ -341,7 +346,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               {missing} missing translations will export as empty values if published.
             </p>
           )}
-          <footer className="sticky bottom-0 z-10 -mx-4 -mb-6 flex flex-wrap items-center justify-between gap-4 border-t bg-background px-4 py-4 sm:-mx-6 sm:-mb-8 sm:px-6">
+          <footer className="sticky bottom-0 z-10 -mx-4 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-2 sm:-mx-6 sm:-mb-8 sm:px-6">
             <div className="flex min-w-0 flex-col gap-1">
               <p className="flex items-center gap-2 text-sm font-medium">
                 {workspace.published && (
