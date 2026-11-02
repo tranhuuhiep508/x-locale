@@ -30,6 +30,32 @@ it('truncates a near-exact match and reserves 100 for exact matches', () => {
   expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('100')
 })
 
+it('uses theme tokens for exact, high, and low similarity', () => {
+  const { rerender } = render(<MatchBar match={{ ...match, exact: true, similarity: 1 }} />)
+  const exact = screen.getByText('Exact match')
+  expect(exact.className).toContain('text-azure-800')
+  expect(exact.className).toContain('dark:text-azure-200')
+  const meter = screen.getByRole('meter')
+  expect(meter.className).toContain('bg-haze-200')
+  expect(meter.className).toContain('dark:bg-haze-800')
+  expect(meter.firstElementChild?.className).toContain('bg-azure-700')
+  expect(meter.firstElementChild?.className).toContain('dark:bg-azure-400')
+
+  rerender(<MatchBar match={{ ...match, similarity: 0.91 }} />)
+  const high = screen.getByText('91% similar')
+  expect(high.className).toContain('text-azure-700')
+  expect(high.className).toContain('dark:text-azure-300')
+  expect(screen.getByRole('meter').firstElementChild?.className).toContain('bg-azure-500')
+  expect(screen.getByRole('meter').firstElementChild?.className).not.toContain('dark:')
+
+  rerender(<MatchBar match={{ ...match, similarity: 0.82 }} />)
+  const low = screen.getByText('82% similar')
+  expect(low.className).toContain('text-haze-600')
+  expect(low.className).toContain('dark:text-haze-400')
+  expect(screen.getByRole('meter').firstElementChild?.className).toContain('bg-azure-300')
+  expect(screen.getByRole('meter').firstElementChild?.className).toContain('dark:bg-azure-700')
+})
+
 it('shows the minimum visible fill for an 80% match', () => {
   render(<MatchBar match={{ ...match, similarity: 0.8 }} />)
   expect(screen.getByRole('meter').firstElementChild?.getAttribute('style')).toContain('width: 10%')
@@ -40,11 +66,15 @@ const panel = {
   selected: {},
   onUse: () => {},
   onUseExact: () => {},
+  onRetry: () => {},
 }
 
-it('hides the locale count when published translations fail to load', () => {
-  render(<TranslationMemoryPanel {...panel} matches={{}} loading={false} error="offline" />)
+it('offers a retry when published translations fail to load', () => {
+  const onRetry = vi.fn()
+  render(<TranslationMemoryPanel {...panel} onRetry={onRetry} matches={{}} loading={false} error="offline" />)
   expect(screen.getByRole('status').textContent).toBe('Could not load published translations.')
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+  expect(onRetry).toHaveBeenCalledOnce()
   expect(screen.queryByText('0/2')).toBeNull()
   expect(screen.queryByText(/No match/)).toBeNull()
 })

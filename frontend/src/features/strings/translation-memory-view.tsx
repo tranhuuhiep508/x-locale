@@ -54,7 +54,11 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
     <span
       className={cn(
         'inline-flex h-5 items-center gap-1.5 text-[11px] font-semibold tabular-nums',
-        match.exact ? 'text-azure-800' : pct >= 90 ? 'text-azure-700' : 'text-haze-600'
+        match.exact
+          ? 'text-azure-800 dark:text-azure-200'
+          : pct >= 90
+            ? 'text-azure-700 dark:text-azure-300'
+            : 'text-haze-600 dark:text-haze-400'
       )}
     >
       <span
@@ -68,12 +72,16 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
             ? 'Exact source match, previously published'
             : `${pct}% similar source, previously published`
         }
-        className="h-1.5 w-10 overflow-hidden rounded-full bg-haze-200"
+        className="h-1.5 w-10 overflow-hidden rounded-full bg-haze-200 dark:bg-haze-800"
       >
         <span
           className={cn(
             'block h-full rounded-full',
-            match.exact ? 'bg-azure-700' : pct >= 90 ? 'bg-azure-500' : 'bg-azure-300'
+            match.exact
+              ? 'bg-azure-700 dark:bg-azure-400'
+              : pct >= 90
+                ? 'bg-azure-500'
+                : 'bg-azure-300 dark:bg-azure-700'
           )}
           style={{ width: `${fill}%` }}
         />
@@ -247,6 +255,7 @@ export function TranslationMemoryPanel({
   onUse,
   onUseExact,
   onUndo,
+  onRetry,
 }: {
   locales: string[]
   matches: Record<string, TranslationMemoryMatch[]>
@@ -258,6 +267,7 @@ export function TranslationMemoryPanel({
   onUse: (locale: string, match: TranslationMemoryMatch) => void
   onUseExact: () => void
   onUndo?: () => void
+  onRetry: () => void
 }) {
   const count = locales.filter((locale) => matches[locale]?.length).length
   const exact = locales.filter(
@@ -322,9 +332,14 @@ export function TranslationMemoryPanel({
           ))}
         </div>
       ) : error ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Could not load published translations.
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p role="status" className="text-xs text-muted-foreground">
+            Could not load published translations.
+          </p>
+          <Button type="button" variant="outline" size="sm" disabled={disabled || stale} onClick={onRetry}>
+            Check again
+          </Button>
+        </div>
       ) : empty ? (
         <p className="text-xs text-muted-foreground">
           No previously published match for this source text. Generate with AI fills the empty locales.

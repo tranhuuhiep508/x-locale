@@ -65,7 +65,7 @@ export function useTranslationMemory(
       return
     }
     const token = ++generation.current
-    const delay = initial.current ? 0 : 350
+    const delay = initial.current ? 0 : 800
     initial.current = false
     setState((prev) =>
       prev.result || prev.error ? prev : { source, localeKey, loading: true },
@@ -84,6 +84,12 @@ export function useTranslationMemory(
       if (generation.current === token) generation.current += 1
     }
   }, [load, source, localeKey, expectedSource])
+  const retry = useCallback(() => {
+    const input = latest.current
+    if (!input.source.trim() || input.locales.length === 0) return
+    setState({ source: input.source, localeKey: input.localeKey, loading: true })
+    void load(++generation.current)
+  }, [load])
   // Previous matches stay visible, but they belong to the last request until this one lands.
   const stale = Boolean(state.result || state.error)
     && (state.source !== source || state.localeKey !== localeKey)
@@ -92,5 +98,6 @@ export function useTranslationMemory(
     loading: state.loading,
     error: state.error,
     stale,
+    retry,
   }
 }

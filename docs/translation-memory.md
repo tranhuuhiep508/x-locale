@@ -39,8 +39,8 @@ retain precedence. An explicit AI request with an exact match receives no exampl
 Accepted cells are excluded individually from AI generation and regeneration.
 Other locales on the same string remain eligible. Editing an accepted cell keeps
 it excluded; clearing it makes it eligible again. Changing the source invalidates
-suggestions and selection markers. The editor looks up memory when it opens or
-when explicitly requested, never while typing. Saves and Apply retain source
+suggestions and selection markers. The editor looks up memory when it opens and
+800 ms after source typing stops. Saves and Apply retain source
 baseline checks, including translation-only editor saves.
 If a lookup fails, use **Check again** to retry; an explicit AI request can proceed
 without memory examples.
