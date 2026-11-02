@@ -211,6 +211,24 @@ describe('translation QA in review', () => {
     }
   })
 
+  it('does not report a clean page when a QA recheck fails', async () => {
+    vi.useFakeTimers()
+    vi.mocked(stringsApi.translateQa).mockRejectedValueOnce(new Error('offline'))
+    try {
+      review([{
+        string_id: 'a', key: 'greeting', source_text: 'Hello {name}', status: 'draft',
+        translations: { en: 'Hi {name}' }, issues: { en: [] },
+      }])
+      fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Hi' } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
+      expect(screen.getByText('QA failed')).toBeTruthy()
+      expect(screen.queryByText('No QA issues')).toBeNull()
+      expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('summarizes a review card as one badge', () => {
     review([{
       string_id: 'a',

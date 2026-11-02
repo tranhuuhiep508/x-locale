@@ -45,6 +45,23 @@ baseline checks, including translation-only editor saves.
 If a lookup fails, use **Check again** to retry; an explicit AI request can proceed
 without memory examples.
 
+## QA format compatibility
+
+QA detects formats per string. It supports ICU MessageFormat (`{name}`, plural,
+select, and number/date/time formats), ngx-translate interpolation (`{{name}}`),
+and messages mixing both. Plural alternatives are checked separately; a target
+category absent from the source is compared with the source's `other` branch.
+Source plural categories absent from the target are skipped. Explicit numeric
+cases (such as `=0`), select keys, and the required `other` branch are still checked.
+This permits different languages' plural categories while still checking missing
+placeholders and markup within each alternative. ICU currency and date/time
+skeletons (formats beginning with `::`) are included in placeholder comparisons.
+Branch checks retain ICU plural context, including apostrophe-quoted `#` literals.
+
+Strings are stored and exported as written. In a consuming ngx-translate app,
+ICU messages require a compatible MessageFormat compiler. QA stays advisory;
+a failed check does not count as a clean result or prevent saving.
+
 ## API
 
 `POST /api/projects/{project_id}/translate/memory` accepts `source_text`, optional

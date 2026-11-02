@@ -19,9 +19,9 @@ runtime and is not required.
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections import Counter, defaultdict, deque
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from html.parser import HTMLParser
 from typing import Any, Literal
 
@@ -96,6 +96,7 @@ _PLAIN_ARG = re.compile(
 _FOLLOWING_NAME = re.compile(r"\s*(?:[^\W\d_]|_|\d)")
 # Same-length stand-in. Never copied into a token or a user-facing message.
 _DOT = "·"
+_PLURAL_PREFIX = "{qa, plural, other {"
 
 MAX_NESTING = 20
 MAX_ISSUES = 50
@@ -131,6 +132,7 @@ class _Block:
     kind: str
     name: str
     selectors: frozenset[str]
+    options: dict[str, tuple[int, str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -182,9 +184,18 @@ def check_translation(source: str, translation: str, locale: str) -> list[QaIssu
         ]
 
 
-def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
-    src = _examine(source)
-    dst = _examine(translation)
+def _check(
+    source: str,
+    translation: str,
+    locale: str,
+    *,
+    check_length: bool = True,
+    in_plural: bool = False,
+) -> list[QaIssue]:
+    source_shell, source_blocks = _split_branches(source, in_plural=in_plural)
+    translation_shell, translation_blocks = _split_branches(translation, in_plural=in_plural)
+    src = _examine(source_shell, in_plural=in_plural)
+    dst = _examine(translation_shell, in_plural=in_plural)
     issues: list[QaIssue] = []
     if src.limited or dst.limited:
         issues.append(
@@ -211,17 +222,100 @@ def _check(source: str, translation: str, locale: str) -> list[QaIssue]:
         issues.extend(_other_issues(dst.icu))
         issues.extend(_plural_issues(dst.icu, locale))
     issues.extend(_html_issues(src.markup, dst.markup))
-    length = _length_issue(source, translation)
+    targets: dict[tuple[str, str], deque[_Block]] = defaultdict(deque)
+    for block in translation_blocks:
+        targets[block.kind, block.name].append(block)
+    for block in source_blocks:
+        matches = targets[block.kind, block.name]
+        if not matches:
+            continue  # The missing variable is already reported above.
+        target = matches.popleft()
+        for selector in sorted(block.selectors | target.selectors):
+            if (
+                block.kind != "select"
+                and selector not in target.selectors
+                and selector in {"zero", "one", "two", "few", "many"}
+            ):
+                continue
+            original = block.options.get(selector, block.options.get("other"))
+            translated = target.options.get(selector, target.options.get("other"))
+            if original is None:
+                continue
+            if translated is None:
+                translated = (0, "")
+            offset, text = translated
+            for issue in _check(
+                original[1], text, locale, check_length=False, in_plural=block.kind != "select"
+            ):
+                issue = replace(
+                    issue,
+                    start=issue.start + offset if issue.start is not None else None,
+                    end=issue.end + offset if issue.end is not None else None,
+                )
+                if issue not in issues:
+                    issues.append(issue)
+            if len(issues) >= MAX_ISSUES:
+                return issues
+    length = _length_issue(source, translation) if check_length else None
     if length is not None:
         issues.append(length)
     return issues
+
+
+def _parse_icu(
+    text: str, *, in_plural: bool, ignore_tag: bool = False, capture_location: bool = False
+) -> list[dict[str, Any]]:
+    # ICU apostrophes can quote # only inside plural/ordinal alternatives.
+    prefix = _PLURAL_PREFIX if in_plural else ""
+    try:
+        nodes = parse(
+            prefix + text + ("}}" if in_plural else ""),
+            ignore_tag=ignore_tag,
+            capture_location=capture_location,
+        )
+    except ValueError as exc:
+        if not in_plural:
+            raise
+        raise ValueError(_retarget(str(exc), text, -len(prefix))) from None
+    return nodes[0]["options"]["other"]["value"] if in_plural else nodes
+
+
+def _split_branches(text: str, *, in_plural: bool = False) -> tuple[str, list[_Block]]:
+    """Check alternatives separately, using other when a language adds a category."""
+    if not _ICU_TYPED.search(text) or _brace_depth(text) > MAX_NESTING:
+        return text, []
+    shielded, _, _ = _shield(text)
+    try:
+        nodes = _parse_icu(shielded, in_plural=in_plural, ignore_tag=True, capture_location=True)
+    except ValueError:
+        return text, []  # Keep the existing full-message syntax diagnostics.
+    shell = list(text)
+    blocks: list[_Block] = []
+    for node in nodes:
+        if node.get("type") not in (_SELECT, _PLURAL):
+            continue
+        options = {}
+        for selector, option in node["options"].items():
+            location = option["location"]
+            prefix_length = len(_PLURAL_PREFIX) if in_plural else 0
+            start = location["start"]["offset"] + 1 - prefix_length
+            end = location["end"]["offset"] - 1 - prefix_length
+            options[selector] = (start, text[start:end])
+            shell[start:end] = _DOT * (end - start)
+        kind = (
+            "select"
+            if node["type"] == _SELECT
+            else ("selectordinal" if node.get("pluralType") == "ordinal" else "plural")
+        )
+        blocks.append(_Block(kind, node["value"], frozenset(options), options))
+    return "".join(shell), blocks
 
 
 def _structure_ok(side: _Side) -> bool:
     return side.icu is not None and (bool(side.icu.blocks) or not side.syntax)
 
 
-def _examine(text: str) -> _Side:
+def _examine(text: str, *, in_plural: bool = False) -> _Side:
     # Reject deep or unclosed braces before the shield. The shield's brace
     # matcher is linear, but a nest past MAX_NESTING is not worth scanning.
     if _brace_depth(text) > MAX_NESTING:
@@ -233,11 +327,11 @@ def _examine(text: str) -> _Side:
     _add_printf(shielded, view.placeholders)
     _add_calls(shielded, view.placeholders)
     try:
-        ast = parse(shielded)
+        ast = _parse_icu(shielded, in_plural=in_plural)
     except ValueError as exc:
         message = str(exc)
         if message.startswith(_TAG_ERRORS):
-            syntax.extend(_absorb_markup(markup, text, view))
+            syntax.extend(_absorb_markup(markup, text, view, in_plural=in_plural))
         else:
             if _should_report_icu(shielded, message):
                 syntax.append(_restore_snippet(message, text))
@@ -294,6 +388,16 @@ def _placeholder_token(node: dict) -> str | None:
     if type_name is None:
         return "{" + name + "}"
     style = node.get("style")
+    if isinstance(style, dict):
+        if "tokens" in style:
+            style = "::" + " ".join(
+                sorted(
+                    "/".join([token["stem"], *token.get("options", [])])
+                    for token in style["tokens"]
+                )
+            )
+        else:
+            style = "::" + style["pattern"]
     if isinstance(style, str) and style:
         return "{" + f"{name}, {type_name}, {style}" + "}"
     return "{" + f"{name}, {type_name}" + "}"
@@ -623,7 +727,7 @@ def _skip_icu_quote(text: str, i: int, end: int) -> int:
     return end
 
 
-def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
+def _absorb_markup(markup: _Markup, full: str, view: _IcuView, *, in_plural: bool) -> list[str]:
     """Parse text nodes and attributes the ICU tag parser rejected.
 
     Text nodes are joined first. ``<b class="item">`` splits a plural into
@@ -635,7 +739,7 @@ def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
     joined, origins = _join_parts(markup)
     if joined and not view.too_deep:
         try:
-            _walk(parse(joined), 1, view)
+            _walk(_parse_icu(joined, in_plural=in_plural), 1, view)
         except ValueError as exc:
             message = str(exc)
             if _should_report_icu(joined, message):
@@ -644,7 +748,7 @@ def _absorb_markup(markup: _Markup, full: str, view: _IcuView) -> list[str]:
         if not piece or view.too_deep:
             continue
         try:
-            _walk(parse(piece), 1, view)
+            _walk(_parse_icu(piece, in_plural=in_plural), 1, view)
         except ValueError as exc:
             message = str(exc)
             if _should_report_icu(piece, message):

@@ -721,8 +721,7 @@ export function TranslateReviewDialog({
   const pageViews = filledViews(draftList, qa)
   const pageCounts = tally(pageViews)
   const checking = pageViews.some((view) => view.status === 'checking')
-  const unchecked = pageViews.some((view) => view.status === 'unchecked')
-  const pageClean = !checking && !unchecked && pageViews.length > 0
+  const pageClean = pageViews.length > 0 && pageViews.every((view) => view.status === 'ready' && !view.stale)
     && pageCounts.errors === 0 && pageCounts.warnings === 0
   const withIssues = draftList.filter((item) => {
     const counts = tally(stringViews(item, qa))
