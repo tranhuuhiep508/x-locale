@@ -52,6 +52,6 @@ test('excel export and import round-trip', async ({ page }) => {
 
   // 5. Navigate to Strings and verify catalog is intact
   await page.getByRole('link', { name: 'Strings' }).click()
-  await searchStrings(page, 'sign_in')
-  await expect(page.getByRole('row').filter({ hasText: 'sign_in' }).first()).toBeVisible()
+  await searchStrings(page, 'demo_checkout_cart_title')
+  await expect(page.getByRole('row').filter({ hasText: 'demo_checkout_cart_title' }).first()).toBeVisible()
 })

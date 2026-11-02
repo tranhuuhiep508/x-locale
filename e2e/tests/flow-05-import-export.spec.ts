@@ -16,7 +16,7 @@ test.beforeAll(() => {
 function buildImportJson() {
   return JSON.stringify(
     {
-      save: 'Lưu (e2e updated)',
+      demo_checkout_cart_title: 'Giỏ hàng (e2e updated)',
       [newKey]: 'E2E imported string',
     },
     null,
@@ -37,7 +37,7 @@ async function selectImportModule(page: import('@playwright/test').Page, moduleN
 
 test('dropping JSON previews it and applies the retained file after confirmation', async ({ page }) => {
   await goToImportExport(page)
-  await selectImportModule(page, 'Common')
+  await selectImportModule(page, 'Checkout')
   const key = `e2e_dropped_${Date.now()}`
   const transfer = await page.evaluateHandle((key) => {
     const data = new DataTransfer()
@@ -146,7 +146,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   page,
 }) => {
   await goToImportExport(page)
-  await selectImportModule(page, 'Common')
+  await selectImportModule(page, 'Checkout')
 
   const importJson = buildImportJson()
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-locale-e2e-'))
@@ -174,7 +174,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   await expect(page.getByRole('row').filter({ hasText: newKey })).toHaveCount(0)
 
   await page.getByRole('link', { name: 'Import / Export' }).click()
-  await selectImportModule(page, 'Common')
+  await selectImportModule(page, 'Checkout')
   await fileInput.setInputFiles(importPath)
   await expect(page.getByRole('heading', { name: 'Import preview (dry run)' })).toBeVisible()
   const applyPreview = page.getByRole('dialog').filter({ hasText: 'Import preview (dry run)' })
@@ -184,11 +184,11 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   await page.getByRole('link', { name: 'Strings' }).click()
   await searchStrings(page, newKey)
   await expect(page.getByRole('row').filter({ hasText: newKey })).toBeVisible()
-  await searchStrings(page, 'cancel')
-  await expect(page.getByRole('row').filter({ hasText: 'cancel' })).toBeVisible()
+  await searchStrings(page, 'demo_checkout_cart_empty')
+  await expect(page.getByRole('row').filter({ hasText: 'demo_checkout_cart_empty' })).toBeVisible()
 
-  await searchStrings(page, 'save')
-  const saveRow = page.getByRole('row').filter({ hasText: 'save' }).first()
+  await searchStrings(page, 'demo_checkout_cart_title')
+  const saveRow = page.getByRole('row').filter({ hasText: 'demo_checkout_cart_title' }).first()
   await saveRow.getByRole('switch', { name: 'Draft' }).click()
   const publishDialog = page.getByRole('dialog').filter({ hasText: 'Publish preview' })
   await publishDialog.getByRole('button', { name: 'Publish' }).click()

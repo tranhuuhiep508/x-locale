@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
-import { openDemoStrings } from '../helpers/strings'
+import { openDemoStrings, searchStrings } from '../helpers/strings'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,6 +26,8 @@ test('login page exposes Microsoft sign-in when visited directly', async ({ page
 test('open Demo App strings catalog with seeded keys', async ({ page }) => {
   await openDemoStrings(page)
   await expect(page.getByRole('button', { name: 'Add string' })).toBeVisible()
-  await expect(page.getByText('sign_in', { exact: true })).toBeVisible()
-  await expect(page.getByText('save', { exact: true })).toBeVisible()
+  for (const key of ['demo_checkout_cart_title', 'demo_settings_two_factor']) {
+    await searchStrings(page, key)
+    await expect(page.getByText(key, { exact: true })).toBeVisible()
+  }
 })

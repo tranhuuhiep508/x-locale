@@ -13,7 +13,7 @@ test.beforeAll(() => {
 function buildPasteJson() {
   return JSON.stringify(
     {
-      save: 'Lưu (add many updated)',
+      demo_checkout_cart_title: 'Giỏ hàng (add many updated)',
       [newKey]: 'E2E add many string',
     },
     null,
@@ -46,11 +46,11 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
 
   await json.fill(buildPasteJson())
   await dialog.getByRole('combobox', { name: 'Module' }).click()
-  await page.getByRole('option', { name: /Common/ }).click()
+  await page.getByRole('option', { name: /Checkout/ }).click()
   await dialog.getByRole('button', { name: 'Preview' }).click()
   await expect(dialog.getByRole('button', { name: 'Apply' })).toBeVisible()
   await expect(dialog.getByText(newKey)).toBeVisible()
-  await expect(dialog.getByText('~ save')).toBeVisible()
+  await expect(dialog.getByText('~ demo_checkout_cart_title')).toBeVisible()
 
   await dialog.getByRole('button', { name: 'Back' }).click()
   await dialog.getByRole('button', { name: 'Cancel' }).click()
@@ -63,7 +63,7 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   const applyDialog = page.getByRole('dialog').filter({ hasText: 'Add many' })
   await applyDialog.getByLabel('JSON').fill(buildPasteJson())
   await applyDialog.getByRole('combobox', { name: 'Module' }).click()
-  await page.getByRole('option', { name: /Common/ }).click()
+  await page.getByRole('option', { name: /Checkout/ }).click()
   await applyDialog.getByRole('button', { name: 'Preview' }).click()
   await expect(applyDialog.getByRole('button', { name: 'Apply' })).toBeVisible()
   await expect(applyDialog.getByText(newKey)).toBeVisible()
@@ -75,8 +75,8 @@ test('add many paste: reject invalid JSON, cancel is a no-op, apply writes once'
   await expect(created).toBeVisible()
   await expect(created.getByRole('switch', { name: 'Draft' })).toBeVisible()
 
-  await searchStrings(page, 'save')
-  await expect(page.getByRole('row').filter({ hasText: 'Lưu (add many updated)' })).toBeVisible()
+  await searchStrings(page, 'demo_checkout_cart_title')
+  await expect(page.getByRole('row').filter({ hasText: 'Giỏ hàng (add many updated)' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Activity' }).click()
   await expect(page.getByText(/Imported · 2 strings/)).toBeVisible()

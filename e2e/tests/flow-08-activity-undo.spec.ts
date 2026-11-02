@@ -23,7 +23,7 @@ test('activity undo reverts a batch import', async ({ page }) => {
   await goToImportExport(page)
 
   await page.getByRole('combobox', { name: 'Module (JSON only)' }).click()
-  await page.getByRole('option', { name: /Common/ }).click()
+  await page.getByRole('option', { name: /Checkout/ }).click()
 
   const importJson = JSON.stringify({ [importKey]: 'Undo me' }, null, 2)
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'x-locale-e2e-'))

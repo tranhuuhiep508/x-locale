@@ -138,7 +138,7 @@ test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', a
   await searchStrings(page, liveKey)
   await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: deletedKey })).toHaveCount(0)
-  await expect(page.getByRole('row').filter({ hasText: 'sign_in' })).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'demo_checkout_cart_title' })).toHaveCount(0)
 
   await clearStringSearch(page)
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()
@@ -148,7 +148,7 @@ test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', a
   await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: deletedKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: pendingKey })).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'sign_in' })).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'demo_checkout_cart_title' })).toHaveCount(0)
 })
 
 test('chip clear: drops batch filter, hides tombstone, clears selection', async ({ page }) => {
@@ -165,6 +165,8 @@ test('chip clear: drops batch filter, hides tombstone, clears selection', async 
   await page.getByRole('button', { name: 'Clear batch filter' }).click()
   await expect(page).not.toHaveURL(new RegExp(`batch_id=${batchId}`))
   await expect(page.getByText('Filtered to this push')).toHaveCount(0)
+  await expect(page.getByRole('toolbar', { name: 'Batch actions' })).toBeHidden()
+  await searchStrings(page, liveKey)
   await expectRowBatchSelected(page, liveKey, false)
 
   await searchStrings(page, deletedKey)
@@ -188,6 +190,8 @@ test('Clear all: removes batch filter and selection', async ({ page }) => {
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page).not.toHaveURL(/batch_id=/)
   await expect(page.getByText('Filtered to this push')).toHaveCount(0)
+  await expect(page.getByRole('toolbar', { name: 'Batch actions' })).toBeHidden()
+  await searchStrings(page, liveKey)
   await expectRowBatchSelected(page, liveKey, false)
 })
 
