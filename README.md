@@ -44,6 +44,8 @@ npm run dev
 
 The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a Postgres URL. `seed-demo` still runs when `AUTH_DEV_BYPASS=false`. It exits when OIDC is configured or `ENV=production` unless you pass `--allow-production`. `--force` only recreates Demo App.
 
+New demo projects include 64 Vietnamese source strings across checkout, notifications, and settings, with English and Japanese translations. They demonstrate HTML, `{{placeholder}}` interpolation, tags, incomplete translations, drafts, and published strings with pending edits. Existing demo projects are left unchanged; `seed-demo --force` replaces the demo project and all of its data with a fresh copy.
+
 ### Native Postgres
 
 Install PostgreSQL 16 and initialize a cluster with collation C.

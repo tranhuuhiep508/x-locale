@@ -1,10 +1,11 @@
-"""Demo seed data — Vietnamese base with auth/home/common modules."""
+"""Demo seed data — Vietnamese base with checkout, notifications and settings."""
 
 from __future__ import annotations
 
 from app.auth import get_or_create_dev_user, hash_api_key
 from app.config import settings
 from app.database import SessionLocal
+from app.demo_data import DEMO_STRINGS
 from app.models import (
     ApiKey,
     MemberRole,
@@ -13,27 +14,15 @@ from app.models import (
     ProjectLayout,
     ProjectMember,
     StringEntry,
+    Tag,
     Translation,
 )
+from app.services.strings import promote_string
 
 DEMO_MODULES = [
-    ("common", "Common", "Shared UI strings"),
-    ("auth", "Auth", "Authentication screens"),
-    ("home", "Home", "Home / dashboard screens"),
-]
-
-# (module_slug, key, source_vi, description)
-DEMO_STRINGS = [
-    ("common", "save", "Lưu", "Nút hành động chính"),
-    ("common", "cancel", "Hủy", "Nút hành động phụ"),
-    ("common", "delete", "Xóa", "Nút hành động phá hủy"),
-    ("common", "search", "Tìm kiếm", "Ô tìm kiếm"),
-    ("auth", "sign_in", "Đăng nhập", "Tiêu đề trang đăng nhập"),
-    ("auth", "sign_up", "Tạo tài khoản", "Tiêu đề trang đăng ký"),
-    ("auth", "email", "Địa chỉ email", "Nhãn ô email"),
-    ("auth", "password", "Mật khẩu", "Nhãn ô mật khẩu"),
-    ("home", "welcome", "Chào mừng trở lại, {name}!", "Lời chào dashboard"),
-    ("home", "subtitle", "Quản lý bản dịch tại một nơi", "Phụ đề dashboard"),
+    ("checkout", "Checkout", "Checkout and order examples"),
+    ("notifications", "Notifications", "Notifications and email examples"),
+    ("settings", "Settings", "Account settings examples"),
 ]
 
 
@@ -115,25 +104,31 @@ def seed_demo_data(*, force: bool = False) -> Project | None:
             db.flush()
             modules[slug] = mod
 
-        for module_slug, key, source_text, description in DEMO_STRINGS:
+        tags = {}
+        for name in sorted({row[5] for row in DEMO_STRINGS}):
+            tag = Tag(project_id=project.id, name=name, color="#6366f1")
+            db.add(tag)
+            tags[name] = tag
+
+        for module_slug, key, source_text, english, japanese, tag, public, pending in DEMO_STRINGS:
             entry = StringEntry(
                 project_id=project.id,
                 key_policy_allows_duplicates=project.allow_duplicate_keys,
                 module_id=modules[module_slug].id,
                 key=key,
                 source_text=source_text,
-                description=description,
+                description=f"{tag} localization example for {module_slug}.",
             )
+            entry.tags.append(tags[tag])
+            entry.translations = [
+                Translation(locale=locale, value=value)
+                for locale, value in zip(project.target_languages, (english, japanese), strict=True)
+            ]
             db.add(entry)
-            db.flush()
-            for locale in project.target_languages:
-                db.add(
-                    Translation(
-                        string_id=entry.id,
-                        locale=locale,
-                        value="",
-                    )
-                )
+            if public:
+                promote_string(entry)
+            if pending:
+                entry.source_text += " (đã cập nhật)"
 
         db.commit()
         db.refresh(project)
