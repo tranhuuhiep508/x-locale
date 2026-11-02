@@ -885,6 +885,7 @@ export default function StringFormDialog({
                     }}
                     onUseExact={useExactMatches}
                     onUndo={memoryUndo?.source === sourceText ? undoExactMatches : undefined}
+                    onRetry={memory.retry}
                   />
                 ) : null}
                 {translateMut.isPending || translateMut.isSuccess ? (

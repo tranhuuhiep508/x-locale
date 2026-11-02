@@ -255,6 +255,7 @@ export function TranslationMemoryPanel({
   onUse,
   onUseExact,
   onUndo,
+  onRetry,
 }: {
   locales: string[]
   matches: Record<string, TranslationMemoryMatch[]>
@@ -266,6 +267,7 @@ export function TranslationMemoryPanel({
   onUse: (locale: string, match: TranslationMemoryMatch) => void
   onUseExact: () => void
   onUndo?: () => void
+  onRetry: () => void
 }) {
   const count = locales.filter((locale) => matches[locale]?.length).length
   const exact = locales.filter(
@@ -330,9 +332,14 @@ export function TranslationMemoryPanel({
           ))}
         </div>
       ) : error ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Could not load published translations.
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p role="status" className="text-xs text-muted-foreground">
+            Could not load published translations.
+          </p>
+          <Button type="button" variant="outline" size="sm" disabled={disabled || stale} onClick={onRetry}>
+            Check again
+          </Button>
+        </div>
       ) : empty ? (
         <p className="text-xs text-muted-foreground">
           No previously published match for this source text. Generate with AI fills the empty locales.

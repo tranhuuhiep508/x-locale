@@ -41,7 +41,7 @@ it('debounces source edits, keeps the first lookup pending, and ignores late res
     matches: { en: [] },
   })
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(349)
+    await vi.advanceTimersByTimeAsync(799)
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(1)
   await act(async () => {
@@ -80,7 +80,7 @@ it('keeps the current matches visible but stale until the edited source resolves
   expect(result.current.stale).toBe(true)
   expect(result.current.matches.en?.[0]?.string_id).toBe('origin')
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(150)
+    await vi.advanceTimersByTimeAsync(600)
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.stale).toBe(true)
@@ -106,7 +106,7 @@ it('invalidates lookups for locale changes and does not fetch empty sources', as
   expect(result.current.stale).toBe(true)
   expect(result.current.loading).toBe(false)
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(350)
+    await vi.advanceTimersByTimeAsync(800)
   })
   expect(result.current.stale).toBe(false)
   expect(stringsApi.translateMemory).toHaveBeenLastCalledWith(
@@ -115,7 +115,7 @@ it('invalidates lookups for locale changes and does not fetch empty sources', as
   )
   rerender({ source: '', locales: ['ja'] })
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(350)
+    await vi.advanceTimersByTimeAsync(800)
   })
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.loading).toBe(false)

@@ -66,11 +66,15 @@ const panel = {
   selected: {},
   onUse: () => {},
   onUseExact: () => {},
+  onRetry: () => {},
 }
 
-it('hides the locale count when published translations fail to load', () => {
-  render(<TranslationMemoryPanel {...panel} matches={{}} loading={false} error="offline" />)
+it('offers a retry when published translations fail to load', () => {
+  const onRetry = vi.fn()
+  render(<TranslationMemoryPanel {...panel} onRetry={onRetry} matches={{}} loading={false} error="offline" />)
   expect(screen.getByRole('status').textContent).toBe('Could not load published translations.')
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+  expect(onRetry).toHaveBeenCalledOnce()
   expect(screen.queryByText('0/2')).toBeNull()
   expect(screen.queryByText(/No match/)).toBeNull()
 })
