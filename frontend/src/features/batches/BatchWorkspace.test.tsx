@@ -91,7 +91,7 @@ const proposal = (i = 0): TranslateProposalItem => ({
   key: `login.${i}`,
   source_text: 'Nguồn mới',
   status: 'public',
-  translations: { en: 'Generated' },
+  translations: { en: 'Generated', ja: '生成済み' },
   scores: { en: 90 },
 })
 let batch: CliPushBatch
@@ -398,4 +398,92 @@ it('distinguishes published values from changes to publish', async () => {
   })
   expect(screen.getAllByText('Changed from published')).toHaveLength(1)
   expect(screen.getByText('Old')).toBeDefined()
+})
+
+it('retries only unresolved AI cells without replacing human edits', async () => {
+  vi.mocked(stringsApi.translateProposals)
+    .mockResolvedValueOnce({
+      items: [{ ...proposal(), translations: { en: 'Generated' } }],
+      locales: ['en', 'ja'],
+      job_id: null,
+      total: 1,
+      page: 1,
+      page_size: 50,
+    })
+    .mockResolvedValueOnce({
+      items: [{ ...proposal(), translations: { en: 'Must not replace', ja: 'Recovered' } }],
+      locales: ['en', 'ja'],
+      job_id: null,
+      total: 1,
+      page: 1,
+      page_size: 50,
+    })
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/1 translations still need review/)
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  const english = screen.getByRole('textbox', {
+    name: 'EN translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(english, { target: { value: 'Human review' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Retry unresolved' }))
+  await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateProposals).toHaveBeenLastCalledWith(
+    'demo',
+    expect.objectContaining({ exclude_cells: { s0: ['en'] } })
+  )
+  expect(english.value).toBe('Human review')
+  expect(
+    (screen.getByRole('textbox', { name: 'JA translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Recovered')
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(false)
+})
+it('keeps historical locales read-only and excludes them from publication edits', async () => {
+  batch.items[0].translations.push({
+    id: null,
+    updated_at: null,
+    locale: 'fr',
+    value: 'Historic',
+    published_value: 'Avant',
+    confidence: null,
+  })
+  show()
+  await loaded()
+  expect(
+    (screen.getByRole('textbox', { name: 'FR translation for login.0' }) as HTMLTextAreaElement)
+      .readOnly
+  ).toBe(true)
+  fireEvent.change(screen.getByRole('textbox', { name: 'FR translation for login.0' }), {
+    target: { value: 'Rejected' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  await waitFor(() =>
+    expect(stringsApi.publishCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+      fingerprint: 'reviewed',
+      items: [],
+    })
+  )
+})
+it('preserves publication success when refresh fails and retries only the read', async () => {
+  vi.mocked(stringsApi.cliPushBatch)
+    .mockResolvedValueOnce(structuredClone(batch))
+    .mockRejectedValueOnce(new Error('Offline'))
+    .mockResolvedValue(structuredClone(batch))
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  await screen.findByRole('button', { name: 'Retry refresh' })
+  expect(screen.queryByText('Workflow could not complete')).toBeNull()
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry refresh' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry refresh' })).toBeNull())
+  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
 })

@@ -33,6 +33,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   const [qaBaselines, setQaBaselines] = useState<Record<string, QaBaseline>>({})
   const [action, setAction] = useState<'translate' | 'publish' | null>(null)
   const [published, setPublished] = useState(false)
+  const [generationStarted, setGenerationStarted] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
+  const requested = useRef(new Set<string>())
   const [started, setStarted] = useState(false)
   const [error, setError] = useState('')
   const [stale, setStale] = useState(false)
@@ -70,32 +73,44 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       setJobId(null)
       return
     }
+    const successful = items.flatMap((item) =>
+      Object.entries(item.translations)
+        .filter(
+          ([locale, value]) =>
+            requested.current.has(`${item.string_id}:${locale}`) &&
+            value.trim() &&
+            !drafts[`${item.string_id}:${locale}`]
+        )
+        .map(([locale, value]) => ({ item, locale, value }))
+    )
     setDrafts((previous) => ({
       ...previous,
       ...Object.fromEntries(
-        items.flatMap((item) =>
-          Object.entries(item.translations).map(([locale, value]) => [
-            `${item.string_id}:${locale}`,
-            { value, source: item.source_text, score: item.scores?.[locale] ?? null },
-          ])
-        )
+        successful.map(({ item, locale, value }) => [
+          `${item.string_id}:${locale}`,
+          { value, source: item.source_text, score: item.scores?.[locale] ?? null },
+        ])
       ),
     }))
     setQaBaselines((previous) => ({
       ...previous,
       ...Object.fromEntries(
-        items.flatMap((item) =>
-          Object.entries(item.translations).map(([locale, text]) => [
-            `${item.string_id}:${locale}`,
-            { source: item.source_text, text, issues: item.issues?.[locale] },
-          ])
-        )
+        successful.map(({ item, locale, value }) => [
+          `${item.string_id}:${locale}`,
+          { source: item.source_text, text: value, issues: item.issues?.[locale] },
+        ])
       ),
     }))
     setJobId(null)
-    setNotice('Translations are ready for review. Nothing is saved until Publish batch.')
+    const remaining = requested.current.size - successful.length
+    setNotice(
+      remaining
+        ? `${remaining} translations still need review. Retry unresolved translations or edit them manually.`
+        : 'Translations are ready for review. Nothing is saved until Publish batch.'
+    )
   }
   function edit(entry: StringEntry, locale: string, value: string) {
+    if (!locales.includes(locale) || refreshError) return
     setStarted(true)
     setPublished(false)
     setNotice('')
@@ -135,8 +150,32 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.data])
 
+  const unresolved = generationStarted
+    ? (query.data?.items ?? []).flatMap((entry) =>
+        locales
+          .filter((locale) => !drafts[`${entry.id}:${locale}`])
+          .map((locale) => `${entry.id}:${locale}`)
+      )
+    : []
   async function translate() {
-    if (operation.current || !locales.length || jobId || Object.keys(drafts).length) return
+    if (
+      operation.current ||
+      !locales.length ||
+      jobId ||
+      refreshError ||
+      stale ||
+      (Object.keys(drafts).length > 0 && !unresolved.length)
+    )
+      return
+    requested.current = new Set(
+      (query.data?.items ?? []).flatMap((entry) =>
+        locales
+          .filter((locale) => !drafts[`${entry.id}:${locale}`])
+          .map((locale) => `${entry.id}:${locale}`)
+      )
+    )
+    if (!requested.current.size) return
+    setGenerationStarted(true)
     operation.current = true
     setAction('translate')
     setPublished(false)
@@ -151,6 +190,12 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         pending_delete: false,
         overwrite: true,
         locales,
+        exclude_cells: Object.fromEntries(
+          (query.data?.items ?? []).map((entry) => [
+            entry.id,
+            locales.filter((locale) => Boolean(drafts[`${entry.id}:${locale}`])),
+          ])
+        ),
       })
       if (!mounted.current) return
       if (result.job_id) setJobId(result.job_id)
@@ -168,6 +213,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setQaBaselines({})
     setJobId(null)
     setPublished(false)
+    setGenerationStarted(false)
+    setRefreshError('')
+    requested.current.clear()
     setStarted(false)
     setStale(false)
     setError('')
@@ -179,9 +227,22 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       setError(message(e))
     }
   }
+  async function refreshPublished() {
+    try {
+      const next = await stringsApi.cliPushBatch(projectRef, batchId)
+      if (mounted.current) {
+        qc.setQueryData(key, next)
+        setRefreshError('')
+      }
+    } catch (e) {
+      if (mounted.current)
+        setRefreshError(`Batch published, but the review could not refresh. ${message(e)}`)
+    }
+  }
   async function publish() {
     const snapshot = query.data
-    if (!snapshot || operation.current || jobId || stale) return
+    if (!snapshot || operation.current || jobId || stale || refreshError || unresolved.length)
+      return
     operation.current = true
     setAction('publish')
     setError('')
@@ -209,10 +270,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       setQaBaselines({})
       setStarted(false)
       setPublished(true)
+      setGenerationStarted(false)
       setNotice('Batch saved and published. Available on the next public pull or export.')
       refreshProjectContent(qc, projectRef)
-      const next = await stringsApi.cliPushBatch(projectRef, batchId)
-      if (mounted.current) qc.setQueryData(key, next)
+      await refreshPublished()
     } catch (e) {
       if (isPublishFingerprintMismatch(e)) {
         setStale(true)
@@ -249,6 +310,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     batch: query.data ? { ...query.data, items } : undefined,
     locales,
     hasDrafts: Object.keys(drafts).length > 0,
+    unresolvedCount: unresolved.length,
+    refreshError,
+    refreshPublished,
     edit,
     busy: Boolean(action) || Boolean(jobId),
     publishing: action === 'publish',

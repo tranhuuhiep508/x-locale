@@ -195,7 +195,9 @@ edits, confidence scores, and QA findings in memory only. It does not call
 abandons temporary progress and starts a new review from saved content. Other
 editors retain their existing blur-save behavior. In-app leave and restart
 confirmations use the shared shadcn dialog; browser reload/close warnings remain
-controlled by the browser.
+controlled by the browser. Partial AI responses leave unresolved cells visible;
+retries exclude completed or manually edited cells. Publication waits until those
+cells are generated or explicitly reviewed through manual editing.
 
 Final `POST /api/projects/{project_id}/cli-push-batches/{batch_id}/publish` accepts
 the original review fingerprint and all staged translation changes. The server
@@ -209,5 +211,7 @@ request, including translation edits and audit records. A stale workflow must be
 restarted before publication. The original CLI push remains saved as before.
 
 Publication is still per string across all locales, including historical locales
-outside the current project targets. These remain visible for review. Missing values and QA issues remain advisory. The existing catalog,
+outside the current project targets. These remain visible but read-only. Missing
+values and QA issues remain advisory. A failed refresh after successful publication
+is reported separately and can retry the read without publishing again. The existing catalog,
 translation Apply, audit, Undo, export, and soft-delete semantics are retained.

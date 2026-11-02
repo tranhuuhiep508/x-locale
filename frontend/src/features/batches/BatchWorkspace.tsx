@@ -55,7 +55,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
   const qa = useQaWatch(
     projectRef,
     visible.flatMap((entry) =>
-      reviewLocales.map((locale) => {
+      locales.map((locale) => {
         const id = `${entry.id}:${locale}`
         const value = entry.translations.find((t) => t.locale === locale)?.value ?? ''
         return {
@@ -152,7 +152,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 onClick={() => void workspace.translate()}
                 disabled={
                   busy ||
-                  workspace.hasDrafts ||
+                  (workspace.hasDrafts && !workspace.unresolvedCount) ||
+                  Boolean(workspace.refreshError) ||
                   workspace.stale ||
                   !locales.length ||
                   !batch.items.length
@@ -163,7 +164,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 ) : (
                   <Wand2 data-icon="inline-start" />
                 )}
-                Translate all
+                {workspace.unresolvedCount ? 'Retry unresolved' : 'Translate all'}
               </Button>
             </div>
           </div>
@@ -172,6 +173,17 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               {batch.excluded_count} deleted or pending-delete strings excluded. Manage them in
               Strings.
             </p>
+          )}
+          {workspace.refreshError && (
+            <Alert>
+              <AlertTitle>Batch published</AlertTitle>
+              <AlertDescription>
+                <p>{workspace.refreshError}</p>
+                <Button variant="outline" onClick={() => void workspace.refreshPublished()}>
+                  Retry refresh
+                </Button>
+              </AlertDescription>
+            </Alert>
           )}
           {workspace.error && (
             <Alert variant="destructive">
@@ -363,7 +375,10 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               <Textarea
                                 id={id}
                                 lang={locale}
-                                disabled={busy || workspace.stale}
+                                disabled={
+                                  busy || workspace.stale || Boolean(workspace.refreshError)
+                                }
+                                readOnly={!locales.includes(locale)}
                                 rows={1}
                                 className={cn(
                                   'min-h-10 py-1.5 pl-8',
@@ -426,7 +441,13 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 </Button>
               )}
               <Button
-                disabled={busy || workspace.stale || !publishable}
+                disabled={
+                  busy ||
+                  workspace.stale ||
+                  Boolean(workspace.refreshError) ||
+                  workspace.unresolvedCount > 0 ||
+                  !publishable
+                }
                 onClick={() => void workspace.publish()}
               >
                 {workspace.publishing ? (
