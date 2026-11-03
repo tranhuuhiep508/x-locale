@@ -1,9 +1,12 @@
-import { useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Undo2, Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
 import { ApiError } from '@/lib/api/client'
 import type {
+  EditorProposal,
+  EditorPreview,
+  EditorSaveRequest,
   BatchRequest,
   Module,
   StringEntry,
@@ -21,7 +24,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { TranslationMemoryPanel } from '@/features/strings/translation-memory-view'
@@ -32,6 +34,9 @@ import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/string
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
+import { EditorPublicationReview } from './EditorPublicationReview'
+import { buildPublishPreview, hasPublishableChanges, isPublishFingerprintMismatch, publicationErrorMessage } from './publish-preview'
+import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -44,6 +49,7 @@ interface Props {
   initialTab?: 'details' | 'history'
   onClose: () => void
   onSuccess: () => void
+  onViewInStrings?: (entry: StringEntry) => void
 }
 
 const NONE_MODULE = '__none__'
@@ -170,9 +176,24 @@ export default function StringFormDialog({
   initialTab = 'details',
   onClose,
   onSuccess,
+  onViewInStrings,
 }: Props) {
   const toast = useToast()
-  const isEdit = Boolean(entry?.id)
+  const qc = useQueryClient()
+  const [baseline, setBaseline] = useState(entry ?? null)
+  const isEdit = Boolean(baseline?.id)
+  const [review, setReview] = useState<{ proposal: EditorProposal; preview: EditorPreview } | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const reviewHeading = useRef<HTMLHeadingElement>(null)
+  const publishButton = useRef<HTMLButtonElement>(null)
+  const wasReviewOpen = useRef(false)
+  useEffect(() => {
+    if (reviewOpen) reviewHeading.current?.focus()
+    else if (wasReviewOpen.current) publishButton.current?.focus()
+    wasReviewOpen.current = reviewOpen
+  }, [reviewOpen])
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false)
   const [tab, setTab] = useState<'details' | 'history'>(initialTab)
   const [key, setKey] = useState(entry?.key ?? '')
   const [sourceText, setSourceText] = useState(entry?.source_text ?? '')
@@ -198,9 +219,8 @@ export default function StringFormDialog({
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [createdModules, setCreatedModules] = useState<Module[]>([])
   const [createdTags, setCreatedTags] = useState<Tag[]>([])
-  const [baseline, setBaseline] = useState(entry ?? null)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
-  const memory = useTranslationMemory(projectId, sourceText, targetLocales, entry?.id, baseline?.source_text)
+  const memory = useTranslationMemory(projectId, sourceText, targetLocales, baseline?.id, baseline?.source_text)
   const [memorySelection, setMemorySelection] = useState<{ source: string; chosen: Record<string, string> }>({ source: sourceText, chosen: {} })
   const chosen = memorySelection.source === sourceText ? memorySelection.chosen : {}
   const memoryLocales = Object.keys(chosen)
@@ -302,7 +322,6 @@ export default function StringFormDialog({
       tag_ids: string[]
       translations: Record<string, string>
       translation_scores?: Record<string, number>
-      status?: TranslationStatus
     } = {
       key: key.trim(),
       source_text: sourceText.trim(),
@@ -314,9 +333,6 @@ export default function StringFormDialog({
     if (Object.keys(scores).length > 0) {
       body.translation_scores = scores
     }
-    if (!isEdit || status !== baseline?.status) {
-      body.status = status
-    }
     return body
   }
 
@@ -327,7 +343,7 @@ export default function StringFormDialog({
     const edited = { ...body, key, source_text: sourceText, description: description || null }
     const changes: StringUpdate = { expected: {} }
     const expected = changes.expected!
-    for (const field of ['key', 'source_text', 'description', 'module_id', 'tag_ids', 'status'] as const) {
+    for (const field of ['key', 'source_text', 'description', 'module_id', 'tag_ids'] as const) {
       const value = body[field]
       if (JSON.stringify(edited[field]) === JSON.stringify(original[field])) continue
       if (value === undefined || JSON.stringify(value) === JSON.stringify(original[field])) continue
@@ -427,8 +443,8 @@ export default function StringFormDialog({
   const savedBaselines: Record<string, QaBaseline> = {}
   for (const locale of targetLocales) {
     savedBaselines[locale] = {
-      source: entry?.source_text ?? '',
-      text: entry?.translations.find((item) => item.locale === locale)?.value ?? '',
+      source: baseline?.source_text ?? '',
+      text: baseline?.translations.find((item) => item.locale === locale)?.value ?? '',
     }
   }
   const qaRows: QaWatchRow[] = targetLocales.map((locale) => ({
@@ -440,28 +456,92 @@ export default function StringFormDialog({
   }))
   const qaViews = useQaWatch(projectId, qaRows)
 
+  function proposal(): EditorProposal {
+    if (!baseline) return { mode: 'create', values: payload() }
+    const changes = editPayload()
+    return { mode: 'update', string_id: baseline.id, values: { ...changes, expected: changes.expected! } }
+  }
+
+  function refreshQueries() {
+    void qc.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
+    onSuccess()
+  }
+
+  function applySaved(fresh: StringEntry) {
+    setBaseline(fresh)
+    applyEntryToForm(fresh, targetLocales, {
+      setKey, setSourceText, setDescription, setModuleId, setTagIds, setStatus, setTranslations, setScores,
+    })
+    setConflict(null)
+    setMemoryUndo(null)
+    setMemorySelection({ source: fresh.source_text, chosen: {} })
+    setQaSeeds({})
+    setErrors({})
+  }
+
+  function editorError(error: unknown) {
+    if (error instanceof ApiError && error.status === 409) {
+      const detail = (error.body as { detail?: SaveConflict & { code?: string } })?.detail
+      if (detail?.code === 'stale_editor_save') {
+        setReviewOpen(false)
+        setReview(null)
+        setConflict(detail)
+        return
+      }
+    }
+    toast.error(publicationErrorMessage(error, 'Failed to save string'))
+  }
+
+  const previewMut = useMutation({
+    mutationFn: (proposed: EditorProposal) => stringsApi.editorPreview(projectId, proposed),
+    onSuccess: (preview, proposed) => {
+      setReview({ proposal: proposed, preview })
+      setReviewOpen(true)
+    },
+    onError: (error) => {
+      setReviewOpen(false)
+      editorError(error)
+    },
+  })
+
   const saveMut = useMutation({
+    mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
+    onSuccess: (fresh, request) => {
+      applySaved(fresh)
+      setReviewOpen(false)
+      setReview(null)
+      setSaved(true)
+      refreshQueries()
+      toast.success(request.action === 'publish' ? 'String saved and published' : 'String saved as draft')
+    },
+    onError: (error, request) => {
+      if (isPublishFingerprintMismatch(error)) {
+        setReview(null)
+        previewMut.mutate(request.proposal)
+        toast.info('Working copy changed. Review the updated preview.')
+        return
+      }
+      editorError(error)
+    },
+  })
+
+  const unpublishMut = useMutation({
     mutationFn: async () => {
-      if (isEdit && entry) {
-        await stringsApi.update(projectId, entry.id, editPayload())
-      } else {
-        await stringsApi.create(projectId, payload())
-      }
+      if (!baseline) return null
+      await stringsApi.batch(projectId, { action: 'unpublish', string_ids: [baseline.id] })
+      return stringsApi.get(projectId, baseline.id)
     },
-    onSuccess: () => {
-      toast.success(isEdit ? 'String saved' : 'String created')
-      onSuccess()
+    onSuccess: (fresh) => {
+      if (!fresh) return
+      // Keep form inputs and their expected-value baselines; only lifecycle state changed.
+      setBaseline((previous) => previous ? { ...previous, status: fresh.status } : fresh)
+      setStatus(fresh.status)
+      setConfirmUnpublish(false)
+      setReview(null)
+      refreshQueries()
+      toast.success('String unpublished')
     },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        const detail = (e.body as { detail?: SaveConflict & { code?: string } })?.detail
-        if (detail?.code === 'stale_editor_save') {
-          setConflict(detail)
-          return
-        }
-      }
-      toast.error(e instanceof Error ? e.message : `Failed to ${isEdit ? 'save' : 'create'} string`)
-    },
+    onError: editorError,
   })
 
   const translateMut = useMutation({
@@ -523,24 +603,32 @@ export default function StringFormDialog({
       setMemorySelection({ source: fresh.source_text, chosen: {} })
       setQaSeeds({})
       setErrors({})
-      onSuccess()
+      setReview(null)
+      refreshQueries()
       toast.success('Working copy discarded')
     },
-    onError: () => toast.error('Failed to discard changes'),
+    onError: (error) => toast.error(publicationErrorMessage(error, 'Failed to discard changes')),
   })
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (conflict || saveMut.isPending) return
+  function submitAction(action: 'save_draft' | 'publish') {
+    if (conflict || busy) return
     const nextErrors: FormErrors = {}
     if (!key.trim()) nextErrors.key = 'Key is required'
     if (!sourceText.trim()) nextErrors.source_text = 'Source text is required'
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
-    saveMut.mutate()
+    if (action === 'publish') previewMut.mutate(proposal())
+    else saveMut.mutate({ proposal: proposal(), action })
   }
 
-  const busy = saveMut.isPending || translateMut.isPending || discardMut.isPending
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submitAction('save_draft')
+  }
+
+  const busy = saveMut.isPending || previewMut.isPending || translateMut.isPending || discardMut.isPending || unpublishMut.isPending
+  const reviewedPreview = review ? buildPublishPreview([review.preview.entry]) : null
+  const publicationReady = reviewedPreview != null && hasPublishableChanges(reviewedPreview)
   const released = isEdit && baseline ? isReleased(baseline) : false
   const moduleSlug = moduleOptions.find((item) => item.id === moduleId)?.slug ?? ''
   const serverDiscardable = Boolean(baseline && canDiscardWorkingCopy(baseline))
@@ -549,7 +637,11 @@ export default function StringFormDialog({
     isEdit && baseline && !baseline.deleted_at && (serverDiscardable || formDirty)
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => {
+      if (open || busy) return
+      if (reviewOpen) { setReviewOpen(false); setReview(null) }
+      else onClose()
+    }}>
       <DialogContent
         className={cn(
           'flex w-full flex-col gap-0 overflow-hidden p-0',
@@ -577,10 +669,10 @@ export default function StringFormDialog({
           </div>
           <DialogDescription>
             {isEdit
-              ? 'Update metadata and translations, or restore a previous version.'
-              : 'Add metadata and translations. The string is created when you click Create.'}
+              ? 'Edit the working copy, then save as draft or review publication.'
+              : 'Add metadata and translations, then save as draft or review publication.'}
           </DialogDescription>
-          {isEdit ? (
+          {isEdit && !reviewOpen ? (
             <ToggleGroup
               type="single"
               variant="outline"
@@ -597,13 +689,42 @@ export default function StringFormDialog({
           ) : null}
         </DialogHeader>
 
-        {isEdit && tab === 'history' && entry ? (
+        {reviewOpen ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <h2 tabIndex={-1} ref={reviewHeading} className="mb-4 text-base font-medium">Review publication</h2>
+              {review ? <EditorPublicationReview entry={review.preview.entry} /> : <p role="status">Refreshing comparison…</p>}
+            </div>
+            <DialogFooter className="mx-0 mb-0 shrink-0 border-t px-5 py-3">
+              <Button type="button" variant="outline" disabled={busy} onClick={() => {
+                setReviewOpen(false)
+                setReview(null)
+              }}>
+                Back to editing
+              </Button>
+              <Button
+                type="button"
+                disabled={busy || !publicationReady}
+                onClick={() => {
+                  if (review) saveMut.mutate({
+                    proposal: review.proposal,
+                    action: 'publish',
+                    fingerprint: review.preview.fingerprint,
+                  })
+                }}
+              >
+                {saveMut.isPending && <Spinner data-icon="inline-start" />}
+                {review && !publicationReady ? 'Nothing to publish' : 'Publish'}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : isEdit && tab === 'history' && baseline ? (
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <StringHistoryPanel
               projectId={projectId}
-              stringId={entry.id}
+              stringId={baseline.id}
               onRestored={async () => {
-                const fresh = await stringsApi.get(projectId, entry.id)
+                const fresh = await stringsApi.get(projectId, baseline!.id)
                 setBaseline(fresh)
                 setConflict(null)
                 applyEntryToForm(fresh, targetLocales, {
@@ -627,7 +748,7 @@ export default function StringFormDialog({
           onSubmit={handleSubmit}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <fieldset disabled={busy} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
             {conflict ? (
               <Alert variant="destructive" className="mx-5 mt-5 w-auto">
                 <AlertTitle>Another save changed this string</AlertTitle>
@@ -711,35 +832,23 @@ export default function StringFormDialog({
                   />
                 </Field>
 
-                <Field orientation="horizontal" className="items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/30 p-3.5">
-                  <div className="flex flex-col gap-0.5">
-                    <FieldLabel htmlFor="string-status">Published</FieldLabel>
-                    <FieldDescription>
-                      {isEdit
-                        ? 'Saving edits does not change production. Turn on to publish the working copy; turn off to unpublish immediately.'
-                        : 'Off keeps this string as draft; on publishes it after create.'}
-                    </FieldDescription>
-                  </div>
-                  <Switch
-                    id="string-status"
-                    checked={status === 'public'}
-                    disabled={Boolean(entry?.pending_delete || entry?.deleted_at)}
-                    onCheckedChange={(checked) =>
-                      setStatus(checked ? 'public' : 'draft')
-                    }
-                  />
-                </Field>
+                <div className="flex items-center justify-between gap-3 rounded-xl border p-3.5">
+                  <p className="text-sm">{baseline?.status === 'public' ? 'Public snapshot is live. Saving as draft leaves it unchanged.' : 'This string is not public.'}</p>
+                  {baseline?.status === 'public' && !baseline.pending_delete && !baseline.deleted_at ? (
+                    <Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmUnpublish(true)}>Unpublish</Button>
+                  ) : null}
+                </div>
                 {isEdit && baseline?.has_unpublished_changes && !baseline.pending_delete ? (
                   <p className="text-sm text-muted-foreground">
                     Production still has the last published snapshot until you publish.
                   </p>
                 ) : null}
-                {entry?.deleted_at ? (
+                {baseline?.deleted_at ? (
                   <p className="text-sm text-muted-foreground">
                     This string is deleted. Restore it from the grid to edit again.
                   </p>
                 ) : null}
-                {entry?.pending_delete ? (
+                {baseline?.pending_delete ? (
                   <p className="text-sm text-muted-foreground">
                     Deletion is pending. Production still has the last published snapshot until you publish the removal.
                   </p>
@@ -877,7 +986,7 @@ export default function StringFormDialog({
                     loading={memory.loading}
                     stale={memory.stale}
                     error={memory.error}
-                    disabled={busy || Boolean(entry?.deleted_at)}
+                    disabled={busy || Boolean(baseline?.deleted_at)}
                     selected={chosen}
                     onUse={(locale, match) => {
                       setMemoryUndo(null)
@@ -959,7 +1068,7 @@ export default function StringFormDialog({
                 </p>
               </div>
             </div>
-          </div>
+          </fieldset>
 
           <DialogFooter className="mx-0 mb-0 shrink-0 flex-col rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-between">
             <div>
@@ -979,7 +1088,7 @@ export default function StringFormDialog({
                 </Button>
               ) : null}
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button
                 variant="outline"
                 type="button"
@@ -988,14 +1097,35 @@ export default function StringFormDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy || Boolean(conflict) || Boolean(entry?.deleted_at)}>
+              {saved && baseline && onViewInStrings ? (
+                <Button type="button" variant="outline" disabled={busy} onClick={() => onViewInStrings(baseline)}>View in Strings</Button>
+              ) : null}
+              <Button type="submit" variant="outline" disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at)}>
                 {saveMut.isPending && <Spinner data-icon="inline-start" />}
-                {isEdit ? 'Save changes' : 'Create string'}
+                Save as draft
+              </Button>
+              <Button
+                ref={publishButton}
+                type="button"
+                disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at || baseline?.pending_delete)}
+                onClick={() => submitAction('publish')}
+              >
+                {previewMut.isPending && <Spinner data-icon="inline-start" />}
+                {isEdit ? 'Publish changes' : 'Create and publish'}
               </Button>
             </div>
           </DialogFooter>
         </form>
         )}
+        <ConfirmDialog
+          open={confirmUnpublish}
+          onClose={() => setConfirmUnpublish(false)}
+          onConfirm={() => unpublishMut.mutate()}
+          title="Unpublish string?"
+          description="This removes the string from public immediately. Unsaved form edits are kept and will not be saved."
+          confirmLabel="Unpublish"
+          isLoading={unpublishMut.isPending}
+        />
         <ConfirmDialog
           open={confirmDiscard}
           onClose={() => setConfirmDiscard(false)}

@@ -17,6 +17,7 @@ import {
   isHistoryRestoreEnabled,
   shouldShowHistoryRestore,
 } from '@/features/strings/history-restore'
+import { publicationErrorMessage } from '@/features/strings/publish-preview'
 import { useToast } from '@/lib/toast'
 import { formatRelativeTime } from '@/lib/utils'
 
@@ -126,7 +127,7 @@ export function StringHistoryPanel({
       onRestored()
     },
     onError: (e) => {
-      toast.error(e instanceof Error ? e.message : 'Restore failed')
+      toast.error(publicationErrorMessage(e, 'Restore failed'))
       if (e instanceof ApiError && e.status === 409) {
         void previewQuery.refetch()
       }

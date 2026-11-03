@@ -280,15 +280,21 @@ class StringOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class StringCreate(BaseModel):
+class StringCreateContent(BaseModel):
+    model_config = {"extra": "forbid"}
+
     key: str = Field(min_length=1, max_length=512)
     source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
-    status: TranslationStatus = TranslationStatus.draft
     translations: TextValues = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+
+
+class StringCreate(StringCreateContent):
+    model_config = {"extra": "ignore"}
+    status: TranslationStatus = TranslationStatus.draft
 
 
 class StringExpected(BaseModel):
@@ -309,16 +315,68 @@ class StringExpected(BaseModel):
     translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
 
 
-class StringUpdate(BaseModel):
+class StringUpdateContent(BaseModel):
+    model_config = {"extra": "forbid"}
+
     key: str | None = Field(default=None, max_length=KEY_MAX_LENGTH)
     source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
-    status: TranslationStatus | None = None
     translations: OptionalTextValues = None
     translation_scores: dict[str, ConfidenceScore | None] | None = None
     expected: StringExpected | None = None
+
+
+class StringUpdate(StringUpdateContent):
+    model_config = {"extra": "ignore"}
+    status: TranslationStatus | None = None
+
+
+class EditorUpdateValues(StringUpdateContent):
+    expected: StringExpected
+
+    @model_validator(mode="after")
+    def content_expected_only(self) -> "EditorUpdateValues":
+        if "status" in self.expected.model_fields_set:
+            raise ValueError("Editor proposals cannot change publication status")
+        return self
+
+
+class EditorCreateProposal(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: Literal["create"]
+    values: StringCreateContent
+
+
+class EditorUpdateProposal(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: Literal["update"]
+    string_id: UUID
+    values: EditorUpdateValues
+
+
+EditorProposal = Annotated[EditorCreateProposal | EditorUpdateProposal, Field(discriminator="mode")]
+
+
+class EditorPreviewRequest(BaseModel):
+    proposal: EditorProposal
+
+
+class EditorSaveRequest(EditorPreviewRequest):
+    action: Literal["save_draft", "publish"]
+    fingerprint: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_publication_review(self) -> "EditorSaveRequest":
+        if self.action == "publish" and not self.fingerprint:
+            raise ValueError("Publication requires a reviewed fingerprint")
+        return self
+
+
+class EditorPreviewOut(BaseModel):
+    entry: StringOut
+    fingerprint: str
 
 
 class TranslationUpdate(BaseModel):

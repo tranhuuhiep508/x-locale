@@ -97,8 +97,9 @@ test('retranslation can reuse its own publication and clear confidence for uncha
   expect((await preview).request().postDataJSON().locales).toEqual(['ja'])
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published English')
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue('[ja] Nội dung đã phát hành')
-  await dialog.getByRole('button', { name: 'Save changes' }).click()
-  await expect(dialog).toBeHidden()
+  await dialog.getByRole('button', { name: 'Save as draft' }).click()
+  await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
+  await expect(dialog).toBeVisible()
   const saved = await (
     await page.request.get(`/api/projects/${project.id}/strings/${row.id}`)
   ).json()

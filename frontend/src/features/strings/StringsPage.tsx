@@ -751,10 +751,13 @@ export function StringsPage() {
               setDialogTab('details')
             }}
             initialTab={dialogTab}
-            onSuccess={() => {
+            onSuccess={invalidateStrings}
+            onViewInStrings={(savedEntry) => {
               setDialogOpen(false)
               setDialogEntry(null)
-              invalidateStrings()
+              setDialogTab('details')
+              setSearchInput(savedEntry.key)
+              navigate({ search: { q: savedEntry.key, page: 1 } })
             }}
           />
         </Suspense>

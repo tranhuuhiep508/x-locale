@@ -34,7 +34,7 @@ vi.mock('@/lib/api/jobs', async (importOriginal) => ({
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api/strings')>(),
   stringsApi: {
-    list: vi.fn(), create: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
+    list: vi.fn(), editorSave: vi.fn(), translateMissing: vi.fn(), translateProposals: vi.fn(), translateApply: vi.fn(),
     translateQa: vi.fn(), translateMemory: vi.fn(),
   },
 }))
@@ -207,9 +207,9 @@ describe('translation review retranslation', () => {
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Lưu' } })
     expect(screen.queryByLabelText(/^vi$/i)).toBeNull()
     fireEvent.change(screen.getByLabelText(/^en$/i), { target: { value: 'Save' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create string' }))
-    await waitFor(() => expect(stringsApi.create).toHaveBeenCalledWith(
-      'demo-app', expect.objectContaining({ source_text: 'Lưu', translations: { en: 'Save' } }),
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(stringsApi.editorSave).toHaveBeenCalledWith(
+      'demo-app', { action: 'save_draft', proposal: { mode: 'create', values: expect.objectContaining({ source_text: 'Lưu', translations: { en: 'Save' } }) } },
     ))
   })
 

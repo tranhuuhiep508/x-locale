@@ -78,7 +78,7 @@ test('edit form groups a placeholder style change and still allows save', async 
   await expect(popover.getByText(grouped)).toBeVisible()
   await expect(popover.getByText('placeholder_changed')).toBeVisible()
   await expect(page.getByText(/Missing placeholder/)).toHaveCount(0)
-  await expect(dialog.getByRole('button', { name: 'Save changes' })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: 'Save as draft' })).toBeEnabled()
   await expect(dialog.locator('#translation-en')).not.toHaveAttribute('aria-invalid')
   await page.screenshot({ path: testInfo.outputPath('qa-edit-placeholder-changed.png') })
 })
