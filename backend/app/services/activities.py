@@ -166,7 +166,9 @@ def _history_restore_flags(activity: Activity) -> tuple[bool, str | None]:
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     if not activity.after:
         return False, "This version cannot be restored"
-    if not is_history_restorable(activity.event_type, str(action or "update")):
+    if not is_history_restorable(
+        activity.event_type, str(action or "update"), before=activity.before, after=activity.after
+    ):
         return False, _history_restore_reject_detail(activity.event_type)
     return True, None
 
@@ -603,7 +605,9 @@ def restore_activity_version(
         if not activity.after:
             raise HTTPException(status_code=400, detail="This version cannot be restored")
         action = activity.action.value if hasattr(activity.action, "value") else activity.action
-        if not is_history_restorable(activity.event_type, action):
+        if not is_history_restorable(
+            activity.event_type, action, before=activity.before, after=activity.after
+        ):
             raise HTTPException(
                 status_code=400, detail=_history_restore_reject_detail(activity.event_type)
             )
@@ -697,7 +701,7 @@ def get_activity_detail(db: Session, project: Project, activity_id: uuid.UUID) -
 def _history_restore_reject_detail(event_type: str | None) -> str:
     if event_type == EVENT_PUBLISHED or event_type == EVENT_UNPUBLISHED:
         return (
-            "Publish and unpublish cannot be restored from History. "
+            "Publication-only and unpublish events cannot be restored from History. "
             "Use Publish or Unpublish, or Undo a batch on the Activity feed."
         )
     if event_type == EVENT_PENDING_DELETE:
@@ -769,7 +773,10 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
         )
         for candidate in candidates:
             if candidate.string_id not in latest_by_string and is_history_restorable(
-                candidate.event_type, candidate.action
+                candidate.event_type,
+                candidate.action,
+                before=candidate.before,
+                after=candidate.after,
             ):
                 latest_by_string[candidate.string_id] = candidate
     references = SnapshotReferences(
@@ -2016,7 +2023,9 @@ def preview_restore_activity_version(
             blocked_reason="This version cannot be restored",
         )
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    if not is_history_restorable(activity.event_type, action):
+    if not is_history_restorable(
+        activity.event_type, action, before=activity.before, after=activity.after
+    ):
         return RestorePreviewOut(
             string_id=string_id,
             activity_id=activity_id,

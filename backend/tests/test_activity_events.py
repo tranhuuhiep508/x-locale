@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.activity_events import (
     EVENT_CREATED,
     EVENT_DELETED,
@@ -243,3 +245,60 @@ def test_history_restorable_skips_lifecycle_events():
     assert is_history_restorable(EVENT_UNPUBLISHED, "update") is False
     assert is_history_restorable(EVENT_PENDING_DELETE, "update") is False
     assert is_history_restorable(EVENT_DELETED, "delete") is False
+
+
+@pytest.mark.parametrize(
+    "field,before,after",
+    [
+        ("key", "old", "new"),
+        ("source_text", "Hello", "Welcome"),
+        ("description", None, "Greeting"),
+        ("module_id", None, "module"),
+        ("tag_ids", [], ["tag"]),
+        ("translations", {"en": "Hello"}, {"en": "Welcome"}),
+    ],
+)
+def test_history_restorable_mixed_publication(field, before, after):
+    assert is_history_restorable(
+        EVENT_PUBLISHED, "update", before={field: before}, after={field: after}
+    )
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        (None, {"source_text": "Welcome"}),
+        ({"source_text": "Hello"}, None),
+        ({"key": "greeting"}, {"key": "greeting", "description": "Greeting"}),
+        ({"status": "draft"}, {"status": "public"}),
+        ({"published_source_text": "Hello"}, {"published_source_text": "Welcome"}),
+        ({"published_at": "old"}, {"published_at": "new"}),
+        ({"published_translations": {"en": "Hello"}}, {"published_translations": {"en": "Hi"}}),
+        ({"pending_delete": False}, {"pending_delete": True}),
+        ({"deleted_at": None}, {"deleted_at": "now"}),
+        ({"tag_ids": ["a", "b"]}, {"tag_ids": ["b", "a"]}),
+        ({"translations": {}}, {"translations": {"en": ""}}),
+        ({"translations": {"en": ""}}, {"translations": {"en": None}}),
+        (
+            {"translations": [{"locale": "en", "value": "Hello"}]},
+            {"translations": {"en": {"value": "Hello", "confidence": 90}}},
+        ),
+    ],
+)
+def test_history_publication_requires_recorded_content_edit(before, after):
+    assert not is_history_restorable(EVENT_PUBLISHED, "update", before=before, after=after)
+
+
+@pytest.mark.parametrize(
+    "event,action",
+    [
+        (EVENT_UNPUBLISHED, "update"),
+        (EVENT_PENDING_DELETE, "update"),
+        (EVENT_DELETED, "update"),
+        (EVENT_PUBLISHED, "delete"),
+    ],
+)
+def test_history_lifecycle_stays_blocked_with_content_edit(event, action):
+    assert not is_history_restorable(
+        event, action, before={"source_text": "Hello"}, after={"source_text": "Welcome"}
+    )
