@@ -73,7 +73,7 @@ def test_mixed_publication_history_restores_content_only(client, field):
     saved = client.patch(f"{root}/strings/{sid}", json={field: value, "status": "public"})
     assert saved.status_code == 200, saved.text
     version = client.get(f"{root}/strings/{sid}/activities").json()["items"][0]
-    assert version["event_type"] == "string.published"
+    assert version["event_type"] == "string.saved_and_published"
     assert version["is_history_restorable"] and version["restore_blocked_reason"] is None
     detail = client.get(f"{root}/activities/{version['id']}").json()
     assert detail["is_history_restorable"] and detail["restore_blocked_reason"] is None

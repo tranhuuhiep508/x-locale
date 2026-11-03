@@ -7,139 +7,142 @@ import {
   shouldShowHistoryRestore,
 } from '@/features/strings/history-restore'
 
-describe('canRestoreHistoryVersion', () => {
-  const contentChange: ActivityChange = {
-    field: 'translation',
-    before: 'Hello',
-    after: 'Welcome',
-    scope: 'draft',
-    kind: 'translation',
-    locale: 'en',
-  }
-
-  it('honors server eligibility for mixed publication and clears the blocked reason', () => {
-    const activity = {
-      action: 'update',
-      event_type: 'string.published',
-      is_history_restorable: true,
+describe.each(['string.published', 'string.saved_and_published'])(
+  'canRestoreHistoryVersion (%s)',
+  (publicationEvent) => {
+    const contentChange: ActivityChange = {
+      field: 'translation',
+      before: 'Hello',
+      after: 'Welcome',
+      scope: 'draft',
+      kind: 'translation',
+      locale: 'en',
     }
-    expect(canRestoreHistoryVersion(activity)).toBe(true)
-    expect(historyRestoreBlockedReason(activity)).toBeNull()
-    expect(isHistoryRestoreEnabled(0, activity)).toBe(false)
-    expect(isHistoryRestoreEnabled(1, activity)).toBe(true)
-  })
 
-  it('keeps a negative server flag authoritative even with content changes', () => {
-    expect(
-      canRestoreHistoryVersion({
-        action: 'update',
-        event_type: 'string.published',
-        is_history_restorable: false,
-        changed: [contentChange],
-      })
-    ).toBe(false)
-  })
-
-  it.each(['key', 'source_text', 'description', 'module_id', 'tags', 'translation'])(
-    'recognizes a mixed publication from a draft %s diff without a server flag',
-    (field) => {
+    it('honors server eligibility for mixed publication and clears the blocked reason', () => {
       const activity = {
         action: 'update',
-        event_type: 'string.published',
-        changed: [{ ...contentChange, field }],
+        event_type: publicationEvent,
+        is_history_restorable: true,
       }
       expect(canRestoreHistoryVersion(activity)).toBe(true)
       expect(historyRestoreBlockedReason(activity)).toBeNull()
-    }
-  )
+      expect(isHistoryRestoreEnabled(0, activity)).toBe(false)
+      expect(isHistoryRestoreEnabled(1, activity)).toBe(true)
+    })
 
-  it.each([
-    { ...contentChange, scope: 'published' as const },
-    { ...contentChange, field: 'status' },
-    { ...contentChange, field: 'pending_delete' },
-    { ...contentChange, before: 'Welcome' },
-  ])('requires evidence of a working-copy edit in fallback diffs: %o', (change) => {
-    expect(
-      canRestoreHistoryVersion({
-        action: 'update',
-        event_type: 'string.published',
-        changed: [change],
-      })
-    ).toBe(false)
-  })
-
-  it.each(['string.unpublished', 'string.pending_delete', 'string.deleted'])(
-    'keeps %s blocked even with content changes',
-    (event_type) => {
+    it('keeps a negative server flag authoritative even with content changes', () => {
       expect(
         canRestoreHistoryVersion({
           action: 'update',
-          event_type,
+          event_type: publicationEvent,
+          is_history_restorable: false,
           changed: [contentChange],
         })
       ).toBe(false)
-    }
-  )
+    })
 
-  it('keeps deletion blocked even when the event type indicates publication', () => {
-    expect(
-      canRestoreHistoryVersion({
-        action: 'delete',
-        event_type: 'string.published',
-        changed: [contentChange],
-      })
-    ).toBe(false)
-  })
+    it.each(['key', 'source_text', 'description', 'module_id', 'tags', 'translation'])(
+      'recognizes a mixed publication from a draft %s diff without a server flag',
+      (field) => {
+        const activity = {
+          action: 'update',
+          event_type: publicationEvent,
+          changed: [{ ...contentChange, field }],
+        }
+        expect(canRestoreHistoryVersion(activity)).toBe(true)
+        expect(historyRestoreBlockedReason(activity)).toBeNull()
+      }
+    )
 
-  it('allows content snapshots', () => {
-    expect(
-      canRestoreHistoryVersion({
-        is_history_restorable: true,
-        action: 'update',
-        event_type: 'translation.updated',
-      }),
-    ).toBe(true)
-  })
+    it.each([
+      { ...contentChange, scope: 'published' as const },
+      { ...contentChange, field: 'status' },
+      { ...contentChange, field: 'pending_delete' },
+      { ...contentChange, before: 'Welcome' },
+    ])('requires evidence of a working-copy edit in fallback diffs: %o', (change) => {
+      expect(
+        canRestoreHistoryVersion({
+          action: 'update',
+          event_type: publicationEvent,
+          changed: [change],
+        })
+      ).toBe(false)
+    })
 
-  it('hides publish, unpublish, and pending delete', () => {
-    expect(
-      canRestoreHistoryVersion({
-        is_history_restorable: false,
-        action: 'update',
-        event_type: 'string.published',
-      }),
-    ).toBe(false)
-    expect(
-      canRestoreHistoryVersion({
-        is_history_restorable: false,
-        action: 'update',
-        event_type: 'string.unpublished',
-      }),
-    ).toBe(false)
-    expect(
-      canRestoreHistoryVersion({
-        is_history_restorable: false,
-        action: 'update',
-        event_type: 'string.pending_delete',
-      }),
-    ).toBe(false)
-  })
+    it.each(['string.unpublished', 'string.pending_delete', 'string.deleted'])(
+      'keeps %s blocked even with content changes',
+      (event_type) => {
+        expect(
+          canRestoreHistoryVersion({
+            action: 'update',
+            event_type,
+            changed: [contentChange],
+          })
+        ).toBe(false)
+      }
+    )
 
-  it('falls back to event_type when server flag is absent', () => {
-    expect(
-      canRestoreHistoryVersion({
-        action: 'update',
-        event_type: 'translation.updated',
-      }),
-    ).toBe(true)
-    expect(
-      canRestoreHistoryVersion({
-        action: 'update',
-        event_type: 'string.published',
-      }),
-    ).toBe(false)
-  })
-})
+    it('keeps deletion blocked even when the event type indicates publication', () => {
+      expect(
+        canRestoreHistoryVersion({
+          action: 'delete',
+          event_type: publicationEvent,
+          changed: [contentChange],
+        })
+      ).toBe(false)
+    })
+
+    it('allows content snapshots', () => {
+      expect(
+        canRestoreHistoryVersion({
+          is_history_restorable: true,
+          action: 'update',
+          event_type: 'translation.updated',
+        })
+      ).toBe(true)
+    })
+
+    it('hides publish, unpublish, and pending delete', () => {
+      expect(
+        canRestoreHistoryVersion({
+          is_history_restorable: false,
+          action: 'update',
+          event_type: publicationEvent,
+        })
+      ).toBe(false)
+      expect(
+        canRestoreHistoryVersion({
+          is_history_restorable: false,
+          action: 'update',
+          event_type: 'string.unpublished',
+        })
+      ).toBe(false)
+      expect(
+        canRestoreHistoryVersion({
+          is_history_restorable: false,
+          action: 'update',
+          event_type: 'string.pending_delete',
+        })
+      ).toBe(false)
+    })
+
+    it('falls back to event_type when server flag is absent', () => {
+      expect(
+        canRestoreHistoryVersion({
+          action: 'update',
+          event_type: 'translation.updated',
+        })
+      ).toBe(true)
+      expect(
+        canRestoreHistoryVersion({
+          action: 'update',
+          event_type: publicationEvent,
+        })
+      ).toBe(false)
+    })
+  }
+)
 
 describe('shouldShowHistoryRestore', () => {
   it('hides restore on the newest event', () => {
@@ -158,7 +161,7 @@ describe('isHistoryRestoreEnabled', () => {
         is_history_restorable: true,
         action: 'update',
         event_type: 'translation.updated',
-      }),
+      })
     ).toBe(false)
   })
 
@@ -168,7 +171,7 @@ describe('isHistoryRestoreEnabled', () => {
         is_history_restorable: true,
         action: 'update',
         event_type: 'translation.updated',
-      }),
+      })
     ).toBe(true)
   })
 
@@ -178,7 +181,7 @@ describe('isHistoryRestoreEnabled', () => {
         is_history_restorable: false,
         action: 'update',
         event_type: 'string.published',
-      }),
+      })
     ).toBe(false)
   })
 })
@@ -189,7 +192,7 @@ describe('historyRestoreBlockedReason', () => {
       historyRestoreBlockedReason({
         action: 'update',
         event_type: 'string.published',
-      }),
+      })
     ).toMatch(/Publication-only/)
   })
 
@@ -225,7 +228,7 @@ describe('historyRestoreBlockedReason', () => {
         restore_blocked_reason: null,
         action: 'update',
         event_type: 'translation.updated',
-      }),
+      })
     ).toBeNull()
   })
 })

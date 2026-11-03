@@ -8,6 +8,8 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   'string.tagged': 'Tagged',
   'translation.updated': 'Translations updated',
   'string.published': 'Published',
+  'string.saved_draft': 'Saved as draft',
+  'string.saved_and_published': 'Saved and published',
   'string.unpublished': 'Unpublished',
   'string.pending_delete': 'Marked for deletion',
   'string.deleted': 'Deleted',

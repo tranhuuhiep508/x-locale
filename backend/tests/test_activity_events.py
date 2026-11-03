@@ -7,6 +7,8 @@ from app.services.activity_events import (
     EVENT_PUBLISHED,
     EVENT_RENAMED,
     EVENT_RESTORED,
+    EVENT_SAVED_DRAFT,
+    EVENT_SAVED_PUBLISHED,
     EVENT_SOURCE,
     EVENT_TRANSLATION,
     EVENT_UNPUBLISHED,
@@ -123,6 +125,122 @@ def test_classify_mixed_fields_fallback():
     assert event.event_type == EVENT_UPDATED
 
 
+@pytest.mark.parametrize(
+    "field,old,new",
+    [
+        ("key", "old", "new"),
+        ("source_text", "Hello", "Welcome"),
+        ("description", None, "Greeting"),
+        ("module_id", None, "module"),
+        ("tag_ids", [], ["tag"]),
+        ("translations", {"en": "Hello"}, {"en": "Welcome"}),
+    ],
+)
+def test_classify_combined_content_and_publication(field, old, new):
+    event = classify_event(
+        action="update",
+        before={"status": "draft", field: old},
+        after={"status": "public", field: new},
+        intent="save_draft",
+    )
+    assert event.event_type == EVENT_SAVED_PUBLISHED
+    assert event.summary.startswith("Saved and published")
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ({"tag_ids": ["a", "b"]}, {"tag_ids": ["b", "a"]}),
+        ({"translations": {}}, {"translations": {"en": ""}}),
+        (
+            {"translations": [{"locale": "en", "value": "Hello"}]},
+            {"translations": {"en": {"value": "Hello", "confidence": 90}}},
+        ),
+        ({"key": "a"}, {"key": "a", "description": "Not recorded before"}),
+    ],
+)
+def test_classify_publication_requires_content_evidence(before, after):
+    event = classify_event(
+        action="update",
+        before={**before, "status": "draft"},
+        after={**after, "status": "public"},
+    )
+    assert event.event_type == EVENT_PUBLISHED
+
+
+def test_classify_draft_save_requires_review_intent_and_actual_content():
+    kwargs = {
+        "action": "update",
+        "before": {"key": "a", "status": "public", "translations": {"en": "Hello"}},
+        "after": {"key": "a", "status": "public", "translations": {"en": "Welcome"}},
+    }
+    assert classify_event(**kwargs).event_type == EVENT_TRANSLATION
+    saved = classify_event(**kwargs, intent="save_draft")
+    assert saved.event_type == EVENT_SAVED_DRAFT and saved.locale == "en"
+    assert saved.summary == "Saved translations of 'a' as draft"
+    assert (
+        classify_event(
+            action="update", before=kwargs["after"], after=kwargs["after"], intent="save_draft"
+        ).event_type
+        != EVENT_SAVED_DRAFT
+    )
+
+
+@pytest.mark.parametrize(
+    "before,after,expected",
+    [
+        ({"status": "public"}, {"status": "draft"}, EVENT_UNPUBLISHED),
+        ({"pending_delete": False}, {"pending_delete": True}, EVENT_PENDING_DELETE),
+        ({"deleted_at": None}, {"deleted_at": "now"}, EVENT_DELETED),
+        ({"deleted_at": "then"}, {"deleted_at": None}, EVENT_RESTORED),
+    ],
+)
+def test_review_save_preserves_lifecycle_precedence(before, after, expected):
+    event = classify_event(
+        action="update",
+        before={**before, "source_text": "Hello"},
+        after={**after, "source_text": "Welcome"},
+        intent="save_draft",
+    )
+    assert event.event_type == expected
+
+
+@pytest.mark.parametrize(
+    "kind,counts,count,expected",
+    [
+        ("batch", {EVENT_SAVED_DRAFT: 101}, 101, "Saved translations as draft · 101 strings"),
+        ("batch", {EVENT_PUBLISHED: 101}, 101, "Published 101 strings"),
+        ("batch", {EVENT_SAVED_PUBLISHED: 101}, 101, "Saved and published 101 strings"),
+        (
+            "batch",
+            {EVENT_SAVED_PUBLISHED: 1, EVENT_PUBLISHED: 2, EVENT_SAVED_DRAFT: 1},
+            4,
+            "Updated 4 strings · Saved and published 1 string · Published 2 strings",
+        ),
+        ("translate", {EVENT_TRANSLATION: 3}, 3, "AI translated 3 strings"),
+        ("cli_push", {EVENT_CREATED: 3}, 3, "CLI push · 3 strings"),
+        ("import", {EVENT_UPDATED: 3}, 3, "Imported · 3 strings"),
+        ("excel_import", {EVENT_CREATED: 3}, 3, "Imported from Excel · 3 strings"),
+    ],
+)
+def test_batch_summaries_use_full_event_counts(kind, counts, count, expected):
+    assert batch_card_summary(kind, counts, count) == expected
+
+
+@pytest.mark.parametrize(
+    "kind,origin",
+    [
+        ("import", "Imported"),
+        ("excel_import", "Excel"),
+        ("cli_push", "CLI push"),
+        ("translate", "AI translated"),
+    ],
+)
+def test_publication_batch_summaries_keep_origin(kind, origin):
+    summary = batch_card_summary(kind, {EVENT_SAVED_PUBLISHED: 2}, 2)
+    assert "Saved and published 2 strings" in summary and origin in summary
+
+
 def test_human_changed_can_omit_published_scope():
     rows = human_changed(
         {
@@ -233,7 +351,7 @@ def test_classify_moved_and_tagged():
 
 
 def test_batch_card_summary_excel():
-    text = batch_card_summary("excel_import", [], 43)
+    text = batch_card_summary("excel_import", {}, 43)
     assert "Excel" in text
     assert "43" in text
 
@@ -258,10 +376,9 @@ def test_history_restorable_skips_lifecycle_events():
         ("translations", {"en": "Hello"}, {"en": "Welcome"}),
     ],
 )
-def test_history_restorable_mixed_publication(field, before, after):
-    assert is_history_restorable(
-        EVENT_PUBLISHED, "update", before={field: before}, after={field: after}
-    )
+@pytest.mark.parametrize("event_type", [EVENT_PUBLISHED, EVENT_SAVED_PUBLISHED])
+def test_history_restorable_mixed_publication(field, before, after, event_type):
+    assert is_history_restorable(event_type, "update", before={field: before}, after={field: after})
 
 
 @pytest.mark.parametrize(
@@ -285,8 +402,9 @@ def test_history_restorable_mixed_publication(field, before, after):
         ),
     ],
 )
-def test_history_publication_requires_recorded_content_edit(before, after):
-    assert not is_history_restorable(EVENT_PUBLISHED, "update", before=before, after=after)
+@pytest.mark.parametrize("event_type", [EVENT_PUBLISHED, EVENT_SAVED_PUBLISHED])
+def test_history_publication_requires_recorded_content_edit(before, after, event_type):
+    assert not is_history_restorable(event_type, "update", before=before, after=after)
 
 
 @pytest.mark.parametrize(
@@ -296,6 +414,7 @@ def test_history_publication_requires_recorded_content_edit(before, after):
         (EVENT_PENDING_DELETE, "update"),
         (EVENT_DELETED, "update"),
         (EVENT_PUBLISHED, "delete"),
+        (EVENT_SAVED_PUBLISHED, "delete"),
     ],
 )
 def test_history_lifecycle_stays_blocked_with_content_edit(event, action):
