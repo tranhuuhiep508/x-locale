@@ -361,7 +361,7 @@ describe('StringFormDialog inline catalog create', () => {
     expect(savedCreates).not.toHaveBeenCalled()
 
     await waitFor(() => {
-      expect(screen.getByRole('combobox').textContent).toContain('Auth')
+      expect(screen.getByLabelText('Module').textContent).toContain('Auth')
     })
 
     await generateAi()
@@ -417,10 +417,25 @@ describe('StringFormDialog inline catalog create', () => {
     })
 
     expect(screen.getByText('Add string')).toBeTruthy()
-    expect(screen.getByRole('radio', { name: 'ios' }).getAttribute('data-state')).toBe('on')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Tag').textContent).toContain('ios')
+    })
     expect(onClose).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
     expect(savedCreates).not.toHaveBeenCalled()
+  })
+
+  it('selects and clears a tag via the dropdown', async () => {
+    const a = { ...createdTag, id: 'a', name: 'Alpha' }
+    renderDialog({ tags: [a] })
+
+    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Alpha' }))
+    expect(screen.getByLabelText('Tag').textContent).toContain('Alpha')
+
+    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.click(await screen.findByRole('option', { name: '— None —' }))
+    expect(screen.getByLabelText('Tag').textContent).toContain('— None —')
   })
 
   it('closes only the popover when New is cancelled', async () => {
@@ -568,7 +583,8 @@ describe('StringFormDialog stale saves', () => {
     const current = { ...entry, tags: [b, c] }
     vi.mocked(savedUpdates).mockRejectedValueOnce(staleSave(current, ['tag_ids']))
     renderDialog({ entry, tags: [a, b, c] })
-    fireEvent.click(screen.getByRole('radio', { name: 'B' }))
+    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.click(await screen.findByRole('option', { name: 'B' }))
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Bob context' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await screen.findByText('Another save changed this string')

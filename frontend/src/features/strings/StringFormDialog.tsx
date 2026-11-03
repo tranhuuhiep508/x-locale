@@ -53,6 +53,7 @@ interface Props {
 }
 
 const NONE_MODULE = '__none__'
+const NONE_TAG = '__none__'
 
 /** Portaled popover/select layers sit outside dialog content in the DOM. */
 function isNestedOverlayTarget(target: EventTarget | null) {
@@ -297,6 +298,7 @@ export default function StringFormDialog({
   }) ?? [])]
   const moduleOptions = [...modules, ...createdModules.filter((item) => !modules.some((m) => m.id === item.id))]
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
+  const selectedTag = tagOptions.find((item) => item.id === tagId)
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
   const formValues = {
@@ -644,8 +646,7 @@ export default function StringFormDialog({
     }}>
       <DialogContent
         className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0',
-          'max-h-[min(90dvh,760px)] sm:max-w-3xl',
+          'flex h-[min(90dvh,760px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl',
         )}
         onFocusOutside={(event) => {
           // Nested popovers unmount after Create; focus then lands on body, not the
@@ -661,14 +662,28 @@ export default function StringFormDialog({
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <div className="flex items-center gap-2">
             <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
-            {isEdit ? (
-              <span className="rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground uppercase">
+            {isEdit && !reviewOpen ? (
+              <span
+                className={cn(
+                  'rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider',
+                  status === 'public'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'border-border/70 bg-muted/50 text-muted-foreground',
+                )}
+              >
                 {status}
+              </span>
+            ) : null}
+            {reviewOpen ? (
+              <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary uppercase">
+                Publication Review
               </span>
             ) : null}
           </div>
           <DialogDescription>
-            {isEdit
+            {reviewOpen
+              ? 'Review proposed changes before promoting to public catalogs.'
+              : isEdit
               ? 'Edit the working copy, then save as draft or review publication.'
               : 'Add metadata and translations, then save as draft or review publication.'}
           </DialogDescription>
@@ -690,12 +705,19 @@ export default function StringFormDialog({
         </DialogHeader>
 
         {reviewOpen ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              <h2 tabIndex={-1} ref={reviewHeading} className="mb-4 text-base font-medium">Review publication</h2>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+              <div className="mb-4 flex flex-col gap-1 border-b border-border/60 pb-3">
+                <h2 tabIndex={-1} ref={reviewHeading} className="font-heading text-base font-semibold tracking-tight text-foreground">
+                  Review publication
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Verify the final snapshot below. Edits are saved and public catalogs update atomically.
+                </p>
+              </div>
               {review ? <EditorPublicationReview entry={review.preview.entry} /> : <p role="status">Refreshing comparison…</p>}
             </div>
-            <DialogFooter className="mx-0 mb-0 shrink-0 border-t px-5 py-3">
+            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" disabled={busy} onClick={() => {
                 setReviewOpen(false)
                 setReview(null)
@@ -719,7 +741,7 @@ export default function StringFormDialog({
             </DialogFooter>
           </div>
         ) : isEdit && tab === 'history' && baseline ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
             <StringHistoryPanel
               projectId={projectId}
               stringId={baseline.id}
@@ -748,7 +770,8 @@ export default function StringFormDialog({
           onSubmit={handleSubmit}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <fieldset disabled={busy} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <fieldset disabled={busy} className="m-0 border-0 p-0 min-w-0">
             {conflict ? (
               <Alert variant="destructive" className="mx-5 mt-5 w-auto">
                 <AlertTitle>Another save changed this string</AlertTitle>
@@ -772,190 +795,246 @@ export default function StringFormDialog({
                 </AlertDescription>
               </Alert>
             ) : null}
-            <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-8">
-              <FieldGroup className="gap-4">
-                <Field data-invalid={errors.key ? 'true' : undefined}>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-key">Key</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_key}
-                        working={key}
-                        released={released}
-                        mono
-                      />
-                    ) : null}
+            {/* Lifecycle Status Banner */}
+            {isEdit && baseline?.deleted_at ? (
+              <div className="mx-5 mt-5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
+                <p className="font-medium">This string is deleted.</p>
+                <p className="text-muted-foreground">Restore it from the grid to edit again.</p>
+              </div>
+            ) : isEdit && baseline?.pending_delete ? (
+              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
+                <p>Deletion is pending. Production still has the last published snapshot until you publish the removal.</p>
+              </div>
+            ) : isEdit && baseline?.status === 'public' ? (
+              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="relative flex size-2 shrink-0">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <div className="flex flex-col min-w-0">
+                    <p className="text-xs font-semibold text-foreground">
+                      Public snapshot is live.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {baseline.has_unpublished_changes
+                        ? 'Production still has the last published snapshot until you publish.'
+                        : 'Saving as draft leaves it unchanged.'}
+                    </p>
                   </div>
-                  <Input
-                    id="string-key"
-                    className="font-mono"
-                    value={key}
-                    onChange={(e) => setKey(e.target.value)}
-                    aria-invalid={errors.key ? true : undefined}
-                  />
-                  <FieldError>{errors.key}</FieldError>
-                </Field>
-
-                <Field data-invalid={errors.source_text ? 'true' : undefined}>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-source">Source text</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_source_text}
-                        working={sourceText}
-                        released={released}
-                      />
-                    ) : null}
-                  </div>
-                  <Textarea
-                    id="string-source"
-                    className="min-h-20 resize-none"
-                    value={sourceText}
-                    onChange={(e) => {
-                      setMemoryUndo(null)
-                      setSourceText(e.target.value)
-                      setMemorySelection({ source: e.target.value, chosen: {} })
-                    }}
-                    rows={3}
-                    aria-invalid={errors.source_text ? true : undefined}
-                  />
-                  <FieldError>{errors.source_text}</FieldError>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="string-description">Description</FieldLabel>
-                  <Input
-                    id="string-description"
-                    placeholder="Context for translators"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </Field>
-
-                <div className="flex items-center justify-between gap-3 rounded-xl border p-3.5">
-                  <p className="text-sm">{baseline?.status === 'public' ? 'Public snapshot is live. Saving as draft leaves it unchanged.' : 'This string is not public.'}</p>
-                  {baseline?.status === 'public' && !baseline.pending_delete && !baseline.deleted_at ? (
-                    <Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmUnpublish(true)}>Unpublish</Button>
-                  ) : null}
                 </div>
-                {isEdit && baseline?.has_unpublished_changes && !baseline.pending_delete ? (
-                  <p className="text-sm text-muted-foreground">
-                    Production still has the last published snapshot until you publish.
-                  </p>
-                ) : null}
-                {baseline?.deleted_at ? (
-                  <p className="text-sm text-muted-foreground">
-                    This string is deleted. Restore it from the grid to edit again.
-                  </p>
-                ) : null}
-                {baseline?.pending_delete ? (
-                  <p className="text-sm text-muted-foreground">
-                    Deletion is pending. Production still has the last published snapshot until you publish the removal.
-                  </p>
-                ) : null}
-
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-module">Module</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_module_slug ?? ''}
-                        working={moduleSlug}
-                        released={released}
-                        mono
-                      />
-                    ) : null}
-                    <CreateModulePopover
-                      projectId={projectId}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedModules((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                        )
-                        setModuleId(created.id)
-                      }}
-                    />
-                  </div>
-                  <Select
-                    value={moduleId || NONE_MODULE}
-                    onValueChange={(v) => {
-                      if (v === NONE_MODULE) {
-                        setModuleId('')
-                        return
-                      }
-                      // Native bubble <select> emits '' when the chosen id is not a
-                      // mounted <option> yet (dropdown closed after inline create).
-                      if (!v) return
-                      setModuleId(v)
-                    }}
+                {!baseline.pending_delete && !baseline.deleted_at ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => setConfirmUnpublish(true)}
                   >
-                    <SelectTrigger id="string-module" className="w-full">
-                      <SelectValue placeholder="— None —">
-                        {selectedModuleName ?? '— None —'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={NONE_MODULE}>— None —</SelectItem>
-                        {moduleOptions.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {moduleOptions.length === 0 ? (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  ) : null}
-                </Field>
+                    Unpublish
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
 
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel>Tag</FieldLabel>
-                    <CreateTagPopover
-                      projectId={projectId}
-                      tags={tagOptions}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedTags((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                        )
-                        setTagId(created.id)
-                      }}
+            <div className="grid gap-8 p-5 sm:grid-cols-2">
+              <div className="flex flex-col gap-4 sm:border-r sm:border-border/60 sm:pr-8">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    String details
+                  </h3>
+                </div>
+                <FieldGroup className="gap-4">
+                  <Field data-invalid={errors.key ? 'true' : undefined}>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="string-key" className="text-xs font-medium">Key</FieldLabel>
+                      {released && baseline ? (
+                        <PublishedChangeHint
+                          published={baseline.published_key}
+                          working={key}
+                          released={released}
+                          mono
+                        />
+                      ) : null}
+                    </div>
+                    <Input
+                      id="string-key"
+                      className="font-mono text-xs bg-muted/20 focus-visible:bg-background"
+                      value={key}
+                      onChange={(e) => setKey(e.target.value)}
+                      aria-invalid={errors.key ? true : undefined}
                     />
-                  </div>
-                  {tagOptions.length > 0 ? (
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      className="flex flex-wrap justify-start"
-                      value={tagId}
-                      onValueChange={setTagId}
-                    >
-                      {tagOptions.map((t) => (
-                        <ToggleGroupItem key={t.id} value={t.id} size="sm">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: t.color }}
-                          />
-                          {t.name}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  ) : (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  )}
-                </Field>
-              </FieldGroup>
+                    <FieldError>{errors.key}</FieldError>
+                  </Field>
 
-              <div className="flex flex-col gap-3">
+                  <Field data-invalid={errors.source_text ? 'true' : undefined}>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="string-source" className="text-xs font-medium">Source text</FieldLabel>
+                      {released && baseline ? (
+                        <PublishedChangeHint
+                          published={baseline.published_source_text}
+                          working={sourceText}
+                          released={released}
+                        />
+                      ) : null}
+                    </div>
+                    <Textarea
+                      id="string-source"
+                      className="min-h-24 resize-none text-sm leading-relaxed"
+                      value={sourceText}
+                      onChange={(e) => {
+                        setMemoryUndo(null)
+                        setSourceText(e.target.value)
+                        setMemorySelection({ source: e.target.value, chosen: {} })
+                      }}
+                      rows={3}
+                      aria-invalid={errors.source_text ? true : undefined}
+                    />
+                    <FieldError>{errors.source_text}</FieldError>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="string-description" className="text-xs font-medium">Description</FieldLabel>
+                    <Input
+                      id="string-description"
+                      placeholder="Context for translators (optional)"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </Field>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field>
+                      <div className="flex items-center gap-1">
+                        <FieldLabel htmlFor="string-module" className="text-xs font-medium">Module</FieldLabel>
+                        {released && baseline ? (
+                          <PublishedChangeHint
+                            published={baseline.published_module_slug ?? ''}
+                            working={moduleSlug}
+                            released={released}
+                            mono
+                          />
+                        ) : null}
+                        <CreateModulePopover
+                          projectId={projectId}
+                          disabled={busy}
+                          onCreated={(created) => {
+                            setCreatedModules((prev) =>
+                              prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                            )
+                            setModuleId(created.id)
+                          }}
+                        />
+                      </div>
+                      <Select
+                        value={moduleId || NONE_MODULE}
+                        onValueChange={(v) => {
+                          if (v === NONE_MODULE) {
+                            setModuleId('')
+                            return
+                          }
+                          // Native bubble <select> emits '' when the chosen id is not a
+                          // mounted <option> yet (dropdown closed after inline create).
+                          if (!v) return
+                          setModuleId(v)
+                        }}
+                      >
+                        <SelectTrigger id="string-module" className="w-full">
+                          <SelectValue placeholder="— None —">
+                            {selectedModuleName ?? '— None —'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NONE_MODULE}>— None —</SelectItem>
+                            {moduleOptions.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {moduleOptions.length === 0 ? (
+                        <FieldDescription>
+                          None yet. Create one without leaving this form.
+                        </FieldDescription>
+                      ) : null}
+                    </Field>
+
+                    <Field>
+                      <div className="flex items-center gap-1">
+                        <FieldLabel htmlFor="string-tag" className="text-xs font-medium">Tag</FieldLabel>
+                        <CreateTagPopover
+                          projectId={projectId}
+                          tags={tagOptions}
+                          disabled={busy}
+                          onCreated={(created) => {
+                            setCreatedTags((prev) =>
+                              prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                            )
+                            setTagId(created.id)
+                          }}
+                        />
+                      </div>
+                      <Select
+                        value={tagId || NONE_TAG}
+                        onValueChange={(v) => {
+                          if (v === NONE_TAG) {
+                            setTagId('')
+                            return
+                          }
+                          if (!v) return
+                          setTagId(v)
+                        }}
+                      >
+                        <SelectTrigger id="string-tag" className="w-full">
+                          <SelectValue placeholder="— None —">
+                            {selectedTag ? (
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="size-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: selectedTag.color }}
+                                />
+                                <span>{selectedTag.name}</span>
+                              </span>
+                            ) : (
+                              '— None —'
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NONE_TAG}>— None —</SelectItem>
+                            {tagOptions.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="size-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: t.color }}
+                                  />
+                                  <span>{t.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {tagOptions.length === 0 ? (
+                        <FieldDescription>
+                          None yet. Create one without leaving this form.
+                        </FieldDescription>
+                      ) : null}
+                    </Field>
+                  </div>
+                </FieldGroup>
+              </div>
+
+              <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium">Translations</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Translations {targetLocales.length > 0 ? `(${targetLocales.length})` : ''}
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -970,11 +1049,12 @@ export default function StringFormDialog({
                         current: translations,
                       })
                     }}
+                    className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" />
                     ) : (
-                      <Wand2 data-icon="inline-start" />
+                      <Wand2 data-icon="inline-start" className="size-3.5" />
                     )}
                     {memoryLocales.length ? `Generate ${aiLocales.length} with AI` : 'Generate with AI'}
                   </Button>
@@ -998,7 +1078,7 @@ export default function StringFormDialog({
                   />
                 ) : null}
                 {translateMut.isPending || translateMut.isSuccess ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {translateMut.isPending
                       ? 'Generating translations…'
                       : 'Review AI text, then Save. Add description context and Auto-translate again if needed.'}
@@ -1014,11 +1094,13 @@ export default function StringFormDialog({
                       const view = qaViews[locale] ?? { status: 'unchecked' as const, issues: [], stale: false }
                       const issuesId = `qa-edit-${locale}`
                       return (
-                      <Field key={locale} className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs transition-colors focus-within:border-primary/40" data-qa-status={view.status}>
+                      <Field key={locale} className="rounded-xl border border-border/80 bg-card p-3.5 shadow-2xs transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20" data-qa-status={view.status}>
                         <div className="flex items-center gap-2">
-                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-semibold tracking-wider">
-                            {locale}
-                          </FieldLabel>
+                          <span className="font-mono text-xs font-bold uppercase rounded bg-muted/80 px-2 py-0.5 text-foreground shrink-0">
+                            <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-bold cursor-pointer">
+                              {locale}
+                            </FieldLabel>
+                          </span>
                           <ConfidenceBadge score={scores[locale]} />
                           {released && baseline ? (
                             <PublishedChangeHint
@@ -1036,7 +1118,7 @@ export default function StringFormDialog({
                         </div>
                         <Textarea
                           id={`translation-${locale}`}
-                          className="min-h-16 resize-none mt-1"
+                          className="min-h-18 resize-none mt-2 text-sm leading-relaxed"
                           value={translations[locale] ?? ''}
                           onChange={(e) => {
                             setMemoryUndo(null)
@@ -1068,14 +1150,16 @@ export default function StringFormDialog({
                 </p>
               </div>
             </div>
-          </fieldset>
+            </fieldset>
+          </div>
 
-          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-between">
-            <div>
+          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-3 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {canDiscard ? (
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   disabled={busy}
                   onClick={() => setConfirmDiscard(true)}
                 >
@@ -1087,8 +1171,20 @@ export default function StringFormDialog({
                   Discard changes
                 </Button>
               ) : null}
+              {saved && baseline && onViewInStrings ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onViewInStrings(baseline)}
+                  className="border-primary/30 text-primary hover:bg-primary/5"
+                >
+                  View in Strings
+                </Button>
+              ) : null}
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Button
                 variant="outline"
                 type="button"
@@ -1097,10 +1193,11 @@ export default function StringFormDialog({
               >
                 Cancel
               </Button>
-              {saved && baseline && onViewInStrings ? (
-                <Button type="button" variant="outline" disabled={busy} onClick={() => onViewInStrings(baseline)}>View in Strings</Button>
-              ) : null}
-              <Button type="submit" variant="outline" disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at)}>
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at)}
+              >
                 {saveMut.isPending && <Spinner data-icon="inline-start" />}
                 Save as draft
               </Button>
