@@ -193,16 +193,37 @@ test("real CLI push → batch translation → temporary review → atomic public
     path: testInfo.outputPath("batch-review-light.png"),
     fullPage: true,
   });
+  const workspaceUrl = page.url();
+  const reviewedBatchId = new URL(workspaceUrl).pathname.split("/").at(-1)!;
+  await page.getByRole("button", { name: "Save as draft", exact: true }).click();
+  await expect(page.getByText("Batch saved as draft.", { exact: false }).last()).toBeVisible();
+  await expect(page).toHaveURL(workspaceUrl);
+  const draft = await page.request.get(`${root}/strings/${existing[0].id}`);
+  expect((await draft.json()).translations.find((t: { locale: string }) => t.locale === "en").value).toBe("Log in with email");
+  const publicAfterDraft = await page.request.get(`${root}/export?stage=public&locale=en`);
+  expect((await publicAfterDraft.json()).en["login.title"]).toBe("Log in");
+  await page.reload();
+  await expect(english).toHaveValue("Log in with email");
   const publish = page.getByRole("button", { name: /Publish batch/ });
   await publish.click();
   await expect(
-    page.getByText("Batch saved and published.", { exact: false }),
+    page.getByText("Batch saved and published.", { exact: false }).last(),
   ).toBeVisible();
   expect(await page.getByRole("dialog").count()).toBe(0);
   await expect(page.locator('[aria-current="step"]')).toHaveCount(0);
   await expect(
     page.getByText("Batch published", { exact: true }),
   ).toBeVisible();
+  await expect(page).toHaveURL(workspaceUrl);
+  await expect(english).toHaveValue("Log in with email");
+  await page.getByRole("link", { name: "View in Strings", exact: true }).click();
+  await expect(page).toHaveURL((url) =>
+    url.pathname === `/projects/${project.slug}/strings` &&
+    url.searchParams.get("batch_id") === reviewedBatchId &&
+    url.searchParams.get("batch_kind") === "cli_push"
+  );
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.goto(workspaceUrl);
   const after = await page.request.get(`${root}/export?stage=public&locale=en`);
   expect((await after.json()).en["login.title"]).toBe("Log in with email");
 
@@ -234,7 +255,7 @@ test("real CLI push → batch translation → temporary review → atomic public
   await expect(publish).toBeEnabled();
   await publish.click();
   await expect(
-    page.getByText("Batch saved and published.", { exact: false }),
+    page.getByText("Batch saved and published.", { exact: false }).last(),
   ).toBeVisible();
   const republished = await page.request.get(
     `${root}/export?stage=public&locale=en`,
@@ -304,8 +325,9 @@ test("translates and publishes a CLI batch larger than 100 strings", async ({
     .getByRole("button", { name: "Publish batch", exact: true })
     .click();
   await expect(
-    page.getByText("Batch saved and published.", { exact: false }),
+    page.getByText("Batch saved and published.", { exact: false }).last(),
   ).toBeVisible();
+  await expect(page).toHaveURL(`/projects/${project.slug}/batches/${batch_id}`);
   const exported = await page.request.get(
     `${root}/export?stage=public&locale=en`,
   );

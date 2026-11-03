@@ -7,6 +7,7 @@ import type { StringEntry, TranslateProposalItem } from '@/lib/api/types'
 import type { QaBaseline } from '@/features/strings/qa-issues'
 import { projectQuery } from '@/lib/queries'
 import { refreshProjectContent } from '@/lib/active-job'
+import { useToast } from '@/lib/toast'
 import {
   buildPublishPreview,
   isPublishFingerprintMismatch,
@@ -20,6 +21,7 @@ const message = (error: unknown) =>
 
 export function useBatchWorkspace(projectRef: string, batchId: string) {
   const qc = useQueryClient()
+  const toast = useToast()
   const key = ['cli-push-batch', projectRef, batchId] as const
   const { data: project } = useQuery(projectQuery(projectRef))
   const query = useQuery({
@@ -35,12 +37,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
   const [qaBaselines, setQaBaselines] = useState<Record<string, QaBaseline>>({})
-  const [action, setAction] = useState<'translate' | 'publish' | 'restart' | null>(null)
-  const [published, setPublished] = useState(false)
-  const [generationStarted, setGenerationStarted] = useState(false)
+  const [action, setAction] = useState<'translate' | 'publish' | 'draft' | 'restart' | null>(null)
+  const [completion, setCompletion] = useState<'draft' | 'public' | null>(null)
   const [refreshError, setRefreshError] = useState('')
-  const [refreshing, setRefreshing] = useState(false)
-  const refreshInFlight = useRef(false)
+  const [generationStarted, setGenerationStarted] = useState(false)
   const requested = useRef(new Set<string>())
   const [started, setStarted] = useState(false)
   const [error, setError] = useState('')
@@ -57,10 +57,11 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     }
   }, [])
   const locales = (project?.target_languages ?? []).filter((l) => l !== project?.base_language)
+  const shouldBlock = started || (Boolean(action) && completion === null)
   const blocker = useBlocker({
-    shouldBlockFn: () => started || Boolean(action),
+    shouldBlockFn: () => shouldBlock,
     withResolver: true,
-    enableBeforeUnload: started || Boolean(action),
+    enableBeforeUnload: shouldBlock,
   })
 
   function stage(items: TranslateProposalItem[]) {
@@ -115,13 +116,13 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setNotice(
       remaining
         ? `${remaining} translations still need review. Retry unresolved translations or edit them manually.`
-        : 'Translations are ready for review. Nothing is saved until Publish batch.'
+        : 'Translations are ready for review. Save as draft to keep reviewing, or publish when ready.'
     )
   }
   function edit(entry: StringEntry, locale: string, value: string) {
-    if (operation.current || stale || !locales.includes(locale) || refreshError) return
+    if (operation.current || stale || !locales.includes(locale)) return
     setStarted(true)
-    setPublished(false)
+    setCompletion(null)
     setNotice('')
     const next = { value, source: entry.source_text, score: null }
     draftsRef.current = {
@@ -171,21 +172,13 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   )
   const unresolved = generationStarted ? remaining : []
   async function translate() {
-    if (
-      operation.current ||
-      !locales.length ||
-      jobId ||
-      refreshError ||
-      stale ||
-      !remaining.length
-    )
-      return
+    if (operation.current || !locales.length || jobId || stale || !remaining.length) return
     requested.current = new Set(remaining)
     if (!requested.current.size) return
     setGenerationStarted(true)
     operation.current = true
     setAction('translate')
-    setPublished(false)
+    setCompletion(null)
     setStarted(true)
     setError('')
     setNotice('')
@@ -222,13 +215,13 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setDrafts({})
     setQaBaselines({})
     setJobId(null)
-    setPublished(false)
+    setCompletion(null)
     setGenerationStarted(false)
-    setRefreshError('')
     requested.current.clear()
     setStarted(false)
     setStale(true)
     setError('')
+    setRefreshError('')
     setNotice('')
     try {
       const next = await stringsApi.cliPushBatch(projectRef, batchId)
@@ -242,45 +235,41 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       if (mounted.current) setAction(null)
     }
   }
-  async function refreshPublished() {
-    if (refreshInFlight.current) return
-    refreshInFlight.current = true
-    setRefreshing(true)
-    try {
-      const next = await stringsApi.cliPushBatch(projectRef, batchId)
-      if (mounted.current) {
-        qc.setQueryData(key, next)
-        setRefreshError('')
-      }
-    } catch (e) {
-      if (mounted.current)
-        setRefreshError(`Batch published, but the review could not refresh. ${message(e)}`)
-    } finally {
-      refreshInFlight.current = false
-      if (mounted.current) setRefreshing(false)
-    }
-  }
-  async function publish() {
+  async function save(publish: boolean) {
     const snapshot = query.data
-    if (!snapshot || operation.current || jobId || stale || refreshError || unresolved.length)
-      return
+    if (!snapshot || operation.current || jobId || stale || (publish && unresolved.length)) return
     operation.current = true
-    setAction('publish')
+    setAction(publish ? 'publish' : 'draft')
     setError('')
     try {
-      await stringsApi.publishCliPushBatch(projectRef, batchId, {
+      const submit = publish ? stringsApi.publishCliPushBatch : stringsApi.saveCliPushBatch
+      await submit(projectRef, batchId, {
         fingerprint: snapshot.fingerprint,
         items: buildBatchPublishItems(snapshot.items, drafts),
       })
-      draftsRef.current = {}
-      setDrafts({})
-      setQaBaselines({})
-      setStarted(false)
-      setPublished(true)
-      setGenerationStarted(false)
-      setNotice('Batch saved and published. Available on the next public pull or export.')
+      const success = publish
+        ? 'Batch saved and published. Available on the next public pull or export.'
+        : 'Batch saved as draft. Public translations are unchanged.'
       refreshProjectContent(qc, projectRef)
-      await refreshPublished()
+      toast.success(success)
+      if (!mounted.current) return
+      setStarted(false)
+      setCompletion(publish ? 'public' : 'draft')
+      setGenerationStarted(false)
+      setNotice('')
+      setStale(true)
+      try {
+        const next = await stringsApi.cliPushBatch(projectRef, batchId)
+        if (!mounted.current) return
+        qc.setQueryData(key, next)
+        draftsRef.current = {}
+        setDrafts({})
+        setQaBaselines({})
+        setStale(false)
+      } catch (e) {
+        if (mounted.current)
+          setRefreshError(`Your changes were saved, but the batch could not refresh. ${message(e)}`)
+      }
     } catch (e) {
       if (isPublishFingerprintMismatch(e)) {
         setStale(true)
@@ -326,13 +315,13 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     ),
     canTranslate: remaining.length > 0,
     unresolvedCount: unresolved.length,
-    refreshError,
-    refreshing,
-    refreshPublished,
     edit,
     busy: Boolean(action) || Boolean(jobId),
     publishing: action === 'publish',
-    published,
+    savingDraft: action === 'draft',
+    published: completion === 'public',
+    savedAsDraft: completion === 'draft',
+    refreshError,
     blocker,
     error,
     stale,
@@ -341,14 +330,17 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         ? 'Generating translations…'
         : action === 'publish'
           ? 'Saving and publishing batch…'
-          : action === 'restart'
-            ? 'Loading the latest batch…'
-            : '',
+          : action === 'draft'
+            ? 'Saving batch as draft…'
+            : action === 'restart'
+              ? 'Loading the latest batch…'
+              : '',
     notice,
     started,
     qaBaselines,
     translate,
-    publish,
+    publish: () => save(true),
+    saveDraft: () => save(false),
     restart,
     job,
     stopJob: () => {

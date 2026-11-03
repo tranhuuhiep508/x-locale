@@ -19,7 +19,7 @@ from app.schemas import (
 from app.services.publish_preview import (
     cli_push_batch,
     list_publish_preview_entries,
-    publish_cli_push_batch,
+    save_cli_push_batch,
 )
 from app.services.strings import apply_batch
 
@@ -53,4 +53,11 @@ def batch_strings(
 def complete_cli_push_batch(
     batch_id: UUID, payload: CliPushPublishRequest, project: ProjectAccess, db: DbSession
 ) -> BatchResult:
-    return publish_cli_push_batch(db, project, batch_id, payload)
+    return save_cli_push_batch(db, project, batch_id, payload, publish=True)
+
+
+@router.post("/cli-push-batches/{batch_id}/draft")
+def save_cli_push_draft(
+    batch_id: UUID, payload: CliPushPublishRequest, project: ProjectAccess, db: DbSession
+) -> BatchResult:
+    return save_cli_push_batch(db, project, batch_id, payload, publish=False)

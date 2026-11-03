@@ -209,10 +209,11 @@ workspace shows the pushed strings, their working translations, and their
 published values. A Translate → Review → Publish stepper tracks the workflow.
 Click **Translate all** to regenerate every project target language for review,
 including existing text. Generated results and manual edits
-stay temporary in this workspace. Review all locales, then click **Publish batch**
-to save and publish the whole batch in one transaction. Leaving or reloading before
-completion discards progress; the workflow must be started again. Public exports
-and saved working translations remain unchanged until final publication.
+stay temporary in this workspace. **Save as draft** saves reviewed translations to
+the working copy without changing public exports. **Publish batch** saves and
+publishes the whole batch in one transaction. Both actions show a success toast
+and keep you on the batch screen; **View in Strings** opens the catalog filtered
+to this CLI push batch. Leaving or reloading discards only unsaved progress.
 
 This is the default workflow for new CLI push batches, with no automation setting.
 CLI commands/configuration and dashboard import/catalog workflows are unchanged.

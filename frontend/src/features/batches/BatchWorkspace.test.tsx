@@ -1,32 +1,26 @@
-import { useBlocker } from '@tanstack/react-router'
+import { useBlocker, useNavigate } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  renderHook,
-  screen,
-  waitFor,
-} from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { BatchWorkspace } from './BatchWorkspace'
-import { useBatchWorkspace } from './use-batch-workspace'
 import { stringsApi } from '@/lib/api/strings'
 import { jobsApi } from '@/lib/api/jobs'
 import { ApiError } from '@/lib/api/client'
+import { toast } from 'sonner'
 import { projectQuery } from '@/lib/queries'
 import type { CliPushBatch, Project, StringEntry, TranslateProposalItem } from '@/lib/api/types'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+  Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
   useBlocker: vi.fn(),
+  useNavigate: vi.fn(),
 }))
 vi.mock('@/lib/api/strings', () => ({
   stringsApi: {
     cliPushBatch: vi.fn(),
     publishCliPushBatch: vi.fn(),
+    saveCliPushBatch: vi.fn(),
     update: vi.fn(),
     translateProposals: vi.fn(),
     translateApply: vi.fn(),
@@ -37,6 +31,7 @@ vi.mock('@/lib/api/jobs', async (original) => ({
   ...(await original<typeof import('@/lib/api/jobs')>()),
   jobsApi: { get: vi.fn() },
 }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/strings/use-qa-watch', () => ({ useQaWatch: () => ({}) }))
 
 const project: Project = {
@@ -103,6 +98,7 @@ const proposal = (i = 0): TranslateProposalItem => ({
   translations: { en: 'Generated', ja: '生成済み' },
   scores: { en: 90 },
 })
+const navigate = vi.fn()
 let batch: CliPushBatch
 let qc: QueryClient
 function show() {
@@ -120,6 +116,8 @@ async function loaded() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  navigate.mockReset().mockResolvedValue(undefined)
+  vi.mocked(useNavigate).mockReturnValue(navigate)
   vi.mocked(useBlocker).mockReturnValue({ status: 'idle' } as ReturnType<typeof useBlocker>)
   sessionStorage.clear()
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
@@ -142,6 +140,7 @@ beforeEach(() => {
     page: 1,
     page_size: 50,
   })
+  vi.mocked(stringsApi.saveCliPushBatch).mockResolvedValue({ affected: 1, batch_id: 'draft-save' })
   vi.mocked(stringsApi.publishCliPushBatch).mockResolvedValue({
     affected: 1,
     batch_id: 'publication',
@@ -218,7 +217,7 @@ it('saves a correction that restores the published translation', async () => {
       ],
     })
   )
-  await screen.findByText(/Batch saved and published/)
+  await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
 })
 
 it('keeps completion disabled when temporary edits match the saved working copy', async () => {
@@ -639,7 +638,35 @@ it('keeps historical locales read-only and excludes them from publication edits'
     })
   )
 })
-it('preserves publication success when refresh fails and retries only the read', async () => {
+it('announces publication success, stays in the workspace, and offers a Strings link', async () => {
+  show()
+  await loaded()
+  fireEvent.change(screen.getByRole('textbox', { name: 'EN translation for login.0' }), {
+    target: { value: 'Reviewed English' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith(
+      'Batch saved and published. Available on the next public pull or export.'
+    )
+  )
+  await waitFor(() => expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(2))
+  expect(navigate).not.toHaveBeenCalled()
+  expect(screen.getByRole('heading', { name: 'CLI push batch' })).toBeDefined()
+  expect(screen.getByRole('link', { name: 'View in Strings' })).toBeDefined()
+})
+
+it('keeps failed publication in the workspace without announcing success or navigating', async () => {
+  vi.mocked(stringsApi.publishCliPushBatch).mockRejectedValueOnce(new Error('Publication failed'))
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  await screen.findByText('Publication failed')
+  expect(toast.success).not.toHaveBeenCalled()
+  expect(navigate).not.toHaveBeenCalled()
+})
+
+it('preserves success when refresh fails and reloads without saving again', async () => {
   vi.mocked(stringsApi.cliPushBatch)
     .mockResolvedValueOnce(structuredClone(batch))
     .mockRejectedValueOnce(new Error('Offline'))
@@ -647,82 +674,125 @@ it('preserves publication success when refresh fails and retries only the read',
   show()
   await loaded()
   fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
-  await screen.findByRole('button', { name: 'Retry refresh' })
+  const reload = await screen.findByRole('button', { name: 'Reload batch' })
+  expect(toast.success).toHaveBeenCalledTimes(1)
   expect(screen.queryByText('Workflow could not complete')).toBeNull()
   expect(
     (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
   ).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'Retry refresh' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry refresh' })).toBeNull())
+  fireEvent.click(reload)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Reload batch' })).toBeNull())
   expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
 })
 
-it('serializes refresh retries even before the retry button can update', async () => {
-  let resolve!: (value: CliPushBatch) => void
-  vi.mocked(stringsApi.cliPushBatch)
-    .mockResolvedValueOnce(structuredClone(batch))
-    .mockRejectedValueOnce(new Error('Offline'))
-    .mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done
-      })
-    )
-  qc.setQueryData(projectQuery('demo').queryKey, project)
-  const { result } = renderHook(() => useBatchWorkspace('demo', 'push'), {
-    wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
-  })
-  await waitFor(() => expect(result.current.batch).toBeDefined())
-  await act(async () => {
-    await result.current.publish()
-  })
-  expect(result.current.refreshError).toContain('Offline')
-  let retry!: Promise<void>
-  act(() => {
-    retry = result.current.refreshPublished()
-    void result.current.refreshPublished()
-  })
-  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(3)
-  expect(result.current.refreshing).toBe(true)
-  await act(async () => {
-    resolve({ ...structuredClone(batch), fingerprint: 'fresh' })
-    await retry
-  })
-  expect(result.current.refreshing).toBe(false)
-  expect(result.current.refreshError).toBe('')
-  expect(result.current.batch?.fingerprint).toBe('fresh')
-  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
-})
-
-it('disables refresh retry while pending and enables it again after failure', async () => {
-  let reject!: (error: Error) => void
-  vi.mocked(stringsApi.cliPushBatch)
-    .mockResolvedValueOnce(structuredClone(batch))
-    .mockRejectedValueOnce(new Error('Offline'))
-    .mockReturnValueOnce(
-      new Promise((_, fail) => {
-        reject = fail
-      })
-    )
-    .mockResolvedValueOnce(structuredClone(batch))
-  show()
+it('does not redirect a user who already left while publication was pending', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof stringsApi.publishCliPushBatch>>) => void
+  vi.mocked(stringsApi.publishCliPushBatch).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done
+    })
+  )
+  const view = show()
   await loaded()
   fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
-  const retry = (await screen.findByRole('button', { name: 'Retry refresh' })) as HTMLButtonElement
-  fireEvent.click(retry)
-  expect(retry.disabled).toBe(true)
-  fireEvent.click(retry)
-  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(3)
-  reject(new Error('Still offline'))
-  await waitFor(() => expect(retry.disabled).toBe(false))
+  view.unmount()
+  await act(async () => {
+    resolve({ affected: 1, batch_id: 'publication' })
+  })
+  expect(toast.success).toHaveBeenCalledTimes(1)
+  expect(navigate).not.toHaveBeenCalled()
+})
+
+it('saves edits as draft without publication and uses the refreshed fingerprint for later publish', async () => {
+  const saved = structuredClone(batch)
+  saved.fingerprint = 'saved-draft'
+  saved.items[0].translations[0].value = 'Working English'
+  vi.mocked(stringsApi.cliPushBatch)
+    .mockResolvedValueOnce(structuredClone(batch))
+    .mockResolvedValue(saved)
+  show()
+  await loaded()
+  fireEvent.change(screen.getByRole('textbox', { name: 'EN translation for login.0' }), {
+    target: { value: 'Working English' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith(
+      'Batch saved as draft. Public translations are unchanged.'
+    )
+  )
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+  )
+  expect(stringsApi.saveCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+    fingerprint: 'reviewed',
+    items: [
+      {
+        string_id: 's0',
+        expected_source_text: 'Nguồn mới',
+        translations: { en: 'Working English' },
+        scores: { en: null },
+      },
+    ],
+  })
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+  expect(navigate).not.toHaveBeenCalled()
+  expect(screen.getByText('Old')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  await waitFor(() =>
+    expect(stringsApi.publishCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+      fingerprint: 'saved-draft',
+      items: [],
+    })
+  )
+})
+
+it('keeps local edits when saving as draft fails', async () => {
+  vi.mocked(stringsApi.saveCliPushBatch).mockRejectedValueOnce(new Error('Draft save failed'))
+  show()
+  await loaded()
+  const field = screen.getByRole('textbox', {
+    name: 'EN translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(field, { target: { value: 'Keep my edit' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+  await screen.findByText('Draft save failed')
+  expect(field.value).toBe('Keep my edit')
+  expect(toast.success).not.toHaveBeenCalled()
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+})
+
+it('allows partial generation to be saved as draft while publication still requires review', async () => {
+  vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
+    items: [{ ...proposal(), translations: { en: 'Generated' } }],
+    locales: ['en', 'ja'],
+    job_id: null,
+    total: 1,
+    page: 1,
+    page_size: 50,
+  })
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/1 translations still need review/)
   expect(
-    (
-      screen.getByRole('textbox', {
-        name: 'EN translation for login.0',
-      }) as HTMLTextAreaElement
-    ).disabled
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
   ).toBe(true)
-  fireEvent.click(retry)
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry refresh' })).toBeNull())
-  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(4)
-  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+  await waitFor(() =>
+    expect(stringsApi.saveCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+      fingerprint: 'reviewed',
+      items: [
+        {
+          string_id: 's0',
+          expected_source_text: 'Nguồn mới',
+          translations: { en: 'Generated' },
+          scores: { en: 90 },
+        },
+      ],
+    })
+  )
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
 })

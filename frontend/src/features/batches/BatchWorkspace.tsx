@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, Globe2, Pencil, RotateCcw, Upload, Wand2 } from 'lucide-react'
+import { ArrowLeft, Check, Globe2, Pencil, RotateCcw, Save, Upload, Wand2 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,7 +31,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
     ? 3
     : workspace.publishing
       ? 2
-      : workspace.hasDrafts
+      : workspace.hasDrafts || workspace.savedAsDraft
         ? 1
         : 0
   const reviewLocales = [
@@ -153,7 +153,6 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 disabled={
                   busy ||
                   !workspace.canTranslate ||
-                  Boolean(workspace.refreshError) ||
                   workspace.stale ||
                   !locales.length ||
                   !batch.items.length
@@ -176,15 +175,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
           )}
           {workspace.refreshError && (
             <Alert>
-              <AlertTitle>Batch published</AlertTitle>
+              <AlertTitle>Batch saved</AlertTitle>
               <AlertDescription>
                 <p>{workspace.refreshError}</p>
-                <Button
-                  variant="outline"
-                  disabled={workspace.refreshing}
-                  onClick={() => void workspace.refreshPublished()}
-                >
-                  Retry refresh
+                <Button variant="outline" disabled={busy} onClick={() => void workspace.restart()}>
+                  Reload batch
                 </Button>
               </AlertDescription>
             </Alert>
@@ -379,9 +374,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               <Textarea
                                 id={id}
                                 lang={locale}
-                                disabled={
-                                  busy || workspace.stale || Boolean(workspace.refreshError)
-                                }
+                                disabled={busy || workspace.stale}
                                 readOnly={!locales.includes(locale)}
                                 rows={1}
                                 className={cn(
@@ -428,14 +421,18 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 )}
                 {workspace.published
                   ? 'Batch published'
-                  : publishable
-                    ? `${publishable} changed strings · ${reviewLocales.map((l) => l.toUpperCase()).join(', ') || 'Source only'}`
-                    : 'Batch is in sync with public.'}
+                  : workspace.savedAsDraft
+                    ? 'Batch saved as draft'
+                    : publishable
+                      ? `${publishable} changed strings · ${reviewLocales.map((l) => l.toUpperCase()).join(', ') || 'Source only'}`
+                      : 'Batch is in sync with public.'}
               </p>
               <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
                 {workspace.published
                   ? 'Available on the next public pull or export.'
-                  : 'Edits are temporary until published.'}
+                  : workspace.savedAsDraft
+                    ? 'Saved to the working copy. Public translations are unchanged.'
+                    : 'Edits are temporary until saved as draft or published.'}
               </p>
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto">
@@ -444,11 +441,31 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   <RotateCcw data-icon="inline-start" /> Restart workflow
                 </Button>
               )}
+              <Button variant="outline" asChild>
+                <Link
+                  to="/projects/$projectRef/strings"
+                  params={{ projectRef }}
+                  search={{ batch_id: batchId, batch_kind: 'cli_push' }}
+                >
+                  View in Strings
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || workspace.stale || !workspace.hasTranslationChanges}
+                onClick={() => void workspace.saveDraft()}
+              >
+                {workspace.savingDraft ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Save data-icon="inline-start" />
+                )}
+                Save as draft
+              </Button>
               <Button
                 disabled={
                   busy ||
                   workspace.stale ||
-                  Boolean(workspace.refreshError) ||
                   workspace.unresolvedCount > 0 ||
                   (!publishable && !workspace.hasTranslationChanges)
                 }

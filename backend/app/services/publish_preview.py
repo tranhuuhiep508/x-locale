@@ -1,4 +1,4 @@
-"""Read-only publish preview: load the strings a batch publish would touch."""
+"""Batch review, working-copy saves, and checked publication."""
 
 from __future__ import annotations
 
@@ -76,8 +76,8 @@ def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatc
     )
 
 
-def publish_cli_push_batch(
-    db: Session, project: Project, batch_id: UUID, payload: CliPushPublishRequest
+def save_cli_push_batch(
+    db: Session, project: Project, batch_id: UUID, payload: CliPushPublishRequest, *, publish: bool
 ) -> BatchResult:
     from app.services.write_transactions import run_write
 
@@ -127,12 +127,16 @@ def publish_cli_push_batch(
         attach_batch(db, publication_id, "batch")
         for item in payload.items:
             apply_translation_values(db, by_id[item.string_id], item.translations, item.scores)
-        publishable = [entry for entry in active if is_publishable_entry(entry)]
+        publishable = [entry for entry in active if is_publishable_entry(entry)] if publish else []
         for entry in publishable:
             promote_string(entry)
         db.flush()
         if publishable:
             guard_published_keys(db, project)
-        return BatchResult(affected=len(publishable), batch_id=publication_id)
+        return BatchResult(
+            affected=len(publishable) if publish else len(payload.items), batch_id=publication_id
+        )
 
-    return run_write(db, project.id, "publish_cli_push_batch", write)
+    return run_write(
+        db, project.id, "publish_cli_push_batch" if publish else "save_cli_push_batch", write
+    )

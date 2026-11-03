@@ -82,6 +82,8 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
   publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
     api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/publish`, body),
   cliPushBatch: (projectId: string, batchId: string) =>

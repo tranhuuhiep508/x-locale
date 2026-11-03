@@ -168,8 +168,9 @@ def test_atomic_completion_saves_and_publishes_more_than_one_apply_chunk(client)
     )
 
 
-@pytest.mark.parametrize("problem", ["source", "outside", "duplicate", "deleted"])
-def test_atomic_completion_validates_entire_request_before_writing(client, problem):
+@pytest.mark.parametrize("action", ["publish", "draft"])
+@pytest.mark.parametrize("problem", ["source", "outside", "duplicate", "deleted", "locale"])
+def test_atomic_completion_validates_entire_request_before_writing(client, problem, action):
     pid = make_project(client)["id"]
     root = f"/api/projects/{pid}"
     pushed = push(client, pid, {"a": "A", "b": "B"})
@@ -181,10 +182,12 @@ def test_atomic_completion_validates_entire_request_before_writing(client, probl
         payload["items"][-1]["string_id"] = str(uuid.uuid4())
     elif problem == "duplicate":
         payload["items"].append(payload["items"][0])
+    elif problem == "locale":
+        payload["items"][-1]["translations"] = {"fr": "Not configured"}
     else:
         client.delete(f"{root}/strings/{batch['items'][-1]['id']}")
     before = client.get(f"{root}/activities").json()["total"]
-    response = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=payload)
+    response = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/{action}", json=payload)
     assert response.status_code in (400, 409), response.text
     row = client.get(f"{root}/strings/{batch['items'][0]['id']}").json()
     assert row["status"] == "draft"
@@ -333,3 +336,85 @@ def test_publish_omits_unchanged_public_strings_from_activity_and_count(client):
     after_activities = client.get(f"{root}/activities").json()["items"]
     new_activities = after_activities[: len(after_activities) - before_count]
     assert not any(act.get("string_id") == a_id for act in new_activities)
+
+
+def test_save_draft_keeps_public_snapshots_and_can_be_undone(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    client.post(
+        f"{root}/strings",
+        json={
+            "key": "existing",
+            "source_text": "Old source",
+            "translations": {"en": "Old"},
+            "status": "public",
+        },
+    )
+    pushed = push(client, pid, {"existing": "New source", "new": "New"})
+    before = workspace(client, pid, pushed["batch_id"])
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+    saved = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/draft", json=atomic_payload(before)
+    )
+    assert saved.status_code == 200, saved.text
+    after = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        t["value"] == "Reviewed" and t["confidence"] == 91
+        for row in after["items"]
+        for t in row["translations"]
+    )
+    existing = next(row for row in after["items"] if row["key"] == "existing")
+    new = next(row for row in after["items"] if row["key"] == "new")
+    assert existing["status"] == "public"
+    assert existing["published_source_text"] == "Old source"
+    assert existing["translations"][0]["published_value"] == "Old"
+    assert new["status"] == "draft" and new["published_key"] is None
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+    stale = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/draft", json=atomic_payload(before)
+    )
+    assert stale.status_code == 409
+    undone = client.post(f"{root}/activities/batch/{saved.json()['batch_id']}/revert")
+    assert undone.status_code == 200, undone.text
+    restored = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        t["value"] == ("Old" if row["key"] == "existing" else "")
+        for row in restored["items"]
+        for t in row["translations"]
+    )
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+
+
+def test_large_draft_save_can_clear_values_then_publish_saved_content(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {f"key{i}": "Source" for i in range(101)})
+    before = workspace(client, pid, pushed["batch_id"])
+    saved = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/draft", json=atomic_payload(before)
+    )
+    assert saved.status_code == 200, saved.text
+    current = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        row["status"] == "draft" and row["published_key"] is None for row in current["items"]
+    )
+    cleared = atomic_payload(current, "")
+    for item in cleared["items"]:
+        item["scores"] = {"en": None}
+    saved = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/draft", json=cleared)
+    assert saved.status_code == 200, saved.text
+    current = workspace(client, pid, pushed["batch_id"])
+    assert all(
+        t["value"] == "" and t["confidence"] is None
+        for row in current["items"]
+        for t in row["translations"]
+    )
+    published = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish",
+        json={"fingerprint": current["fingerprint"], "items": []},
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["affected"] == 101
+    assert all(
+        row["status"] == "public" for row in workspace(client, pid, pushed["batch_id"])["items"]
+    )
