@@ -141,6 +141,53 @@ def atomic_payload(batch, value="Reviewed"):
     }
 
 
+@pytest.mark.parametrize("pending_delete", [False, True])
+def test_cli_mixed_publication_history_preserves_public_and_lifecycle(client, pending_delete):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"greeting": "Greeting"})
+    batch = workspace(client, pid, pushed["batch_id"])
+    sid = batch["items"][0]["id"]
+    published = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish",
+        json=atomic_payload(batch, "Welcome"),
+    )
+    assert published.status_code == 200, published.text
+    version = client.get(f"{root}/strings/{sid}/activities").json()["items"][0]
+    assert version["event_type"] == "string.published" and version["is_history_restorable"]
+    assert (
+        client.patch(
+            f"{root}/strings/{sid}",
+            json={"translations": {"en": "Good morning"}, "status": "public"},
+        ).status_code
+        == 200
+    )
+    # A locale added after the version is cleared only in the working copy.
+    assert client.patch(root, json={"target_languages": ["en", "fr"]}).status_code == 200
+    assert (
+        client.patch(
+            f"{root}/strings/{sid}", json={"translations": {"fr": "Bonjour"}, "status": "public"}
+        ).status_code
+        == 200
+    )
+    if pending_delete:
+        assert client.delete(f"{root}/strings/{sid}").status_code == 204
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+    restore_url = f"{root}/strings/{sid}/activities/{version['id']}/restore"
+    assert client.get(f"{restore_url}/preview").json()["can_restore"]
+    restored = client.post(restore_url)
+    assert restored.status_code == 200, restored.text
+    live = client.get(f"{root}/strings/{sid}").json()
+    assert live["status"] == "public" and live["pending_delete"] == pending_delete
+    assert live["deleted_at"] is None
+    assert {t["locale"]: t["value"] for t in live["translations"]} == {"en": "Welcome", "fr": ""}
+    assert {t["locale"]: t["published_value"] for t in live["translations"]} == {
+        "en": "Good morning",
+        "fr": "Bonjour",
+    }
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+
+
 def test_atomic_completion_saves_and_publishes_more_than_one_apply_chunk(client):
     pid = make_project(client)["id"]
     root = f"/api/projects/{pid}"

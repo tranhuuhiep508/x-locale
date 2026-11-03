@@ -304,11 +304,32 @@ def human_changed(
     return rows
 
 
-def is_history_restorable(event_type: str | None, action: str | None = None) -> bool:
+def is_history_restorable(
+    event_type: str | None,
+    action: str | None = None,
+    *,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+) -> bool:
     """History restore writes working-copy text/metadata, not publish or delete lifecycle."""
     action_val = _enum_val(action) or "update"
     if action_val == "delete":
         return False
+    if event_type == EVENT_PUBLISHED:
+        if not before or not after:
+            return False
+        # Require both recorded values so incomplete legacy snapshots are not evidence of an edit.
+        for field in ("key", "source_text", "description", "module_id"):
+            if field in before and field in after and before[field] != after[field]:
+                return True
+        if "tag_ids" in before and "tag_ids" in after:
+            if sorted(before["tag_ids"] or []) != sorted(after["tag_ids"] or []):
+                return True
+        return (
+            "translations" in before
+            and "translations" in after
+            and bool(_changed_locales(before, after))
+        )
     return (event_type or "") not in HISTORY_UNRESTORABLE_EVENT_TYPES
 
 

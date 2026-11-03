@@ -55,6 +55,120 @@ def edit_batch(client, root):
     return response.json()["batch_id"]
 
 
+@pytest.mark.parametrize(
+    "field", ["key", "source_text", "description", "module_id", "tag_ids", "translations"]
+)
+def test_mixed_publication_history_restores_content_only(client, field):
+    pid, sid, root, _ = setup_string(client)
+    value = {
+        "key": "welcome",
+        "source_text": "Welcome",
+        "description": "Greeting",
+        "translations": {"en": "Welcome"},
+    }.get(field)
+    if field == "module_id":
+        value = client.post(f"{root}/modules", json={"slug": "home", "name": "Home"}).json()["id"]
+    if field == "tag_ids":
+        value = [client.post(f"{root}/tags", json={"name": "Greeting"}).json()["id"]]
+    saved = client.patch(f"{root}/strings/{sid}", json={field: value, "status": "public"})
+    assert saved.status_code == 200, saved.text
+    version = client.get(f"{root}/strings/{sid}/activities").json()["items"][0]
+    assert version["event_type"] == "string.published"
+    assert version["is_history_restorable"] and version["restore_blocked_reason"] is None
+    detail = client.get(f"{root}/activities/{version['id']}").json()
+    assert detail["is_history_restorable"] and detail["restore_blocked_reason"] is None
+    restore_url = f"{root}/strings/{sid}/activities/{version['id']}/restore"
+    assert client.get(f"{restore_url}/preview").json()["already_matches"]
+    assert client.post(restore_url).status_code == 400
+
+    later = client.patch(
+        f"{root}/strings/{sid}",
+        json={
+            "key": "later",
+            "source_text": "Good morning",
+            "description": "Later greeting",
+            "module_id": None,
+            "tag_ids": [],
+            "translations": {"en": "Good morning"},
+            "status": "public",
+        },
+    )
+    assert later.status_code == 200, later.text
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+    preview = client.get(f"{restore_url}/preview").json()
+    assert preview["can_restore"] and not preview["already_matches"]
+    assert all(change["scope"] == "draft" for change in preview["changes"])
+    restored = client.post(restore_url)
+    assert restored.status_code == 200, restored.text
+    live = client.get(f"{root}/strings/{sid}").json()
+    for name in ("key", "source_text", "description", "module_id", "tags"):
+        assert live[name] == saved.json()[name]
+    assert {t["locale"]: t["value"] for t in live["translations"]} == {
+        t["locale"]: t["value"] for t in saved.json()["translations"]
+    }
+    for name in (
+        "status",
+        "published_key",
+        "published_source_text",
+        "published_module_id",
+        "published_at",
+        "pending_delete",
+        "deleted_at",
+    ):
+        assert live[name] == later.json()[name]
+    assert {t["locale"]: t["published_value"] for t in live["translations"]} == {
+        t["locale"]: t["published_value"] for t in later.json()["translations"]
+    }
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+
+
+def test_restore_last_edit_includes_mixed_publication(client):
+    pid, sid, root, _ = setup_string(client)
+    saved = client.patch(
+        f"{root}/strings/{sid}", json={"source_text": "Welcome", "status": "public"}
+    )
+    assert saved.status_code == 200, saved.text
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+    result = client.post(
+        f"{root}/strings/batch", json={"action": "restore_last_history", "string_ids": [sid]}
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["affected"] == 1
+    live = client.get(f"{root}/strings/{sid}").json()
+    assert live["source_text"] == "A1" and live["status"] == "public"
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+
+
+@pytest.mark.parametrize("problem", ["collision", "deleted"])
+def test_mixed_publication_history_keeps_restore_guards(client, problem):
+    pid, sid, root, _ = setup_string(client)
+    assert (
+        client.patch(
+            f"{root}/strings/{sid}", json={"key": "welcome", "status": "public"}
+        ).status_code
+        == 200
+    )
+    version = client.get(f"{root}/strings/{sid}/activities").json()["items"][0]["id"]
+    if problem == "collision":
+        assert client.patch(f"{root}/strings/{sid}", json={"key": "moved"}).status_code == 200
+        assert (
+            client.post(
+                f"{root}/strings", json={"key": "welcome", "source_text": "Other"}
+            ).status_code
+            == 201
+        )
+    else:
+        assert client.delete(f"{root}/strings/{sid}").status_code == 204
+        publish_strings(client, pid, [sid])
+    restore_url = f"{root}/strings/{sid}/activities/{version}/restore"
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+    preview = client.get(f"{restore_url}/preview").json()
+    assert not preview["can_restore"]
+    result = client.post(restore_url)
+    assert result.status_code == (409 if problem == "collision" else 400), result.text
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+
+
 def test_history_preview_preserves_public_and_pending_delete(client):
     pid, sid, root, original = setup_string(client)
     client.patch(f"{root}/strings/{sid}", json={"source_text": "A2"})
