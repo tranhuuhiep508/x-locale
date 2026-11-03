@@ -186,6 +186,116 @@ def test_double_brace_mixes_with_icu_plurals():
     ]
 
 
+def test_plural_expansion_compares_each_branch_instead_of_total_counts():
+    for token in ("{name}", "{{name}}", "%s", "<b>#</b>", '<a href="{{url}}">#</a>'):
+        source = "{n, plural, other {" + token + " mục}}"
+        english = "{n, plural, one {" + token + " item} other {" + token + " items}}"
+        assert check_translation(source, english, "en") == [], token
+        assert check_translation(english, source, "vi") == [], token
+
+    for token in ("{name}", "{{name}}"):
+        source = "{n, plural, other {" + token + " " + token + "}}"
+        translation = "{n, plural, one {" + token + "} other {" + token + " " + token + "}}"
+        issues = check_translation(source, translation, "en")
+        assert [issue.code for issue in issues] == ["placeholder_missing"]
+        assert issues[0].detail == {"token": token, "source_count": 2, "translation_count": 1}
+
+
+def test_plural_expansion_checks_nested_branches_and_outer_placeholders():
+    source = "{{user}} {n, plural, other {{g, select, other {<b>{name}</b>}}}}"
+    translation = "{{user}} {n, plural, one {{g, select, other {<b>{name}</b>}}} other {{g, select, other {<b>{name}</b>}}}}"
+    assert check_translation(source, translation, "en") == []
+    assert "placeholder_missing" in _codes(source, translation.replace("{{user}} ", ""))
+    assert "html_mismatch" in _codes(source, translation.replace("<b>{name}</b>", "{name}", 1))
+
+
+def test_plural_reduction_does_not_compare_removed_categories_with_other():
+    for token in ("{n}", "{{n}}", "<b>#</b>"):
+        source = "{n, plural, one {One item} other {" + token + " items}}"
+        translation = "{n, plural, other {" + token + "個}}"
+        assert check_translation(source, translation, "ja") == [], token
+        assert "placeholder_missing" in _codes(
+            source.replace(token, "{name}"), "{n, plural, other {項目}}", "ja"
+        )
+
+    # Exact-number cases and select keys are not language-specific plural categories.
+    for kind, selector in (("plural", "=0"), ("select", "male")):
+        source = "{n, " + kind + ", " + selector + " {{name}} other {Items}}"
+        translation = "{n, " + kind + ", other {Items}}"
+        assert "placeholder_missing" in _codes(source, translation, "ja")
+
+
+def test_plural_branches_preserve_icu_pound_quoting():
+    for kind in ("plural", "selectordinal"):
+        for body, translated in (
+            ("'#{name}'", "'#{nom}'"),
+            ("'#{name}' {actual}", "'#{nom}' {actual}"),
+            ("'#{name}' {{actual}}", "'#{nom}' {{ actual }}"),
+            ("<b class=\"item\">'# {name}'</b>", "<b class=\"item\">'# {nom}'</b>"),
+            ("<a title=\"'#{name}'\">Item</a>", "<a title=\"'#{nom}'\">Article</a>"),
+            ("'# {g, select, other {name}}'", "'# {g, select, other {nom}}'"),
+            ("{g, plural, other {'#{name}'}}", "{g, plural, other {'#{nom}'}}"),
+        ):
+            source = "{n, " + kind + ", other {" + body + "}}"
+            translation = "{n, " + kind + ", other {" + translated + "}}"
+            assert check_translation(source, translation, "ja") == [], (kind, body)
+
+    for token in ("{actual}", "{{actual}}"):
+        source = "{n, plural, other {'#{literal}' " + token + "}}"
+        translation = "{n, plural, other {'#{texte}'}}"
+        issues = check_translation(source, translation, "ja")
+        assert [issue.code for issue in issues] == ["placeholder_missing"]
+        assert issues[0].detail["token"] == token
+
+
+def test_plural_expansion_supports_russian_and_ordinals():
+    for kind, locale, selectors in (
+        ("plural", "ru", ("one", "few", "many", "other")),
+        ("selectordinal", "en", ("one", "two", "few", "other")),
+    ):
+        source = "😀 {n, " + kind + ", other {{{name}}}}"
+        translation = (
+            "😀 {n, "
+            + kind
+            + ", "
+            + " ".join(selector + " {{{name}}}" for selector in selectors)
+            + "}"
+        )
+        assert not any(
+            issue.severity == "error" for issue in check_translation(source, translation, locale)
+        )
+        assert check_translation(translation, source, "ja") == []
+
+
+def test_plural_checks_keep_html_attribute_error_offsets():
+    source = '{n, plural, other {<a href="{{url}}">#</a>}}'
+    translation = '😀 {n, plural, one {<a href="{{url}">#</a>} other {<a href="{{url}}">#</a>}}'
+    issues = check_translation(source, translation, "en")
+    syntax = next(issue for issue in issues if issue.code == "icu_syntax")
+    assert syntax.start == translation.index("{{url}")
+
+
+def test_icu_skeleton_formats_are_preserved():
+    for source, translation in (
+        ("{price, number, ::currency/USD}", "{price, number, ::currency/EUR}"),
+        ("{date, date, ::yyyyMMdd}", "{date, date, ::yyyy}"),
+        ("{time, time, ::HHmm}", "{time, time, ::HH}"),
+    ):
+        assert check_translation(source, source, "en") == []
+        issues = check_translation(source, translation, "en")
+        assert {issue.code for issue in issues} == {"placeholder_missing", "placeholder_extra"}
+        assert {issue.detail["token"] for issue in issues} == {source, translation}
+
+    assert (
+        check_translation(
+            "{{name}} {price, number, ::currency/USD precision-integer}",
+            "{{ name }} {price, number, ::precision-integer currency/USD}",
+            "en",
+        )
+        == []
+    )
+
+
 def test_prose_percent_signs_are_not_printf():
     samples = [
         ("50% discount", "en"),
