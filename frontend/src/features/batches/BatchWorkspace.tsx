@@ -450,7 +450,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   workspace.stale ||
                   Boolean(workspace.refreshError) ||
                   workspace.unresolvedCount > 0 ||
-                  !publishable
+                  (!publishable && !workspace.hasTranslationChanges)
                 }
                 onClick={() => void workspace.publish()}
               >

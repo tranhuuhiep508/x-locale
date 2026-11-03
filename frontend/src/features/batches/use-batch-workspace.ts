@@ -317,6 +317,13 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     batch: query.data ? { ...query.data, items } : undefined,
     locales,
     hasDrafts: Object.keys(drafts).length > 0,
+    hasTranslationChanges: (query.data?.items ?? []).some((entry) =>
+      locales.some((locale) => {
+        const draft = drafts[`${entry.id}:${locale}`]
+        const saved = entry.translations.find((translation) => translation.locale === locale)
+        return draft !== undefined && draft.value !== (saved?.value ?? '')
+      })
+    ),
     canTranslate: remaining.length > 0,
     unresolvedCount: unresolved.length,
     refreshError,

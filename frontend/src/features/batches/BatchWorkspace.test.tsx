@@ -189,6 +189,52 @@ it('keeps blur edits local and sends one atomic publication request', async () =
     })
   )
 })
+
+it('saves a correction that restores the published translation', async () => {
+  batch.items[0].published_source_text = batch.items[0].source_text
+  batch.items[0].translations[0].value = 'Unwanted saved edit'
+  vi.mocked(stringsApi.publishCliPushBatch).mockResolvedValue({
+    affected: 0,
+    batch_id: 'correction',
+  })
+  show()
+  await loaded()
+  fireEvent.change(screen.getByRole('textbox', { name: 'EN translation for login.0' }), {
+    target: { value: 'Old' },
+  })
+  const publish = screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement
+  expect(publish.disabled).toBe(false)
+  fireEvent.click(publish)
+  await waitFor(() =>
+    expect(stringsApi.publishCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+      fingerprint: 'reviewed',
+      items: [
+        {
+          string_id: 's0',
+          expected_source_text: 'Nguồn mới',
+          translations: { en: 'Old' },
+          scores: { en: null },
+        },
+      ],
+    })
+  )
+  await screen.findByText(/Batch saved and published/)
+})
+
+it('keeps completion disabled when temporary edits match the saved working copy', async () => {
+  batch.items[0].published_source_text = batch.items[0].source_text
+  batch.items[0].has_unpublished_changes = false
+  show()
+  await loaded()
+  const publish = screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement
+  expect(publish.disabled).toBe(true)
+  const english = screen.getByRole('textbox', { name: 'EN translation for login.0' })
+  fireEvent.change(english, { target: { value: 'Temporary edit' } })
+  expect(publish.disabled).toBe(false)
+  fireEvent.change(english, { target: { value: 'Old' } })
+  expect(publish.disabled).toBe(true)
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+})
 it('discards temporary translations when the workflow is left and reopened', async () => {
   const view = show()
   await loaded()
