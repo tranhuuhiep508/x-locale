@@ -179,7 +179,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               <AlertTitle>Batch published</AlertTitle>
               <AlertDescription>
                 <p>{workspace.refreshError}</p>
-                <Button variant="outline" onClick={() => void workspace.refreshPublished()}>
+                <Button
+                  variant="outline"
+                  disabled={workspace.refreshing}
+                  onClick={() => void workspace.refreshPublished()}
+                >
                   Retry refresh
                 </Button>
               </AlertDescription>

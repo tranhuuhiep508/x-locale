@@ -1,9 +1,18 @@
 import { useBlocker } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { BatchWorkspace } from './BatchWorkspace'
+import { useBatchWorkspace } from './use-batch-workspace'
 import { stringsApi } from '@/lib/api/strings'
 import { jobsApi } from '@/lib/api/jobs'
 import { ApiError } from '@/lib/api/client'
@@ -599,5 +608,75 @@ it('preserves publication success when refresh fails and retries only the read',
   ).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Retry refresh' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry refresh' })).toBeNull())
+  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
+})
+
+it('serializes refresh retries even before the retry button can update', async () => {
+  let resolve!: (value: CliPushBatch) => void
+  vi.mocked(stringsApi.cliPushBatch)
+    .mockResolvedValueOnce(structuredClone(batch))
+    .mockRejectedValueOnce(new Error('Offline'))
+    .mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      })
+    )
+  qc.setQueryData(projectQuery('demo').queryKey, project)
+  const { result } = renderHook(() => useBatchWorkspace('demo', 'push'), {
+    wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+  })
+  await waitFor(() => expect(result.current.batch).toBeDefined())
+  await act(async () => {
+    await result.current.publish()
+  })
+  expect(result.current.refreshError).toContain('Offline')
+  let retry!: Promise<void>
+  act(() => {
+    retry = result.current.refreshPublished()
+    void result.current.refreshPublished()
+  })
+  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(3)
+  expect(result.current.refreshing).toBe(true)
+  await act(async () => {
+    resolve({ ...structuredClone(batch), fingerprint: 'fresh' })
+    await retry
+  })
+  expect(result.current.refreshing).toBe(false)
+  expect(result.current.refreshError).toBe('')
+  expect(result.current.batch?.fingerprint).toBe('fresh')
+  expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
+})
+
+it('disables refresh retry while pending and enables it again after failure', async () => {
+  let reject!: (error: Error) => void
+  vi.mocked(stringsApi.cliPushBatch)
+    .mockResolvedValueOnce(structuredClone(batch))
+    .mockRejectedValueOnce(new Error('Offline'))
+    .mockReturnValueOnce(
+      new Promise((_, fail) => {
+        reject = fail
+      })
+    )
+    .mockResolvedValueOnce(structuredClone(batch))
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
+  const retry = (await screen.findByRole('button', { name: 'Retry refresh' })) as HTMLButtonElement
+  fireEvent.click(retry)
+  expect(retry.disabled).toBe(true)
+  fireEvent.click(retry)
+  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(3)
+  reject(new Error('Still offline'))
+  await waitFor(() => expect(retry.disabled).toBe(false))
+  expect(
+    (
+      screen.getByRole('textbox', {
+        name: 'EN translation for login.0',
+      }) as HTMLTextAreaElement
+    ).disabled
+  ).toBe(true)
+  fireEvent.click(retry)
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry refresh' })).toBeNull())
+  expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(4)
   expect(stringsApi.publishCliPushBatch).toHaveBeenCalledTimes(1)
 })

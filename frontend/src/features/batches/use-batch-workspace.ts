@@ -39,6 +39,8 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   const [published, setPublished] = useState(false)
   const [generationStarted, setGenerationStarted] = useState(false)
   const [refreshError, setRefreshError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshInFlight = useRef(false)
   const requested = useRef(new Set<string>())
   const [started, setStarted] = useState(false)
   const [error, setError] = useState('')
@@ -241,6 +243,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     }
   }
   async function refreshPublished() {
+    if (refreshInFlight.current) return
+    refreshInFlight.current = true
+    setRefreshing(true)
     try {
       const next = await stringsApi.cliPushBatch(projectRef, batchId)
       if (mounted.current) {
@@ -250,6 +255,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     } catch (e) {
       if (mounted.current)
         setRefreshError(`Batch published, but the review could not refresh. ${message(e)}`)
+    } finally {
+      refreshInFlight.current = false
+      if (mounted.current) setRefreshing(false)
     }
   }
   async function publish() {
@@ -312,6 +320,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     canTranslate: remaining.length > 0,
     unresolvedCount: unresolved.length,
     refreshError,
+    refreshing,
     refreshPublished,
     edit,
     busy: Boolean(action) || Boolean(jobId),
