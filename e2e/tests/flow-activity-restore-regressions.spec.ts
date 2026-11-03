@@ -52,7 +52,7 @@ async function openBatchUndo(page: Page, pid: string, batch: string) {
   await page.goto(`/projects/${pid}/activity`)
   const card = page
     .locator('div.rounded-lg')
-    .filter({ has: page.locator(`a[href*="batch_id=${batch}"]`) })
+    .filter({ has: page.locator(`a[href*="batch_id=${batch}"], a[href$="/batches/${batch}"]`) })
   await card.getByRole('button', { name: 'Undo', exact: true }).click()
   return page.getByRole('alertdialog')
 }

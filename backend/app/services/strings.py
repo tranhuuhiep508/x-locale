@@ -167,11 +167,13 @@ def _status_value(status: TranslationStatus | str) -> str:
     return status.value if isinstance(status, TranslationStatus) else str(status)
 
 
-def compute_publish_fingerprint(entries: Sequence[StringEntry]) -> str:
-    """Hash publishable working-copy state. Tags, activity, and no-ops are ignored."""
+def compute_publish_fingerprint(
+    entries: Sequence[StringEntry], *, include_unchanged: bool = False
+) -> str:
+    """Hash reviewed content; ordinary publication omits unchanged strings."""
     rows: list[dict[str, object]] = []
     for entry in entries:
-        if not is_publishable_entry(entry):
+        if not include_unchanged and not is_publishable_entry(entry):
             continue
         translations = sorted(entry.translations or [], key=lambda item: item.locale)
         rows.append(

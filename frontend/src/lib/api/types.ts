@@ -371,6 +371,25 @@ export interface TranslateProposalsResult {
   page_size: number
 }
 
+export interface CliPushBatch extends PublishPreviewEntries {
+  batch_id: string
+  actor_label: string
+  created_at: string | null
+  created_count: number
+  updated_count: number
+  excluded_count: number
+}
+
+export interface CliPushPublishRequest {
+  fingerprint: string
+  items: Array<{
+    string_id: string
+    expected_source_text: string
+    translations: Record<string, string>
+    scores?: Record<string, number | null>
+  }>
+}
+
 export interface TranslateApplyRequest {
   items: Array<{
     string_id: string

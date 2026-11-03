@@ -175,3 +175,48 @@ with zero translations. Comparison is exact, including whitespace; restoring the
 identical source makes an existing proposal valid again. AI writes still affect
 only the working copy. Deploy backend and frontend together; custom Apply clients
 must send the baseline, and older browser tabs may need a reload.
+
+
+## CLI push batch workspace
+
+New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports keep
+`import`/`excel_import`. Historical batches are not reclassified. The endpoint
+`GET /api/projects/{project_id}/cli-push-batches/{batch_id}` resolves unique activity
+members within the project and returns metadata, active working/published rows,
+excluded lifecycle counts, and the existing publication fingerprint. An unknown,
+other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
+empty review. No additional workflow state or schema migration is required.
+
+The dashboard automatically translates all configured project target languages
+(excluding the base language), with no language picker. The stepper shows Translate,
+Review, and Publish. It generates read-only translation proposals and keeps them, manual
+edits, confidence scores, and QA findings in memory until an explicit save. It does not call
+`/translate/apply`, save on blur, or store resumable jobs. Leaving or reloading
+abandons unsaved progress and starts a new review from saved content. Other
+editors retain their existing blur-save behavior. In-app leave and restart
+confirmations use the shared shadcn dialog; browser reload/close warnings remain
+controlled by the browser. Partial AI responses leave unresolved cells visible;
+retries exclude completed or manually edited cells. Publication waits until those
+cells are generated or explicitly reviewed through manual editing.
+
+Both `POST /api/projects/{project_id}/cli-push-batches/{batch_id}/draft` and
+`POST /api/projects/{project_id}/cli-push-batches/{batch_id}/publish` accept
+the original review fingerprint and all staged translation changes. The server
+locks publication, batch strings, and their translations; verifies batch membership,
+source text, locales, and the full review fingerprint (including unchanged public
+strings); applies translations; and commits the content and audit batch together.
+Only publication promotes snapshots and validates public-key collisions. Saving
+as draft preserves existing string status and public snapshots: new strings remain
+draft and already-public strings retain their last published values. More than 100 rows
+can complete in this one transaction; there are no independently committed chunks.
+Any validation, stale-content, or publication failure rolls back the entire final
+request, including translation edits and audit records. A stale workflow must be
+restarted before publication. The original CLI push remains saved as before.
+
+Publication is still per string across all locales, including historical locales
+outside the current project targets. These remain visible but read-only. Missing
+values and QA issues remain advisory. Saving or publishing shows a success toast
+and refreshes the batch in place. View in Strings opens the catalog filtered to
+the original CLI push batch. If refresh fails, saved changes remain committed;
+Reload batch retries the read without saving or publishing again. The existing catalog,
+translation Apply, audit, Undo, export, and soft-delete semantics are retained.

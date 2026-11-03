@@ -144,10 +144,7 @@ class PushReviewLineTests(unittest.TestCase):
 
     def test_prints_one_review_line_for_creates(self) -> None:
         text = self._print()
-        expected = (
-            f"Review: http://localhost:5173/projects/demo-app/strings"
-            f"?batch_id={BATCH}&batch_kind=import"
-        )
+        expected = f"Review: http://localhost:5173/projects/demo-app/batches/{BATCH}"
         self.assertEqual(text.count("Review:"), 1)
         self.assertIn(expected, text)
         self.assertNotIn("nothing to review", text.lower())
@@ -155,7 +152,7 @@ class PushReviewLineTests(unittest.TestCase):
     def test_prints_review_line_for_updates_only(self) -> None:
         text = self._print(result=_result(create_count=0, update_count=2))
         self.assertEqual(text.count("Review:"), 1)
-        self.assertIn(f"batch_id={BATCH}&batch_kind=import", text)
+        self.assertIn(f"/projects/demo-app/batches/{BATCH}", text)
 
     def test_project_id_when_slug_missing(self) -> None:
         config = _config(project_slug="", project_id=PROJECT_ID, web_url="http://localhost:5173")
@@ -163,7 +160,7 @@ class PushReviewLineTests(unittest.TestCase):
             project_ref=config.project_ref,
             web_base=resolve_web_base(config, environ={}),
         )
-        self.assertIn(f"/projects/{PROJECT_ID}/strings?", text)
+        self.assertIn(f"/projects/{PROJECT_ID}/batches/{BATCH}", text)
         self.assertNotIn("/projects/demo-app/", text)
 
     def test_dry_run_omits_line_even_with_batch_id(self) -> None:
@@ -253,10 +250,7 @@ class PushPathReviewTests(unittest.TestCase):
             web_url="http://localhost:5173",
         )
         text = self._run(config, dry_run=False, body=_result(create_count=1, update_count=1))
-        expected = (
-            f"Review: http://localhost:5173/projects/demo-app/strings"
-            f"?batch_id={BATCH}&batch_kind=import"
-        )
+        expected = f"Review: http://localhost:5173/projects/demo-app/batches/{BATCH}"
         self.assertEqual(text.count("Review:"), 1)
         self.assertIn(expected, text)
 
@@ -270,7 +264,7 @@ class PushPathReviewTests(unittest.TestCase):
         config = _config(output_dir=self.output_dir, api_url="http://127.0.0.1:8000")
         text = self._run(config, dry_run=False, body=_result())
         self.assertIn(
-            f"Review: http://127.0.0.1:8000/projects/demo-app/strings?batch_id={BATCH}&batch_kind=import",
+            f"Review: http://127.0.0.1:8000/projects/demo-app/batches/{BATCH}",
             text,
         )
 
@@ -278,4 +272,4 @@ class PushPathReviewTests(unittest.TestCase):
         config = _config(output_dir=self.output_dir, api_url="localhost:8000", project_slug="demo-app")
         text = self._run(config, dry_run=False, body=_result())
         self.assertNotIn("Review:", text)
-        self.assertNotIn("/projects/demo-app/strings", text)
+        self.assertNotIn("/projects/demo-app/batches", text)

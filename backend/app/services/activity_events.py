@@ -19,9 +19,9 @@ EVENT_DELETED = "string.deleted"
 EVENT_RESTORED = "string.restored"
 
 BATCH_EVENT_TYPES = frozenset(
-    {"import", "excel_import", "translate", "batch", "revert"}
+    {"import", "cli_push", "excel_import", "translate", "batch", "revert"}
 )
-UNDOABLE_BATCH_KINDS = frozenset({"import", "excel_import", "translate", "batch"})
+UNDOABLE_BATCH_KINDS = frozenset({"import", "cli_push", "excel_import", "translate", "batch"})
 HISTORY_UNRESTORABLE_EVENT_TYPES = frozenset(
     {EVENT_PUBLISHED, EVENT_UNPUBLISHED, EVENT_PENDING_DELETE, EVENT_DELETED}
 )
@@ -331,6 +331,8 @@ def batch_card_summary(
     noun = "string" if count == 1 else "strings"
     if kind == "excel_import":
         return f"Imported from Excel · {count} {noun}"
+    if kind == "cli_push":
+        return f"CLI push · {count} {noun}"
     if kind == "import":
         return f"Imported · {count} {noun}"
     if kind == "translate":

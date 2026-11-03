@@ -1,6 +1,8 @@
 import { api } from '@/lib/api/client'
 import { resolveStringTimeForApi } from '@/lib/time-range'
 import type {
+  CliPushBatch,
+  CliPushPublishRequest,
   BatchRequest,
   BatchResult,
   PublishPreviewEntries,
@@ -80,6 +82,12 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
+  publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/publish`, body),
+  cliPushBatch: (projectId: string, batchId: string) =>
+    api.get<CliPushBatch>(`/projects/${projectId}/cli-push-batches/${batchId}`),
   translateMemory: (projectId: string, body: TranslationMemoryRequest) =>
     api.post<TranslationMemoryResult>(`/projects/${projectId}/translate/memory`, body),
   list: (projectId: string, params: StringListParams) =>

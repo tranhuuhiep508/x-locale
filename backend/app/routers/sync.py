@@ -161,10 +161,13 @@ def download_import_template(
 
 
 def _import_job_work(
-    batch_id: uuid.UUID, dry_run: bool, run: Callable[[Session, Project], ImportResult]
+    batch_id: uuid.UUID,
+    dry_run: bool,
+    run: Callable[[Session, Project], ImportResult],
+    batch_kind: str = "import",
 ) -> JobWork:
     def work(db: Session, project: Project) -> dict:
-        attach_batch(db, batch_id, "import")
+        attach_batch(db, batch_id, batch_kind)
         result = run(db, project)
         if dry_run:
             db.rollback()
@@ -272,11 +275,12 @@ def import_strings_compat(
                 lambda job_db, job_project: import_payload(
                     job_db, job_project, payload, dry_run=dry_run, partial=partial
                 ),
+                batch_kind="cli_push",
             ),
         )
         return accepted_response(job)
 
-    attach_batch(db, batch_id, "import")
+    attach_batch(db, batch_id, "cli_push")
     result = import_payload(db, project, payload, dry_run=dry_run, partial=partial)
     if not dry_run:
         db.commit()

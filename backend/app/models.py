@@ -85,6 +85,7 @@ class EntityType(str, enum.Enum):
 
 
 class BatchKind(str, enum.Enum):
+    cli_push = "cli_push"
     import_ = "import"
     excel_import = "excel_import"
     batch = "batch"
