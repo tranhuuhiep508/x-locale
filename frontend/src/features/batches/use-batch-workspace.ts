@@ -35,7 +35,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
   const [qaBaselines, setQaBaselines] = useState<Record<string, QaBaseline>>({})
-  const [action, setAction] = useState<'translate' | 'publish' | null>(null)
+  const [action, setAction] = useState<'translate' | 'publish' | 'restart' | null>(null)
   const [published, setPublished] = useState(false)
   const [generationStarted, setGenerationStarted] = useState(false)
   const [refreshError, setRefreshError] = useState('')
@@ -117,7 +117,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     )
   }
   function edit(entry: StringEntry, locale: string, value: string) {
-    if (!locales.includes(locale) || refreshError) return
+    if (operation.current || stale || !locales.includes(locale) || refreshError) return
     setStarted(true)
     setPublished(false)
     setNotice('')
@@ -162,13 +162,12 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.data])
 
-  const unresolved = generationStarted
-    ? (query.data?.items ?? []).flatMap((entry) =>
-        locales
-          .filter((locale) => !drafts[`${entry.id}:${locale}`])
-          .map((locale) => `${entry.id}:${locale}`)
-      )
-    : []
+  const remaining = (query.data?.items ?? []).flatMap((entry) =>
+    locales
+      .filter((locale) => !drafts[`${entry.id}:${locale}`])
+      .map((locale) => `${entry.id}:${locale}`)
+  )
+  const unresolved = generationStarted ? remaining : []
   async function translate() {
     if (
       operation.current ||
@@ -176,16 +175,10 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       jobId ||
       refreshError ||
       stale ||
-      (Object.keys(drafts).length > 0 && !unresolved.length)
+      !remaining.length
     )
       return
-    requested.current = new Set(
-      (query.data?.items ?? []).flatMap((entry) =>
-        locales
-          .filter((locale) => !drafts[`${entry.id}:${locale}`])
-          .map((locale) => `${entry.id}:${locale}`)
-      )
-    )
+    requested.current = new Set(remaining)
     if (!requested.current.size) return
     setGenerationStarted(true)
     operation.current = true
@@ -221,6 +214,8 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
   }
   async function restart() {
     if (operation.current) return
+    operation.current = true
+    setAction('restart')
     draftsRef.current = {}
     setDrafts({})
     setQaBaselines({})
@@ -230,14 +225,19 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setRefreshError('')
     requested.current.clear()
     setStarted(false)
-    setStale(false)
+    setStale(true)
     setError('')
     setNotice('')
     try {
       const next = await stringsApi.cliPushBatch(projectRef, batchId)
+      if (!mounted.current) return
       qc.setQueryData(key, next)
+      setStale(false)
     } catch (e) {
-      setError(message(e))
+      if (mounted.current) setError(message(e))
+    } finally {
+      operation.current = false
+      if (mounted.current) setAction(null)
     }
   }
   async function refreshPublished() {
@@ -309,6 +309,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     batch: query.data ? { ...query.data, items } : undefined,
     locales,
     hasDrafts: Object.keys(drafts).length > 0,
+    canTranslate: remaining.length > 0,
     unresolvedCount: unresolved.length,
     refreshError,
     refreshPublished,
@@ -324,7 +325,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         ? 'Generating translations…'
         : action === 'publish'
           ? 'Saving and publishing batch…'
-          : '',
+          : action === 'restart'
+            ? 'Loading the latest batch…'
+            : '',
     notice,
     started,
     qaBaselines,

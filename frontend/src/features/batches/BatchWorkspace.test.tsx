@@ -474,6 +474,90 @@ it('allows manual edits to satisfy remaining unresolved cells', async () => {
   ).toBe(false)
 })
 
+it('generates remaining locales after an initial manual edit', async () => {
+  show()
+  await loaded()
+  const english = screen.getByRole('textbox', {
+    name: 'EN translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(english, { target: { value: 'Manual English' } })
+  const translate = screen.getByRole('button', { name: 'Translate all' }) as HTMLButtonElement
+  expect(translate.disabled).toBe(false)
+  fireEvent.click(translate)
+  await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ exclude_cells: { s0: ['en'] } })
+  )
+  expect(english.value).toBe('Manual English')
+  expect(
+    (screen.getByRole('textbox', { name: 'JA translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('生成済み')
+})
+
+it('blocks edits and publication until restart loads the latest snapshot', async () => {
+  show()
+  await loaded()
+  const english = screen.getByRole('textbox', {
+    name: 'EN translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(english, { target: { value: 'Discard this' } })
+  let resolve!: (value: CliPushBatch) => void
+  vi.mocked(stringsApi.cliPushBatch).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done
+    })
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and restart' }))
+  expect(english.disabled).toBe(true)
+  expect(
+    (screen.getByRole('button', { name: /Translate all/ }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  const publish = screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement
+  expect(publish.disabled).toBe(true)
+  fireEvent.change(english, { target: { value: 'Edit from old snapshot' } })
+  const next = structuredClone(batch)
+  next.fingerprint = 'concurrent-review'
+  next.items[0].translations[0].value = 'Concurrent saved translation'
+  resolve(next)
+  await waitFor(() => expect(english.disabled).toBe(false))
+  expect(english.value).toBe('Concurrent saved translation')
+  fireEvent.click(publish)
+  await waitFor(() =>
+    expect(stringsApi.publishCliPushBatch).toHaveBeenCalledWith('demo', 'push', {
+      fingerprint: 'concurrent-review',
+      items: [],
+    })
+  )
+})
+
+it('requires a successful restart after the snapshot reload fails', async () => {
+  show()
+  await loaded()
+  const english = screen.getByRole('textbox', {
+    name: 'EN translation for login.0',
+  }) as HTMLTextAreaElement
+  fireEvent.change(english, { target: { value: 'Discard this' } })
+  vi.mocked(stringsApi.cliPushBatch).mockRejectedValueOnce(new Error('Reload failed'))
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and restart' }))
+  await screen.findByText('Reload failed')
+  expect(english.disabled).toBe(true)
+  expect(
+    (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  expect(
+    (screen.getByRole('button', { name: 'Translate all' }) as HTMLButtonElement).disabled
+  ).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Restart workflow' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Discard and restart' }))
+  await waitFor(() => expect(english.disabled).toBe(false))
+  expect(english.value).toBe('Old')
+  expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+})
+
 it('keeps historical locales read-only and excludes them from publication edits', async () => {
   batch.items[0].translations.push({
     id: null,

@@ -152,7 +152,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 onClick={() => void workspace.translate()}
                 disabled={
                   busy ||
-                  (workspace.hasDrafts && !workspace.unresolvedCount) ||
+                  !workspace.canTranslate ||
                   Boolean(workspace.refreshError) ||
                   workspace.stale ||
                   !locales.length ||
