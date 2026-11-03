@@ -1,9 +1,12 @@
-import { useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Undo2, Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
 import { ApiError } from '@/lib/api/client'
 import type {
+  EditorProposal,
+  EditorPreview,
+  EditorSaveRequest,
   BatchRequest,
   Module,
   StringEntry,
@@ -21,7 +24,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { TranslationMemoryPanel } from '@/features/strings/translation-memory-view'
@@ -32,6 +34,9 @@ import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/string
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
+import { EditorPublicationReview } from './EditorPublicationReview'
+import { buildPublishPreview, hasPublishableChanges, isPublishFingerprintMismatch, publicationErrorMessage } from './publish-preview'
+import { queryKeys } from '@/lib/query-keys'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -44,9 +49,11 @@ interface Props {
   initialTab?: 'details' | 'history'
   onClose: () => void
   onSuccess: () => void
+  onViewInStrings?: (entry: StringEntry) => void
 }
 
 const NONE_MODULE = '__none__'
+const NONE_TAG = '__none__'
 
 /** Portaled popover/select layers sit outside dialog content in the DOM. */
 function isNestedOverlayTarget(target: EventTarget | null) {
@@ -117,7 +124,6 @@ function isFormDirty(
     description: string
     moduleId: string
     tagIds: string[]
-    status: TranslationStatus
     translations: Record<string, string>
     scores: Record<string, number>
   },
@@ -127,7 +133,6 @@ function isFormDirty(
   if (values.description !== (entry.description ?? '')) return true
   if (values.moduleId !== (entry.module_id ?? '')) return true
   if (JSON.stringify([...values.tagIds].sort()) !== JSON.stringify(entry.tags.map((tag) => tag.id).sort())) return true
-  if (values.status !== entry.status) return true
   const saved = translationsFromEntry(entry, targetLocales)
   const savedScores = scoresFromEntry(entry, targetLocales)
   for (const locale of targetLocales) {
@@ -170,9 +175,24 @@ export default function StringFormDialog({
   initialTab = 'details',
   onClose,
   onSuccess,
+  onViewInStrings,
 }: Props) {
   const toast = useToast()
-  const isEdit = Boolean(entry?.id)
+  const qc = useQueryClient()
+  const [baseline, setBaseline] = useState(entry ?? null)
+  const isEdit = Boolean(baseline?.id)
+  const [review, setReview] = useState<{ proposal: EditorProposal; preview: EditorPreview } | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const reviewHeading = useRef<HTMLHeadingElement>(null)
+  const publishButton = useRef<HTMLButtonElement>(null)
+  const wasReviewOpen = useRef(false)
+  useEffect(() => {
+    if (reviewOpen) reviewHeading.current?.focus()
+    else if (wasReviewOpen.current) publishButton.current?.focus()
+    wasReviewOpen.current = reviewOpen
+  }, [reviewOpen])
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false)
   const [tab, setTab] = useState<'details' | 'history'>(initialTab)
   const [key, setKey] = useState(entry?.key ?? '')
   const [sourceText, setSourceText] = useState(entry?.source_text ?? '')
@@ -180,7 +200,13 @@ export default function StringFormDialog({
   const [moduleId, setModuleId] = useState(entry?.module_id ?? '')
   const [tagIds, setTagIds] = useState(() => entry?.tags.map((tag) => tag.id) ?? [])
   const tagId = tagIds[0] ?? ''
-  const setTagId = (value: string) => setTagIds(value ? [value] : [])
+  const setTagId = (value: string) => {
+    if (!value) {
+      setTagIds([])
+      return
+    }
+    setTagIds([value, ...tagIds.slice(1).filter((id) => id !== value)])
+  }
   const [status, setStatus] = useState<TranslationStatus>(() => entry?.status ?? 'draft')
   const [translations, setTranslations] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
@@ -198,9 +224,8 @@ export default function StringFormDialog({
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [createdModules, setCreatedModules] = useState<Module[]>([])
   const [createdTags, setCreatedTags] = useState<Tag[]>([])
-  const [baseline, setBaseline] = useState(entry ?? null)
   const [conflict, setConflict] = useState<SaveConflict | null>(null)
-  const memory = useTranslationMemory(projectId, sourceText, targetLocales, entry?.id, baseline?.source_text)
+  const memory = useTranslationMemory(projectId, sourceText, targetLocales, baseline?.id, baseline?.source_text)
   const [memorySelection, setMemorySelection] = useState<{ source: string; chosen: Record<string, string> }>({ source: sourceText, chosen: {} })
   const chosen = memorySelection.source === sourceText ? memorySelection.chosen : {}
   const memoryLocales = Object.keys(chosen)
@@ -277,6 +302,7 @@ export default function StringFormDialog({
   }) ?? [])]
   const moduleOptions = [...modules, ...createdModules.filter((item) => !modules.some((m) => m.id === item.id))]
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
+  const selectedTag = tagOptions.find((item) => item.id === tagId)
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
   const formValues = {
@@ -285,7 +311,6 @@ export default function StringFormDialog({
     description,
     moduleId,
     tagIds,
-    status,
     translations,
     scores,
   }
@@ -302,7 +327,6 @@ export default function StringFormDialog({
       tag_ids: string[]
       translations: Record<string, string>
       translation_scores?: Record<string, number>
-      status?: TranslationStatus
     } = {
       key: key.trim(),
       source_text: sourceText.trim(),
@@ -314,9 +338,6 @@ export default function StringFormDialog({
     if (Object.keys(scores).length > 0) {
       body.translation_scores = scores
     }
-    if (!isEdit || status !== baseline?.status) {
-      body.status = status
-    }
     return body
   }
 
@@ -327,7 +348,7 @@ export default function StringFormDialog({
     const edited = { ...body, key, source_text: sourceText, description: description || null }
     const changes: StringUpdate = { expected: {} }
     const expected = changes.expected!
-    for (const field of ['key', 'source_text', 'description', 'module_id', 'tag_ids', 'status'] as const) {
+    for (const field of ['key', 'source_text', 'description', 'module_id', 'tag_ids'] as const) {
       const value = body[field]
       if (JSON.stringify(edited[field]) === JSON.stringify(original[field])) continue
       if (value === undefined || JSON.stringify(value) === JSON.stringify(original[field])) continue
@@ -427,8 +448,8 @@ export default function StringFormDialog({
   const savedBaselines: Record<string, QaBaseline> = {}
   for (const locale of targetLocales) {
     savedBaselines[locale] = {
-      source: entry?.source_text ?? '',
-      text: entry?.translations.find((item) => item.locale === locale)?.value ?? '',
+      source: baseline?.source_text ?? '',
+      text: baseline?.translations.find((item) => item.locale === locale)?.value ?? '',
     }
   }
   const qaRows: QaWatchRow[] = targetLocales.map((locale) => ({
@@ -440,28 +461,92 @@ export default function StringFormDialog({
   }))
   const qaViews = useQaWatch(projectId, qaRows)
 
+  function proposal(): EditorProposal {
+    if (!baseline) return { mode: 'create', values: payload() }
+    const changes = editPayload()
+    return { mode: 'update', string_id: baseline.id, values: { ...changes, expected: changes.expected! } }
+  }
+
+  function refreshQueries() {
+    void qc.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId) })
+    onSuccess()
+  }
+
+  function applySaved(fresh: StringEntry) {
+    setBaseline(fresh)
+    applyEntryToForm(fresh, targetLocales, {
+      setKey, setSourceText, setDescription, setModuleId, setTagIds, setStatus, setTranslations, setScores,
+    })
+    setConflict(null)
+    setMemoryUndo(null)
+    setMemorySelection({ source: fresh.source_text, chosen: {} })
+    setQaSeeds({})
+    setErrors({})
+  }
+
+  function editorError(error: unknown) {
+    if (error instanceof ApiError && error.status === 409) {
+      const detail = (error.body as { detail?: SaveConflict & { code?: string } })?.detail
+      if (detail?.code === 'stale_editor_save') {
+        setReviewOpen(false)
+        setReview(null)
+        setConflict(detail)
+        return
+      }
+    }
+    toast.error(publicationErrorMessage(error, 'Failed to save string'))
+  }
+
+  const previewMut = useMutation({
+    mutationFn: (proposed: EditorProposal) => stringsApi.editorPreview(projectId, proposed),
+    onSuccess: (preview, proposed) => {
+      setReview({ proposal: proposed, preview })
+      setReviewOpen(true)
+    },
+    onError: (error) => {
+      setReviewOpen(false)
+      editorError(error)
+    },
+  })
+
   const saveMut = useMutation({
+    mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
+    onSuccess: (fresh, request) => {
+      applySaved(fresh)
+      setReviewOpen(false)
+      setReview(null)
+      setSaved(true)
+      refreshQueries()
+      toast.success(request.action === 'publish' ? 'String saved and published' : 'String saved as draft')
+    },
+    onError: (error, request) => {
+      if (isPublishFingerprintMismatch(error)) {
+        setReview(null)
+        previewMut.mutate(request.proposal)
+        toast.info('Working copy changed. Review the updated preview.')
+        return
+      }
+      editorError(error)
+    },
+  })
+
+  const unpublishMut = useMutation({
     mutationFn: async () => {
-      if (isEdit && entry) {
-        await stringsApi.update(projectId, entry.id, editPayload())
-      } else {
-        await stringsApi.create(projectId, payload())
-      }
+      if (!baseline) return null
+      await stringsApi.batch(projectId, { action: 'unpublish', string_ids: [baseline.id] })
+      return stringsApi.get(projectId, baseline.id)
     },
-    onSuccess: () => {
-      toast.success(isEdit ? 'String saved' : 'String created')
-      onSuccess()
+    onSuccess: (fresh) => {
+      if (!fresh) return
+      // Keep form inputs and their expected-value baselines; only lifecycle state changed.
+      setBaseline((previous) => previous ? { ...previous, status: fresh.status } : fresh)
+      setStatus(fresh.status)
+      setConfirmUnpublish(false)
+      setReview(null)
+      refreshQueries()
+      toast.success('String unpublished')
     },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        const detail = (e.body as { detail?: SaveConflict & { code?: string } })?.detail
-        if (detail?.code === 'stale_editor_save') {
-          setConflict(detail)
-          return
-        }
-      }
-      toast.error(e instanceof Error ? e.message : `Failed to ${isEdit ? 'save' : 'create'} string`)
-    },
+    onError: editorError,
   })
 
   const translateMut = useMutation({
@@ -523,24 +608,32 @@ export default function StringFormDialog({
       setMemorySelection({ source: fresh.source_text, chosen: {} })
       setQaSeeds({})
       setErrors({})
-      onSuccess()
-      toast.success('Working copy discarded')
+      setReview(null)
+      refreshQueries()
+      toast.success(serverDiscardable ? 'Working copy discarded' : 'Form changes reset')
     },
-    onError: () => toast.error('Failed to discard changes'),
+    onError: (error) => toast.error(publicationErrorMessage(error, 'Failed to discard changes')),
   })
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (conflict || saveMut.isPending) return
+  function submitAction(action: 'save_draft' | 'publish') {
+    if (conflict || busy) return
     const nextErrors: FormErrors = {}
     if (!key.trim()) nextErrors.key = 'Key is required'
     if (!sourceText.trim()) nextErrors.source_text = 'Source text is required'
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
-    saveMut.mutate()
+    if (action === 'publish') previewMut.mutate(proposal())
+    else saveMut.mutate({ proposal: proposal(), action })
   }
 
-  const busy = saveMut.isPending || translateMut.isPending || discardMut.isPending
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submitAction('save_draft')
+  }
+
+  const busy = saveMut.isPending || previewMut.isPending || translateMut.isPending || discardMut.isPending || unpublishMut.isPending
+  const reviewedPreview = review ? buildPublishPreview([review.preview.entry]) : null
+  const publicationReady = reviewedPreview != null && hasPublishableChanges(reviewedPreview)
   const released = isEdit && baseline ? isReleased(baseline) : false
   const moduleSlug = moduleOptions.find((item) => item.id === moduleId)?.slug ?? ''
   const serverDiscardable = Boolean(baseline && canDiscardWorkingCopy(baseline))
@@ -549,11 +642,14 @@ export default function StringFormDialog({
     isEdit && baseline && !baseline.deleted_at && (serverDiscardable || formDirty)
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => {
+      if (open || busy) return
+      if (reviewOpen) { setReviewOpen(false); setReview(null) }
+      else onClose()
+    }}>
       <DialogContent
         className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0',
-          'max-h-[min(90dvh,760px)] sm:max-w-3xl',
+          'flex h-[min(90dvh,760px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl',
         )}
         onFocusOutside={(event) => {
           // Nested popovers unmount after Create; focus then lands on body, not the
@@ -569,18 +665,32 @@ export default function StringFormDialog({
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <div className="flex items-center gap-2">
             <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
-            {isEdit ? (
-              <span className="rounded-md border border-border/70 bg-muted/50 px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground uppercase">
+            {isEdit && !reviewOpen ? (
+              <span
+                className={cn(
+                  'rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider',
+                  status === 'public'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'border-border/70 bg-muted/50 text-muted-foreground',
+                )}
+              >
                 {status}
+              </span>
+            ) : null}
+            {reviewOpen ? (
+              <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary uppercase">
+                Publication Review
               </span>
             ) : null}
           </div>
           <DialogDescription>
-            {isEdit
-              ? 'Update metadata and translations, or restore a previous version.'
-              : 'Add metadata and translations. The string is created when you click Create.'}
+            {reviewOpen
+              ? 'Review proposed changes before promoting to public catalogs.'
+              : isEdit
+              ? 'Edit the working copy, then save as draft or review publication.'
+              : 'Add metadata and translations, then save as draft or review publication.'}
           </DialogDescription>
-          {isEdit ? (
+          {isEdit && !reviewOpen ? (
             <ToggleGroup
               type="single"
               variant="outline"
@@ -597,13 +707,49 @@ export default function StringFormDialog({
           ) : null}
         </DialogHeader>
 
-        {isEdit && tab === 'history' && entry ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {reviewOpen ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+              <div className="mb-4 flex flex-col gap-1 border-b border-border/60 pb-3">
+                <h2 tabIndex={-1} ref={reviewHeading} className="font-heading text-base font-semibold tracking-tight text-foreground">
+                  Review publication
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Verify the final snapshot below. Edits are saved and public catalogs update atomically.
+                </p>
+              </div>
+              {review ? <EditorPublicationReview entry={review.preview.entry} /> : <p role="status">Refreshing comparison…</p>}
+            </div>
+            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" disabled={busy} onClick={() => {
+                setReviewOpen(false)
+                setReview(null)
+              }}>
+                Back to editing
+              </Button>
+              <Button
+                type="button"
+                disabled={busy || !publicationReady}
+                onClick={() => {
+                  if (review) saveMut.mutate({
+                    proposal: review.proposal,
+                    action: 'publish',
+                    fingerprint: review.preview.fingerprint,
+                  })
+                }}
+              >
+                {saveMut.isPending && <Spinner data-icon="inline-start" />}
+                {review && !publicationReady ? 'Nothing to publish' : 'Publish'}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : isEdit && tab === 'history' && baseline ? (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
             <StringHistoryPanel
               projectId={projectId}
-              stringId={entry.id}
+              stringId={baseline.id}
               onRestored={async () => {
-                const fresh = await stringsApi.get(projectId, entry.id)
+                const fresh = await stringsApi.get(projectId, baseline!.id)
                 setBaseline(fresh)
                 setConflict(null)
                 applyEntryToForm(fresh, targetLocales, {
@@ -628,6 +774,7 @@ export default function StringFormDialog({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <fieldset disabled={busy} className="m-0 border-0 p-0 min-w-0">
             {conflict ? (
               <Alert variant="destructive" className="mx-5 mt-5 w-auto">
                 <AlertTitle>Another save changed this string</AlertTitle>
@@ -651,202 +798,246 @@ export default function StringFormDialog({
                 </AlertDescription>
               </Alert>
             ) : null}
-            <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-8">
-              <FieldGroup className="gap-4">
-                <Field data-invalid={errors.key ? 'true' : undefined}>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-key">Key</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_key}
-                        working={key}
-                        released={released}
-                        mono
-                      />
-                    ) : null}
+            {/* Lifecycle Status Banner */}
+            {isEdit && baseline?.deleted_at ? (
+              <div className="mx-5 mt-5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
+                <p className="font-medium">This string is deleted.</p>
+                <p className="text-muted-foreground">Restore it from the grid to edit again.</p>
+              </div>
+            ) : isEdit && baseline?.pending_delete ? (
+              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
+                <p>Deletion is pending. Production still has the last published snapshot until you publish the removal.</p>
+              </div>
+            ) : isEdit && baseline?.status === 'public' ? (
+              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="relative flex size-2 shrink-0">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <div className="flex flex-col min-w-0">
+                    <p className="text-xs font-semibold text-foreground">
+                      Public snapshot is live.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {baseline.has_unpublished_changes
+                        ? 'Production still has the last published snapshot until you publish.'
+                        : 'Saving as draft leaves it unchanged.'}
+                    </p>
                   </div>
-                  <Input
-                    id="string-key"
-                    className="font-mono"
-                    value={key}
-                    onChange={(e) => setKey(e.target.value)}
-                    aria-invalid={errors.key ? true : undefined}
-                  />
-                  <FieldError>{errors.key}</FieldError>
-                </Field>
-
-                <Field data-invalid={errors.source_text ? 'true' : undefined}>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-source">Source text</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_source_text}
-                        working={sourceText}
-                        released={released}
-                      />
-                    ) : null}
-                  </div>
-                  <Textarea
-                    id="string-source"
-                    className="min-h-20 resize-none"
-                    value={sourceText}
-                    onChange={(e) => {
-                      setMemoryUndo(null)
-                      setSourceText(e.target.value)
-                      setMemorySelection({ source: e.target.value, chosen: {} })
-                    }}
-                    rows={3}
-                    aria-invalid={errors.source_text ? true : undefined}
-                  />
-                  <FieldError>{errors.source_text}</FieldError>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="string-description">Description</FieldLabel>
-                  <Input
-                    id="string-description"
-                    placeholder="Context for translators"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </Field>
-
-                <Field orientation="horizontal" className="items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/30 p-3.5">
-                  <div className="flex flex-col gap-0.5">
-                    <FieldLabel htmlFor="string-status">Published</FieldLabel>
-                    <FieldDescription>
-                      {isEdit
-                        ? 'Saving edits does not change production. Turn on to publish the working copy; turn off to unpublish immediately.'
-                        : 'Off keeps this string as draft; on publishes it after create.'}
-                    </FieldDescription>
-                  </div>
-                  <Switch
-                    id="string-status"
-                    checked={status === 'public'}
-                    disabled={Boolean(entry?.pending_delete || entry?.deleted_at)}
-                    onCheckedChange={(checked) =>
-                      setStatus(checked ? 'public' : 'draft')
-                    }
-                  />
-                </Field>
-                {isEdit && baseline?.has_unpublished_changes && !baseline.pending_delete ? (
-                  <p className="text-sm text-muted-foreground">
-                    Production still has the last published snapshot until you publish.
-                  </p>
-                ) : null}
-                {entry?.deleted_at ? (
-                  <p className="text-sm text-muted-foreground">
-                    This string is deleted. Restore it from the grid to edit again.
-                  </p>
-                ) : null}
-                {entry?.pending_delete ? (
-                  <p className="text-sm text-muted-foreground">
-                    Deletion is pending. Production still has the last published snapshot until you publish the removal.
-                  </p>
-                ) : null}
-
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel htmlFor="string-module">Module</FieldLabel>
-                    {released && baseline ? (
-                      <PublishedChangeHint
-                        published={baseline.published_module_slug ?? ''}
-                        working={moduleSlug}
-                        released={released}
-                        mono
-                      />
-                    ) : null}
-                    <CreateModulePopover
-                      projectId={projectId}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedModules((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                        )
-                        setModuleId(created.id)
-                      }}
-                    />
-                  </div>
-                  <Select
-                    value={moduleId || NONE_MODULE}
-                    onValueChange={(v) => {
-                      if (v === NONE_MODULE) {
-                        setModuleId('')
-                        return
-                      }
-                      // Native bubble <select> emits '' when the chosen id is not a
-                      // mounted <option> yet (dropdown closed after inline create).
-                      if (!v) return
-                      setModuleId(v)
-                    }}
+                </div>
+                {!baseline.pending_delete && !baseline.deleted_at ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => setConfirmUnpublish(true)}
                   >
-                    <SelectTrigger id="string-module" className="w-full">
-                      <SelectValue placeholder="— None —">
-                        {selectedModuleName ?? '— None —'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={NONE_MODULE}>— None —</SelectItem>
-                        {moduleOptions.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {moduleOptions.length === 0 ? (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  ) : null}
-                </Field>
+                    Unpublish
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
 
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel>Tag</FieldLabel>
-                    <CreateTagPopover
-                      projectId={projectId}
-                      tags={tagOptions}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedTags((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                        )
-                        setTagId(created.id)
-                      }}
+            <div className="grid gap-8 p-5 sm:grid-cols-2">
+              <div className="flex flex-col gap-4 sm:border-r sm:border-border/60 sm:pr-8">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    String details
+                  </h3>
+                </div>
+                <FieldGroup className="gap-4">
+                  <Field data-invalid={errors.key ? 'true' : undefined}>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="string-key" className="text-xs font-medium">Key</FieldLabel>
+                      {released && baseline ? (
+                        <PublishedChangeHint
+                          published={baseline.published_key}
+                          working={key}
+                          released={released}
+                          mono
+                        />
+                      ) : null}
+                    </div>
+                    <Input
+                      id="string-key"
+                      className="font-mono text-xs bg-muted/20 focus-visible:bg-background"
+                      value={key}
+                      onChange={(e) => setKey(e.target.value)}
+                      aria-invalid={errors.key ? true : undefined}
                     />
-                  </div>
-                  {tagOptions.length > 0 ? (
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      className="flex flex-wrap justify-start"
-                      value={tagId}
-                      onValueChange={setTagId}
-                    >
-                      {tagOptions.map((t) => (
-                        <ToggleGroupItem key={t.id} value={t.id} size="sm">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: t.color }}
-                          />
-                          {t.name}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  ) : (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  )}
-                </Field>
-              </FieldGroup>
+                    <FieldError>{errors.key}</FieldError>
+                  </Field>
 
-              <div className="flex flex-col gap-3">
+                  <Field data-invalid={errors.source_text ? 'true' : undefined}>
+                    <div className="flex items-center gap-1">
+                      <FieldLabel htmlFor="string-source" className="text-xs font-medium">Source text</FieldLabel>
+                      {released && baseline ? (
+                        <PublishedChangeHint
+                          published={baseline.published_source_text}
+                          working={sourceText}
+                          released={released}
+                        />
+                      ) : null}
+                    </div>
+                    <Textarea
+                      id="string-source"
+                      className="min-h-24 resize-none text-sm leading-relaxed"
+                      value={sourceText}
+                      onChange={(e) => {
+                        setMemoryUndo(null)
+                        setSourceText(e.target.value)
+                        setMemorySelection({ source: e.target.value, chosen: {} })
+                      }}
+                      rows={3}
+                      aria-invalid={errors.source_text ? true : undefined}
+                    />
+                    <FieldError>{errors.source_text}</FieldError>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="string-description" className="text-xs font-medium">Description</FieldLabel>
+                    <Input
+                      id="string-description"
+                      placeholder="Context for translators (optional)"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </Field>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field>
+                      <div className="flex items-center gap-1">
+                        <FieldLabel htmlFor="string-module" className="text-xs font-medium">Module</FieldLabel>
+                        {released && baseline ? (
+                          <PublishedChangeHint
+                            published={baseline.published_module_slug ?? ''}
+                            working={moduleSlug}
+                            released={released}
+                            mono
+                          />
+                        ) : null}
+                        <CreateModulePopover
+                          projectId={projectId}
+                          disabled={busy}
+                          onCreated={(created) => {
+                            setCreatedModules((prev) =>
+                              prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                            )
+                            setModuleId(created.id)
+                          }}
+                        />
+                      </div>
+                      <Select
+                        value={moduleId || NONE_MODULE}
+                        onValueChange={(v) => {
+                          if (v === NONE_MODULE) {
+                            setModuleId('')
+                            return
+                          }
+                          // Native bubble <select> emits '' when the chosen id is not a
+                          // mounted <option> yet (dropdown closed after inline create).
+                          if (!v) return
+                          setModuleId(v)
+                        }}
+                      >
+                        <SelectTrigger id="string-module" className="w-full">
+                          <SelectValue placeholder="— None —">
+                            {selectedModuleName ?? '— None —'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NONE_MODULE}>— None —</SelectItem>
+                            {moduleOptions.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {moduleOptions.length === 0 ? (
+                        <FieldDescription>
+                          None yet. Create one without leaving this form.
+                        </FieldDescription>
+                      ) : null}
+                    </Field>
+
+                    <Field>
+                      <div className="flex items-center gap-1">
+                        <FieldLabel htmlFor="string-tag" className="text-xs font-medium">Tag</FieldLabel>
+                        <CreateTagPopover
+                          projectId={projectId}
+                          tags={tagOptions}
+                          disabled={busy}
+                          onCreated={(created) => {
+                            setCreatedTags((prev) =>
+                              prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                            )
+                            setTagId(created.id)
+                          }}
+                        />
+                      </div>
+                      <Select
+                        value={tagId || NONE_TAG}
+                        onValueChange={(v) => {
+                          if (v === NONE_TAG) {
+                            setTagId('')
+                            return
+                          }
+                          if (!v) return
+                          setTagId(v)
+                        }}
+                      >
+                        <SelectTrigger id="string-tag" className="w-full">
+                          <SelectValue placeholder="— None —">
+                            {selectedTag ? (
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="size-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: selectedTag.color }}
+                                />
+                                <span>{selectedTag.name}</span>
+                              </span>
+                            ) : (
+                              '— None —'
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NONE_TAG}>— None —</SelectItem>
+                            {tagOptions.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="size-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: t.color }}
+                                  />
+                                  <span>{t.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {tagOptions.length === 0 ? (
+                        <FieldDescription>
+                          None yet. Create one without leaving this form.
+                        </FieldDescription>
+                      ) : null}
+                    </Field>
+                  </div>
+                </FieldGroup>
+              </div>
+
+              <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-medium">Translations</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Translations {targetLocales.length > 0 ? `(${targetLocales.length})` : ''}
+                  </h3>
                   <Button
                     type="button"
                     variant="outline"
@@ -861,11 +1052,12 @@ export default function StringFormDialog({
                         current: translations,
                       })
                     }}
+                    className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" />
                     ) : (
-                      <Wand2 data-icon="inline-start" />
+                      <Wand2 data-icon="inline-start" className="size-3.5" />
                     )}
                     {memoryLocales.length ? `Generate ${aiLocales.length} with AI` : 'Generate with AI'}
                   </Button>
@@ -877,7 +1069,7 @@ export default function StringFormDialog({
                     loading={memory.loading}
                     stale={memory.stale}
                     error={memory.error}
-                    disabled={busy || Boolean(entry?.deleted_at)}
+                    disabled={busy || Boolean(baseline?.deleted_at)}
                     selected={chosen}
                     onUse={(locale, match) => {
                       setMemoryUndo(null)
@@ -889,7 +1081,7 @@ export default function StringFormDialog({
                   />
                 ) : null}
                 {translateMut.isPending || translateMut.isSuccess ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {translateMut.isPending
                       ? 'Generating translations…'
                       : 'Review AI text, then Save. Add description context and Auto-translate again if needed.'}
@@ -905,11 +1097,13 @@ export default function StringFormDialog({
                       const view = qaViews[locale] ?? { status: 'unchecked' as const, issues: [], stale: false }
                       const issuesId = `qa-edit-${locale}`
                       return (
-                      <Field key={locale} className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs transition-colors focus-within:border-primary/40" data-qa-status={view.status}>
+                      <Field key={locale} className="rounded-xl border border-border/80 bg-card p-3.5 shadow-2xs transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20" data-qa-status={view.status}>
                         <div className="flex items-center gap-2">
-                          <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-semibold tracking-wider">
-                            {locale}
-                          </FieldLabel>
+                          <span className="font-mono text-xs font-bold uppercase rounded bg-muted/80 px-2 py-0.5 text-foreground shrink-0">
+                            <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-bold cursor-pointer">
+                              {locale}
+                            </FieldLabel>
+                          </span>
                           <ConfidenceBadge score={scores[locale]} />
                           {released && baseline ? (
                             <PublishedChangeHint
@@ -927,7 +1121,7 @@ export default function StringFormDialog({
                         </div>
                         <Textarea
                           id={`translation-${locale}`}
-                          className="min-h-16 resize-none mt-1"
+                          className="min-h-18 resize-none mt-2 text-sm leading-relaxed"
                           value={translations[locale] ?? ''}
                           onChange={(e) => {
                             setMemoryUndo(null)
@@ -959,14 +1153,16 @@ export default function StringFormDialog({
                 </p>
               </div>
             </div>
+            </fieldset>
           </div>
 
-          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col rounded-none border-t bg-muted/40 px-5 py-3 sm:justify-between">
-            <div>
+          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-3 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {canDiscard ? (
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   disabled={busy}
                   onClick={() => setConfirmDiscard(true)}
                 >
@@ -978,8 +1174,20 @@ export default function StringFormDialog({
                   Discard changes
                 </Button>
               ) : null}
+              {saved && baseline && onViewInStrings ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onViewInStrings(baseline)}
+                  className="border-primary/30 text-primary hover:bg-primary/5"
+                >
+                  View in Strings
+                </Button>
+              ) : null}
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Button
                 variant="outline"
                 type="button"
@@ -988,14 +1196,36 @@ export default function StringFormDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy || Boolean(conflict) || Boolean(entry?.deleted_at)}>
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at)}
+              >
                 {saveMut.isPending && <Spinner data-icon="inline-start" />}
-                {isEdit ? 'Save changes' : 'Create string'}
+                Save as draft
+              </Button>
+              <Button
+                ref={publishButton}
+                type="button"
+                disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at || baseline?.pending_delete)}
+                onClick={() => submitAction('publish')}
+              >
+                {previewMut.isPending && <Spinner data-icon="inline-start" />}
+                {isEdit ? 'Publish changes' : 'Create and publish'}
               </Button>
             </div>
           </DialogFooter>
         </form>
         )}
+        <ConfirmDialog
+          open={confirmUnpublish}
+          onClose={() => setConfirmUnpublish(false)}
+          onConfirm={() => unpublishMut.mutate()}
+          title="Unpublish string?"
+          description="This removes the string from public immediately. Unsaved form edits are kept and will not be saved."
+          confirmLabel="Unpublish"
+          isLoading={unpublishMut.isPending}
+        />
         <ConfirmDialog
           open={confirmDiscard}
           onClose={() => setConfirmDiscard(false)}

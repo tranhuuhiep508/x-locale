@@ -1,6 +1,9 @@
 import { api } from '@/lib/api/client'
 import { resolveStringTimeForApi } from '@/lib/time-range'
 import type {
+  EditorProposal,
+  EditorPreview,
+  EditorSaveRequest,
   CliPushBatch,
   CliPushPublishRequest,
   BatchRequest,
@@ -82,6 +85,10 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  editorPreview: (projectId: string, proposal: EditorProposal) =>
+    api.post<EditorPreview>(`/projects/${projectId}/strings/editor-preview`, { proposal }),
+  editorSave: (projectId: string, body: EditorSaveRequest) =>
+    api.post<StringEntry>(`/projects/${projectId}/strings/editor-save`, body),
   saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
     api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
   publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>

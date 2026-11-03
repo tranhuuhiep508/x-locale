@@ -198,6 +198,23 @@ export interface StringUpdate {
   }
 }
 
+export type EditorProposal =
+  | { mode: 'create'; values: Omit<StringCreate, 'status'> }
+  | { mode: 'update'; string_id: string; values: Omit<StringUpdate, 'status' | 'expected'> & {
+      expected: Omit<NonNullable<StringUpdate['expected']>, 'status'>
+    } }
+
+export interface EditorPreview {
+  entry: StringEntry
+  fingerprint: string
+}
+
+export interface EditorSaveRequest {
+  proposal: EditorProposal
+  action: 'save_draft' | 'publish'
+  fingerprint?: string
+}
+
 export interface TranslationUpdate {
   value: string
   expected?: string

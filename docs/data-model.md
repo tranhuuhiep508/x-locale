@@ -36,6 +36,30 @@ from target lists. Existing base-language translation rows and history are retai
 but are not used by source exports. A `source_text` edit changes draft exports;
 public exports change only when the source correction is published.
 
+## Explicit editor saves and publication
+
+The single-string editor keeps edits local until **Save as draft** or the final
+**Publish** confirmation. Saving a draft preserves an existing public snapshot,
+publication status, and pending removal. Unpublish remains a separate immediate
+lifecycle action and does not save form edits.
+
+Project-scoped `POST /strings/editor-preview` accepts a `proposal` discriminated
+by `mode`: `create` with content `values`, or `update` with `string_id` and partial
+`values` including required `expected` baselines. Content values exclude status
+and lifecycle fields. The read-only response contains the complete proposed
+`entry` (including untouched/historical locales) and a `fingerprint`. Synthetic
+identifiers in create previews are never persisted or included in the fingerprint.
+
+`POST /strings/editor-save` accepts that proposal and `action: save_draft | publish`.
+Publication requires the reviewed fingerprint. It rechecks current working/public
+state, the proposal, and relevant project/catalog settings under the existing
+locks, then saves content, promotes snapshots, and captures audit in one
+transaction. HTTP 409 `publish_fingerprint_mismatch` requires a fresh review;
+`stale_editor_save` requires explicit resolution of competing field edits.
+Publication with no public change returns 409 `nothing_to_publish` without saving.
+Both successful actions return the saved `StringOut`. Legacy CRUD and batch
+publication contracts retain their existing behavior.
+
 ## Translation context
 
 `projects.translation_context` and `modules.translation_context` are nullable text

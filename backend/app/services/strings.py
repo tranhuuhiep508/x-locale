@@ -132,7 +132,7 @@ def queue_or_soft_delete(entry: StringEntry) -> bool:
     return True
 
 
-def has_unpublished_changes(entry: StringEntry) -> bool:
+def has_unpublished_changes(entry: StringEntry | StringOut) -> bool:
     if entry.deleted_at is not None:
         return False
     if entry.pending_delete:
@@ -152,7 +152,7 @@ def has_unpublished_changes(entry: StringEntry) -> bool:
     return False
 
 
-def is_publishable_entry(entry: StringEntry) -> bool:
+def is_publishable_entry(entry: StringEntry | StringOut) -> bool:
     """True when batch publish would change public for this row."""
     if entry.deleted_at is not None:
         return False
@@ -942,6 +942,12 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    entry = _create_string(db, project, payload)
+    db.commit()
+    return serialize_string(get_string(db, project.id, entry.id))
+
+
+def _create_string(db: Session, project: Project, payload: StringCreate) -> StringEntry:
     base_language = project.base_language
     # Block settings changes until creation commits, including before the first insert.
     db.refresh(project, with_for_update={"read": True})
@@ -987,8 +993,7 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         promote_string(entry)
         db.flush()
         guard_published_keys(db, project)
-    db.commit()
-    return serialize_string(get_string(db, project.id, entry.id))
+    return entry
 
 
 def _locked_editor_entry(

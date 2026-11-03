@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
+const publishOnSave = new WeakMap<Page, boolean>()
+
 export async function openDemoStrings(page: Page) {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
@@ -120,7 +122,7 @@ export async function createInlineTag(page: Page, name: string) {
   ])
   await expect(popover).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Add string' })).toBeVisible()
-  await expect(addDialog.locator('[data-state="on"]', { hasText: name })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Tag' })).toContainText(name)
 }
 
 export async function fillStringForm(
@@ -129,21 +131,25 @@ export async function fillStringForm(
 ) {
   await page.getByLabel('Key').fill(values.key)
   await page.getByLabel('Source text').fill(values.source)
-  if (values.published !== undefined) {
-    const published = page.getByRole('switch', { name: 'Published' })
-    const checked = await published.isChecked()
-    if (checked !== values.published) {
-      await published.click()
-    }
-  }
+  publishOnSave.set(page, values.published === true)
 }
 
-export async function saveStringForm(page: Page, mode: 'create' | 'edit' = 'create') {
-  const button = page.getByRole('button', {
-    name: mode === 'create' ? 'Create string' : 'Save changes',
-  })
-  await expect(button).toBeEnabled()
-  await button.click()
+/** Existing catalog flows explicitly close after saving; editor tests cover staying open. */
+export async function saveStringForm(page: Page, _mode: 'create' | 'edit' = 'create') {
+  const publish = publishOnSave.get(page) ?? false
+  publishOnSave.delete(page)
+  if (publish) {
+    await page.getByRole('button', { name: /^(Create and publish|Publish changes)$/ }).click()
+    await expect(page.getByRole('heading', { name: 'Review publication' })).toBeVisible()
+  }
+  const response = page.waitForResponse((res) =>
+    res.request().method() === 'POST' && res.url().endsWith('/strings/editor-save'),
+  )
+  await page.getByRole('button', { name: publish ? 'Publish' : 'Save as draft', exact: true }).click()
+  if ((await response).ok()) {
+    await expect(page.getByRole('button', { name: 'Save as draft', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  }
 }
 
 export async function togglePublishSwitch(page: Page, key: string, on: boolean) {

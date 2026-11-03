@@ -12,6 +12,9 @@ from app.auth import ProjectAccess
 from app.database import DbSession
 from app.models import TranslationStatus
 from app.schemas import (
+    EditorPreviewOut,
+    EditorPreviewRequest,
+    EditorSaveRequest,
     StringCreate,
     StringListOut,
     StringOut,
@@ -88,15 +91,29 @@ def create_string(
     return strings_service.create_string(db, project, payload)
 
 
+@router.post("/strings/editor-preview")
+def editor_preview(
+    payload: EditorPreviewRequest, project: ProjectAccess, db: DbSession
+) -> EditorPreviewOut:
+    from app.services.string_editor import preview_editor
+
+    return preview_editor(db, project, payload.proposal)
+
+
+@router.post("/strings/editor-save")
+def editor_save(payload: EditorSaveRequest, project: ProjectAccess, db: DbSession) -> StringOut:
+    from app.services.string_editor import save_editor
+
+    return save_editor(db, project, payload)
+
+
 @router.get("/strings/{string_id}", response_model=StringOut)
 def get_string_endpoint(
     string_id: uuid.UUID,
     project: ProjectAccess,
     db: DbSession,
 ) -> StringOut:
-    return strings_service.serialize_string(
-        strings_service.get_string(db, project.id, string_id)
-    )
+    return strings_service.serialize_string(strings_service.get_string(db, project.id, string_id))
 
 
 @router.patch("/strings/{string_id}", response_model=StringOut)
