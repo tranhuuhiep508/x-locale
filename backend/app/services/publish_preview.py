@@ -125,6 +125,8 @@ def save_cli_push_batch(
             validate_locales(project, item.translations)
         publication_id = uuid4()
         attach_batch(db, publication_id, "batch")
+        if not publish:
+            db.info["activity"]["intent"] = "save_draft"
         for item in payload.items:
             apply_translation_values(db, by_id[item.string_id], item.translations, item.scores)
         publishable = [entry for entry in active if is_publishable_entry(entry)] if publish else []

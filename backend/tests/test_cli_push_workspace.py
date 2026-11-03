@@ -154,7 +154,9 @@ def test_cli_mixed_publication_history_preserves_public_and_lifecycle(client, pe
     )
     assert published.status_code == 200, published.text
     version = client.get(f"{root}/strings/{sid}/activities").json()["items"][0]
-    assert version["event_type"] == "string.published" and version["is_history_restorable"]
+    assert (
+        version["event_type"] == "string.saved_and_published" and version["is_history_restorable"]
+    )
     assert (
         client.patch(
             f"{root}/strings/{sid}",
@@ -199,6 +201,32 @@ def test_atomic_completion_saves_and_publishes_more_than_one_apply_chunk(client)
     )
     assert result.status_code == 200, result.text
     assert result.json()["affected"] == 101
+    action_id = result.json()["batch_id"]
+    assert action_id != pushed["batch_id"]
+    rows = client.get(f"{root}/activities", params={"batch_id": action_id, "page_size": 200}).json()
+    assert rows["total"] == 101
+    assert all(row["event_type"] == "string.saved_and_published" for row in rows["items"])
+    assert (
+        client.get(
+            f"{root}/activities", params={"batch_id": action_id, "event_type": "string.published"}
+        ).json()["total"]
+        == 101
+    )
+    card = next(
+        item
+        for item in client.get(
+            f"{root}/activities/feed", params={"event_type": "string.published"}
+        ).json()["items"]
+        if item["batch_id"] == action_id
+    )
+    assert card["summary"] == "Saved and published 101 strings"
+    assert card["children_count"] == 101 and card["children"] == []
+    assert card["counts"] == {"created": 0, "updated": 0, "deleted": 0, "published": 101}
+    detail = client.get(f"{root}/activities/{rows['items'][0]['id']}").json()
+    assert {change["scope"] for change in detail["changed"]} == {"draft", "published"}
+    preview = client.get(f"{root}/activities/batch/{action_id}/revert/preview").json()
+    assert preview["total"] == 101 and preview["affects_published"]
+    assert preview["can_revert"] and not preview["requires_force"]
     current = workspace(client, pid, pushed["batch_id"])
     assert all(row["status"] == "public" for row in current["items"])
     assert all(
@@ -210,9 +238,16 @@ def test_atomic_completion_saves_and_publishes_more_than_one_apply_chunk(client)
     assert reverted.status_code == 200, reverted.text
     after = workspace(client, pid, pushed["batch_id"])
     assert all(
-        row["status"] == "draft" and all(t["value"] == "" for t in row["translations"])
+        row["status"] == "draft"
+        and row["published_key"] is None
+        and all(t["value"] == "" and t["published_value"] is None for t in row["translations"])
         for row in after["items"]
     )
+    reverted_detail = client.get(f"{root}/activities/{detail['id']}").json()
+    marker = client.get(f"{root}/activities/{reverted_detail['reverted_by']['id']}").json()
+    assert marker["revert_of"]["id"] == detail["id"]
+    assert marker["batch_id"] == reverted.json()["batch_id"]
+    assert marker["event_type"] == "string.restored"
 
 
 @pytest.mark.parametrize("action", ["publish", "draft"])
@@ -404,6 +439,24 @@ def test_save_draft_keeps_public_snapshots_and_can_be_undone(client):
         f"{root}/cli-push-batches/{pushed['batch_id']}/draft", json=atomic_payload(before)
     )
     assert saved.status_code == 200, saved.text
+    action_id = saved.json()["batch_id"]
+    assert action_id != pushed["batch_id"]
+    rows = client.get(f"{root}/activities", params={"batch_id": action_id}).json()
+    assert rows["total"] == 2
+    assert all(row["event_type"] == "string.saved_draft" for row in rows["items"])
+    translated = client.get(
+        f"{root}/activities", params={"event_type": "translation.updated", "batch_id": action_id}
+    ).json()
+    assert translated["total"] == 2
+    card = next(
+        item
+        for item in client.get(
+            f"{root}/activities/feed", params={"event_type": "translation.updated"}
+        ).json()["items"]
+        if item["batch_id"] == action_id
+    )
+    assert card["summary"] == "Saved translations as draft · 2 strings"
+    assert card["counts"] == {"created": 0, "updated": 2, "deleted": 0, "published": 0}
     after = workspace(client, pid, pushed["batch_id"])
     assert all(
         t["value"] == "Reviewed" and t["confidence"] == 91
@@ -462,6 +515,91 @@ def test_large_draft_save_can_clear_values_then_publish_saved_content(client):
     )
     assert published.status_code == 200, published.text
     assert published.json()["affected"] == 101
+    assert published.json()["batch_id"] not in {pushed["batch_id"], saved.json()["batch_id"]}
+    rows = client.get(
+        f"{root}/activities", params={"batch_id": published.json()["batch_id"], "page_size": 200}
+    ).json()
+    assert rows["total"] == 101
+    assert all(row["event_type"] == "string.published" for row in rows["items"])
     assert all(
         row["status"] == "public" for row in workspace(client, pid, pushed["batch_id"])["items"]
     )
+
+
+@pytest.mark.parametrize("publish", [False, True])
+def test_review_noop_creates_no_activities(client, publish):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"a": "A"})
+    endpoint = "publish" if publish else "draft"
+    initial = workspace(client, pid, pushed["batch_id"])
+    assert (
+        client.post(
+            f"{root}/cli-push-batches/{pushed['batch_id']}/{endpoint}", json=atomic_payload(initial)
+        ).status_code
+        == 200
+    )
+    current = workspace(client, pid, pushed["batch_id"])
+    before = client.get(f"{root}/activities").json()["total"]
+    assert (
+        client.post(
+            f"{root}/cli-push-batches/{pushed['batch_id']}/{endpoint}", json=atomic_payload(current)
+        ).status_code
+        == 200
+    )
+    assert client.get(f"{root}/activities").json()["total"] == before
+
+
+def test_mixed_publication_batch_counts_all_members_without_duplicate_rows(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {f"key{i}": "Source" for i in range(101)})
+    initial = workspace(client, pid, pushed["batch_id"])
+    payload = atomic_payload(initial)
+    payload["items"] = payload["items"][-1:]
+    completed = client.post(f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=payload)
+    assert completed.status_code == 200, completed.text
+    bid = completed.json()["batch_id"]
+    rows = client.get(f"{root}/activities", params={"batch_id": bid, "page_size": 200}).json()
+    assert rows["total"] == 101
+    assert sum(row["event_type"] == "string.saved_and_published" for row in rows["items"]) == 1
+    assert sum(row["event_type"] == "string.published" for row in rows["items"]) == 100
+    card = next(
+        item
+        for item in client.get(
+            f"{root}/activities/feed", params={"event_type": "string.published"}
+        ).json()["items"]
+        if item["batch_id"] == bid
+    )
+    assert card["children_count"] == 101
+    assert card["counts"] == {"created": 0, "updated": 0, "deleted": 0, "published": 101}
+    assert card["summary"] == (
+        "Updated 101 strings · Saved and published 1 string · Published 100 strings"
+    )
+
+
+def test_combined_undo_conflict_preserves_state_until_force_confirmation(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    pushed = push(client, pid, {"a": "A"})
+    initial = workspace(client, pid, pushed["batch_id"])
+    sid = initial["items"][0]["id"]
+    completed = client.post(
+        f"{root}/cli-push-batches/{pushed['batch_id']}/publish", json=atomic_payload(initial)
+    ).json()
+    assert (
+        client.patch(f"{root}/strings/{sid}", json={"translations": {"en": "Later"}}).status_code
+        == 200
+    )
+    before = client.get(f"{root}/strings/{sid}").json()
+    count = client.get(f"{root}/activities").json()["total"]
+    endpoint = f"{root}/activities/batch/{completed['batch_id']}/revert"
+    preview = client.get(f"{endpoint}/preview").json()
+    assert preview["requires_force"] and preview["affects_published"]
+    assert client.post(endpoint).status_code == 409
+    assert client.get(f"{root}/strings/{sid}").json() == before
+    assert client.get(f"{root}/activities").json()["total"] == count
+    assert client.post(endpoint, params={"force": True}).status_code == 200
+    restored = client.get(f"{root}/strings/{sid}").json()
+    assert restored["status"] == "draft" and restored["published_key"] is None
+    assert all(t["value"] == "" and t["published_value"] is None for t in restored["translations"])

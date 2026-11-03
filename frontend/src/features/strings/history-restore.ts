@@ -2,6 +2,7 @@ import type { ActivityChange } from '@/lib/api/types'
 
 const HISTORY_UNRESTORABLE_EVENT_TYPES = new Set([
   'string.published',
+  'string.saved_and_published',
   'string.unpublished',
   'string.pending_delete',
   'string.deleted',
@@ -20,7 +21,10 @@ export function canRestoreHistoryVersion(activity: RestorableActivity) {
     return activity.is_history_restorable
   }
   if (activity.action === 'delete') return false
-  if (activity.event_type === 'string.published') {
+  if (
+    activity.event_type === 'string.published' ||
+    activity.event_type === 'string.saved_and_published'
+  ) {
     return (
       activity.changed?.some(
         (change) =>
@@ -45,7 +49,11 @@ export function historyRestoreBlockedReason(activity: RestorableActivity): strin
   if (activity.action === 'delete' || activity.event_type === 'string.deleted') {
     return 'Deleted strings cannot be restored from History. Use Restore on the Deleted filter.'
   }
-  if (activity.event_type === 'string.published' || activity.event_type === 'string.unpublished') {
+  if (
+    activity.event_type === 'string.published' ||
+    activity.event_type === 'string.saved_and_published' ||
+    activity.event_type === 'string.unpublished'
+  ) {
     return (
       'Publication-only and unpublish events cannot be restored from History. ' +
       'Use Publish or Unpublish, or Undo a batch on the Activity feed.'

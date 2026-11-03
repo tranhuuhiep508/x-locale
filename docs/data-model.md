@@ -88,6 +88,22 @@ empty; a newly imported target-only key still uses the key as its initial source
 
 `activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (default 90; 0 = keep forever) deletes activity rows older than that many days via `uv run python -m app.cli prune-activities`. Pruning is not run on API startup. Pruning removes feed, History, and Undo for those old events; it does not delete strings.
 
+Explicit review saves use `string.saved_draft`; ordinary editor changes retain their
+specific event labels. A publication that also saves recorded working-copy content
+uses `string.saved_and_published`; publication-only actions keep `string.published`.
+Both publication events require recorded before/after content evidence for History
+restoration. The Published filter includes both event values, and the translation
+filter includes review draft saves. Existing activity rows are not rewritten.
+
+Batch summaries use full SQL event counts, retaining import, CLI, Excel, or AI
+origin alongside publication wording. A combined record counts once as published;
+a draft save counts as updated. Review saves and later publication have separate
+batch IDs from the original import. Content and audit records commit or roll back
+together; temporary proposals and discarded local edits create no content audit.
+Whole-action Undo retains its full-state inverse and warns when the preview would
+change public content or publication status immediately. History Restore only
+changes the working copy.
+
 Named project snapshots are not in this pass.
 
 ### Project feed vs string History vs bulk undo

@@ -145,10 +145,15 @@ describe('undoOverwriteDescription', () => {
   })
 
   it('warns about published data when overwriting later edits', () => {
-    expect(
-      undoOverwriteDescription(preview({ conflict_count: 1, affects_published: true }))
-    ).toContain('published content or publish status')
+    const text = undoOverwriteDescription(preview({ conflict_count: 1, affects_published: true }))
+    expect(text).toContain('public content or publication status immediately')
+    expect(text).toContain('History Restore changes only the working copy.')
     expect(undoOverwriteDescription(preview({ conflict_count: 1 }))).toContain('1 string was')
+  })
+
+  it('does not claim a public effect for a working-copy-only inverse', () => {
+    expect(undoOverwriteDescription(preview({ conflict_count: 1 }))).not.toContain('immediately')
+    expect(undoDescription(card({}), preview({ total: 1 }))).not.toContain('immediately')
   })
 })
 
@@ -191,7 +196,8 @@ describe('undoDescription with preview', () => {
       card({ counts: { updated: 1 } }),
       preview({ total: 1, affects_published: true })
     )
-    expect(text).toContain('published snapshot')
+    expect(text).toContain('public content or publication status immediately')
+    expect(text).toContain('History Restore changes only the working copy.')
   })
 })
 
