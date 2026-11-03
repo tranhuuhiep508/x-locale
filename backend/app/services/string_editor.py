@@ -113,11 +113,12 @@ def _preview(
             )
     for locale, value in (values.translations or {}).items():
         translation = by_locale[locale]
-        if locale in (values.translation_scores or {}):
-            translation.confidence = values.translation_scores[locale]
-        elif translation.value != value:
+        if translation.value != value:
             translation.confidence = None
         translation.value = value
+    for locale, score in (values.translation_scores or {}).items():
+        if locale in by_locale:
+            by_locale[locale].confidence = score
     projected.translations = sorted(by_locale.values(), key=lambda item: item.locale)
     projected.has_unpublished_changes = strings.has_unpublished_changes(projected)
     normalized = proposal.model_dump(mode="json", exclude_unset=True)

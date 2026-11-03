@@ -124,7 +124,6 @@ function isFormDirty(
     description: string
     moduleId: string
     tagIds: string[]
-    status: TranslationStatus
     translations: Record<string, string>
     scores: Record<string, number>
   },
@@ -134,7 +133,6 @@ function isFormDirty(
   if (values.description !== (entry.description ?? '')) return true
   if (values.moduleId !== (entry.module_id ?? '')) return true
   if (JSON.stringify([...values.tagIds].sort()) !== JSON.stringify(entry.tags.map((tag) => tag.id).sort())) return true
-  if (values.status !== entry.status) return true
   const saved = translationsFromEntry(entry, targetLocales)
   const savedScores = scoresFromEntry(entry, targetLocales)
   for (const locale of targetLocales) {
@@ -202,7 +200,13 @@ export default function StringFormDialog({
   const [moduleId, setModuleId] = useState(entry?.module_id ?? '')
   const [tagIds, setTagIds] = useState(() => entry?.tags.map((tag) => tag.id) ?? [])
   const tagId = tagIds[0] ?? ''
-  const setTagId = (value: string) => setTagIds(value ? [value] : [])
+  const setTagId = (value: string) => {
+    if (!value) {
+      setTagIds([])
+      return
+    }
+    setTagIds([value, ...tagIds.slice(1).filter((id) => id !== value)])
+  }
   const [status, setStatus] = useState<TranslationStatus>(() => entry?.status ?? 'draft')
   const [translations, setTranslations] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
@@ -307,7 +311,6 @@ export default function StringFormDialog({
     description,
     moduleId,
     tagIds,
-    status,
     translations,
     scores,
   }
@@ -607,7 +610,7 @@ export default function StringFormDialog({
       setErrors({})
       setReview(null)
       refreshQueries()
-      toast.success('Working copy discarded')
+      toast.success(serverDiscardable ? 'Working copy discarded' : 'Form changes reset')
     },
     onError: (error) => toast.error(publicationErrorMessage(error, 'Failed to discard changes')),
   })

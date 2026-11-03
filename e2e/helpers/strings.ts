@@ -122,7 +122,7 @@ export async function createInlineTag(page: Page, name: string) {
   ])
   await expect(popover).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Add string' })).toBeVisible()
-  await expect(addDialog.locator('[data-state="on"]', { hasText: name })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Tag' })).toContainText(name)
 }
 
 export async function fillStringForm(
