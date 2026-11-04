@@ -568,6 +568,9 @@ class TranslateProposalItem(BaseModel):
     key: str
     source_text: str
     status: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    module_name: str | None = None
     description: str | None = None
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)

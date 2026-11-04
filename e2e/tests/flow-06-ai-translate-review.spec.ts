@@ -65,12 +65,12 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await dialog.getByRole('button', { name: 'Previous page' }).click()
   await expect(firstKey).toBeVisible()
 
-  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('progressbar')).toBeVisible()
   await expect(paging).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 
-  const applyButton = dialog.getByRole('button', { name: /Save \d+ translations as draft/ })
+  const applyButton = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(applyButton).toBeEnabled()
   await applyButton.click()
 
@@ -106,7 +106,7 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.locator('li').filter({ hasText: prefix })).toHaveCount(2)
-  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   const stale = dialog.locator('li').filter({ hasText: rows[0].key })
   const unrelated = dialog.locator('li').filter({ hasText: rows[1].key })
   await expect(stale.getByLabel('en', { exact: true })).toBeVisible()
@@ -114,7 +114,7 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   const edited = await page.request.patch(`${root}/strings/${rows[0].id}`, { data: { source_text: 'Hủy' } })
   expect(edited.ok()).toBeTruthy()
   const conflictResponse = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
-  await dialog.getByRole('button', { name: /^Save .* as draft$/ }).click()
+  await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
   expect((await conflictResponse).status()).toBe(409)
   await expect(stale.getByText('Source text changed since generation')).toBeVisible()
   await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
@@ -129,7 +129,7 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   await expect(stale.getByLabel('en', { exact: true })).toBeVisible()
   await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
   const applied = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
-  await dialog.getByRole('button', { name: /^Save .* as draft$/ }).click()
+  await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
   const response = await applied
   expect(response.ok(), await response.text()).toBeTruthy()
   const items = response.request().postDataJSON().items as Array<{ string_id: string; expected_source_text: string; translations: Record<string, string> }>
@@ -151,7 +151,7 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
   await dialog.getByRole('button', { name: 'Review & publish' }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Publication' })).toBeVisible()

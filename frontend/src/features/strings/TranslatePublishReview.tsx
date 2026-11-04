@@ -9,11 +9,9 @@ import { emptyPublicLocales } from './translate-review'
 export function TranslatePublishReview({
   entries,
   loading,
-  paged,
 }: {
   entries: StringEntry[] | null
   loading: boolean
-  paged: boolean
 }) {
   if (!entries) {
     return (
@@ -27,17 +25,12 @@ export function TranslatePublishReview({
   const empty = emptyPublicLocales(entries)
   return (
     <div className="flex flex-col gap-4" aria-busy={loading}>
-      <p className="text-sm text-muted-foreground">
-        {paged ? 'Only the strings reviewed on this page are included. ' : ''}
-        Each string publishes its whole working copy, including pending edits in other locales shown below.
-      </p>
       {empty.length > 0 ? (
         <Alert>
           <AlertTitle>
             {empty.length} {empty.length === 1 ? 'string has' : 'strings have'} empty locales
           </AlertTitle>
           <AlertDescription>
-            <p>These locales will export as empty values once published. Go back to fill them, or save as draft instead.</p>
             <ul className="mt-1 flex flex-col gap-0.5">
               {empty.map((row) => (
                 <li key={row.id} className="text-xs">

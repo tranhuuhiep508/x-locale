@@ -5,7 +5,6 @@ import {
   applyPayloadFromDrafts,
   clampPage,
   createMissingReviewRequest,
-  descriptionsFromDrafts,
   draftsFromItems,
   filledCount,
   mergeProposalResults,
@@ -13,7 +12,6 @@ import {
   sourceConflicts,
   translateProgressLabel,
   translateProgressPercent,
-  updateDraftDescription,
   updateDraftTranslation,
   emptyPublicLocales,
   reviewedPayloadFromDrafts,
@@ -110,49 +108,8 @@ describe('updateDraftTranslation', () => {
   })
 })
 
-describe('updateDraftDescription', () => {
-  it('updates one description', () => {
-    const drafts = draftsFromItems([item({ string_id: 'a' }), item({ string_id: 'b' })])
-    const next = updateDraftDescription(drafts, 'a', 'login button')
-    expect(next.a.description).toBe('login button')
-    expect(next.b).toBe(drafts.b)
-  })
-})
-
 describe('applyPayloadFromDrafts', () => {
-  it('omits untouched, whitespace-only, and reverted description edits', () => {
-    for (const description of ['Original', ' Original ']) {
-      const payload = applyPayloadFromDrafts([item({ string_id: 'a', description })], { a: 'Original' })
-      expect(payload[0]).not.toHaveProperty('description')
-      expect(payload[0]).not.toHaveProperty('expected_description')
-    }
-    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: '  ' })], { a: null })[0])
-      .not.toHaveProperty('description')
-    let drafts = draftsFromItems([item({ string_id: 'a', description: 'Original' })])
-    drafts = updateDraftDescription(drafts, 'a', 'Edited')
-    drafts = updateDraftDescription(drafts, 'a', 'Original')
-    expect(applyPayloadFromDrafts(Object.values(drafts), { a: 'Original' })[0])
-      .not.toHaveProperty('description')
-  })
-
-  it('normalizes edits but sends the exact saved baseline, including null', () => {
-    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: ' ' })], { a: ' Original ' })[0])
-      .toMatchObject({ description: null, expected_description: ' Original ' })
-    expect(applyPayloadFromDrafts([item({ string_id: 'a', description: ' New ' })], { a: null })[0])
-      .toMatchObject({ description: 'New', expected_description: null })
-  })
-
-  it('keeps the page baseline through repeated sync and job proposal merges', () => {
-    const originals = { a: 'Original' }
-    let items = [item({ string_id: 'a', description: 'Original' })]
-    for (const description of ['First context', 'Second context']) {
-      items = mergeProposalResults(items, [item({ string_id: 'a', description, translations: { en: 'Hello' } })])
-      expect(applyPayloadFromDrafts(items, originals)[0])
-        .toMatchObject({ description, expected_description: 'Original' })
-    }
-  })
-
-  it('drops empty locales and keeps descriptions', () => {
+  it('drops empty locales', () => {
     const payload = applyPayloadFromDrafts([
       item({
         string_id: 'a',
@@ -160,28 +117,15 @@ describe('applyPayloadFromDrafts', () => {
         translations: { en: 'Hello', ja: '  ' },
         scores: { en: 91 },
       }),
-    ], { a: null })
+    ])
     expect(payload).toEqual([
       {
         string_id: 'a',
         expected_source_text: 'Xin chào',
         translations: { en: 'Hello' },
         scores: { en: 91 },
-        description: 'ctx',
-        expected_description: null,
       },
     ])
-  })
-})
-
-describe('descriptionsFromDrafts', () => {
-  it('includes empty descriptions so Translate can override stored context', () => {
-    expect(
-      descriptionsFromDrafts([
-        item({ string_id: 'a', description: 'keep' }),
-        item({ string_id: 'b', description: '' }),
-      ]),
-    ).toEqual({ a: 'keep', b: '' })
   })
 })
 
@@ -235,7 +179,7 @@ describe('mergeProposalResults', () => {
 })
 
 describe('reviewStatusDescription', () => {
-  it('leads with string count after generate and keeps queue copy while paging', () => {
+  it('shows concise string and cell counts', () => {
     expect(
       reviewStatusDescription({
         loadingInitial: true,
@@ -243,9 +187,17 @@ describe('reviewStatusDescription', () => {
         pageStringCount: 0,
         missingCount: 0,
         applyCount: 0,
-        generated: false,
       }),
     ).toBe('Finding empty locales…')
+    expect(
+      reviewStatusDescription({
+        loadingInitial: false,
+        total: 5,
+        pageStringCount: 5,
+        missingCount: 12,
+        applyCount: 0,
+      }),
+    ).toBe('5 strings · 12 missing')
     expect(
       reviewStatusDescription({
         loadingInitial: false,
@@ -253,21 +205,17 @@ describe('reviewStatusDescription', () => {
         pageStringCount: 5,
         missingCount: 12,
         applyCount: 0,
-        generated: false,
       }),
-    ).toBe('5 of 40 strings · 12 empty locales. Add description context, then Translate.')
+    ).toBe('5 of 40 strings · 12 missing')
     expect(
       reviewStatusDescription({
         loadingInitial: false,
         total: 40,
         pageStringCount: 5,
-        missingCount: 12,
+        missingCount: 0,
         applyCount: 12,
-        generated: true,
       }),
-    ).toBe(
-      '5 of 40 strings · 12 translations filled. Add description context and Translate again if the draft is off.',
-    )
+    ).toBe('5 of 40 strings · 12 translations ready')
   })
 })
 
@@ -331,7 +279,7 @@ describe('source freshness', () => {
   })
 
   it('sends the exact reviewed source, including whitespace', () => {
-    const payload = applyPayloadFromDrafts([item({ string_id: 'a', source_text: ' Lưu\n' })], {})
+    const payload = applyPayloadFromDrafts([item({ string_id: 'a', source_text: ' Lưu\n' })])
     expect(payload[0].expected_source_text).toBe(' Lưu\n')
   })
 
@@ -353,21 +301,19 @@ describe('source freshness', () => {
     expect(merged[0].scores).toEqual({ en: 90 })
     expect(merged[0].issues).toEqual({})
     expect(merged[1]).toBe(previous[1])
-    expect(applyPayloadFromDrafts(merged, {})[0].expected_source_text).toBe('Hủy')
+    expect(applyPayloadFromDrafts(merged)[0].expected_source_text).toBe('Hủy')
   })
 })
 
 describe('reviewed save payload', () => {
   const base = { key: 'k', source_text: 'S', status: 'draft' as const, scores: {} }
-  it('sends only rows with a filled cell or an edited description', () => {
+  it('sends only rows with a filled cell', () => {
     const payload = reviewedPayloadFromDrafts([
       { ...base, string_id: 'filled', translations: { en: 'Hi', ja: ' ' }, description: '' },
       { ...base, string_id: 'untouched', translations: { en: '' }, description: '' },
-      { ...base, string_id: 'described', translations: { en: '' }, description: 'Context' },
-    ], { filled: null, untouched: null, described: null })
-    expect(payload.map((item) => item.string_id)).toEqual(['filled', 'described'])
+    ])
+    expect(payload.map((item) => item.string_id)).toEqual(['filled'])
     expect(payload[0].translations).toEqual({ en: 'Hi' })
-    expect(payload[1]).toMatchObject({ description: 'Context', expected_description: null })
   })
 
   it('lists locales that would export empty and reads value conflicts', () => {

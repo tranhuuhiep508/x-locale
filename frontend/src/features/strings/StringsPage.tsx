@@ -60,10 +60,8 @@ import {
 } from '@/features/strings/batch-feedback'
 import {
   TRANSLATE_MISSING_PAGE_SIZE,
-  descriptionConflicts,
   sourceConflicts,
   createMissingReviewRequest,
-  descriptionsFromDrafts,
   excludedMemoryCells,
   mergeProposalResults,
   reviewedPayloadFromDrafts,
@@ -144,8 +142,6 @@ export function StringsPage() {
   const [reviewTotal, setReviewTotal] = useState(0)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
-  const descriptionOriginals = useRef<Record<string, string | null>>({})
-  const [applyConflicts, setApplyConflicts] = useState<ReturnType<typeof descriptionConflicts>>([])
   const [applySourceConflicts, setApplySourceConflicts] = useState<ReturnType<typeof sourceConflicts>>([])
   const regenerationIds = useRef<string[] | null>(null)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
@@ -316,8 +312,6 @@ export function StringsPage() {
   const missingMut = useMutation({
     mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
     onSuccess: (res) => {
-      descriptionOriginals.current = Object.fromEntries(res.items.map((item) => [item.string_id, item.description ?? null]))
-      setApplyConflicts([])
       setApplySourceConflicts([])
       regenerationIds.current = null
       setRecoveryMessage(null)
@@ -394,19 +388,15 @@ export function StringsPage() {
 
   /** Show stale-content conflicts in the editable review. Returns false for other errors. */
   function showWriteConflicts(error: unknown): boolean {
-    const conflicts = descriptionConflicts(error)
     const changedSources = sourceConflicts(error)
     const filledElsewhere = valueConflicts(error)
-    if (!conflicts.length && !changedSources.length && !filledElsewhere.length) return false
-    setApplyConflicts(conflicts)
+    if (!changedSources.length && !filledElsewhere.length) return false
     setApplySourceConflicts(changedSources)
     setRecoveryMessage(filledElsewhere.length ? valueConflictMessage(filledElsewhere) : null)
     setPublishReview(null)
     toast.error(changedSources.length
       ? 'Source text changed. Nothing was saved. Regenerate the changed strings.'
-      : conflicts.length
-        ? 'Descriptions changed. Resolve the conflicts before saving again.'
-        : 'Some translations were filled elsewhere. Nothing was saved.')
+      : 'Some translations were filled elsewhere. Nothing was saved.')
     return true
   }
 
@@ -450,7 +440,6 @@ export function StringsPage() {
       }
       setSavedNotice(message)
       setPublishReview(null)
-      setApplyConflicts([])
       setApplySourceConflicts([])
       setRecoveryMessage(null)
       setProposalJobId(null)
@@ -487,7 +476,6 @@ export function StringsPage() {
 
   /** Close the review and show exactly the strings this publish changed. */
   function showPublishedStrings(batchId: string) {
-    setApplyConflicts([])
     setApplySourceConflicts([])
     setRecoveryMessage(null)
     setProposalItems([])
@@ -751,8 +739,6 @@ export function StringsPage() {
                     ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
                     : createMissingReviewRequest(search, locales)
                   setProposalItems([])
-                  descriptionOriginals.current = {}
-                  setApplyConflicts([])
                   setProposalJobId(null)
                   setProposalsReady(false)
                   setReviewPage(1)
@@ -920,7 +906,6 @@ export function StringsPage() {
         generated={proposalsReady}
         error={reviewError}
         items={reviewItems}
-        conflicts={applyConflicts}
         sourceConflicts={applySourceConflicts}
         recoveryMessage={recoveryMessage}
         onRegenerate={(items) => {
@@ -933,21 +918,15 @@ export function StringsPage() {
             scope: 'strings',
             string_ids: ids,
             locales,
-            descriptions: descriptionsFromDrafts(items.filter((item) => ids.includes(item.string_id))),
           })
         }}
         onRemoveFromReview={(items, stringId) => {
           setProposalItems(items.filter((item) => item.string_id !== stringId))
           setApplySourceConflicts((prev) => prev.filter((item) => item.string_id !== stringId))
-          setApplyConflicts((prev) => prev.filter((item) => item.string_id !== stringId))
           setRecoveryMessage(null)
           setProposalJobId(null)
           regenerationIds.current = null
           proposeMut.reset()
-        }}
-        onResolveConflict={(conflict) => {
-          descriptionOriginals.current[conflict.string_id] = conflict.description
-          setApplyConflicts((prev) => prev.filter((item) => item.string_id !== conflict.string_id))
         }}
         page={reviewPage}
         pageSize={reviewPageSize}
@@ -964,17 +943,16 @@ export function StringsPage() {
             scope: 'strings',
             string_ids: items.map((item) => item.string_id),
             locales,
-            descriptions: descriptionsFromDrafts(items),
             exclude_cells: excludedMemoryCells(items),
           })
         }}
         onSaveDraft={(items) => {
           setSavedNotice(null)
-          saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items, descriptionOriginals.current) })
+          saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
         }}
         onReviewPublish={(items) => {
           // Freeze membership, values, and baseline; later edits need a new review.
-          const payload = reviewedPayloadFromDrafts(items, descriptionOriginals.current)
+          const payload = reviewedPayloadFromDrafts(items)
           setProposalItems(items)
           setSavedNotice(null)
           requestPublicationReview(payload)

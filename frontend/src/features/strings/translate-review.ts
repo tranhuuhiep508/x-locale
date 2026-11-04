@@ -106,16 +106,6 @@ export function excludedMemoryCells(items: TranslateProposalItem[]): Record<stri
   }))
 }
 
-export function updateDraftDescription(
-  drafts: Record<string, TranslateProposalItem>,
-  stringId: string,
-  description: string,
-): Record<string, TranslateProposalItem> {
-  const row = drafts[stringId]
-  if (!row) return drafts
-  return { ...drafts, [stringId]: { ...row, description } }
-}
-
 export function filledCount(items: TranslateProposalItem[]): number {
   let count = 0
   for (const item of items) {
@@ -188,28 +178,26 @@ export function reviewStatusDescription({
   pageStringCount,
   missingCount,
   applyCount,
-  generated,
 }: {
   loadingInitial: boolean
   total: number
   pageStringCount: number
   missingCount: number
   applyCount: number
-  generated: boolean
 }): string {
   if (loadingInitial) return 'Finding empty locales…'
   if (total === 0) return 'Every target locale already has text.'
-  const page = `${pageStringCount} of ${countNoun(total, 'string', 'strings')}`
-  if (generated && applyCount > 0) {
-    return `${page} · ${countNoun(applyCount, 'translation', 'translations')} filled. Add description context and Translate again if the draft is off.`
+  const scope = total > pageStringCount
+    ? `${pageStringCount} of ${countNoun(total, 'string', 'strings')}`
+    : countNoun(total, 'string', 'strings')
+  if (applyCount > 0) {
+    return `${scope} · ${countNoun(applyCount, 'translation', 'translations')} ready`
   }
   if (missingCount > 0) {
-    return `${page} · ${countNoun(missingCount, 'empty locale', 'empty locales')}. Add description context, then Translate.`
+    return `${scope} · ${missingCount} missing`
   }
-  return 'Empty locales only. Existing text was not changed.'
+  return scope
 }
-
-export type DescriptionConflict = { string_id: string; key: string; description: string | null }
 
 export function sourceConflicts(error: unknown): TranslationSourceConflict[] {
   if (!(error instanceof ApiError) || error.status !== 409) return []
@@ -221,20 +209,7 @@ export function sourceConflicts(error: unknown): TranslationSourceConflict[] {
   )
 }
 
-export function descriptionConflicts(error: unknown): DescriptionConflict[] {
-  if (!(error instanceof ApiError) || error.status !== 409) return []
-  const detail = (error.body as { detail?: { code?: string; conflicts?: unknown } } | null)?.detail
-  if (detail?.code !== 'stale_translation_description' || !Array.isArray(detail.conflicts)) return []
-  return detail.conflicts.filter((item): item is DescriptionConflict =>
-    item != null && typeof item.string_id === 'string' && typeof item.key === 'string'
-    && (item.description === null || typeof item.description === 'string'),
-  )
-}
-
-export function applyPayloadFromDrafts(
-  items: TranslateProposalItem[],
-  originals: Record<string, string | null>,
-) {
+export function applyPayloadFromDrafts(items: TranslateProposalItem[]) {
   return items.map((item) => ({
     string_id: item.string_id,
     expected_source_text: item.source_text,
@@ -242,19 +217,13 @@ export function applyPayloadFromDrafts(
       Object.entries(item.translations).filter(([, value]) => value.trim()),
     ),
     scores: item.scores,
-    ...((item.description?.trim() || null) !== (originals[item.string_id]?.trim() || null)
-      ? { description: item.description?.trim() || null, expected_description: originals[item.string_id] }
-      : {}),
   }))
 }
 
-/** Only rows the reviewer changed: a filled cell or an edited description. */
-export function reviewedPayloadFromDrafts(
-  items: TranslateProposalItem[],
-  originals: Record<string, string | null>,
-) {
-  return applyPayloadFromDrafts(items, originals).filter(
-    (item) => Object.keys(item.translations).length > 0 || 'description' in item,
+/** Only rows with a filled translation cell. */
+export function reviewedPayloadFromDrafts(items: TranslateProposalItem[]) {
+  return applyPayloadFromDrafts(items).filter(
+    (item) => Object.keys(item.translations).length > 0,
   )
 }
 
@@ -293,12 +262,6 @@ export function emptyPublicLocales(entries: StringEntry[]): Array<{ id: string; 
       .sort()
     return locales.length ? [{ id: entry.id, key: entry.key, locales }] : []
   })
-}
-
-export function descriptionsFromDrafts(
-  items: TranslateProposalItem[],
-): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.string_id, item.description ?? '']))
 }
 
 export type TranslateJobProgress = {

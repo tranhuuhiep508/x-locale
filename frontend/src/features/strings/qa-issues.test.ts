@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QaIssue } from '@/lib/api/types'
-import { presentQaIssues, shouldFoldCleanLocales, shouldShowQaIndex } from './qa-issues'
+import { presentQaIssues } from './qa-issues'
 
 function issue(
   code: string,
@@ -87,15 +87,5 @@ describe('presentQaIssues', () => {
       issue('placeholder_extra', '%1$s', 0, 1),
     ])
     expect(presented.map((item) => item.code)).toEqual(['placeholder_missing', 'placeholder_extra'])
-  })
-})
-
-describe('QA scan layout', () => {
-  it('indexes and folds only a long filtered page', () => {
-    expect(shouldShowQaIndex(8, 'issues')).toBe(false)
-    expect(shouldShowQaIndex(9, 'all')).toBe(false)
-    expect(shouldShowQaIndex(9, 'issues')).toBe(true)
-    expect(shouldFoldCleanLocales(8)).toBe(false)
-    expect(shouldFoldCleanLocales(9)).toBe(true)
   })
 })

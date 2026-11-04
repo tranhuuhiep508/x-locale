@@ -423,6 +423,9 @@ def _proposal_dict(
         "key": entry.key,
         "source_text": entry.source_text if source_text is None else source_text,
         "status": _status_str(entry),
+        "module_id": str(entry.module_id) if entry.module_id else None,
+        "module_slug": entry.module.slug if entry.module else None,
+        "module_name": entry.module.name if entry.module else None,
         "description": description,
         "translations": translations,
         "scores": scores or {},
@@ -471,6 +474,9 @@ def _proposal_fields(
         "string_id": str(entry.id),
         "key": entry.key,
         "status": _status_str(entry),
+        "module_id": str(entry.module_id) if entry.module_id else None,
+        "module_slug": entry.module.slug if entry.module else None,
+        "module_name": entry.module.name if entry.module else None,
         "description": _description_for(entry, descriptions),
     }
 

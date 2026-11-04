@@ -38,45 +38,6 @@ function lightness(color: string): number {
   return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
 }
 
-test('exact filter resets on the next page, and an empty page says so', async ({ page }) => {
-  const project = await setupProject(page)
-  const source = 'Shared hello for the missing queue'
-  await createPublished(page, project.id, 'tm_page_origin', source, 'Published hello')
-  const strings: Record<string, string> = {}
-  for (let index = 0; index < 50; index += 1) {
-    strings[`tm_page_a_${String(index).padStart(2, '0')}`] = source
-  }
-  for (let index = 0; index < 5; index += 1) {
-    strings[`tm_page_b_${String(index).padStart(2, '0')}`] = `Unique hello ${index}`
-  }
-  await importStringsViaApi(page, project.id, strings)
-
-  await page.getByRole('button', { name: 'Translate missing' }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Use 50 exact matches on this page' })).toBeVisible()
-  await expect(dialog.getByText('on this page', { exact: true })).toBeVisible()
-
-  await dialog.getByRole('radio', { name: 'Exact 50' }).click()
-  await expect(dialog.getByText('Showing 50 of 50 on this page')).toBeVisible()
-  await expect(dialog.getByText('tm_page_b_00')).toBeHidden()
-
-  const nextResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' && response.url().includes('/translate/missing'),
-  )
-  await dialog.getByRole('button', { name: 'Next page' }).click()
-  expect((await nextResponse).ok()).toBeTruthy()
-  await expect(dialog.getByRole('radio', { name: 'All 5' })).toBeChecked()
-  await expect(dialog.getByText('tm_page_b_00')).toBeVisible()
-  await expect(dialog.getByText('tm_page_a_00')).toBeHidden()
-
-  await dialog.getByRole('radio', { name: 'Exact 0' }).click()
-  await expect(dialog.getByText('No exact matches on this page')).toBeVisible()
-  await expect(dialog.getByRole('radio', { name: 'Exact 0' })).toBeChecked()
-  await expect(dialog.getByText('Showing 0 of 5 on this page')).toBeVisible()
-})
-
 test('next stays put while exact matches on this page are unapplied', async ({ page }) => {
   const project = await setupProject(page)
   const source = 'Shared hello for the page guard'
@@ -87,8 +48,8 @@ test('next stays put while exact matches on this page are unapplied', async ({ p
 
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByRole('button', { name: 'Use 50 exact matches on this page' })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Use 50 exact matches on this page' }).click()
+  await expect(dialog.getByRole('button', { name: 'Use 50 exact matches' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Use 50 exact matches' }).click()
   const next = dialog.getByRole('button', { name: 'Next page' })
   await expect(next).toHaveAttribute('aria-disabled', 'true')
   expect(await next.evaluate((element) => (element as HTMLButtonElement).disabled)).toBe(false)
@@ -101,36 +62,10 @@ test('next stays put while exact matches on this page are unapplied', async ({ p
   }
   page.on('request', mark)
   await next.click({ force: true })
-  await expect(dialog.getByText('Skipped · using match').first()).toBeVisible()
+  await expect(dialog.getByLabel('en', { exact: true }).first()).toHaveValue('Published guard')
   await expect(dialog.getByText(/1–50 of 51/)).toBeVisible()
   expect(paged).toBe(false)
   page.off('request', mark)
-})
-
-test('exact filter falls back to all after this page no longer has matches', async ({ page }) => {
-  const project = await setupProject(page)
-  const source = 'Shared hello that gets applied'
-  await createPublished(page, project.id, 'tm_apply_origin', source, 'Published apply')
-  const strings: Record<string, string> = {}
-  for (let index = 0; index < 50; index += 1) {
-    strings[`tm_apply_a_${String(index).padStart(2, '0')}`] = source
-  }
-  strings.tm_apply_b_00 = 'Unique hello after apply'
-  await importStringsViaApi(page, project.id, strings)
-
-  await page.getByRole('button', { name: 'Translate missing' }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByRole('radio', { name: 'Exact 50' }).click()
-  await dialog.getByRole('button', { name: 'Use 50 exact matches on this page' }).click()
-  const reload = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' && response.url().includes('/translate/missing'),
-  )
-  await dialog.getByRole('button', { name: 'Save 50 translations as draft' }).click()
-  expect((await reload).ok()).toBeTruthy()
-  await expect(dialog.getByRole('radio', { name: 'All 1' })).toBeChecked()
-  await expect(dialog.getByText('tm_apply_b_00')).toBeVisible()
-  await expect(dialog.getByText('No exact matches on this page')).toBeHidden()
 })
 
 test('generated translations block the next page until they are discarded', async ({ page }) => {
@@ -143,7 +78,7 @@ test('generated translations block the next page until they are discarded', asyn
 
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Translate 50 cells' }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
   const next = dialog.getByRole('button', { name: 'Next page' })
   await expect(next).toHaveAttribute('aria-disabled', 'true')
@@ -185,14 +120,14 @@ test('applying generated translations unlocks the next page', async ({ page }) =
 
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Translate 50 cells' }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Next page' })).toHaveAttribute('aria-disabled', 'true')
 
   const reload = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),
   )
-  await dialog.getByRole('button', { name: 'Save 50 translations as draft' }).click()
+  await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
   expect((await reload).ok()).toBeTruthy()
   await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
   const next = dialog.getByRole('button', { name: 'Next page' })
@@ -203,26 +138,6 @@ test('applying generated translations unlocks the next page', async ({ page }) =
   await next.click()
   expect((await pageTwo).ok()).toBeTruthy()
   await expect(dialog.getByText('tm_applied_100')).toBeVisible()
-})
-
-test('description stacks under the source text on a phone width', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 800 })
-  const project = await setupProject(page)
-  const created = await page.request.post(`/api/projects/${project.id}/strings`, {
-    data: { key: 'tm_narrow', source_text: 'A long source sentence that must stay readable on a phone' },
-  })
-  expect(created.ok(), await created.text()).toBeTruthy()
-  await page.getByRole('button', { name: 'Translate missing' }).click()
-  const dialog = page.getByRole('dialog')
-  const source = dialog.getByText('A long source sentence that must stay readable on a phone')
-  const description = dialog.getByLabel('Description')
-  await expect(source).toBeVisible()
-  const sourceBox = await source.boundingBox()
-  const descriptionBox = await description.boundingBox()
-  expect(sourceBox).toBeTruthy()
-  expect(descriptionBox).toBeTruthy()
-  expect(sourceBox!.width).toBeGreaterThan(120)
-  expect(descriptionBox!.y).toBeGreaterThan(sourceBox!.y + sourceBox!.height - 1)
 })
 
 test('a used match stays on the public color in dark mode', async ({ page }) => {
@@ -236,7 +151,7 @@ test('a used match stays on the public color in dark mode', async ({ page }) => 
 
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
-  const row = () => dialog.locator('tr').filter({ hasText: 'Skipped · using match' })
+  const row = () => dialog.locator('.bg-public').first()
   await dialog.getByRole('button', { name: 'Use match for en in tm_dark_missing' }).click()
   await expect(row()).toBeVisible()
   const light = await row().evaluate((element) => getComputedStyle(element).backgroundColor)
@@ -249,7 +164,7 @@ test('a used match stays on the public color in dark mode', async ({ page }) => 
   await page.getByRole('button', { name: 'Translate missing' }).click()
   await dialog.getByRole('button', { name: 'Use match for en in tm_dark_missing' }).click()
   const darkRow = await row().evaluate((element) => getComputedStyle(element).backgroundColor)
-  const label = await dialog.getByText('Exact match', { exact: true }).evaluate((element) => getComputedStyle(element).color)
+  const label = await dialog.getByText('Exact', { exact: true }).evaluate((element) => getComputedStyle(element).color)
   expect(lightness(darkRow)).toBeLessThan(0.45)
   expect(lightness(label)).toBeGreaterThan(0.7)
   await expect(row()).toHaveClass(/bg-public/)

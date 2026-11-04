@@ -5,50 +5,42 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Check, CheckCheck, ChevronDown, ChevronUp, Equal, History, Save, Send, Wand2 } from 'lucide-react'
-import type { Job, StringEntry, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
-import { Badge } from '@/components/ui/badge'
+import { ArrowLeft, Check, CheckCheck, Save, Send, Wand2 } from 'lucide-react'
+import type {
+  Job,
+  StringEntry,
+  TranslateJobProgress,
+  TranslateProposalItem,
+  TranslationMemoryMatch,
+  TranslationSourceConflict,
+} from '@/lib/api/types'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { MemoryCount, MemoryMatch } from '@/features/strings/translation-memory-view'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { ConfidenceBadge } from '@/features/strings/confidence'
-import { describedByFor, QA_APPLY_FOOTER, QaCountBadges, QaIssueBadge, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import { MatchBar } from '@/features/strings/translation-memory-view'
+import { describedByFor, QA_APPLY_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import type { QaBaseline, QaView } from '@/features/strings/qa-issues'
 import {
-  issueCounts,
-  presentQaIssues,
-  shouldFoldCleanLocales,
-  shouldShowQaIndex,
-  type QaBaseline,
-  type QaFilter,
-  type QaView,
-} from '@/features/strings/qa-issues'
-import {
-  type DescriptionConflict,
+  applyMemoryTranslation,
   draftsFromItems,
   filledCount,
   localeCount,
   reviewStatusDescription,
   translateProgressLabel,
   translateProgressPercent,
-  updateDraftDescription,
   updateDraftTranslation,
-  applyMemoryTranslation,
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { cn } from '@/lib/utils'
 import { TranslatePublishReview } from '@/features/strings/TranslatePublishReview'
 
 export function proposalsFromJobResult(
-  result: Record<string, unknown> | null | undefined
+  result: Record<string, unknown> | null | undefined,
 ): TranslateProposalItem[] {
   if (!result || !Array.isArray(result.items)) return []
   return result.items as TranslateProposalItem[]
@@ -62,6 +54,62 @@ export function jobStillRunning(job: Job | undefined): boolean {
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
 const PAGE_BLOCKED = "Save or undo this page's changes first"
 
+const reviewSteps = [
+  { label: 'Translate', description: 'Generate or match translations' },
+  { label: 'Review', description: 'Check and edit translations' },
+  { label: 'Publish', description: 'Review public changes and publish' },
+]
+
+export function TranslateStepper({ current }: { current: number }) {
+  return (
+    <div
+      role="group"
+      aria-label="Translation progress"
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
+    >
+      {reviewSteps.map((step, index) => {
+        const complete = index < current
+        const active = index === current
+        return (
+          <div
+            key={step.label}
+            aria-current={active ? 'step' : undefined}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs transition-all',
+              active
+                ? 'bg-background font-semibold text-foreground shadow-xs ring-1 ring-border/50'
+                : complete
+                  ? 'font-medium text-primary'
+                  : 'text-muted-foreground/60',
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex size-3.5 items-center justify-center rounded-full font-mono text-[9px]',
+                active
+                  ? 'bg-primary font-bold text-primary-foreground'
+                  : complete
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {complete ? <Check className="size-2.5 stroke-[2.5]" /> : index + 1}
+            </span>
+            <span className="font-medium">
+              {step.label}
+              <span className="sr-only">
+                {complete ? ', complete' : active ? ', current step' : ', upcoming'}
+              </span>
+            </span>
+            <span className="sr-only">{step.description}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
   const left = draft.memory_selected ?? []
   const right = original.memory_selected ?? []
@@ -73,7 +121,6 @@ function draftDiffers(
   original: TranslateProposalItem | undefined,
 ): boolean {
   if (!original) return true
-  if ((draft.description ?? '') !== (original.description ?? '')) return true
   if (!sameSelection(draft, original)) return true
   const locales = Object.keys(draft.translations)
   if (locales.length !== Object.keys(original.translations).length) return true
@@ -111,195 +158,89 @@ function localeView(qa: Record<string, QaView>, stringId: string, locale: string
   return qa[qaId(stringId, locale)] ?? UNCHECKED
 }
 
-function stringViews(item: TranslateProposalItem, qa: Record<string, QaView>): QaView[] {
-  return Object.keys(item.translations).map((locale) => localeView(qa, item.string_id, locale))
-}
-
-function tally(views: readonly QaView[]): { errors: number; warnings: number } {
-  let errors = 0
-  let warnings = 0
-  for (const view of views) {
-    const counts = issueCounts(presentQaIssues(view.issues))
-    errors += counts.errors
-    warnings += counts.warnings
-  }
-  return { errors, warnings }
-}
-
-function filledViews(items: TranslateProposalItem[], qa: Record<string, QaView>): QaView[] {
-  const views: QaView[] = []
-  for (const item of items) {
-    for (const [locale, text] of Object.entries(item.translations)) {
-      if (!text.trim()) continue
-      views.push(localeView(qa, item.string_id, locale))
-    }
-  }
-  return views
-}
-
-function ProposalLocaleRows({
+function ProposalLocaleRow({
   stringId,
   locale,
   value,
-  score,
   view,
   disabled,
   onChange,
-  memory,
+  bestMatch,
   selected,
-  choiceId,
   sourceKey,
-  aiProposal,
   onToggleMemory,
-  onUseMemory,
-  foldClean,
 }: {
   stringId: string
   locale: string
   value: string
-  score: number | undefined
   view: QaView
   disabled: boolean
   onChange: (value: string) => void
-  memory?: TranslationMemoryMatch[]
+  bestMatch?: TranslationMemoryMatch
   selected: boolean
-  choiceId?: string
   sourceKey: string
-  aiProposal?: { text: string; score?: number }
   onToggleMemory: (checked: boolean) => void
-  onUseMemory: (match: TranslationMemoryMatch) => void
-  foldClean: boolean
 }) {
-  const [compare, setCompare] = useState(false)
-  const [expanded, setExpanded] = useState(false)
   const inputId = `proposal-${stringId}-${locale}`
   const issuesId = `qa-${stringId}-${locale}`
-  const best = memory?.[0]
-  const extra = Math.min(memory?.length ?? 0, 3) - 1
-  const clean = view.status === 'ready' && !view.stale && presentQaIssues(view.issues).length === 0
-  const folded = foldClean && clean && !expanded && !selected
   return (
-    <>
-      <tr data-qa-status={view.status} className={cn(selected && 'bg-public')}>
-        <th scope="row" className="w-12 py-2 pr-2 align-top font-mono text-xs font-semibold uppercase text-muted-foreground">
+    <div
+      data-qa-status={view.status}
+      className={cn('flex flex-col gap-2 px-4 py-3 transition-colors', selected && 'bg-public')}
+    >
+      <div className="flex items-start gap-3">
+        <label
+          htmlFor={inputId}
+          className="w-10 shrink-0 pt-1.5 font-mono text-xs font-semibold uppercase text-muted-foreground"
+        >
           {locale}
-        </th>
-        <td className="relative min-w-0 py-2 pr-3 align-top">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {selected ? null : <ConfidenceBadge score={score} />}
-            {selected ? null : (
-              <QaLocaleBadge view={view} locale={locale} footer={QA_APPLY_FOOTER} id={issuesId} />
-            )}
-            {selected ? (
-              <p className="min-w-0 text-xs whitespace-pre-wrap wrap-anywhere">{value}</p>
-            ) : null}
-            {selected ? <p className="text-xs text-muted-foreground">Skipped · using match</p> : null}
-            {selected ? null : folded ? (
-              <button
+        </label>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Textarea
+            id={inputId}
+            className="field-sizing-content min-h-8 w-full resize-none px-2.5 py-1.5 text-sm leading-relaxed"
+            value={value}
+            rows={1}
+            disabled={disabled}
+            autoComplete="off"
+            spellCheck
+            aria-label={locale}
+            placeholder="Translation…"
+            aria-describedby={describedByFor(view, issuesId)}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {bestMatch ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-muted-foreground">
+                <MatchBar match={bestMatch} />
+                <span aria-hidden="true">·</span>
+                <span className="truncate text-foreground/80">{bestMatch.translation}</span>
+              </div>
+              <Button
                 type="button"
-                className="block w-full truncate text-left text-xs text-muted-foreground"
-                onClick={() => setExpanded(true)}
-              >
-                {value}
-              </button>
-            ) : (
-              <Textarea
-                id={inputId}
-                className="field-sizing-fixed h-8 min-h-8 w-full min-w-0 max-w-full resize-none border-transparent bg-transparent px-1 py-1 text-xs shadow-none"
-                value={value}
-                rows={1}
-                cols={12}
+                variant="outline"
+                size="xs"
                 disabled={disabled}
-                autoComplete="off"
-                spellCheck
-                aria-label={locale}
-                placeholder="Empty · AI on Translate"
-                aria-describedby={describedByFor(view, issuesId)}
-                onChange={(event) => onChange(event.target.value)}
-              />
-            )}
-          </div>
-        </td>
-        <td className="min-w-0 overflow-hidden py-2 pr-3 align-top">
-          {best ? (
-            <MemoryMatch
-              locale={locale}
-              match={best}
-              hideUse
-              disabled={disabled}
-              used={choiceId === best.string_id}
-              onUse={onUseMemory}
-              accessory={(
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
-                  aria-label={`Compare ${locale} matches for ${sourceKey}`}
-                  aria-expanded={compare}
-                  onClick={() => setCompare((open) => !open)}
-                >
-                  {extra > 0 ? (compare ? 'Less' : `+${extra}`) : null}
-                  {compare ? <ChevronUp className="size-3" aria-hidden="true" /> : <ChevronDown className="size-3" aria-hidden="true" />}
-                </button>
-              )}
-            />
-          ) : (
-            <p className="pt-1 text-xs text-muted-foreground">No match</p>
-          )}
-        </td>
-        <td className="w-32 py-2 align-top text-right whitespace-nowrap">
-          {best ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="whitespace-nowrap"
-              disabled={disabled}
-              aria-pressed={selected}
-              aria-label={`Use match for ${locale} in ${sourceKey}`}
-              onClick={() => onToggleMemory(!selected)}
-            >
-              {selected ? 'Using' : 'Use match'}
-            </Button>
-          ) : null}
-        </td>
-      </tr>
-      {compare && memory?.length ? (
-        <tr>
-          <td colSpan={4} className="pb-3">
-            <div className="grid min-w-0 gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
-              <div className="min-w-0">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Choose what fills this cell</p>
-                <p className="text-sm whitespace-pre-wrap wrap-anywhere">{aiProposal?.text || 'Generated when you click Translate'}</p>
-                <ConfidenceBadge score={aiProposal?.score} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  disabled={disabled || !selected}
-                  onClick={() => onToggleMemory(false)}
-                >
-                  Use AI
-                </Button>
-              </div>
-              <div className="flex min-w-0 flex-col gap-3">
-                <p className="text-xs font-medium text-muted-foreground">Previously published</p>
-                {memory.slice(0, 3).map((match) => (
-                  <MemoryMatch
-                    key={match.string_id}
-                    locale={locale}
-                    match={match}
-                    disabled={disabled}
-                    used={choiceId === match.string_id}
-                    onUse={onUseMemory}
-                  />
-                ))}
-              </div>
+                aria-pressed={selected}
+                aria-label={`Use match for ${locale} in ${sourceKey}`}
+                onClick={() => onToggleMemory(!selected)}
+              >
+                {selected ? 'Using match' : 'Use match'}
+              </Button>
             </div>
-          </td>
-        </tr>
-      ) : null}
-    </>
+          ) : null}
+        </div>
+        {!selected ? (
+          <QaLocaleBadge
+            view={view}
+            locale={locale}
+            footer={QA_APPLY_FOOTER}
+            id={issuesId}
+            showClean={false}
+          />
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -308,199 +249,85 @@ function ProposalTreeNode({
   disabled,
   qa,
   onChange,
-  onDescriptionChange,
-  conflict,
-  onResolveConflict,
   sourceConflict,
   onRemove,
-  onUseMemory,
   onToggleMemory,
-  cellOriginals,
-  foldClean,
 }: {
-  cellOriginals: Record<string, TranslateProposalItem>
   item: TranslateProposalItem
   disabled: boolean
   qa: Record<string, QaView>
   onChange: (stringId: string, locale: string, value: string) => void
-  onDescriptionChange: (stringId: string, description: string) => void
-  conflict?: DescriptionConflict
-  onResolveConflict: (conflict: DescriptionConflict, useLatest: boolean) => void
   sourceConflict?: TranslationSourceConflict
   onRemove: () => void
-  onUseMemory: (stringId: string, locale: string, match: TranslationMemoryMatch) => void
   onToggleMemory: (stringId: string, locale: string, checked: boolean) => void
-  foldClean: boolean
 }) {
   const locales = Object.entries(item.translations)
-  const descriptionId = `proposal-description-${item.string_id}`
-  const rollupIssues = locales.flatMap(([locale]) =>
-    presentQaIssues(localeView(qa, item.string_id, locale).issues).map((issue) => ({
-      ...issue,
-      locale,
-    })),
-  )
-  const rollupStale = locales.some(([locale]) => localeView(qa, item.string_id, locale).stale)
+  const moduleLabel = item.module_name ?? item.module_slug
 
   return (
     <li
       id={`proposal-${item.string_id}`}
-      className="grid min-w-0 gap-4 rounded-xl border border-border/80 bg-card p-4.5 shadow-2xs transition-all "
+      className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs"
     >
-      <div className="flex min-w-0 flex-col gap-3.5">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Source text</span>
-              <span className="flex items-center gap-1.5">
-                <QaIssueBadge
-                  label={item.key}
-                  issues={rollupIssues}
-                  footer={QA_APPLY_FOOTER}
-                  showClean={false}
-                  stale={rollupStale}
-                />
-                {item.status === 'public' ? (
-                  <Badge variant="outline" className="font-mono text-[10px] uppercase">Public</Badge>
-                ) : null}
-              </span>
-            </div>
-            <p className="font-medium whitespace-pre-wrap wrap-anywhere text-foreground text-sm leading-relaxed">{item.source_text}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="font-mono text-xs break-all text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5" translate="no">
-                {item.key}
-              </code>
-            </div>
-          </div>
-          <Field className="w-full sm:w-72 sm:shrink-0">
-            <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
-            <Textarea
-              id={descriptionId}
-              className="min-h-16 resize-y text-xs"
-              value={item.description ?? ''}
-              rows={2}
-              disabled={disabled}
-              autoComplete="off"
-              placeholder="Context for a better translation"
-              onChange={(e) => onDescriptionChange(item.string_id, e.target.value)}
-            />
-          </Field>
+      <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/20 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="font-mono text-xs break-all text-muted-foreground" translate="no">
+            {item.key}
+          </code>
+          {moduleLabel ? (
+            <span className="rounded border border-border/70 bg-background/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {moduleLabel}
+            </span>
+          ) : null}
         </div>
+        <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap wrap-anywhere text-foreground">
+          {item.source_text}
+        </p>
+        {item.description ? (
+          <p className="text-xs whitespace-pre-wrap text-muted-foreground">{item.description}</p>
+        ) : null}
         {sourceConflict ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="mt-2">
             <AlertTitle>Source text changed since generation</AlertTitle>
             <AlertDescription>
               <p className="whitespace-pre-wrap">Reviewed source: {sourceConflict.expected_source_text}</p>
               <p className="whitespace-pre-wrap">Latest saved source: {sourceConflict.source_text}</p>
               <p>Nothing was saved. Regenerate changed strings before saving again.</p>
-              <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onRemove}>Remove from review</Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {conflict ? (
-          <Alert variant="destructive">
-            <AlertTitle>Description changed since review opened</AlertTitle>
-            <AlertDescription>
-              <p>Latest saved description: {conflict.description ?? '(empty)'}</p>
-              <p>Your draft is shown above. Choose which description to use, then save again.</p>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, true)}>Use latest</Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, false)}>Keep mine</Button>
-              </div>
+              <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onRemove}>
+                Remove from review
+              </Button>
             </AlertDescription>
           </Alert>
         ) : null}
       </div>
 
-      <FieldGroup
-        className="min-w-0 gap-3 border-t pt-4"
+      <div
+        className="divide-y divide-border/50"
         role="group"
         aria-label={`Translations for ${item.key}`}
       >
-        {item.memory_error ? <p role="status" className="text-xs text-muted-foreground">Could not load published translations.</p> : null}
-        <table className="w-full table-fixed border-collapse text-left">
-          <colgroup>
-            <col className="w-12" />
-            <col />
-            <col />
-            <col className="w-32" />
-          </colgroup>
-          <thead>
-            <tr className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              <th className="py-1 pr-2 font-medium">Loc</th>
-              <th className="py-1 pr-3 font-medium">AI proposal</th>
-              <th className="py-1 pr-3 font-medium">Best published match</th>
-              <th className="w-32 py-1 font-medium"><span className="sr-only">Use</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {locales.map(([locale, value]) => (
-              <ProposalLocaleRows
-                key={locale}
-                stringId={item.string_id}
-                locale={locale}
-                value={value}
-                score={item.scores?.[locale]}
-                memory={sourceConflict ? [] : item.memory?.[locale]}
-                selected={item.memory_selected?.includes(locale) ?? false}
-                choiceId={item.memory_choice?.[locale]}
-                sourceKey={item.key}
-                aiProposal={{ text: cellOriginals[qaId(item.string_id, locale)]?.translations[locale] ?? (item.memory_selected?.includes(locale) ? '' : value), score: (cellOriginals[qaId(item.string_id, locale)] ?? item).scores?.[locale] }}
-                onToggleMemory={(checked) => onToggleMemory(item.string_id, locale, checked)}
-                onUseMemory={(match) => onUseMemory(item.string_id, locale, match)}
-                view={localeView(qa, item.string_id, locale)}
-                disabled={disabled}
-                foldClean={foldClean}
-                onChange={(next) => onChange(item.string_id, locale, next)}
-              />
-            ))}
-          </tbody>
-        </table>
-      </FieldGroup>
-    </li>
-  )
-}
-
-function QaIndex({
-  items,
-  qa,
-}: {
-  items: TranslateProposalItem[]
-  qa: Record<string, QaView>
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs">
-      <div className="border-b px-3.5 py-2">
-        <span className="eyebrow">QA</span>
+        {item.memory_error ? (
+          <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
+            Could not load published translations.
+          </p>
+        ) : null}
+        {locales.map(([locale, value]) => (
+          <ProposalLocaleRow
+            key={locale}
+            stringId={item.string_id}
+            locale={locale}
+            value={value}
+            bestMatch={sourceConflict ? undefined : item.memory?.[locale]?.[0]}
+            selected={item.memory_selected?.includes(locale) ?? false}
+            sourceKey={item.key}
+            onToggleMemory={(checked) => onToggleMemory(item.string_id, locale, checked)}
+            view={localeView(qa, item.string_id, locale)}
+            disabled={disabled}
+            onChange={(next) => onChange(item.string_id, locale, next)}
+          />
+        ))}
       </div>
-      <ul className="divide-y divide-border/60">
-        {items.map((item) => {
-          const views = stringViews(item, qa)
-          const counts = tally(views)
-          const flagged = Object.keys(item.translations).filter((locale) => {
-            const shown = presentQaIssues(localeView(qa, item.string_id, locale).issues)
-            return shown.length > 0
-          })
-          return (
-            <li key={item.string_id}>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-3.5 py-1.5 text-left hover:bg-accent/60"
-                onClick={() => document.getElementById(`proposal-${item.string_id}`)?.scrollIntoView({ block: 'nearest' })}
-              >
-                <code className="font-mono text-xs" translate="no">{item.key}</code>
-                {flagged.map((locale) => (
-                  <span key={locale} className="font-mono text-[10px] uppercase text-muted-foreground">{locale}</span>
-                ))}
-                <span className="ml-auto">
-                  <QaCountBadges errors={counts.errors} warnings={counts.warnings} showClean={false} />
-                </span>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
+    </li>
   )
 }
 
@@ -530,8 +357,6 @@ export function TranslateReviewDialog({
   refreshError,
   onRetryRefresh,
   progress,
-  conflicts = [],
-  onResolveConflict,
   sourceConflicts = [],
   recoveryMessage,
   onRegenerate,
@@ -565,8 +390,6 @@ export function TranslateReviewDialog({
   savedNotice?: string | null
   refreshError?: string | null
   onRetryRefresh?: () => void
-  conflicts?: DescriptionConflict[]
-  onResolveConflict?: (conflict: DescriptionConflict) => void
   sourceConflicts?: TranslationSourceConflict[]
   recoveryMessage?: string | null
   onRegenerate?: (items: TranslateProposalItem[]) => void
@@ -574,58 +397,58 @@ export function TranslateReviewDialog({
 }) {
   const applying = saving !== null
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
-    draftsFromItems(items)
+    draftsFromItems(items),
   )
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
-  const [filter, setFilter] = useState<QaFilter | 'matches' | 'exact'>('all')
   // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
   const loadedPage = useRef(items)
   const sawGenerated = useRef(false)
 
   useEffect(() => {
-    setFilter('all')
-  }, [page])
-
-  useEffect(() => {
     setDrafts(draftsFromItems(items))
     setMemoryUndo(null)
     // Generation refreshes items; keep restore values for unchanged selected cells.
-    setCellOriginals((prev) => Object.fromEntries(items.flatMap((item) =>
-      (item.memory_selected ?? []).flatMap((locale) => {
-        const id = qaId(item.string_id, locale)
-        const original = prev[id]
-        return original?.source_text === item.source_text ? [[id, original]] : []
-      }),
-    )))
+    setCellOriginals((prev) =>
+      Object.fromEntries(
+        items.flatMap((item) =>
+          (item.memory_selected ?? []).flatMap((locale) => {
+            const id = qaId(item.string_id, locale)
+            const original = prev[id]
+            return original?.source_text === item.source_text ? [[id, original]] : []
+          }),
+        ),
+      ),
+    )
   }, [items])
 
   const draftList = items.flatMap((item) => {
     const draft = drafts[item.string_id]
     return draft ? [draft] : []
   })
-  const echoed = items.length === draftList.length && items.every((item) => {
-    const draft = drafts[item.string_id]
-    return draft !== undefined && !draftDiffers(draft, item)
-  })
+  const echoed =
+    items.length === draftList.length &&
+    items.every((item) => {
+      const draft = drafts[item.string_id]
+      return draft !== undefined && !draftDiffers(draft, item)
+    })
   if (generated) sawGenerated.current = true
   else if (sawGenerated.current) {
     loadedPage.current = items
     sawGenerated.current = false
   } else if (!echoed) loadedPage.current = items
-  const memoryCells = draftList.flatMap((item) =>
+
+  const exactCells = draftList.flatMap((item) =>
     Object.keys(item.translations).flatMap((locale) => {
       if (sourceConflicts.some((conflict) => conflict.string_id === item.string_id)) return []
-      const matches = item.memory?.[locale] ?? []
-      return matches.length ? [{ item, locale, matches }] : []
+      const match = (item.memory?.[locale] ?? []).find((candidate) => candidate.exact)
+      return match ? [{ item, locale, match }] : []
     }),
   )
-  const exactCells = memoryCells.filter(({ matches }) => matches.some((match) => match.exact))
-  const matchStringCount = new Set(memoryCells.map((cell) => cell.item.string_id)).size
-  const exactStringCount = new Set(exactCells.map((cell) => cell.item.string_id)).size
-  const unusedExact = exactCells.filter(({ item, locale }) => !item.memory_selected?.includes(locale))
-  const usedCount = draftList.reduce((count, item) => count + (item.memory_selected?.length ?? 0), 0)
-  const aiCount = localeCount(draftList) - usedCount
+  const unusedExact = exactCells.filter(
+    ({ item, locale }) => !item.memory_selected?.includes(locale),
+  )
+
   function chooseMemory(stringId: string, locale: string, match: TranslationMemoryMatch) {
     setMemoryUndo(null)
     setCellOriginals((prev) => ({
@@ -634,6 +457,7 @@ export function TranslateReviewDialog({
     }))
     setDrafts((prev) => applyMemoryTranslation(prev, stringId, locale, match))
   }
+
   function restoreCell(
     current: TranslateProposalItem,
     original: TranslateProposalItem | undefined,
@@ -645,7 +469,9 @@ export function TranslateReviewDialog({
       scores: { ...current.scores },
       issues: { ...current.issues },
       memory_selected: current.memory_selected?.filter((value) => value !== locale),
-      memory_choice: Object.fromEntries(Object.entries(current.memory_choice ?? {}).filter(([key]) => key !== locale)),
+      memory_choice: Object.fromEntries(
+        Object.entries(current.memory_choice ?? {}).filter(([key]) => key !== locale),
+      ),
     }
     delete next.scores[locale]
     delete next.issues[locale]
@@ -653,6 +479,7 @@ export function TranslateReviewDialog({
     if (original?.issues?.[locale]) next.issues[locale] = original.issues[locale]
     return next
   }
+
   function toggleMemory(stringId: string, locale: string, checked: boolean) {
     if (checked) {
       const match = drafts[stringId].memory?.[locale]?.[0]
@@ -675,18 +502,14 @@ export function TranslateReviewDialog({
     setMemoryUndo(drafts)
     let next = drafts
     const originals = { ...cellOriginals }
-    for (const { item, locale, matches } of unusedExact) {
+    for (const { item, locale, match } of unusedExact) {
       originals[qaId(item.string_id, locale)] ??= item
-      next = applyMemoryTranslation(
-        next,
-        item.string_id,
-        locale,
-        matches.find((match) => match.exact)!,
-      )
+      next = applyMemoryTranslation(next, item.string_id, locale, match)
     }
     setCellOriginals(originals)
     setDrafts(next)
   }
+
   function undoExactMatches() {
     if (!memoryUndo) return
     setDrafts((prev) =>
@@ -717,15 +540,18 @@ export function TranslateReviewDialog({
     setMemoryUndo(null)
   }
 
-  const publicCount = draftList.filter((item) => item.status === 'public').length
   const applyCount = filledCount(draftList)
   const loadedById = new Map(loadedPage.current.map((item) => [item.string_id, item]))
   const pageLocked = draftList.some((draft) => draftDiffers(draft, loadedById.get(draft.string_id)))
   const missingCount = localeCount(draftList) - applyCount
-  const review = !generating
   const busy = loadingQueue || generating || applying || reviewLoading
-  const canTranslate = !busy && draftList.some((item) => Object.keys(item.translations).some((locale) => !item.memory_selected?.includes(locale))) && conflicts.length === 0 && sourceConflicts.length === 0
-  const canApply = !busy && applyCount > 0 && conflicts.length === 0 && sourceConflicts.length === 0
+  const canTranslate =
+    !busy &&
+    draftList.some((item) =>
+      Object.keys(item.translations).some((locale) => !item.memory_selected?.includes(locale)),
+    ) &&
+    sourceConflicts.length === 0
+  const canApply = !busy && applyCount > 0 && sourceConflicts.length === 0
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -737,45 +563,15 @@ export function TranslateReviewDialog({
     pageStringCount: draftList.length,
     missingCount,
     applyCount,
-    generated,
   })
   const publishCount = publishReview?.length ?? 0
+  const currentStep = reviewing ? 2 : generated || applyCount > 0 ? 1 : 0
   const description = reviewing
     ? reviewLoading && !publishReview
-      ? 'Comparing the reviewed working copy to public…'
-      : `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}. Nothing is saved until you publish.`
+      ? 'Comparing changes…'
+      : `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
     : statusDescription
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
-  const foldClean = shouldFoldCleanLocales(draftList.length)
-  const pageViews = filledViews(draftList, qa)
-  const pageCounts = tally(pageViews)
-  const checking = pageViews.some((view) => view.status === 'checking')
-  const pageClean = pageViews.length > 0 && pageViews.every((view) => view.status === 'ready' && !view.stale)
-    && pageCounts.errors === 0 && pageCounts.warnings === 0
-  const withIssues = draftList.filter((item) => {
-    const counts = tally(stringViews(item, qa))
-    return counts.errors + counts.warnings > 0
-  })
-  const withErrors = draftList.filter((item) => tally(stringViews(item, qa)).errors > 0)
-  const visible = filter === 'errors' ? withErrors : filter === 'issues' ? withIssues : filter === 'matches' ? draftList.filter((item) => memoryCells.some((cell) => cell.item.string_id === item.string_id)) : filter === 'exact' ? draftList.filter((item) => exactCells.some((cell) => cell.item.string_id === item.string_id)) : draftList
-  const seenMatchCount = useRef(matchStringCount)
-  const seenExactCount = useRef(exactStringCount)
-  useEffect(() => {
-    // Opening Exact/Matches on a page that already has none keeps the empty state.
-    // A count that drops to zero while that filter is on falls back, same as issues.
-    const matchesFellEmpty = filter === 'matches' && matchStringCount === 0 && seenMatchCount.current > 0
-    const exactFellEmpty = filter === 'exact' && exactStringCount === 0 && seenExactCount.current > 0
-    if (
-      (filter === 'errors' && withErrors.length === 0) ||
-      (filter === 'issues' && withIssues.length === 0) ||
-      matchesFellEmpty ||
-      exactFellEmpty
-    ) {
-      setFilter('all')
-    }
-    seenMatchCount.current = matchStringCount
-    seenExactCount.current = exactStringCount
-  }, [filter, withErrors.length, withIssues.length, matchStringCount, exactStringCount])
 
   return (
     <Dialog
@@ -785,19 +581,54 @@ export function TranslateReviewDialog({
       }}
     >
       <ReviewDialogContent
-        className="sm:max-w-4xl"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           const root = event.currentTarget
           if (!(root instanceof HTMLElement)) return
-          const filter = root.querySelector<HTMLElement>('[aria-label="Filter translations"] [role="radio"]:not([disabled])')
-          const close = root.querySelector<HTMLElement>('[data-slot="dialog-close"]')
-          ;(filter ?? close)?.focus()
+          const target =
+            root.querySelector<HTMLElement>('textarea:not([disabled])') ??
+            root.querySelector<HTMLElement>('[data-slot="dialog-close"]')
+          target?.focus()
         }}
       >
         <ReviewDialogHeader>
-          <DialogTitle>{reviewing ? 'Review Publication' : generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="truncate">
+              {reviewing
+                ? 'Review Publication'
+                : generated
+                  ? 'Review Translations'
+                  : 'Missing Translations'}
+            </DialogTitle>
+            <TranslateStepper current={currentStep} />
+          </div>
+          <div className="flex min-h-6 items-center justify-between gap-3" aria-live="polite">
+            <DialogDescription className="min-w-0 truncate">
+              {generating ? generatingLabel : description}
+            </DialogDescription>
+            {generating ? (
+              <Progress
+                value={generatingPercent}
+                aria-label={generatingLabel}
+                aria-valuetext={generatingLabel}
+                className={cn('w-28 shrink-0', generatingPercent == null && 'animate-pulse')}
+              />
+            ) : !reviewing && (unusedExact.length > 0 || memoryUndo) ? (
+              <div className="flex shrink-0 items-center gap-1.5">
+                {unusedExact.length > 0 ? (
+                  <Button type="button" variant="outline" size="xs" disabled={busy} onClick={useExactMatches}>
+                    <CheckCheck data-icon="inline-start" />
+                    {`Use ${unusedExact.length} exact ${unusedExact.length === 1 ? 'match' : 'matches'}`}
+                  </Button>
+                ) : null}
+                {memoryUndo ? (
+                  <Button type="button" variant="ghost" size="xs" disabled={busy} onClick={undoExactMatches}>
+                    Undo
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
           {savedNotice && !reviewing ? (
             <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status">
               <Check className="size-4 text-primary" aria-hidden="true" />
@@ -816,103 +647,19 @@ export function TranslateReviewDialog({
               </AlertDescription>
             </Alert>
           ) : null}
-          {review && !reviewing && draftList.length > 0 ? (
-            <div className="flex flex-col gap-2 pt-1">
-              {memoryCells.length === 0 ? (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <History className="size-3.5 shrink-0" aria-hidden="true" />
-                  No previously published matches on this page. Translate fills all {localeCount(draftList)} cells with AI.
-                </p>
-              ) : (
-                <TooltipProvider delayDuration={200}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <MemoryCount icon={History} label={`Previously published: ${memoryCells.length} of ${localeCount(draftList)} cells have a match`}>{memoryCells.length}/{localeCount(draftList)}</MemoryCount>
-                    <MemoryCount icon={Equal} label={`${exactCells.length} cells have an exact match`}>{exactCells.length}</MemoryCount>
-                    {usedCount > 0 ? <MemoryCount icon={Check} label={`${usedCount} cells use a match`}>{usedCount}</MemoryCount> : null}
-                    {unusedExact.length > 0 ? (
-                      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={useExactMatches}>
-                        <CheckCheck data-icon="inline-start" />
-                        {canPage
-                          ? `Use ${unusedExact.length} exact matches on this page`
-                          : `Use ${unusedExact.length} exact matches`}
-                      </Button>
-                    ) : null}
-                    {memoryUndo ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={undoExactMatches}>Undo</Button> : null}
-                  </div>
-                </TooltipProvider>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                {generated ? <>
-                {checking ? <span className="text-xs text-muted-foreground">Checking…</span> : null}
-                <QaCountBadges
-                  errors={pageCounts.errors}
-                  warnings={pageCounts.warnings}
-                  showClean={pageClean}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {pageClean
-                    ? `on ${draftList.length} ${draftList.length === 1 ? 'string' : 'strings'}`
-                    : `in ${withIssues.length} of ${draftList.length} ${draftList.length === 1 ? 'string' : 'strings'}`}
-                </span>
-                </> : null}
-                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                  {canPage ? (
-                    <span id="missing-filter-scope" className="text-xs text-muted-foreground">
-                      on this page
-                    </span>
-                  ) : null}
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  size="sm"
-                  value={filter}
-                  onValueChange={(value) => {
-                    if (value === 'all' || value === 'issues' || value === 'errors' || value === 'matches' || value === 'exact') setFilter(value)
-                  }}
-                  aria-label="Filter translations"
-                  aria-describedby={canPage ? 'missing-filter-scope' : undefined}
-                >
-                  <ToggleGroupItem value="all">All {draftList.length}</ToggleGroupItem>
-                  <ToggleGroupItem value="matches">With matches {matchStringCount}</ToggleGroupItem>
-                  <ToggleGroupItem value="exact">Exact {exactStringCount}</ToggleGroupItem>
-                  {generated ? <>
-                  <ToggleGroupItem value="issues" disabled={withIssues.length === 0}>
-                    With issues {withIssues.length}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="errors" disabled={withErrors.length === 0}>
-                    Errors {withErrors.length}
-                  </ToggleGroupItem>
-                  </> : null}
-                </ToggleGroup>
-                </div>
-              </div>
-            </div>
-          ) : null}
-          {generating ? (
-            <div className="flex flex-col gap-2" aria-live="polite">
-              <p className="text-sm text-muted-foreground">{generatingLabel}</p>
-              <Progress
-                value={generatingPercent}
-                aria-label={generatingLabel}
-                aria-valuetext={generatingLabel}
-                className={generatingPercent == null ? 'animate-pulse' : undefined}
-              />
-            </div>
-          ) : null}
-          {reviewing ? null : error && !loadingQueue && !refreshError ? (
+          {!reviewing && error && !loadingQueue && !refreshError ? (
             <p className="text-sm text-destructive">{error}</p>
-          ) : publicCount > 0 && !loadingQueue ? (
-            <p className="text-sm text-muted-foreground">
-              {publicCount} public {publicCount === 1 ? 'string is' : 'strings are'} in this list.
-              Save as draft keeps their public text unchanged until you publish.
+          ) : null}
+          {recoveryMessage ? (
+            <p className="text-sm text-destructive" role="status">
+              {recoveryMessage}
             </p>
           ) : null}
-          {recoveryMessage ? <p className="text-sm text-destructive" role="status">{recoveryMessage}</p> : null}
         </ReviewDialogHeader>
 
         <ReviewDialogBody>
           {reviewing ? (
-            <TranslatePublishReview entries={publishReview} loading={reviewLoading} paged={canPage} />
+            <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
           ) : showInitialSpinner ? (
             <div
               className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
@@ -922,7 +669,10 @@ export function TranslateReviewDialog({
               Loading missing strings…
             </div>
           ) : refreshError && draftList.length === 0 ? (
-            <EmptyState title="List not refreshed" description="Your changes were saved. Retry loading to continue reviewing." />
+            <EmptyState
+              title="List not refreshed"
+              description="Your changes were saved. Retry loading to continue reviewing."
+            />
           ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
           ) : draftList.length === 0 ? (
@@ -937,38 +687,22 @@ export function TranslateReviewDialog({
                   <Spinner />
                 </div>
               ) : null}
-              {shouldShowQaIndex(draftList.length, filter === 'matches' || filter === 'exact' ? 'all' : filter) ? (
-                <QaIndex items={visible} qa={qa} />
-              ) : null}
-              {visible.length === 0 && (filter === 'exact' || filter === 'matches') ? (
-                <EmptyState
-                  title={filter === 'exact' ? 'No exact matches on this page' : 'No matches on this page'}
-                />
-              ) : (
               <ul
                 className={cn(
                   'flex min-w-0 flex-col gap-3 overflow-x-clip',
-                  pagingInPlace && 'pointer-events-none opacity-60'
+                  pagingInPlace && 'pointer-events-none opacity-60',
                 )}
               >
-                {visible.map((item) => (
+                {draftList.map((item) => (
                   <ProposalTreeNode
                     key={item.string_id}
                     item={item}
-                    cellOriginals={cellOriginals}
                     qa={qa}
-                    conflict={conflicts.find((conflict) => conflict.string_id === item.string_id)}
-                    sourceConflict={sourceConflicts.find((conflict) => conflict.string_id === item.string_id)}
+                    sourceConflict={sourceConflicts.find(
+                      (conflict) => conflict.string_id === item.string_id,
+                    )}
                     onRemove={() => onRemoveFromReview?.(draftList, item.string_id)}
-                    onResolveConflict={(conflict, useLatest) => {
-                      if (useLatest) {
-                        setDrafts((prev) => updateDraftDescription(prev, conflict.string_id, conflict.description ?? ''))
-                      }
-                      onResolveConflict?.(conflict)
-                    }}
-                    onUseMemory={chooseMemory}
                     onToggleMemory={toggleMemory}
-                    foldClean={foldClean}
                     disabled={applying || generating || pagingInPlace}
                     onChange={(stringId, locale, value) => {
                       setMemoryUndo(null)
@@ -981,13 +715,9 @@ export function TranslateReviewDialog({
                       }
                       setDrafts((prev) => updateDraftTranslation(prev, stringId, locale, value))
                     }}
-                    onDescriptionChange={(stringId, nextDescription) =>
-                      setDrafts((prev) => updateDraftDescription(prev, stringId, nextDescription))
-                    }
                   />
                 ))}
               </ul>
-              )}
             </div>
           )}
         </ReviewDialogBody>
@@ -1000,7 +730,6 @@ export function TranslateReviewDialog({
               total={total}
               disabled={busy}
               blockedReason={pageLocked ? PAGE_BLOCKED : undefined}
-              note={filter === 'all' ? undefined : `Showing ${visible.length} of ${draftList.length} on this page`}
               onPageChange={onPageChange}
             />
           </div>
@@ -1013,8 +742,16 @@ export function TranslateReviewDialog({
                 <ArrowLeft data-icon="inline-start" />
                 Back to edit
               </Button>
-              <Button type="button" disabled={applying || reviewLoading || publishCount === 0} onClick={onPublish}>
-                {saving === 'publish' ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
+              <Button
+                type="button"
+                disabled={applying || reviewLoading || publishCount === 0}
+                onClick={onPublish}
+              >
+                {saving === 'publish' ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Send data-icon="inline-start" />
+                )}
                 {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
               </Button>
             </>
@@ -1030,28 +767,53 @@ export function TranslateReviewDialog({
               </Button>
               {sourceConflicts.length > 0 ? (
                 <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
-                  {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+                  {generating ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <Wand2 data-icon="inline-start" />
+                  )}
                   Regenerate changed strings
                 </Button>
               ) : null}
               <Button
-                variant={review ? 'outline' : 'default'}
+                variant={applyCount > 0 ? 'outline' : 'default'}
                 type="button"
                 disabled={!canTranslate}
                 onClick={() => onTranslate(draftList)}
               >
-                {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
-                {generated ? `Translate again · ${aiCount} cells` : `Translate ${aiCount} cells`}
+                {generating ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Wand2 data-icon="inline-start" />
+                )}
+                {generated ? 'Translate again' : 'Translate'}
               </Button>
               {applyCount > 0 ? (
                 <>
-                  <Button variant="outline" type="button" disabled={!canApply} onClick={() => onSaveDraft(draftList)}>
-                    {saving === 'draft' ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-                    {`Save ${applyCount === 1 ? '1 translation' : `${applyCount} translations`} as draft`}
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={!canApply}
+                    onClick={() => onSaveDraft(draftList)}
+                  >
+                    {saving === 'draft' ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <Save data-icon="inline-start" />
+                    )}
+                    Save as draft
                   </Button>
-                  <Button type="button" disabled={!canApply} onClick={() => onReviewPublish(draftList)}>
-                    {reviewLoading ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-                    {canPage ? 'Review & publish this page' : 'Review & publish'}
+                  <Button
+                    type="button"
+                    disabled={!canApply}
+                    onClick={() => onReviewPublish(draftList)}
+                  >
+                    {reviewLoading ? (
+                      <Spinner data-icon="inline-start" />
+                    ) : (
+                      <Check data-icon="inline-start" />
+                    )}
+                    Review & publish
                   </Button>
                 </>
               ) : null}

@@ -366,6 +366,9 @@ export interface TranslateProposalItem {
   key: string
   source_text: string
   status: TranslationStatus
+  module_id?: string | null
+  module_slug?: string | null
+  module_name?: string | null
   description?: string | null
   translations: Record<string, string>
   scores?: Record<string, number>

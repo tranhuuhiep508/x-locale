@@ -8,7 +8,6 @@ import { jobsApi } from '@/lib/api/jobs'
 import { projectsApi } from '@/lib/api/projects'
 import { stringsApi } from '@/lib/api/strings'
 import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
-import { queryKeys } from '@/lib/query-keys'
 import { StringsPage } from './StringsPage'
 
 const navigate = vi.hoisted(() => vi.fn())
@@ -74,14 +73,10 @@ beforeEach(() => {
   vi.mocked(stringsApi.list).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50 })
   vi.mocked(stringsApi.translateMissing).mockResolvedValue(page)
   vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
-    ...page, items: [{ ...item, description: 'My context', translations: { en: 'Hello' } }],
+    ...page, items: [{ ...item, translations: { en: 'Hello' } }],
   })
   vi.mocked(stringsApi.translateQa).mockResolvedValue({ locale: 'en', issues: [] })
-  vi.mocked(stringsApi.translateSave).mockRejectedValueOnce(new ApiError(409, 'Conflict', {
-    detail: { code: 'stale_translation_description', conflicts: [
-      { string_id: 'a', key: 'greeting', description: 'New context' },
-    ] },
-  })).mockResolvedValue({ action: 'draft', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'batch' })
+  vi.mocked(stringsApi.translateSave).mockResolvedValue({ action: 'draft', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'batch' })
 })
 
 describe('translation review retranslation', () => {
@@ -90,20 +85,20 @@ describe('translation review retranslation', () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     expect(await screen.findByText('Could not load published translations.')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /^Translate \d+ cells$/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     expect(stringsApi.translateMemory).not.toHaveBeenCalled()
   })
+
   it('applies a memory selection before any generation', async () => {
     vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory: { en: [publishedMatch] } }] })
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ action: 'draft', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'batch' })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Use match for en in greeting' }))
-    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
-    expect(screen.getAllByText('Published hello').length).toBeGreaterThan(1)
-    expect((screen.getByRole('button', { name: /^Translate \d+ cells$/ }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Save 1 translation as draft' }))
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Published hello')
+    expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledWith('demo-app', { action: 'draft', items: [{
       string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Published hello' }, scores: {},
     }] }))
@@ -128,12 +123,11 @@ describe('translation review retranslation', () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Use match for en in greeting' }))
-    fireEvent.click(screen.getByRole('button', { name: /^Translate \d+ cells$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate' }))
     await screen.findByText('AI unavailable')
-    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
-    expect(screen.getAllByText('Published hello').length).toBeGreaterThan(1)
-    expect((screen.getByRole('button', { name: 'Save 1 translation as draft' }) as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Save 1 translation as draft' }))
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Published hello')
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledWith('demo-app', { action: 'draft', items: [{
       string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Published hello' }, scores: {},
     }] }))
@@ -147,20 +141,19 @@ describe('translation review retranslation', () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Use match for en in greeting' }))
-    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
-    expect(screen.getByText('Skipped · using match')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /^Translate \d+ cells$/ }))
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Published hello')
+    expect(screen.getByRole('button', { name: 'Use match for en in greeting' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Translate' }))
     await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledWith('demo-app', expect.objectContaining({ exclude_cells: { a: ['en'] } })))
     await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('AI Japanese'))
-    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
-    expect(screen.getAllByText('Published hello').length).toBeGreaterThan(1)
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Published hello')
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('')
-    fireEvent.click(screen.getByRole('button', { name: /^Translate again/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: {} })))
   })
 
-  it.each([false, true])('restores the AI proposal after retranslation and deselection (alternative match: %s)', async (alternative) => {
+  it('restores the AI proposal after retranslation and deselection', async () => {
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
     const row = { ...item, translations: { en: '', ja: '' }, memory: { en: [
       publishedMatch,
@@ -173,21 +166,17 @@ describe('translation review retranslation', () => {
       .mockResolvedValueOnce({ ...page, items: [{ ...row, translations: { ja: 'New Japanese' }, scores: { ja: 80 } }] })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate 2 cells' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
     await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'))
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Translate again · 1 cells' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese'))
     expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: { a: ['en'] } }))
-    fireEvent.click(screen.getByRole('button', { name: 'Compare en matches for greeting' }))
-    expect(screen.getByText('AI English')).toBeTruthy()
-    if (alternative) fireEvent.click(screen.getByRole('button', { name: 'Use en match from other.greeting' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English')
     expect(screen.getByRole('button', { name: 'Use match for en in greeting' }).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getAllByLabelText(/Model estimate 90\/100/).length).toBeGreaterThan(0)
     expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese')
-    fireEvent.click(screen.getByRole('button', { name: 'Translate again · 2 cells' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: {} })))
   })
 
@@ -222,7 +211,7 @@ describe('translation review retranslation', () => {
     let finishRetry!: (result: TranslateProposalsResult) => void
     const retryResponse = new Promise<TranslateProposalsResult>((resolve) => { finishRetry = resolve })
     vi.mocked(stringsApi.translateProposals).mockReset()
-      .mockResolvedValueOnce({ ...page, items: [{ ...item, description: 'My context', translations: { en: 'Hello' } }] })
+      .mockResolvedValueOnce({ ...page, items: [{ ...item, translations: { en: 'Hello' } }] })
       .mockResolvedValueOnce({ ...page, items: [], job_id: 'interrupted-job' })
       .mockImplementationOnce(() => retryResponse)
     vi.mocked(jobsApi.get).mockResolvedValueOnce({
@@ -235,69 +224,22 @@ describe('translation review retranslation', () => {
     })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.change(await screen.findByLabelText('Description'), { target: { value: 'My context' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Translate \d+ cells$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
     fireEvent.change(await screen.findByLabelText('en'), { target: { value: 'My draft' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Translate again/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await screen.findByText(interrupted)
-    expect((screen.getByRole('button', { name: /^Translate again/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)) })
     expect(jobsApi.get).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: /^Translate again/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect(screen.queryByText(interrupted)).toBeNull())
-    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('My context')
-    expect(vi.mocked(stringsApi.translateProposals).mock.calls[2][1].descriptions).toEqual({ a: 'My context' })
     await act(async () => { finishRetry({ ...page, items: [], job_id: 'retry-job' }) })
     await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Hello'))
     expect(screen.queryByText(interrupted)).toBeNull()
     expect(jobsApi.get).toHaveBeenLastCalledWith('retry-job')
-    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it.each([false, true])('preserves Use latest through incomplete results (background: %s)', async (background) => {
-    let finishProposals!: (result: TranslateProposalsResult) => void
-    const pendingProposals = new Promise<TranslateProposalsResult>((resolve) => { finishProposals = resolve })
-    vi.mocked(stringsApi.translateProposals).mockImplementationOnce(() => pendingProposals)
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'job', kind: 'translate_proposals', status: 'completed', result: { items: [] },
-      error: null, created_at: null, completed_at: null, progress: null,
-    })
-    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
-    await waitFor(() => expect(vi.mocked(projectsApi.get)).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: 'Translate missing' }))
-    await screen.findByLabelText('Description')
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'My context' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Translate \d+ cells$/ }))
-    await screen.findByLabelText('en')
-    fireEvent.change(screen.getByLabelText('en'), { target: { value: 'My translation' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Use latest' }))
-    fireEvent.click(screen.getByRole('button', { name: /^Translate again/ }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Translate again/ })).toBeNull())
-    await act(async () => {
-      finishProposals({ ...page, items: [], job_id: background ? 'job' : null })
-    })
-    await waitFor(() => {
-      expect(stringsApi.translateProposals).toHaveBeenCalledTimes(2)
-      expect((screen.getByRole('button', { name: /^Translate again/ }) as HTMLButtonElement).disabled).toBe(false)
-    })
-    if (background) {
-      expect(jobsApi.get).toHaveBeenCalledWith('job')
-      // Wait until the page consumes the job result and detaches its observer.
-      await waitFor(() => expect(client.getQueryCache().find({
-        queryKey: queryKeys.jobs.detail('job'),
-      })?.getObserversCount()).toBe(0))
-    }
-    expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('New context')
-    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My translation')
-    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
-    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
-    const payload = vi.mocked(stringsApi.translateSave).mock.calls[1][1].items[0]
-    expect(payload.translations).toEqual({ en: 'My translation' })
-    expect(payload).not.toHaveProperty('description')
-    expect(payload).not.toHaveProperty('expected_description')
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
@@ -317,20 +259,18 @@ async function openSourceConflict() {
     .mockResolvedValue({ action: 'draft', translated_count: 2, string_count: 2, published_count: 0, batch_id: 'batch' })
   render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-  await screen.findAllByLabelText('Description')
-  fireEvent.click(screen.getByRole('button', { name: /^Translate \d+ cells$/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
   await screen.findAllByLabelText('en')
   fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
-  fireEvent.change(screen.getAllByLabelText('Description')[0], { target: { value: 'My context' } })
-  fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await screen.findByText('Source text changed since generation')
 }
 
 describe('source conflict recovery', () => {
   it.each([false, true])('regenerates only affected rows and preserves other drafts (background: %s)', async (background) => {
     await openSourceConflict()
-    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
     expect(screen.getByText('Latest saved source: Hủy')).toBeTruthy()
@@ -345,15 +285,14 @@ describe('source conflict recovery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
     await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
     expect(vi.mocked(stringsApi.translateProposals).mock.calls[1][1]).toEqual({
-      scope: 'strings', string_ids: ['a'], locales: ['en'], descriptions: { a: 'My context' },
+      scope: 'strings', string_ids: ['a'], locales: ['en'],
     })
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
-    expect((screen.getAllByLabelText('Description')[0] as HTMLTextAreaElement).value).toBe('My context')
-    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].items).toMatchObject([
-      { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' }, expected_description: 'Original', description: 'My context' },
+      { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' } },
       { string_id: 'b', expected_source_text: 'Xin chào', translations: { en: 'Unrelated draft' } },
     ])
   })
@@ -373,13 +312,13 @@ describe('source conflict recovery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled).toBe(false))
     expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
-    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
     if (outcome.endsWith('empty')) expect(screen.getByText(/No replacement was produced/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Remove from review' }))
     expect(screen.queryByText('Source text changed since generation')).toBeNull()
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Unrelated draft')
-    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].items).toHaveLength(1)
     expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].items[0].string_id).toBe('b')
@@ -398,7 +337,7 @@ describe('source conflict recovery', () => {
     await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
-    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
@@ -477,7 +416,7 @@ describe('save as draft or publish in place', () => {
     vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'fp' })
     vi.mocked(stringsApi.translateSave).mockReset().mockRejectedValue(new Error('Network down'))
     await openAndFill()
-    fireEvent.click(screen.getByRole('button', { name: 'Save 1 translation as draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
     await waitFor(() => expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello'))
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
@@ -511,7 +450,7 @@ describe('save as draft or publish in place', () => {
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ ...published, action: 'draft', published_count: 0 })
     await openAndFill()
     vi.mocked(stringsApi.translateMissing).mockRejectedValueOnce(new Error('Gateway timeout'))
-    fireEvent.click(screen.getByRole('button', { name: 'Save 1 translation as draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     expect(await screen.findByText('Saved, but the list could not refresh')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading' }))
     await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3))
@@ -524,7 +463,7 @@ describe('save as draft or publish in place', () => {
       detail: { code: 'stale_translation_value', conflicts: [{ string_id: 'a', key: 'greeting', locale: 'en', value: 'Hi' }] },
     }))
     await openAndFill()
-    fireEvent.click(screen.getByRole('button', { name: 'Save 1 translation as draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     expect(await screen.findByText(/Filled elsewhere since review: greeting \(EN\)/)).toBeTruthy()
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
   })

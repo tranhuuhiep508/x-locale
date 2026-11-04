@@ -29,13 +29,13 @@ test('review groups a placeholder style change and still allows apply', async ({
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog', { name: /^(Missing|Review) Translations$/ })
   await expect(dialog.locator('li').filter({ hasText: key })).toHaveCount(1)
-  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
+  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 
   const row = dialog.locator('li').filter({ hasText: key })
   const english = row.getByLabel('en', { exact: true })
   await expect(english).toHaveValue(`[en] ${source}`)
-  await expect(dialog.getByText('No QA issues').first()).toBeVisible()
+  await expect(dialog.getByText('No QA issues')).toHaveCount(0)
 
   const qa = page.waitForResponse(
     (response) => response.url().includes('/translate/qa') && response.request().method() === 'POST',
@@ -53,7 +53,7 @@ test('review groups a placeholder style change and still allows apply', async ({
   await expect(page.getByText(/Missing placeholder/)).toHaveCount(0)
   await expect(page.getByText(/Extra placeholder/)).toHaveCount(0)
   await expect(popover.getByText('Advisory only. You can still save or publish.')).toBeVisible()
-  await expect(dialog.getByRole('button', { name: /^Save .* as draft$/ })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: 'Save as draft', exact: true })).toBeEnabled()
   await page.screenshot({ path: testInfo.outputPath('qa-review-placeholder-changed.png') })
 
   await dialog.getByRole('button', { name: 'Discard' }).click()
