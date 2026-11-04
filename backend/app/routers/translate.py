@@ -75,7 +75,7 @@ def translate(
 ) -> TranslateResult:
     if payload.exclude_cells:
         raise HTTPException(
-            status_code=400, detail="exclude_cells is only supported by /translate/missing"
+            status_code=400, detail="exclude_cells is only supported by /translate/proposals"
         )
     locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
