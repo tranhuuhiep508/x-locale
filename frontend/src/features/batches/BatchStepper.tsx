@@ -9,7 +9,10 @@ const steps = [
 
 export function BatchStepper({ current }: { current: number }) {
   return (
-    <ol aria-label="Batch progress" className="grid grid-cols-3">
+    <ol
+      aria-label="Batch progress"
+      className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
+    >
       {steps.map((step, index) => {
         const complete = index < current
         const active = index === current
@@ -17,42 +20,35 @@ export function BatchStepper({ current }: { current: number }) {
           <li
             key={step.label}
             aria-current={active ? 'step' : undefined}
-            className="relative flex min-w-0 flex-col items-center gap-1.5 text-center"
-          >
-            {index < steps.length - 1 && (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'absolute top-3 left-[calc(50%+1rem)] h-px w-[calc(100%-2rem)] bg-border',
-                  complete && 'bg-primary'
-                )}
-              />
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 transition-all text-xs',
+              active
+                ? 'bg-background text-foreground font-semibold shadow-xs ring-1 ring-border/50'
+                : complete
+                  ? 'text-primary font-medium'
+                  : 'text-muted-foreground/60'
             )}
+          >
             <span
               aria-hidden="true"
               className={cn(
-                'flex size-6 items-center justify-center rounded-full border bg-card font-mono text-xs text-muted-foreground',
-                active &&
-                  'border-primary bg-primary text-primary-foreground ring-4 ring-primary/10',
-                complete && 'border-primary bg-primary/10 text-primary'
+                'flex size-3.5 items-center justify-center rounded-full text-[9px] font-mono',
+                active
+                  ? 'bg-primary text-primary-foreground font-bold'
+                  : complete
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-muted text-muted-foreground'
               )}
             >
-              {complete ? <Check className="size-3" /> : index + 1}
+              {complete ? <Check className="size-2.5 stroke-[2.5]" /> : index + 1}
             </span>
-            <div className="flex flex-col gap-1">
-              <span
-                className={cn(
-                  'text-sm font-medium text-muted-foreground',
-                  (active || complete) && 'text-foreground'
-                )}
-              >
-                {step.label}
-                <span className="sr-only">
-                  {complete ? ', complete' : active ? ', current step' : ', upcoming'}
-                </span>
+            <span className="font-medium">
+              {step.label}
+              <span className="sr-only">
+                {complete ? ', complete' : active ? ', current step' : ', upcoming'}
               </span>
-              <span className="sr-only">{step.description}</span>
-            </div>
+            </span>
+            <span className="sr-only">{step.description}</span>
           </li>
         )
       })}
