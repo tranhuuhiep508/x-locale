@@ -135,7 +135,7 @@ def snapshot(root):
 def test_trailing_comma_support_preserves_all_quoted_text(tmp_path, value):
     path = tmp_path / "vi.json"
     data = {"key, }": value}
-    path.write_text(json.dumps(data, ensure_ascii=False)[:-1] + ",\n}")
+    path.write_text(json.dumps(data, ensure_ascii=False)[:-1] + ",\n}", encoding="utf-8")
     assert load_json_file(path) == data
 
 
@@ -160,7 +160,7 @@ def test_invalid_modular_source_stops_sync_before_any_http_or_write(workspace, m
     command = import_module("x_locale_cli.commands.sync")
     monkeypatch.setattr(command, "runtime_config", lambda **kwargs: config)
     monkeypatch.setattr(command, "api_client", lambda config: api.client)
-    with pytest.raises(XLocaleError, match="bad/vi.json"):
+    with pytest.raises(XLocaleError, match=r"bad[\\/]vi\.json"):
         sync()
     assert api.calls == []
     assert snapshot(workspace) == before

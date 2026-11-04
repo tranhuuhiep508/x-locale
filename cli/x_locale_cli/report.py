@@ -200,7 +200,7 @@ def print_issue_sections(
 
 def _relative_output_path(path: Path, output_dir: Path) -> str:
     try:
-        return str(path.resolve().relative_to(output_dir.resolve()))
+        return path.resolve().relative_to(output_dir.resolve()).as_posix()
     except ValueError:
         return str(path)
 
