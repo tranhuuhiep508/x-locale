@@ -22,3 +22,4 @@ e2e/blob-report/
 .playwright-mcp/
 
 frontend/src/lib/api/openapi.d.ts
+/cli-dist/

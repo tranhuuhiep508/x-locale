@@ -118,6 +118,12 @@ class Settings(BaseSettings):
     # Built frontend directory (e.g. static/). When present, FastAPI serves the SPA from the same origin.
     static_dir: str = ""
 
+    # Folder holding the `loc` CLI release files (loc-<os>-<arch>, SHA256SUMS, VERSION,
+    # install.sh, install.ps1). Served under /cli so users install without GitHub.
+    cli_dist_dir: str = ""
+    # Public origin used inside served install scripts when behind a TLS proxy.
+    public_url: str = ""
+
     # OIDC
     oidc_issuer: str = "https://login.microsoftonline.com/common/v2.0"
     oidc_client_id: str = ""
@@ -153,6 +159,13 @@ class Settings(BaseSettings):
         if not self.static_dir.strip():
             return None
         path = Path(self.static_dir)
+        return path if path.is_dir() else None
+
+    @property
+    def cli_dist_directory(self) -> Path | None:
+        if not self.cli_dist_dir.strip():
+            return None
+        path = Path(self.cli_dist_dir)
         return path if path.is_dir() else None
 
     @property

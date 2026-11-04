@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from x_locale_cli.client import api_client
-from x_locale_cli.commands.options import LayoutOption, LocalesOption, OutputDirOption, StageOption
+from x_locale_cli.commands.options import (
+    LayoutOption,
+    LocalesOption,
+    OutputDirOption,
+    StageOption,
+)
 from x_locale_cli.config import runtime_config
 from x_locale_cli.ops import finish_sync, pull_translations, push_strings
 from x_locale_cli.report import print_phase, print_report_header

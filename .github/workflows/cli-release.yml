@@ -1,7 +1,8 @@
 name: CLI release
 
 # Publishes standalone `loc` binaries as a GitHub Release `cli-v<version>`, where
-# <version> is `__version__` in cli/x_locale_cli/__init__.py.
+# <version> is `__version__` in cli/x_locale_cli/__init__.py. The release also carries
+# `cli-dist.tar.gz`, the folder an x-locale server serves under /cli (CLI_DIST_DIR).
 #  - Push to develop/master that bumps the version: builds and releases it
 #    (skipped when that release already exists).
 #  - Push a tag `cli-v<version>`: same, for that exact commit.
@@ -141,9 +142,15 @@ jobs:
           merge-multiple: true
 
       - name: Write checksums and add install scripts
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
           (cd dist && sha256sum loc-* > SHA256SUMS && cat SHA256SUMS)
           cp cli/install.sh cli/install.ps1 dist/
+          # Drop-in folder for the x-locale server (CLI_DIST_DIR): extract cli-dist.tar.gz there.
+          echo "${TAG#cli-v}" > dist/VERSION
+          tar -czf cli-dist.tar.gz -C dist .
+          mv cli-dist.tar.gz dist/
 
       - name: Create GitHub Release
         env:
