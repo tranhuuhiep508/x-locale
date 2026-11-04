@@ -3,13 +3,11 @@ import type { StringEntry, TranslateProposalItem } from '@/lib/api/types'
 import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
-  applySuccessMessage,
   clampPage,
   createMissingReviewRequest,
   descriptionsFromDrafts,
   draftsFromItems,
   filledCount,
-  filledStringCount,
   mergeProposalResults,
   reviewStatusDescription,
   sourceConflicts,
@@ -195,24 +193,6 @@ describe('filledCount', () => {
         item({ string_id: 'b', translations: { en: '  ' } }),
       ]),
     ).toBe(1)
-  })
-})
-
-describe('filledStringCount', () => {
-  it('counts strings with at least one filled locale', () => {
-    expect(
-      filledStringCount([
-        item({ string_id: 'a', translations: { en: 'Hi', ja: '' } }),
-        item({ string_id: 'b', translations: { en: '  ' } }),
-      ]),
-    ).toBe(1)
-  })
-})
-
-describe('applySuccessMessage', () => {
-  it('includes translation and string counts with pluralization', () => {
-    expect(applySuccessMessage(1, 1)).toBe('Filled 1 empty translation across 1 string')
-    expect(applySuccessMessage(12, 5)).toBe('Filled 12 empty translations across 5 strings')
   })
 })
 

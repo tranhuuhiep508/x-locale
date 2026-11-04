@@ -126,26 +126,12 @@ export function filledCount(items: TranslateProposalItem[]): number {
   return count
 }
 
-export function filledStringCount(items: TranslateProposalItem[]): number {
-  let count = 0
-  for (const item of items) {
-    if (Object.values(item.translations).some((value) => value.trim())) count += 1
-  }
-  return count
-}
-
 export function localeCount(items: TranslateProposalItem[]): number {
   let count = 0
   for (const item of items) {
     count += Object.keys(item.translations).length
   }
   return count
-}
-
-export function applySuccessMessage(translatedCount: number, stringCount: number): string {
-  const translations = translatedCount === 1 ? 'translation' : 'translations'
-  const strings = stringCount === 1 ? 'string' : 'strings'
-  return `Filled ${translatedCount} empty ${translations} across ${stringCount} ${strings}`
 }
 
 export function mergeProposalResults(
