@@ -32,7 +32,7 @@ describe('translation description conflict recovery', () => {
       const [conflicts, setConflicts] = useState<DescriptionConflict[]>([])
       const [originals, setOriginals] = useState<Record<string, string | null>>({ a: 'Original' })
       return <TranslateReviewDialog
-        open projectId="proj-1" loadingQueue={false} generating={false} applying={false} generated
+        open projectId="proj-1" loadingQueue={false} generating={false} generated
         error={null} items={items} page={1} pageSize={50} total={1}
         onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={vi.fn()}
         conflicts={conflicts}
@@ -40,7 +40,7 @@ describe('translation description conflict recovery', () => {
           setOriginals({ a: resolved.description })
           setConflicts([])
         }}
-        onApply={(drafts) => {
+        onReviewPublish={vi.fn()} onSaveDraft={(drafts: TranslateProposalItem[]) => {
           applied(applyPayloadFromDrafts(drafts, originals))
           if (applied.mock.calls.length === 1) setConflicts([conflict])
         }}
@@ -49,14 +49,14 @@ describe('translation description conflict recovery', () => {
     render(<TooltipProvider><Review /></TooltipProvider>)
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'My context' } })
     fireEvent.change(screen.getByLabelText('en'), { target: { value: 'My translation' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
     expect(screen.getByText('Latest saved description: New context')).toBeTruthy()
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My translation')
     expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe('My context')
-    expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: choice }))
     expect(applied).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: /^Apply/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Save .* as draft$/ }))
     const payload = applied.mock.calls[1][0][0]
     expect(payload.translations).toEqual({ en: 'My translation' })
     expect(payload.scores).toEqual({})
@@ -96,7 +96,7 @@ function review(items: TranslateProposalItem[]) {
         projectId="proj-1"
         loadingQueue={false}
         generating={false}
-        applying={false}
+       
         generated
         error={null}
         items={items}
@@ -106,7 +106,8 @@ function review(items: TranslateProposalItem[]) {
         onPageChange={vi.fn()}
         onClose={vi.fn()}
         onTranslate={vi.fn()}
-        onApply={vi.fn()}
+        onSaveDraft={vi.fn()}
+        onReviewPublish={vi.fn()}
       />
     </TooltipProvider>,
   )
@@ -160,12 +161,12 @@ describe('translation QA in review', () => {
     fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
     const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
     expect(within(popover).getByText('Placeholder price changed from {price, number} to {price, number, percent}.')).toBeTruthy()
-    expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
+    expect(within(popover).getByText('Advisory only. You can still save or publish.')).toBeTruthy()
     expect(screen.queryByText(/Missing placeholder/)).toBeNull()
     expect(screen.queryByText(/Extra placeholder/)).toBeNull()
     expect(screen.getAllByText('No QA issues').length).toBeGreaterThan(0)
     expect(screen.queryByText('1 QA error. You can still apply.')).toBeNull()
-    const apply = screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement
+    const apply = screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement
     expect(apply.disabled).toBe(false)
     const edited = screen.getByLabelText('en', { selector: '#proposal-a-en' }) as HTMLTextAreaElement
     expect(edited.getAttribute('aria-invalid')).toBeNull()
@@ -199,13 +200,13 @@ describe('translation QA in review', () => {
       expect(screen.getAllByText('No QA issues').length).toBeGreaterThan(0)
       fireEvent.change(screen.getByLabelText('en'), { target: { value: 'Hello' } })
       expect(screen.getAllByText('Checking…').length).toBeGreaterThan(0)
-      expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+      expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
       await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
       fireEvent.click(screen.getByRole('button', { name: /QA for en/ }))
       const popover = document.querySelector('[data-slot="popover-content"]') as HTMLElement
       expect(within(popover).getByText('Missing placeholder {name} (source has 1, translation has 0).')).toBeTruthy()
-      expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
-      expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+      expect(within(popover).getByText('Advisory only. You can still save or publish.')).toBeTruthy()
+      expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -223,7 +224,7 @@ describe('translation QA in review', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(QA_DEBOUNCE_MS) })
       expect(screen.getByText('QA failed')).toBeTruthy()
       expect(screen.queryByText('No QA issues')).toBeNull()
-      expect((screen.getByRole('button', { name: /^Apply/ }) as HTMLButtonElement).disabled).toBe(false)
+      expect((screen.getByRole('button', { name: /^Save .* as draft$/ }) as HTMLButtonElement).disabled).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -262,7 +263,7 @@ describe('translation QA in review', () => {
     expect(within(popover).getByText('Missing placeholder {name}.')).toBeTruthy()
     expect(within(popover).getByText('Translation is long.')).toBeTruthy()
     expect(within(popover).getByText('placeholder_missing')).toBeTruthy()
-    expect(within(popover).getByText('Advisory only. You can still apply.')).toBeTruthy()
+    expect(within(popover).getByText('Advisory only. You can still save or publish.')).toBeTruthy()
     expect(screen.getByText('en', { selector: 'li span' })).toBeTruthy()
     expect(screen.getByText('de', { selector: 'li span' })).toBeTruthy()
   })
@@ -318,8 +319,8 @@ const memoryItems: TranslateProposalItem[] = [
 function memoryReview(items = memoryItems) {
   const onTranslate = vi.fn()
   const onApply = vi.fn()
-  render(<TooltipProvider><TranslateReviewDialog open projectId="p" loadingQueue={false} generating={false} applying={false} generated error={null}
-    items={items} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onApply={onApply} /></TooltipProvider>)
+  render(<TooltipProvider><TranslateReviewDialog open projectId="p" loadingQueue={false} generating={false} generated error={null}
+    items={items} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onSaveDraft={onApply} onReviewPublish={vi.fn()} /></TooltipProvider>)
   return { onTranslate, onApply }
 }
 
@@ -381,7 +382,7 @@ it('bulk uses exact matches on the current page, excludes them from AI, and undo
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Translate again · 1 cells' }))
   expect(onTranslate.mock.calls[0][0][0].memory_selected).toEqual(['en'])
-  fireEvent.click(screen.getByRole('button', { name: 'Apply 2 translations' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save 2 translations as draft' }))
   expect(onApply.mock.calls[0][0][1].translations.en).toBe('Manual text')
 })
 
@@ -427,9 +428,9 @@ it('switches off an incoming selection even after choosing another match without
 
 it.each(['source change', 'page change'])('discards restore history after a %s', (change) => {
   const props = {
-    open: true, projectId: 'p', loadingQueue: false, generating: false, applying: false, generated: true,
+    open: true, projectId: 'p', loadingQueue: false, generating: false, generated: true,
     error: null, page: 1, pageSize: 50, total: 1,
-    onPageChange: vi.fn(), onClose: vi.fn(), onTranslate: vi.fn(), onApply: vi.fn(),
+    onPageChange: vi.fn(), onClose: vi.fn(), onTranslate: vi.fn(), onSaveDraft: vi.fn(), onReviewPublish: vi.fn(),
   }
   const view = (items: TranslateProposalItem[]) => <TooltipProvider><TranslateReviewDialog {...props} items={items} /></TooltipProvider>
   const { rerender } = render(view([memoryItems[0]]))
@@ -476,7 +477,7 @@ function pagedReview(initial: { page?: number; total?: number; items?: Translate
     projectId: 'p',
     loadingQueue: false,
     generating: false,
-    applying: false,
+   
     generated: false,
     error: null,
     items: memoryItems,
@@ -486,7 +487,7 @@ function pagedReview(initial: { page?: number; total?: number; items?: Translate
     onPageChange,
     onClose: vi.fn(),
     onTranslate: vi.fn(),
-    onApply: vi.fn(),
+    onSaveDraft: vi.fn(), onReviewPublish: vi.fn(),
     ...initial,
   }
   const view = (next: Partial<typeof props> = {}) => (
@@ -583,7 +584,7 @@ it('blocks paging while generated translations differ from the loaded page', asy
   await act(async () => {
     next.focus()
   })
-  expect((await screen.findByRole('tooltip')).textContent).toBe("Apply or undo this page's changes first")
+  expect((await screen.findByRole('tooltip')).textContent).toBe("Save or undo this page's changes first")
   fireEvent.click(next)
   expect(waiting.onPageChange).not.toHaveBeenCalled()
 
@@ -614,7 +615,7 @@ it('blocks next and previous while this page has unapplied work', async () => {
     next.focus()
   })
   expect(document.activeElement).toBe(next)
-  expect((await screen.findByRole('tooltip')).textContent).toBe("Apply or undo this page's changes first")
+  expect((await screen.findByRole('tooltip')).textContent).toBe("Save or undo this page's changes first")
   fireEvent.click(next)
   expect(blocked.onPageChange).not.toHaveBeenCalled()
   expect(screen.getByText('Skipped · using match')).toBeTruthy()

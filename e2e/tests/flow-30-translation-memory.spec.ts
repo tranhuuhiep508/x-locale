@@ -52,7 +52,7 @@ test('batch review shows memory inline before AI and skips only the selected loc
   await expect(dialog.getByLabel('en', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('Published hello {name}').first()).toBeVisible()
   await expect(dialog.getByText('Skipped · using match')).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Apply 1 translation' })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: 'Save 1 translation as draft' })).toBeEnabled()
   const generation = page.waitForResponse((response) =>
     response.url().endsWith('/translate/proposals'),
   )
@@ -63,7 +63,7 @@ test('batch review shows memory inline before AI and skips only the selected loc
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue(`[ja] ${source}`)
   await expect(dialog.getByLabel('en', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('Published hello {name}').first()).toBeVisible()
-  await dialog.getByRole('button', { name: 'Apply 2 translations' }).click()
+  await dialog.getByRole('button', { name: 'Save 2 translations as draft' }).click()
   await expect(dialog.getByText('Every target locale already has text.').first()).toBeVisible()
   const saved = await (
     await page.request.get(`/api/projects/${project.id}/strings/${destination.id}`)

@@ -5,8 +5,8 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useEffect, useRef, useState } from 'react'
-import { Check, CheckCheck, ChevronDown, ChevronUp, Equal, History, Wand2 } from 'lucide-react'
-import type { Job, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
+import { ArrowLeft, Check, CheckCheck, ChevronDown, ChevronUp, Equal, History, Save, Send, Wand2 } from 'lucide-react'
+import type { Job, StringEntry, TranslateJobProgress, TranslateProposalItem, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -45,6 +45,7 @@ import {
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { cn } from '@/lib/utils'
+import { TranslatePublishReview } from '@/features/strings/TranslatePublishReview'
 
 export function proposalsFromJobResult(
   result: Record<string, unknown> | null | undefined
@@ -59,7 +60,7 @@ export function jobStillRunning(job: Job | undefined): boolean {
 }
 
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
-const PAGE_BLOCKED = "Apply or undo this page's changes first"
+const PAGE_BLOCKED = "Save or undo this page's changes first"
 
 function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
   const left = draft.memory_selected ?? []
@@ -391,7 +392,7 @@ function ProposalTreeNode({
             <AlertDescription>
               <p className="whitespace-pre-wrap">Reviewed source: {sourceConflict.expected_source_text}</p>
               <p className="whitespace-pre-wrap">Latest saved source: {sourceConflict.source_text}</p>
-              <p>Nothing from this Apply was saved. Regenerate changed strings before applying again.</p>
+              <p>Nothing from this save was saved. Regenerate changed strings before saving again.</p>
               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onRemove}>Remove from review</Button>
             </AlertDescription>
           </Alert>
@@ -401,7 +402,7 @@ function ProposalTreeNode({
             <AlertTitle>Description changed since review opened</AlertTitle>
             <AlertDescription>
               <p>Latest saved description: {conflict.description ?? '(empty)'}</p>
-              <p>Your draft is shown above. Choose which description to use, then Apply again.</p>
+              <p>Your draft is shown above. Choose which description to use, then save again.</p>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, true)}>Use latest</Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => onResolveConflict(conflict, false)}>Keep mine</Button>
@@ -508,7 +509,7 @@ export function TranslateReviewDialog({
   projectId,
   loadingQueue,
   generating,
-  applying,
+  saving = null,
   generated,
   error,
   items,
@@ -518,7 +519,17 @@ export function TranslateReviewDialog({
   onPageChange,
   onClose,
   onTranslate,
-  onApply,
+  onSaveDraft,
+  onReviewPublish,
+  publishReview = null,
+  reviewing = false,
+  reviewLoading = false,
+  onBackToEdit,
+  onPublish,
+  savedNotice,
+  onViewInStrings,
+  refreshError,
+  onRetryRefresh,
   progress,
   conflicts = [],
   onResolveConflict,
@@ -531,7 +542,8 @@ export function TranslateReviewDialog({
   projectId: string
   loadingQueue: boolean
   generating: boolean
-  applying: boolean
+  /** The write in flight, if any. */
+  saving?: 'draft' | 'publish' | null
   generated: boolean
   error: string | null
   items: TranslateProposalItem[]
@@ -542,7 +554,19 @@ export function TranslateReviewDialog({
   onPageChange: (page: number) => void
   onClose: () => void
   onTranslate: (items: TranslateProposalItem[]) => void
-  onApply: (items: TranslateProposalItem[]) => void
+  onSaveDraft: (items: TranslateProposalItem[]) => void
+  /** Freeze the current page's reviewed rows and show the full public diff. */
+  onReviewPublish: (items: TranslateProposalItem[]) => void
+  /** Proposed public state of the frozen review; null while loading. */
+  publishReview?: StringEntry[] | null
+  reviewing?: boolean
+  reviewLoading?: boolean
+  onBackToEdit?: () => void
+  onPublish?: () => void
+  savedNotice?: string | null
+  onViewInStrings?: () => void
+  refreshError?: string | null
+  onRetryRefresh?: () => void
   conflicts?: DescriptionConflict[]
   onResolveConflict?: (conflict: DescriptionConflict) => void
   sourceConflicts?: TranslationSourceConflict[]
@@ -550,6 +574,7 @@ export function TranslateReviewDialog({
   onRegenerate?: (items: TranslateProposalItem[]) => void
   onRemoveFromReview?: (items: TranslateProposalItem[], stringId: string) => void
 }) {
+  const applying = saving !== null
   const [drafts, setDrafts] = useState<Record<string, TranslateProposalItem>>(() =>
     draftsFromItems(items)
   )
@@ -700,7 +725,7 @@ export function TranslateReviewDialog({
   const pageLocked = draftList.some((draft) => draftDiffers(draft, loadedById.get(draft.string_id)))
   const missingCount = localeCount(draftList) - applyCount
   const review = !generating
-  const busy = loadingQueue || generating || applying
+  const busy = loadingQueue || generating || applying || reviewLoading
   const canTranslate = !busy && draftList.some((item) => Object.keys(item.translations).some((locale) => !item.memory_selected?.includes(locale))) && conflicts.length === 0 && sourceConflicts.length === 0
   const canApply = !busy && applyCount > 0 && conflicts.length === 0 && sourceConflicts.length === 0
   const canPage = total > pageSize
@@ -708,7 +733,7 @@ export function TranslateReviewDialog({
   const showInitialSpinner = loadingQueue && draftList.length === 0
   const generatingLabel = translateProgressLabel(progress)
   const generatingPercent = translateProgressPercent(progress)
-  const description = reviewStatusDescription({
+  const statusDescription = reviewStatusDescription({
     loadingInitial: showInitialSpinner,
     total,
     pageStringCount: draftList.length,
@@ -716,6 +741,12 @@ export function TranslateReviewDialog({
     applyCount,
     generated,
   })
+  const publishCount = publishReview?.length ?? 0
+  const description = reviewing
+    ? reviewLoading && !publishReview
+      ? 'Comparing the reviewed working copy to public…'
+      : `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}. Nothing is saved until you publish.`
+    : statusDescription
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
   const foldClean = shouldFoldCleanLocales(draftList.length)
   const pageViews = filledViews(draftList, qa)
@@ -752,7 +783,7 @@ export function TranslateReviewDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && !applying && !generating) onClose()
+        if (!next && !applying && !generating && !reviewing) onClose()
       }}
     >
       <ReviewDialogContent
@@ -767,9 +798,30 @@ export function TranslateReviewDialog({
         }}
       >
         <ReviewDialogHeader>
-          <DialogTitle>{generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
+          <DialogTitle>{reviewing ? 'Review Publication' : generated ? 'Review Translations' : 'Missing Translations'}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
-          {review && draftList.length > 0 ? (
+          {savedNotice && !reviewing ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Check className="size-4 text-primary" aria-hidden="true" />
+              {savedNotice}
+              {onViewInStrings ? (
+                <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={onViewInStrings}>View in Strings</Button>
+              ) : null}
+            </p>
+          ) : null}
+          {refreshError ? (
+            <Alert>
+              <AlertTitle>Saved, but the list could not refresh</AlertTitle>
+              <AlertDescription>
+                <p>{refreshError}</p>
+                <Button type="button" variant="outline" size="sm" disabled={loadingQueue} onClick={onRetryRefresh}>
+                  {loadingQueue ? <Spinner data-icon="inline-start" /> : null}
+                  Retry loading
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {review && !reviewing && draftList.length > 0 ? (
             <div className="flex flex-col gap-2 pt-1">
               {memoryCells.length === 0 ? (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -852,19 +904,21 @@ export function TranslateReviewDialog({
               />
             </div>
           ) : null}
-          {error && !loadingQueue ? (
+          {reviewing ? null : error && !loadingQueue && !refreshError ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : publicCount > 0 && !loadingQueue ? (
             <p className="text-sm text-muted-foreground">
               {publicCount} public {publicCount === 1 ? 'string is' : 'strings are'} in this list.
-              Applied values stay in the working copy until you publish.
+              Save as draft keeps their public text unchanged until you publish.
             </p>
           ) : null}
           {recoveryMessage ? <p className="text-sm text-destructive" role="status">{recoveryMessage}</p> : null}
         </ReviewDialogHeader>
 
         <ReviewDialogBody>
-          {showInitialSpinner ? (
+          {reviewing ? (
+            <TranslatePublishReview entries={publishReview} loading={reviewLoading} paged={canPage} />
+          ) : showInitialSpinner ? (
             <div
               className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
               aria-live="polite"
@@ -872,6 +926,8 @@ export function TranslateReviewDialog({
               <Spinner />
               Loading missing strings…
             </div>
+          ) : refreshError && draftList.length === 0 ? (
+            <EmptyState title="List not refreshed" description="Your changes were saved. Retry loading to continue reviewing." />
           ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
           ) : draftList.length === 0 ? (
@@ -941,7 +997,7 @@ export function TranslateReviewDialog({
           )}
         </ReviewDialogBody>
 
-        {canPage ? (
+        {canPage && !reviewing ? (
           <div className="shrink-0 border-t px-5">
             <DataPagination
               page={page}
@@ -956,35 +1012,56 @@ export function TranslateReviewDialog({
         ) : null}
 
         <ReviewDialogFooter>
-          <Button
-            variant="outline"
-            type="button"
-            onClick={onClose}
-            disabled={applying || generating}
-          >
-            Discard
-          </Button>
-          {sourceConflicts.length > 0 ? (
-            <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
-              {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
-              Regenerate changed strings
-            </Button>
-          ) : null}
-          <Button
-            variant={review ? 'outline' : 'default'}
-            type="button"
-            disabled={!canTranslate}
-            onClick={() => onTranslate(draftList)}
-          >
-            {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
-            {generated ? `Translate again · ${aiCount} cells` : `Translate ${aiCount} cells`}
-          </Button>
-          {applyCount > 0 ? (
-            <Button type="button" disabled={!canApply} onClick={() => onApply(draftList)}>
-              {applying ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-              Apply {applyCount === 1 ? '1 translation' : `${applyCount} translations`}
-            </Button>
-          ) : null}
+          {reviewing ? (
+            <>
+              <Button variant="outline" type="button" onClick={onBackToEdit} disabled={applying}>
+                <ArrowLeft data-icon="inline-start" />
+                Back to edit
+              </Button>
+              <Button type="button" disabled={applying || reviewLoading || publishCount === 0} onClick={onPublish}>
+                {saving === 'publish' ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
+                {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={onClose}
+                disabled={applying || generating}
+              >
+                Discard
+              </Button>
+              {sourceConflicts.length > 0 ? (
+                <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
+                  {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+                  Regenerate changed strings
+                </Button>
+              ) : null}
+              <Button
+                variant={review ? 'outline' : 'default'}
+                type="button"
+                disabled={!canTranslate}
+                onClick={() => onTranslate(draftList)}
+              >
+                {generating ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+                {generated ? `Translate again · ${aiCount} cells` : `Translate ${aiCount} cells`}
+              </Button>
+              {applyCount > 0 ? (
+                <>
+                  <Button variant="outline" type="button" disabled={!canApply} onClick={() => onSaveDraft(draftList)}>
+                    {saving === 'draft' ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                    {`Save ${applyCount === 1 ? '1 translation' : `${applyCount} translations`} as draft`}
+                  </Button>
+                  <Button type="button" disabled={!canApply} onClick={() => onReviewPublish(draftList)}>
+                    {reviewLoading ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                    {canPage ? 'Review & publish this page' : 'Review & publish'}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          )}
         </ReviewDialogFooter>
       </ReviewDialogContent>
     </Dialog>

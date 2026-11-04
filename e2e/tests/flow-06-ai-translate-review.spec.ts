@@ -70,12 +70,12 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await expect(paging).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 
-  const applyButton = dialog.getByRole('button', { name: /Apply \d+ translations/ })
+  const applyButton = dialog.getByRole('button', { name: /Save \d+ translations as draft/ })
   await expect(applyButton).toBeEnabled()
   await applyButton.click()
 
   await expect(
-    page.getByText(/Filled \d+ empty translations across \d+ strings/),
+    dialog.getByRole('status').filter({ hasText: /Saved \d+ strings as draft/ }),
   ).toBeVisible()
 
   await dialog.getByRole('button', { name: 'Discard' }).click()
@@ -113,8 +113,8 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   await unrelated.getByLabel('en', { exact: true }).fill('Unrelated reviewed draft')
   const edited = await page.request.patch(`${root}/strings/${rows[0].id}`, { data: { source_text: 'Hủy' } })
   expect(edited.ok()).toBeTruthy()
-  const conflictResponse = page.waitForResponse((response) => response.url().endsWith('/translate/apply'))
-  await dialog.getByRole('button', { name: /^Apply/ }).click()
+  const conflictResponse = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
+  await dialog.getByRole('button', { name: /^Save .* as draft$/ }).click()
   expect((await conflictResponse).status()).toBe(409)
   await expect(stale.getByText('Source text changed since generation')).toBeVisible()
   await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
@@ -128,11 +128,48 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
   await expect(stale.getByText('Source text changed since generation')).toBeHidden()
   await expect(stale.getByLabel('en', { exact: true })).toBeVisible()
   await expect(unrelated.getByLabel('en', { exact: true })).toHaveValue('Unrelated reviewed draft')
-  const applied = page.waitForResponse((response) => response.url().endsWith('/translate/apply'))
-  await dialog.getByRole('button', { name: /^Apply/ }).click()
+  const applied = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
+  await dialog.getByRole('button', { name: /^Save .* as draft$/ }).click()
   const response = await applied
   expect(response.ok(), await response.text()).toBeTruthy()
   const items = response.request().postDataJSON().items as Array<{ string_id: string; expected_source_text: string; translations: Record<string, string> }>
   expect(items.find((item) => item.string_id === rows[0].id)?.expected_source_text).toBe('Hủy')
   expect(items.find((item) => item.string_id === rows[1].id)?.translations.en).toBe('Unrelated reviewed draft')
+})
+
+test('publishes reviewed strings in place after one full review', async ({ page }) => {
+  await openDemoStrings(page)
+  const projectId = projectIdFromUrl(page)
+  const root = `/api/projects/${projectId}`
+  const prefix = `e2e_review_publish_${Date.now()}`
+  const created = await page.request.post(`${root}/strings`, { data: { key: `${prefix}_a`, source_text: 'Lưu' } })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const entry = await created.json()
+  const untouched = await page.request.post(`${root}/strings`, { data: { key: `${prefix}_b`, source_text: 'Hủy' } })
+  expect(untouched.ok()).toBeTruthy()
+  await page.getByRole('textbox', { name: 'Search strings' }).fill(`${prefix}_a`)
+  await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
+  await page.getByRole('button', { name: 'Translate missing' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
+  await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Review & publish' }).click()
+  await expect(dialog.getByRole('heading', { name: 'Review Publication' })).toBeVisible()
+  await expect(dialog.getByRole('region', { name: 'New to public' })).toContainText(`${prefix}_a`)
+  const published = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
+  await dialog.getByRole('button', { name: /^Publish 1 string$/ }).click()
+  const response = await published
+  expect(response.ok(), await response.text()).toBeTruthy()
+  expect(response.request().postDataJSON().action).toBe('publish')
+  // No second confirmation and no redirect: the review dialog stays open.
+  await expect(dialog.getByRole('status').filter({ hasText: 'Saved and published 1 string' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'View in Strings' })).toBeVisible()
+  const saved = await (await page.request.get(`${root}/strings/${entry.id}`)).json()
+  expect(saved.status).toBe('public')
+  expect(saved.translations.every((cell: { value: string; published_value: string }) => cell.published_value === cell.value)).toBe(true)
+  const other = await (await page.request.get(`${root}/strings/${(await untouched.json()).id}`)).json()
+  expect(other.status).toBe('draft')
+  await dialog.getByRole('button', { name: 'View in Strings' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
 })

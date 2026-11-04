@@ -431,6 +431,27 @@ export interface TranslateApplyResult {
   locales: string[]
 }
 
+export type TranslateReviewRequest = TranslateApplyRequest
+
+export interface TranslateReview {
+  /** Full proposed strings: the working copy after save, with published snapshots. */
+  items: StringEntry[]
+  fingerprint: string
+}
+
+export interface TranslateSaveRequest extends TranslateApplyRequest {
+  action: 'draft' | 'publish'
+  fingerprint?: string
+}
+
+export interface TranslateSaveResult {
+  action: 'draft' | 'publish'
+  translated_count: number
+  string_count: number
+  published_count: number
+  batch_id: string
+}
+
 // ── Jobs ───────────────────────────────────────────────────────────────
 export interface TranslateJobProgress {
   phase: string

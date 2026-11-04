@@ -1,4 +1,4 @@
-import type { TranslateProposalItem, TranslateRequest, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
+import type { StringEntry, TranslateProposalItem, TranslateRequest, TranslateSaveResult, TranslationSourceConflict, TranslationMemoryMatch } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
 import { ApiError } from '@/lib/api/client'
 import { searchToBatchFilter } from '@/features/strings/publish-preview'
@@ -260,6 +260,53 @@ export function applyPayloadFromDrafts(
       ? { description: item.description?.trim() || null, expected_description: originals[item.string_id] }
       : {}),
   }))
+}
+
+/** Only rows the reviewer changed: a filled cell or an edited description. */
+export function reviewedPayloadFromDrafts(
+  items: TranslateProposalItem[],
+  originals: Record<string, string | null>,
+) {
+  return applyPayloadFromDrafts(items, originals).filter(
+    (item) => Object.keys(item.translations).length > 0 || 'description' in item,
+  )
+}
+
+export type ValueConflict = { string_id: string; key: string; locale: string; value: string }
+
+export function valueConflicts(error: unknown): ValueConflict[] {
+  if (!(error instanceof ApiError) || error.status !== 409) return []
+  const detail = (error.body as { detail?: { code?: string; conflicts?: unknown } } | null)?.detail
+  if (detail?.code !== 'stale_translation_value' || !Array.isArray(detail.conflicts)) return []
+  return detail.conflicts.filter((item): item is ValueConflict =>
+    item != null && typeof item.string_id === 'string' && typeof item.key === 'string'
+    && typeof item.locale === 'string' && typeof item.value === 'string',
+  )
+}
+
+export function valueConflictMessage(conflicts: ValueConflict[]): string {
+  const cells = conflicts.map((item) => `${item.key} (${item.locale.toUpperCase()})`).join(', ')
+  return `Filled elsewhere since review: ${cells}. Nothing was saved. Clear these cells to keep the saved text, then try again.`
+}
+
+export function saveSuccessMessage(result: TranslateSaveResult): string {
+  const strings = `${result.string_count} ${result.string_count === 1 ? 'string' : 'strings'}`
+  if (result.action === 'publish') {
+    const published = `${result.published_count} ${result.published_count === 1 ? 'string' : 'strings'}`
+    return `Saved and published ${published}. Available on the next public pull or export.`
+  }
+  return `Saved ${strings} as draft. Public translations are unchanged.`
+}
+
+/** Locales that would export empty for each string once published. */
+export function emptyPublicLocales(entries: StringEntry[]): Array<{ id: string; key: string; locales: string[] }> {
+  return entries.flatMap((entry) => {
+    const locales = entry.translations
+      .filter((translation) => !(translation.value ?? '').trim())
+      .map((translation) => translation.locale)
+      .sort()
+    return locales.length ? [{ id: entry.id, key: entry.key, locales }] : []
+  })
 }
 
 export function descriptionsFromDrafts(

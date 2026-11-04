@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { TranslateProposalItem } from '@/lib/api/types'
+import type { StringEntry, TranslateProposalItem } from '@/lib/api/types'
 import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
@@ -17,6 +17,10 @@ import {
   translateProgressPercent,
   updateDraftDescription,
   updateDraftTranslation,
+  emptyPublicLocales,
+  reviewedPayloadFromDrafts,
+  saveSuccessMessage,
+  valueConflicts,
 } from './translate-review'
 
 describe('createMissingReviewRequest', () => {
@@ -370,5 +374,38 @@ describe('source freshness', () => {
     expect(merged[0].issues).toEqual({})
     expect(merged[1]).toBe(previous[1])
     expect(applyPayloadFromDrafts(merged, {})[0].expected_source_text).toBe('Hủy')
+  })
+})
+
+describe('reviewed save payload', () => {
+  const base = { key: 'k', source_text: 'S', status: 'draft' as const, scores: {} }
+  it('sends only rows with a filled cell or an edited description', () => {
+    const payload = reviewedPayloadFromDrafts([
+      { ...base, string_id: 'filled', translations: { en: 'Hi', ja: ' ' }, description: '' },
+      { ...base, string_id: 'untouched', translations: { en: '' }, description: '' },
+      { ...base, string_id: 'described', translations: { en: '' }, description: 'Context' },
+    ], { filled: null, untouched: null, described: null })
+    expect(payload.map((item) => item.string_id)).toEqual(['filled', 'described'])
+    expect(payload[0].translations).toEqual({ en: 'Hi' })
+    expect(payload[1]).toMatchObject({ description: 'Context', expected_description: null })
+  })
+
+  it('lists locales that would export empty and reads value conflicts', () => {
+    const entry = { id: 'a', key: 'k', translations: [
+      { locale: 'ja', value: '' }, { locale: 'en', value: 'Hi' }, { locale: 'fr', value: ' ' },
+    ] } as unknown as StringEntry
+    expect(emptyPublicLocales([entry])).toEqual([{ id: 'a', key: 'k', locales: ['fr', 'ja'] }])
+    const error = new ApiError(409, 'Conflict', { detail: { code: 'stale_translation_value', conflicts: [
+      { string_id: 'a', key: 'k', locale: 'en', value: 'Old' },
+    ] } })
+    expect(valueConflicts(error)).toHaveLength(1)
+    expect(valueConflicts(new ApiError(409, 'Conflict', { detail: { code: 'other' } }))).toEqual([])
+  })
+
+  it('describes draft and publish outcomes', () => {
+    expect(saveSuccessMessage({ action: 'draft', translated_count: 3, string_count: 2, published_count: 0, batch_id: 'b' }))
+      .toBe('Saved 2 strings as draft. Public translations are unchanged.')
+    expect(saveSuccessMessage({ action: 'publish', translated_count: 1, string_count: 1, published_count: 1, batch_id: 'b' }))
+      .toBe('Saved and published 1 string. Available on the next public pull or export.')
   })
 })

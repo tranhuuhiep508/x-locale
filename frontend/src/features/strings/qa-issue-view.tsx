@@ -15,7 +15,7 @@ const warningIconClass = 'text-amber-600 dark:text-amber-400'
 const CLOSE_DELAY_MS = 150
 
 export const QA_SAVE_FOOTER = 'Advisory only. You can still save.'
-export const QA_APPLY_FOOTER = 'Advisory only. You can still apply.'
+export const QA_APPLY_FOOTER = 'Advisory only. You can still save or publish.'
 
 export type QaBadgeIssue = QaIssue & { locale?: string }
 

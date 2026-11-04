@@ -49,6 +49,7 @@ import { PublishPreviewDialog } from '@/features/strings/PublishPreviewDialog'
 import {
   buildPublishPreview,
   isPublishFingerprintMismatch,
+  publicationErrorMessage,
   publishConfirmRequest,
   reviewPublishSource,
   searchToBatchFilter,
@@ -59,15 +60,16 @@ import {
 } from '@/features/strings/batch-feedback'
 import {
   TRANSLATE_MISSING_PAGE_SIZE,
-  applyPayloadFromDrafts,
   descriptionConflicts,
   sourceConflicts,
-  applySuccessMessage,
   createMissingReviewRequest,
   descriptionsFromDrafts,
   excludedMemoryCells,
-  filledStringCount,
   mergeProposalResults,
+  reviewedPayloadFromDrafts,
+  saveSuccessMessage,
+  valueConflictMessage,
+  valueConflicts,
   type MissingReviewRequest,
 } from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
@@ -83,6 +85,8 @@ import type {
   StringEntry,
   TranslateProposalItem,
   TranslateRequest,
+  TranslateReview,
+  TranslateSaveRequest,
 } from '@/lib/api/types'
 import {
   modulesQuery,
@@ -98,6 +102,14 @@ import { useToast } from '@/lib/toast'
 const StringFormDialog = lazy(() => import('@/features/strings/StringFormDialog'))
 
 const stringsRoute = getRouteApi('/projects/$projectRef/strings')
+
+type ReviewPayload = TranslateSaveRequest['items']
+type SaveVariables = {
+  action: TranslateSaveRequest['action']
+  payload: ReviewPayload
+  fingerprint?: string
+  items?: TranslateProposalItem[]
+}
 
 const STRING_COLUMN_PINNING: ColumnPinningState = {
   left: ['select', 'key'],
@@ -138,6 +150,14 @@ export function StringsPage() {
   const regenerationIds = useRef<string[] | null>(null)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [proposalsReady, setProposalsReady] = useState(false)
+  // Frozen publication review: exactly these rows publish, against this fingerprint.
+  const [publishReview, setPublishReview] = useState<{
+    payload: ReviewPayload
+    review: TranslateReview | null
+  } | null>(null)
+  const [savedNotice, setSavedNotice] = useState<{ message: string; batchId: string } | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const refreshingAfterSave = useRef(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -306,8 +326,17 @@ export function StringsPage() {
       setReviewPage(res.page)
       setReviewPageSize(res.page_size)
       setProposalsReady(false)
+      refreshingAfterSave.current = false
+      setRefreshError(null)
     },
-    onError: () => toast.error('Failed to load missing translations'),
+    onError: (error) => {
+      if (refreshingAfterSave.current) {
+        // The write already committed; offer a read retry, never a second write.
+        setRefreshError(error instanceof Error ? error.message : 'Failed to load missing translations')
+        return
+      }
+      toast.error('Failed to load missing translations')
+    },
   })
 
   function acceptProposals(items: TranslateProposalItem[]) {
@@ -363,42 +392,96 @@ export function StringsPage() {
     if (job.status === 'completed') acceptJobResult(job)
   }, [proposalJobId, proposalJobQuery.data])
 
-  const applyMut = useMutation({
-    onMutate: (items: TranslateProposalItem[]) => { setProposalItems(items) },
-    mutationFn: (items: TranslateProposalItem[]) =>
-      stringsApi.translateApply(projectId, {
-        items: applyPayloadFromDrafts(items, descriptionOriginals.current),
-      }),
-    onSuccess: (res, items) => {
-      toast.success(applySuccessMessage(res.translated_count, filledStringCount(items)))
-      setProposalJobId(null)
-      setProposalsReady(false)
-      proposeMut.reset()
-      invalidateStrings()
-      missingMut.mutate(missingRequest(reviewPage))
-    },
+  /** Show stale-content conflicts in the editable review. Returns false for other errors. */
+  function showWriteConflicts(error: unknown): boolean {
+    const conflicts = descriptionConflicts(error)
+    const changedSources = sourceConflicts(error)
+    const filledElsewhere = valueConflicts(error)
+    if (!conflicts.length && !changedSources.length && !filledElsewhere.length) return false
+    setApplyConflicts(conflicts)
+    setApplySourceConflicts(changedSources)
+    setRecoveryMessage(filledElsewhere.length ? valueConflictMessage(filledElsewhere) : null)
+    setPublishReview(null)
+    toast.error(changedSources.length
+      ? 'Source text changed. Nothing was saved. Regenerate the changed strings.'
+      : conflicts.length
+        ? 'Descriptions changed. Resolve the conflicts before saving again.'
+        : 'Some translations were filled elsewhere. Nothing was saved.')
+    return true
+  }
+
+  const reviewMut = useMutation({
+    mutationFn: (payload: ReviewPayload) => stringsApi.translateReview(projectId, { items: payload }),
+    onSuccess: (review, payload) => setPublishReview({ payload, review }),
     onError: (error) => {
-      const conflicts = descriptionConflicts(error)
-      const changedSources = sourceConflicts(error)
-      setApplyConflicts(conflicts)
-      setApplySourceConflicts(changedSources)
-      toast.error(changedSources.length
-        ? 'Source text changed. Nothing was saved. Regenerate the changed strings.'
-        : conflicts.length ? 'Descriptions changed. Resolve the conflicts before applying again.' : 'Failed to save translations')
+      if (showWriteConflicts(error)) return
+      setPublishReview(null)
+      toast.error(error instanceof Error ? error.message : 'Failed to prepare the publication review')
     },
   })
 
-  function closeReview() {
-    if (applyMut.isPending || proposeMut.isPending) return
+  const saveMut = useMutation({
+    onMutate: ({ items }: SaveVariables) => {
+      // Keep the reviewer's edits as the dialog's items so a failed save loses nothing.
+      if (items) setProposalItems(items)
+    },
+    mutationFn: ({ action, payload, fingerprint }: SaveVariables) =>
+      stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
+    onSuccess: (res) => {
+      const message = saveSuccessMessage(res)
+      toast.success(message, { label: 'View in Strings', onClick: () => viewInStrings(res.batch_id) })
+      setSavedNotice({ message, batchId: res.batch_id })
+      setPublishReview(null)
+      setApplyConflicts([])
+      setApplySourceConflicts([])
+      setRecoveryMessage(null)
+      setProposalJobId(null)
+      setProposalsReady(false)
+      setProposalItems([])
+      proposeMut.reset()
+      invalidateStrings()
+      refreshingAfterSave.current = true
+      setRefreshError(null)
+      missingMut.mutate(missingRequest(reviewPage))
+    },
+    onError: (error, { action, payload }) => {
+      if (action === 'publish' && isPublishFingerprintMismatch(error)) {
+        toast.info('Content changed since review. Nothing was published. Review the updated changes.')
+        setPublishReview({ payload, review: null })
+        reviewMut.mutate(payload)
+        return
+      }
+      if (showWriteConflicts(error)) return
+      toast.error(publicationErrorMessage(error, 'Failed to save translations'))
+    },
+  })
+
+  function resetReview() {
     setReviewOpen(false)
     reviewRequestRef.current = null
     setProposalJobId(null)
     setProposalsReady(false)
+    setPublishReview(null)
+    setSavedNotice(null)
+    setRefreshError(null)
+    refreshingAfterSave.current = false
     proposeMut.reset()
   }
 
+  function viewInStrings(batchId: string) {
+    resetReview()
+    startTransition(() => {
+      navigate({ search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }) })
+    })
+  }
+
+  function closeReview() {
+    if (saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
+    resetReview()
+  }
+
   function loadMissingPage(page: number) {
-    if (!reviewRequestRef.current || applyMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
+    if (!reviewRequestRef.current || saveMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
     setProposalJobId(null)
     missingMut.mutate(missingRequest(page))
   }
@@ -811,7 +894,7 @@ export function StringsPage() {
         projectId={projectId}
         loadingQueue={missingMut.isPending}
         generating={reviewGenerating}
-        applying={applyMut.isPending}
+        saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}
         generated={proposalsReady}
         error={reviewError}
         items={reviewItems}
@@ -863,7 +946,35 @@ export function StringsPage() {
             exclude_cells: excludedMemoryCells(items),
           })
         }}
-        onApply={(items) => applyMut.mutate(items)}
+        onSaveDraft={(items) => {
+          setSavedNotice(null)
+          saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items, descriptionOriginals.current) })
+        }}
+        onReviewPublish={(items) => {
+          // Freeze membership, values, and baseline; later edits need a new review.
+          const payload = reviewedPayloadFromDrafts(items, descriptionOriginals.current)
+          setProposalItems(items)
+          setSavedNotice(null)
+          setPublishReview({ payload, review: null })
+          reviewMut.mutate(payload)
+        }}
+        reviewing={publishReview !== null}
+        reviewLoading={reviewMut.isPending}
+        publishReview={publishReview?.review?.items ?? null}
+        onBackToEdit={() => {
+          if (saveMut.isPending) return
+          reviewMut.reset()
+          setPublishReview(null)
+        }}
+        onPublish={() => {
+          const frozen = publishReview
+          if (!frozen?.review) return
+          saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
+        }}
+        savedNotice={savedNotice?.message ?? null}
+        onViewInStrings={savedNotice ? () => viewInStrings(savedNotice.batchId) : undefined}
+        refreshError={refreshError}
+        onRetryRefresh={() => missingMut.mutate(missingRequest(reviewPage))}
       />
 
       <PublishPreviewDialog

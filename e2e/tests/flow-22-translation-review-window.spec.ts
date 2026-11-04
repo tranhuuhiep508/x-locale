@@ -49,7 +49,7 @@ for (const filter of [
     await expect(dialog.locator('li')).toHaveCount(5)
 
     await dialog.getByRole('button', { name: /^Translate \d+ cells$/ }).click()
-    const apply = dialog.getByRole('button', { name: /Apply \d+ translations?/ })
+    const apply = dialog.getByRole('button', { name: /Save \d+ translations? as draft/ })
     await expect(apply).toBeEnabled()
     await page.clock.setSystemTime(new Date(later + 3_600_000))
     const refreshedResponse = waitForQueue()

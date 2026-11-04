@@ -54,7 +54,7 @@ npx playwright show-report  # last HTML report (traces on failure)
 | 3 — Publish preview | `e2e/tests/flow-03-publish-preview.spec.ts` | New to public, content updates, in-sync noop, needs-publish review |
 | 4 — Soft-delete / restore | `e2e/tests/flow-04-soft-delete.spec.ts` | Never-published delete/restore; published pending-delete + publish removal |
 | 5 — Import / export | `e2e/tests/flow-05-import-export.spec.ts` | Dry-run create/update/orphan, cancel, apply, export public JSON |
-| B — AI translate review | `e2e/tests/flow-06-ai-translate-review.spec.ts` | Translate missing → review dialog, progress, apply to working copy (stubbed AI) |
+| B — AI translate review | `e2e/tests/flow-06-ai-translate-review.spec.ts` | Translate missing → review dialog, progress, save as draft, publish in place (stubbed AI) |
 | C — Unpublish selection | `e2e/tests/flow-07-unpublish-selection.spec.ts` | Batch unpublish returns published strings to draft |
 | D — Activity undo (batch) | `e2e/tests/flow-08-activity-undo.spec.ts` | Import apply → Activity → Undo restores catalog |
 | E — Settings / API key | `e2e/tests/flow-09-settings-api-key.spec.ts` | Generate key, one-time secret, revoke blocks bootstrap |

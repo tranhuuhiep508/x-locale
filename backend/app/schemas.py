@@ -614,6 +614,33 @@ class TranslateApplyResult(BaseModel):
     locales: list[str]
 
 
+class TranslateReviewRequest(BaseModel):
+    """Reviewed AI-review rows. Each translation fills a cell that was empty at review."""
+
+    items: list[TranslateApplyItem] = Field(min_length=1, max_length=100)
+
+
+class TranslateReviewOut(BaseModel):
+    """Full proposed strings (working copy after save) and the publication fingerprint."""
+
+    items: list[StringOut]
+    fingerprint: str
+
+
+class TranslateSaveRequest(TranslateReviewRequest):
+    action: Literal["draft", "publish"]
+    # Required for publish: the fingerprint of the review the user saw.
+    fingerprint: str | None = None
+
+
+class TranslateSaveResult(BaseModel):
+    action: Literal["draft", "publish"]
+    translated_count: int
+    string_count: int
+    published_count: int
+    batch_id: UUID
+
+
 class TranslateJobProgress(BaseModel):
     phase: str
     chunks_done: int = 0

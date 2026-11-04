@@ -16,6 +16,10 @@ import type {
   StringUpdate,
   TranslateApplyRequest,
   TranslateApplyResult,
+  TranslateReview,
+  TranslateReviewRequest,
+  TranslateSaveRequest,
+  TranslateSaveResult,
   TranslatePreviewRequest,
   TranslatePreviewResult,
   TranslateProposalsResult,
@@ -121,6 +125,10 @@ export const stringsApi = {
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/missing`, body),
   translateApply: (projectId: string, body: TranslateApplyRequest) =>
     api.post<TranslateApplyResult>(`/projects/${projectId}/translate/apply`, body),
+  translateReview: (projectId: string, body: TranslateReviewRequest) =>
+    api.post<TranslateReview>(`/projects/${projectId}/translate/review`, body),
+  translateSave: (projectId: string, body: TranslateSaveRequest) =>
+    api.post<TranslateSaveResult>(`/projects/${projectId}/translate/save`, body),
   translateQa: (projectId: string, body: TranslationQaRequest) =>
     api.post<TranslationQaResult>(`/projects/${projectId}/translate/qa`, body),
 }

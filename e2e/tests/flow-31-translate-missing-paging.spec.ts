@@ -93,7 +93,7 @@ test('next stays put while exact matches on this page are unapplied', async ({ p
   await expect(next).toHaveAttribute('aria-disabled', 'true')
   expect(await next.evaluate((element) => (element as HTMLButtonElement).disabled)).toBe(false)
   await next.focus()
-  await expect(page.getByRole('tooltip')).toHaveText("Apply or undo this page's changes first")
+  await expect(page.getByRole('tooltip')).toHaveText("Save or undo this page's changes first")
 
   let paged = false
   const mark = (request: { url: () => string; method: () => string }) => {
@@ -126,7 +126,7 @@ test('exact filter falls back to all after this page no longer has matches', asy
     (response) =>
       response.request().method() === 'POST' && response.url().includes('/translate/missing'),
   )
-  await dialog.getByRole('button', { name: 'Apply 50 translations' }).click()
+  await dialog.getByRole('button', { name: 'Save 50 translations as draft' }).click()
   expect((await reload).ok()).toBeTruthy()
   await expect(dialog.getByRole('radio', { name: 'All 1' })).toBeChecked()
   await expect(dialog.getByText('tm_apply_b_00')).toBeVisible()
@@ -148,7 +148,7 @@ test('generated translations block the next page until they are discarded', asyn
   const next = dialog.getByRole('button', { name: 'Next page' })
   await expect(next).toHaveAttribute('aria-disabled', 'true')
   await next.focus()
-  await expect(page.getByRole('tooltip')).toHaveText("Apply or undo this page's changes first")
+  await expect(page.getByRole('tooltip')).toHaveText("Save or undo this page's changes first")
 
   let paged = false
   const mark = (request: { url: () => string; method: () => string }) => {
@@ -192,7 +192,7 @@ test('applying generated translations unlocks the next page', async ({ page }) =
   const reload = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),
   )
-  await dialog.getByRole('button', { name: 'Apply 50 translations' }).click()
+  await dialog.getByRole('button', { name: 'Save 50 translations as draft' }).click()
   expect((await reload).ok()).toBeTruthy()
   await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
   const next = dialog.getByRole('button', { name: 'Next page' })
