@@ -6,25 +6,39 @@ Sync locale files with an x-locale server.
 
 ### Standalone binary (no Python needed)
 
-Build a self-contained `loc` executable with PyInstaller. The build machine
-needs uv; the machines that run the binary need no Python at all.
+Prebuilt `loc` executables are published on the repository's GitHub Releases
+(tags `cli-v*`) for Linux x64/arm64 (glibc 2.28+: Ubuntu 20.04+, Debian 10+,
+RHEL 8+), macOS x64/arm64, and Windows x64.
 
 ```bash
-cd cli && uv run --group build python packaging/build_binary.py
-# → dist/loc-<os>-<arch>   (Windows: dist/loc-windows-x64.exe)
+# macOS / Linux → installs to ~/.local/bin/loc
+curl -fsSL https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.sh | sh
 ```
 
-PyInstaller cannot cross-compile: build on each OS/CPU you need (Linux, macOS,
-Windows; x64 or arm64). Copy the file onto your `PATH` as `loc`, for example:
+```powershell
+# Windows (PowerShell) → installs to %LOCALAPPDATA%\Programs\loc and adds it to PATH
+irm https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.ps1 | iex
+```
+
+Set `LOC_VERSION=0.2.0` to pin a release (recommended in CI) and
+`LOC_INSTALL_DIR` to change the location. Both scripts verify the download
+against the release's `SHA256SUMS`. Re-run the same command to update. You can
+also download `loc-<os>-<arch>` from the release page by hand; macOS may then
+need `xattr -d com.apple.quarantine ./loc-macos-*` because the binaries are not
+signed. The installers fetch from GitHub without credentials, so the releases
+must be publicly readable.
+
+To publish a release, bump `__version__` in `x_locale_cli/__init__.py`, merge,
+then push a matching tag: `git tag cli-v0.2.0 && git push origin cli-v0.2.0`.
+`.github/workflows/cli-release.yml` tests, builds each platform with
+PyInstaller, and attaches the binaries, `SHA256SUMS`, and both install scripts
+to the release (the install commands above always fetch the newest release's
+scripts). To build
+for your current machine locally:
 
 ```bash
-install -m 755 dist/loc-linux-x64 ~/.local/bin/loc && loc --version
+cd cli && uv run --group build python packaging/build_binary.py   # → dist/loc-<os>-<arch>
 ```
-
-On Linux, build with uv's managed Python (`UV_PYTHON_PREFERENCE=only-managed`)
-rather than the distro's so the binary also runs on older distros; if one fails
-with a `GLIBC_x.y not found` error, build on the oldest distro you need. The binaries are unsigned, so if macOS blocks one copied
-from another machine, run `xattr -d com.apple.quarantine <file>`.
 
 ### With Python (uv)
 
