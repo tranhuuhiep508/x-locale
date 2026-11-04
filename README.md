@@ -264,9 +264,10 @@ strings keep their published snapshot). **Review & publish** freezes the changed
 rows on the current page and shows the full proposed public state of each string,
 including pending edits in other locales and locales that would export empty;
 **Publish** there saves and publishes exactly those strings in one transaction, with
-no second confirmation. Generation never saves. After a save the dialog stays open
-with an optional **View in Strings**; if only the list refresh fails, **Retry loading**
-repeats the read, not the write.
+no second confirmation. Generation never saves. After a publish the dialog closes and
+Strings shows the published batch (`?batch_id=`). After a draft save the dialog stays
+open on the refreshed queue; if only that refresh fails, **Retry loading** repeats the
+read, not the write.
 
 ## Development
 

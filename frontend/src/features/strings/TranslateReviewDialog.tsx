@@ -527,7 +527,6 @@ export function TranslateReviewDialog({
   onBackToEdit,
   onPublish,
   savedNotice,
-  onViewInStrings,
   refreshError,
   onRetryRefresh,
   progress,
@@ -564,7 +563,6 @@ export function TranslateReviewDialog({
   onBackToEdit?: () => void
   onPublish?: () => void
   savedNotice?: string | null
-  onViewInStrings?: () => void
   refreshError?: string | null
   onRetryRefresh?: () => void
   conflicts?: DescriptionConflict[]
@@ -804,9 +802,6 @@ export function TranslateReviewDialog({
             <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status">
               <Check className="size-4 text-primary" aria-hidden="true" />
               {savedNotice}
-              {onViewInStrings ? (
-                <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={onViewInStrings}>View in Strings</Button>
-              ) : null}
             </p>
           ) : null}
           {refreshError ? (

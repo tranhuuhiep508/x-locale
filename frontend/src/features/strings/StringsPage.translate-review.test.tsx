@@ -11,15 +11,18 @@ import type { Project, TranslateProposalItem, TranslateProposalsResult, Translat
 import { queryKeys } from '@/lib/query-keys'
 import { StringsPage } from './StringsPage'
 
+const navigate = vi.hoisted(() => vi.fn())
+const toastSuccess = vi.hoisted(() => vi.fn())
+
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
     useParams: () => ({ projectRef: 'demo-app' }),
     useSearch: () => ({}),
   }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
 }))
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn() }),
 }))
 vi.mock('@/lib/api/catalog', () => ({
   languagesApi: { list: vi.fn() },
@@ -441,10 +444,16 @@ describe('save as draft or publish in place', () => {
       action: 'publish', fingerprint: 'fp-1',
       items: [{ string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Hello' }, scores: {} }],
     }))
-    // Stays on the review screen with optional navigation.
-    expect(await screen.findByRole('button', { name: 'View in Strings' })).toBeTruthy()
-    expect(screen.getByText('Missing Translations')).toBeTruthy()
-    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
+    // Toast, close the dialog, and show the published batch in Strings.
+    await waitFor(() => expect(screen.queryByText('Review Publication')).toBeNull())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'View in Strings' })).toBeNull()
+    expect(toastSuccess).toHaveBeenCalledWith('Saved and published 1 string. Available on the next public pull or export.')
+    expect(navigate).toHaveBeenCalledTimes(1)
+    const { search } = navigate.mock.calls[0][0] as { search: (prev: { page_size?: number }) => unknown }
+    expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub' })
+    // No queue reload after publish: the dialog is gone.
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1)
   })
 
   it('reloads the review instead of publishing when content changed after review', async () => {

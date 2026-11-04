@@ -155,7 +155,7 @@ export function StringsPage() {
     payload: ReviewPayload
     review: TranslateReview | null
   } | null>(null)
-  const [savedNotice, setSavedNotice] = useState<{ message: string; batchId: string } | null>(null)
+  const [savedNotice, setSavedNotice] = useState<string | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const refreshingAfterSave = useRef(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
@@ -442,8 +442,13 @@ export function StringsPage() {
       stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
     onSuccess: (res) => {
       const message = saveSuccessMessage(res)
-      toast.success(message, { label: 'View in Strings', onClick: () => viewInStrings(res.batch_id) })
-      setSavedNotice({ message, batchId: res.batch_id })
+      toast.success(message)
+      invalidateStrings()
+      if (res.action === 'publish') {
+        showPublishedStrings(res.batch_id)
+        return
+      }
+      setSavedNotice(message)
       setPublishReview(null)
       setApplyConflicts([])
       setApplySourceConflicts([])
@@ -452,7 +457,6 @@ export function StringsPage() {
       setProposalsReady(false)
       setProposalItems([])
       proposeMut.reset()
-      invalidateStrings()
       refreshingAfterSave.current = true
       setRefreshError(null)
       missingMut.mutate(missingRequest(reviewPage))
@@ -481,9 +485,12 @@ export function StringsPage() {
     proposeMut.reset()
   }
 
-  function viewInStrings(batchId: string) {
-    // The toast action outlives the save; never drop a running write or AI job.
-    if (saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
+  /** Close the review and show exactly the strings this publish changed. */
+  function showPublishedStrings(batchId: string) {
+    setApplyConflicts([])
+    setApplySourceConflicts([])
+    setRecoveryMessage(null)
+    setProposalItems([])
     resetReview()
     startTransition(() => {
       navigate({ search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }) })
@@ -986,8 +993,7 @@ export function StringsPage() {
           if (!frozen?.review) return
           saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
-        savedNotice={savedNotice?.message ?? null}
-        onViewInStrings={savedNotice ? () => viewInStrings(savedNotice.batchId) : undefined}
+        savedNotice={savedNotice}
         refreshError={refreshError}
         onRetryRefresh={() => missingMut.mutate(missingRequest(reviewPage))}
       />
