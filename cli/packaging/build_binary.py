@@ -63,13 +63,21 @@ def build() -> Path:
     return target
 
 
+def _run(binary: Path, *args: str) -> str:
+    proc = subprocess.run([str(binary), *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"`{binary.name} {' '.join(args)}` exited {proc.returncode}\n"
+            f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        )
+    return proc.stdout
+
+
 def smoke_test(binary: Path) -> None:
-    out = subprocess.run(
-        [str(binary), "--version"], check=True, capture_output=True, text=True
-    ).stdout.strip()
+    out = _run(binary, "--version").strip()
     if out != f"loc {__version__}":
         raise SystemExit(f"unexpected --version output: {out!r}")
-    subprocess.run([str(binary), "--help"], check=True, capture_output=True)
+    _run(binary, "--help")
     print(f"built {binary} ({binary.stat().st_size / 1_000_000:.1f} MB): {out}")
 
 
