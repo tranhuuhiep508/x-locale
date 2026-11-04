@@ -46,14 +46,25 @@ def list_publish_preview_entries(
     )
 
 
+def _cli_push_activities(db: Session, project: Project, batch_id: UUID, *columns):
+    # Columns only: full rows carry before/after JSON for every change.
+    return db.query(*columns).filter(
+        Activity.project_id == project.id,
+        Activity.batch_id == batch_id,
+        Activity.batch_kind == BatchKind.cli_push,
+    )
+
+
 def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatchOut:
     activities = (
-        # Columns only: full rows carry before/after JSON for every change.
-        db.query(Activity.string_id, Activity.event_type, Activity.actor_label, Activity.created_at)
-        .filter(
-            Activity.project_id == project.id,
-            Activity.batch_id == batch_id,
-            Activity.batch_kind == BatchKind.cli_push,
+        _cli_push_activities(
+            db,
+            project,
+            batch_id,
+            Activity.string_id,
+            Activity.event_type,
+            Activity.actor_label,
+            Activity.created_at,
         )
         .order_by(Activity.created_at, Activity.id)
         .all()
@@ -86,13 +97,7 @@ def save_cli_push_batch(
         lock_publication(db, project.id)
         db.refresh(project, with_for_update={"read": True})
         activities = (
-            db.query(Activity.string_id)
-            .filter(
-                Activity.project_id == project.id,
-                Activity.batch_id == batch_id,
-                Activity.batch_kind == BatchKind.cli_push,
-            )
-            .all()
+            _cli_push_activities(db, project, batch_id, Activity.string_id).distinct().all()
         )
         if not activities:
             raise HTTPException(404, detail="CLI push batch not found")
