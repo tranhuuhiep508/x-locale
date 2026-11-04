@@ -247,12 +247,15 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         fingerprint: snapshot.fingerprint,
         items: buildBatchPublishItems(snapshot.items, drafts),
       })
-      const success = publish
-        ? 'Batch saved and published. Available on the next public pull or export.'
-        : 'Batch saved as draft. Public translations are unchanged.'
       refreshProjectContent(qc, projectRef)
-      toast.success(success)
-      if (!mounted.current) return
+      if (!mounted.current) {
+        toast.success(
+          publish
+            ? 'Batch saved and published. Available on the next public pull or export.'
+            : 'Batch saved as draft. Public translations are unchanged.'
+        )
+        return
+      }
       setStarted(false)
       setCompletion(publish ? 'public' : 'draft')
       setGenerationStarted(false)

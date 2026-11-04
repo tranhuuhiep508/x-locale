@@ -217,7 +217,7 @@ it('saves a correction that restores the published translation', async () => {
       ],
     })
   )
-  await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+  await screen.findByText('Batch published')
 })
 
 it('keeps completion disabled when temporary edits match the saved working copy', async () => {
@@ -645,11 +645,11 @@ it('announces publication success, stays in the workspace, and offers a Strings 
     target: { value: 'Reviewed English' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
-  await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith(
-      'Batch saved and published. Available on the next public pull or export.'
-    )
+  const confirmation = await screen.findByText('Batch published')
+  expect(confirmation.closest('[role="status"]')?.textContent).toContain(
+    'Available on the next public pull or export.'
   )
+  expect(toast.success).not.toHaveBeenCalled()
   await waitFor(() => expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(2))
   expect(navigate).not.toHaveBeenCalled()
   expect(screen.getByRole('heading', { name: 'CLI push batch' })).toBeDefined()
@@ -675,7 +675,7 @@ it('preserves success when refresh fails and reloads without saving again', asyn
   await loaded()
   fireEvent.click(screen.getByRole('button', { name: 'Publish batch' }))
   const reload = await screen.findByRole('button', { name: 'Reload batch' })
-  expect(toast.success).toHaveBeenCalledTimes(1)
+  expect(screen.getByText('Batch published')).toBeDefined()
   expect(screen.queryByText('Workflow could not complete')).toBeNull()
   expect(
     (screen.getByRole('button', { name: 'Publish batch' }) as HTMLButtonElement).disabled
@@ -716,11 +716,11 @@ it('saves edits as draft without publication and uses the refreshed fingerprint 
     target: { value: 'Working English' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-  await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith(
-      'Batch saved as draft. Public translations are unchanged.'
-    )
+  const confirmation = await screen.findByText('Batch saved as draft')
+  expect(confirmation.closest('[role="status"]')?.textContent).toContain(
+    'Saved to the working copy. Public translations are unchanged.'
   )
+  expect(toast.success).not.toHaveBeenCalled()
   await waitFor(() =>
     expect(
       (screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled

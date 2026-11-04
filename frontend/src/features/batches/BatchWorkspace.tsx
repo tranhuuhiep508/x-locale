@@ -537,7 +537,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
           )}
 
           <footer className="sticky bottom-0 z-10 -mx-4 -mb-6 flex flex-wrap items-center justify-between gap-3 border-t bg-background/95 backdrop-blur-md px-4 py-3 sm:-mx-6 sm:-mb-8 sm:px-6 shadow-md">
-            <div className="flex min-w-0 flex-col gap-0.5">
+            <div role="status" className="flex min-w-0 flex-col gap-0.5">
               <p className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
                 {workspace.published && (
                   <Check aria-hidden="true" className="size-4 text-primary" />
