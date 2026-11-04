@@ -28,12 +28,13 @@ need `xattr -d com.apple.quarantine ./loc-macos-*` because the binaries are not
 signed. The installers fetch from GitHub without credentials, so the releases
 must be publicly readable.
 
-To publish a release, bump `__version__` in `x_locale_cli/__init__.py`, merge,
-then push a matching tag: `git tag cli-v0.2.0 && git push origin cli-v0.2.0`.
-`.github/workflows/cli-release.yml` tests, builds each platform with
-PyInstaller, and attaches the binaries, `SHA256SUMS`, and both install scripts
-to the release (the install commands above always fetch the newest release's
-scripts). To build
+To publish a release, bump `__version__` in `x_locale_cli/__init__.py` and merge
+it into `develop` (or `master`). `.github/workflows/cli-release.yml` then tests,
+builds each platform with PyInstaller, and publishes GitHub Release
+`cli-v<version>` with the binaries, `SHA256SUMS`, and both install scripts (the
+install commands above always fetch the newest release's scripts). Pushes that
+do not change the version, or whose release already exists, publish nothing.
+Pull requests that touch `cli/` run the same builds without publishing. To build
 for your current machine locally:
 
 ```bash
