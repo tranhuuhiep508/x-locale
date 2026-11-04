@@ -410,10 +410,23 @@ export function StringsPage() {
     return true
   }
 
+  // Only the latest review request may open the publication review. Back to edit or a
+  // newer review abandons earlier requests; reset() alone still runs these callbacks.
+  const reviewRequestId = useRef(0)
+  function requestPublicationReview(payload: ReviewPayload) {
+    reviewRequestId.current += 1
+    setPublishReview({ payload, review: null })
+    reviewMut.mutate({ payload, requestId: reviewRequestId.current })
+  }
   const reviewMut = useMutation({
-    mutationFn: (payload: ReviewPayload) => stringsApi.translateReview(projectId, { items: payload }),
-    onSuccess: (review, payload) => setPublishReview({ payload, review }),
-    onError: (error) => {
+    mutationFn: ({ payload }: { payload: ReviewPayload; requestId: number }) =>
+      stringsApi.translateReview(projectId, { items: payload }),
+    onSuccess: (review, { payload, requestId }) => {
+      if (requestId !== reviewRequestId.current) return
+      setPublishReview({ payload, review })
+    },
+    onError: (error, { requestId }) => {
+      if (requestId !== reviewRequestId.current) return
       if (showWriteConflicts(error)) return
       setPublishReview(null)
       toast.error(error instanceof Error ? error.message : 'Failed to prepare the publication review')
@@ -447,8 +460,7 @@ export function StringsPage() {
     onError: (error, { action, payload }) => {
       if (action === 'publish' && isPublishFingerprintMismatch(error)) {
         toast.info('Content changed since review. Nothing was published. Review the updated changes.')
-        setPublishReview({ payload, review: null })
-        reviewMut.mutate(payload)
+        requestPublicationReview(payload)
         return
       }
       if (showWriteConflicts(error)) return
@@ -457,6 +469,7 @@ export function StringsPage() {
   })
 
   function resetReview() {
+    reviewRequestId.current += 1
     setReviewOpen(false)
     reviewRequestRef.current = null
     setProposalJobId(null)
@@ -955,14 +968,14 @@ export function StringsPage() {
           const payload = reviewedPayloadFromDrafts(items, descriptionOriginals.current)
           setProposalItems(items)
           setSavedNotice(null)
-          setPublishReview({ payload, review: null })
-          reviewMut.mutate(payload)
+          requestPublicationReview(payload)
         }}
         reviewing={publishReview !== null}
         reviewLoading={reviewMut.isPending}
         publishReview={publishReview?.review?.items ?? null}
         onBackToEdit={() => {
           if (saveMut.isPending) return
+          reviewRequestId.current += 1
           reviewMut.reset()
           setPublishReview(null)
         }}

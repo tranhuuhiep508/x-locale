@@ -476,6 +476,28 @@ describe('save as draft or publish in place', () => {
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
   })
 
+  it('ignores a publication review that resolves after Back to edit', async () => {
+    let resolveStale!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
+      .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fresh' })
+    vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to edit' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Hello again' } })
+    await act(async () => { resolveStale({ items: [reviewed], fingerprint: 'stale' }) })
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello again')
+    // A newer review is the only one that can publish.
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(stringsApi.translateSave).mock.calls[0][1]).toMatchObject({
+      fingerprint: 'fresh', items: [{ translations: { en: 'Hello again' } }],
+    })
+  })
+
   it('retries only the read when the list refresh fails after a successful save', async () => {
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ ...published, action: 'draft', published_count: 0 })
     await openAndFill()
