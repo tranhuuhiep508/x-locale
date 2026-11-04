@@ -48,7 +48,8 @@ def list_publish_preview_entries(
 
 def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatchOut:
     activities = (
-        db.query(Activity)
+        # Columns only: full rows carry before/after JSON for every change.
+        db.query(Activity.string_id, Activity.event_type, Activity.actor_label, Activity.created_at)
         .filter(
             Activity.project_id == project.id,
             Activity.batch_id == batch_id,

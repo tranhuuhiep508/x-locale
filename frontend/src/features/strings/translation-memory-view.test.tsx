@@ -16,18 +16,13 @@ const match: TranslationMemoryMatch = {
   issues: [],
 }
 
-it('truncates a near-exact match and reserves 100 for exact matches', () => {
+it('truncates a near-exact match and reserves Exact for exact matches', () => {
   const { rerender } = render(<MatchBar match={match} />)
   expect(screen.getByText('99% similar')).toBeTruthy()
-  expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('99')
-  expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toBe(
-    '99% similar source, previously published'
-  )
   rerender(<MatchBar match={{ ...match, similarity: 1 }} />)
   expect(screen.getByText('99% similar')).toBeTruthy()
   rerender(<MatchBar match={{ ...match, exact: true, similarity: 1 }} />)
   expect(screen.getByText('Exact match')).toBeTruthy()
-  expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('100')
 })
 
 it('uses theme tokens for exact, high, and low similarity', () => {
@@ -35,30 +30,16 @@ it('uses theme tokens for exact, high, and low similarity', () => {
   const exact = screen.getByText('Exact match')
   expect(exact.className).toContain('text-azure-800')
   expect(exact.className).toContain('dark:text-azure-200')
-  const meter = screen.getByRole('meter')
-  expect(meter.className).toContain('bg-haze-200')
-  expect(meter.className).toContain('dark:bg-haze-800')
-  expect(meter.firstElementChild?.className).toContain('bg-azure-700')
-  expect(meter.firstElementChild?.className).toContain('dark:bg-azure-400')
 
   rerender(<MatchBar match={{ ...match, similarity: 0.91 }} />)
   const high = screen.getByText('91% similar')
   expect(high.className).toContain('text-azure-700')
   expect(high.className).toContain('dark:text-azure-300')
-  expect(screen.getByRole('meter').firstElementChild?.className).toContain('bg-azure-500')
-  expect(screen.getByRole('meter').firstElementChild?.className).not.toContain('dark:')
 
   rerender(<MatchBar match={{ ...match, similarity: 0.82 }} />)
   const low = screen.getByText('82% similar')
   expect(low.className).toContain('text-haze-600')
   expect(low.className).toContain('dark:text-haze-400')
-  expect(screen.getByRole('meter').firstElementChild?.className).toContain('bg-azure-300')
-  expect(screen.getByRole('meter').firstElementChild?.className).toContain('dark:bg-azure-700')
-})
-
-it('shows the minimum visible fill for an 80% match', () => {
-  render(<MatchBar match={{ ...match, similarity: 0.8 }} />)
-  expect(screen.getByRole('meter').firstElementChild?.getAttribute('style')).toContain('width: 10%')
 })
 
 const panel = {
@@ -99,7 +80,7 @@ it('puts extra matches inline and marks only the chosen match used', () => {
   )
   const more = screen.getByRole('button', { name: 'More matches for en' })
   expect(more.textContent).toContain('+1')
-  expect(more.parentElement?.contains(screen.getByRole('meter'))).toBe(true)
+  expect(more.parentElement?.contains(screen.getAllByText('99% similar')[0])).toBe(true)
   expect(screen.queryByRole('button', { name: /Show less/ })).toBeNull()
   fireEvent.click(more)
   expect(screen.getByRole('button', { name: 'Use en match from greeting' }).textContent).toBe('Use')

@@ -48,12 +48,10 @@ export function MemoryCount({
 
 export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
   const pct = match.exact ? 100 : Math.min(99, Math.floor(match.similarity * 100))
-  const label = match.exact ? 'Exact match' : `${pct}% similar`
-  const fill = 10 + ((Math.max(80, Math.min(100, pct)) - 80) / 20) * 90
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center gap-1.5 text-[11px] font-semibold tabular-nums',
+        'inline-flex h-5 items-center text-[11px] font-semibold tabular-nums',
         match.exact
           ? 'text-azure-800 dark:text-azure-200'
           : pct >= 90
@@ -61,32 +59,7 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
             : 'text-haze-600 dark:text-haze-400'
       )}
     >
-      <span
-        role="meter"
-        aria-label="Published source similarity"
-        aria-valuemin={80}
-        aria-valuemax={100}
-        aria-valuenow={Math.max(80, pct)}
-        aria-valuetext={
-          match.exact
-            ? 'Exact source match, previously published'
-            : `${pct}% similar source, previously published`
-        }
-        className="h-1.5 w-10 overflow-hidden rounded-full bg-haze-200 dark:bg-haze-800"
-      >
-        <span
-          className={cn(
-            'block h-full rounded-full',
-            match.exact
-              ? 'bg-azure-700 dark:bg-azure-400'
-              : pct >= 90
-                ? 'bg-azure-500'
-                : 'bg-azure-300 dark:bg-azure-700'
-          )}
-          style={{ width: `${fill}%` }}
-        />
-      </span>
-      {label}
+      {match.exact ? 'Exact match' : `${pct}% similar`}
     </span>
   )
 }
@@ -154,41 +127,13 @@ export function MemoryMatch({
             size="sm"
             disabled={disabled || stale || used}
             aria-label={`Use ${locale} match from ${match.key}`}
-            onClick={() => {
-              if (stale) return
-              onUse(match)
-            }}
+            onClick={() => onUse(match)}
           >
             {used ? 'Used' : 'Use'}
           </Button>
         </UpdatingMatches>
       )}
     </div>
-  )
-}
-
-function MoreMatches({
-  locale,
-  extra,
-  expanded,
-  onToggle,
-}: {
-  locale: string
-  extra: number
-  expanded: boolean
-  onToggle: () => void
-}) {
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
-      aria-label={`${expanded ? 'Collapse' : 'More'} matches for ${locale}`}
-      aria-expanded={expanded}
-      onClick={onToggle}
-    >
-      {expanded ? 'Less' : `+${extra}`}
-      {expanded ? <ChevronUp className="size-3" aria-hidden="true" /> : <ChevronDown className="size-3" aria-hidden="true" />}
-    </button>
   )
 }
 
@@ -208,8 +153,9 @@ function MemoryLocale({
   onUse: (match: TranslationMemoryMatch) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const shown = expanded ? matches.slice(0, 3) : matches.slice(0, 1)
-  const extra = Math.min(matches.length, 3) - 1
+  // The API returns at most three matches per locale.
+  const shown = expanded ? matches : matches.slice(0, 1)
+  const extra = matches.length - 1
   return (
     <div className="flex items-start gap-3 py-3">
       <span className="w-7 shrink-0 pt-1 font-mono text-xs uppercase text-muted-foreground">
@@ -226,12 +172,16 @@ function MemoryLocale({
               stale={stale}
               used={selected === match.string_id}
               accessory={index === 0 && extra > 0 ? (
-                <MoreMatches
-                  locale={locale}
-                  extra={extra}
-                  expanded={expanded}
-                  onToggle={() => setExpanded((open) => !open)}
-                />
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
+                  aria-label={`${expanded ? 'Collapse' : 'More'} matches for ${locale}`}
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded((open) => !open)}
+                >
+                  {expanded ? 'Less' : `+${extra}`}
+                  {expanded ? <ChevronUp className="size-3" aria-hidden="true" /> : <ChevronDown className="size-3" aria-hidden="true" />}
+                </button>
               ) : null}
               onUse={onUse}
             />
@@ -303,10 +253,7 @@ export function TranslationMemoryPanel({
                   variant="outline"
                   size="sm"
                   disabled={disabled || stale}
-                  onClick={() => {
-                    if (stale) return
-                    onUseExact()
-                  }}
+                  onClick={onUseExact}
                 >
                   <CheckCheck data-icon="inline-start" />
                   Use {exact} exact
