@@ -88,7 +88,7 @@ def test_successful_write_replaces_destination(tmp_path, kind, existing):
         path.chmod(0o640)
     expected = write_output(kind, path)
     assert path.read_bytes() == expected.encode("utf-8")
-    if existing:
+    if existing and os.name != "nt":  # Windows has no POSIX permission modes.
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert set(tmp_path.iterdir()) == {path}
 
