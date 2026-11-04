@@ -134,7 +134,6 @@ export async function fillStringForm(
   publishOnSave.set(page, values.published === true)
 }
 
-/** Existing catalog flows explicitly close after saving; editor tests cover staying open. */
 export async function saveStringForm(page: Page, _mode: 'create' | 'edit' = 'create') {
   const publish = publishOnSave.get(page) ?? false
   publishOnSave.delete(page)
@@ -147,8 +146,7 @@ export async function saveStringForm(page: Page, _mode: 'create' | 'edit' = 'cre
   )
   await page.getByRole('button', { name: publish ? 'Publish' : 'Save as draft', exact: true }).click()
   if ((await response).ok()) {
-    await expect(page.getByRole('button', { name: 'Save as draft', exact: true })).toBeEnabled()
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: /^(Add|Edit) string$/ })).toBeHidden()
   }
 }
 

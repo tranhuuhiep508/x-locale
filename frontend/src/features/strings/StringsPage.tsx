@@ -122,6 +122,8 @@ export function StringsPage() {
   const [addManyOpen, setAddManyOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
+  const savedRow = useRef<HTMLTableRowElement>(null)
+  const pendingSavedFocus = useRef<string | null>(null)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
@@ -156,6 +158,7 @@ export function StringsPage() {
         search: (prev) => ({
           ...prev,
           q: value || undefined,
+          saved_string: undefined,
           page: 1,
         }),
       })
@@ -174,6 +177,14 @@ export function StringsPage() {
   }, [searchInput, search.q])
 
   const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  useEffect(() => {
+    const row = savedRow.current
+    if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
+    pendingSavedFocus.current = null
+    row.focus({ preventScroll: true })
+    row.scrollIntoView?.({ block: 'nearest' })
+  }, [dialogOpen, search.saved_string, stringsResult.isPlaceholderData])
+
   const catalogSortSearch = useMemo(
     () => ({ sort: rawSearch.sort, order: rawSearch.order }),
     [rawSearch.sort, rawSearch.order],
@@ -405,14 +416,39 @@ export function StringsPage() {
   )
 
   const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
+    pendingSavedFocus.current = null
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
   }, [])
 
+  function closeEditor() {
+    setDialogOpen(false)
+    setDialogEntry(null)
+    setDialogTab('details')
+  }
+
+  function showSavedString(entry: StringEntry) {
+    const nextSearch = {
+      q: entry.key,
+      saved_string: entry.id,
+      page: 1,
+      page_size: search.page_size,
+      sort: search.sort,
+      order: search.order,
+    }
+    qc.setQueryData(stringsQueryOptions(projectId, nextSearch).queryKey, {
+      items: [entry], total: 1, page: 1, page_size: 1,
+    })
+    pendingSavedFocus.current = entry.id
+    closeEditor()
+    setSearchInput(entry.key)
+    void navigate({ search: nextSearch })
+  }
+
   function setFilter(updates: Partial<StringsSearch>) {
     startTransition(() => {
-      navigate({ search: (prev) => ({ ...prev, ...updates, page: 1 }) })
+      navigate({ search: (prev) => ({ ...prev, ...updates, saved_string: undefined, page: 1 }) })
     })
   }
 
@@ -606,7 +642,9 @@ export function StringsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  reviewRequestRef.current = createMissingReviewRequest(search, locales)
+                  reviewRequestRef.current = search.saved_string
+                    ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
+                    : createMissingReviewRequest(search, locales)
                   setProposalItems([])
                   descriptionOriginals.current = {}
                   setApplyConflicts([])
@@ -693,6 +731,8 @@ export function StringsPage() {
         ) : (
           <DataTable
             table={table}
+            focusRowId={stringsResult.isPlaceholderData ? undefined : search.saved_string}
+            focusRowRef={savedRow}
             getRowClassName={(row) => releaseRowClassName(releaseState(row.original))}
             onRowClick={(row, event) => {
               const target = event.target as HTMLElement
@@ -745,20 +785,10 @@ export function StringsPage() {
             modules={modules}
             tags={tags}
             targetLocales={locales}
-            onClose={() => {
-              setDialogOpen(false)
-              setDialogEntry(null)
-              setDialogTab('details')
-            }}
+            onClose={closeEditor}
             initialTab={dialogTab}
             onSuccess={invalidateStrings}
-            onViewInStrings={(savedEntry) => {
-              setDialogOpen(false)
-              setDialogEntry(null)
-              setDialogTab('details')
-              setSearchInput(savedEntry.key)
-              navigate({ search: { q: savedEntry.key, page: 1 } })
-            }}
+            onSaved={showSavedString}
           />
         </Suspense>
       )}

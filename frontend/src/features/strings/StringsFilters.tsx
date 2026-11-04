@@ -67,6 +67,7 @@ function confidenceValue(search: StringsSearch) {
 export function hasActiveStringFilters(search: StringsSearch) {
   return Boolean(
     search.q ||
+    search.saved_string ||
     search.module ||
     search.unassigned_module ||
     search.tag ||
@@ -369,8 +370,12 @@ export function StringsFilters({
   }
 
   const activeChips: { id: string; label: string; updates: Partial<StringsSearch> }[] = []
-  if (search.q)
-    activeChips.push({ id: 'search', label: `Search: ${search.q}`, updates: { q: undefined } })
+  if (search.q || search.saved_string)
+    activeChips.push({
+      id: 'search',
+      label: search.saved_string ? 'Saved string' : `Search: ${search.q}`,
+      updates: { q: undefined },
+    })
   const status = statusValue(search)
   if (status !== STATUS_ALL)
     activeChips.push({

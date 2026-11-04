@@ -1,13 +1,16 @@
 import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
-import { openDemoStrings, openAddStringDialog, fillStringForm, openStringEditor } from '../helpers/strings'
+import { openDemoStrings, openAddStringDialog, fillStringForm, openStringEditor, setStatusFilter } from '../helpers/strings'
 import { fetchStringByKey, projectIdFromUrl } from '../helpers/api'
 
 test.beforeAll(() => resetDemoDatabase())
 
-test('create, review, publish, and keep editing without leaving the dialog', async ({ page }, testInfo) => {
+test('publishing closes the editor and focuses the saved row even when filters hide it', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openDemoStrings(page)
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await setStatusFilter(page, 'Draft')
+  await expect(page).toHaveURL(/[?&]status=draft(?:&|$)/)
   const key = `compact_${Date.now()}`
   await openAddStringDialog(page)
   await fillStringForm(page, { key, source: 'Welcome' })
@@ -22,43 +25,61 @@ test('create, review, publish, and keep editing without leaving the dialog', asy
   await expect(page.getByLabel('en', { exact: true })).toHaveValue('Welcome English')
   await page.getByRole('button', { name: 'Create and publish' }).click()
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Edit string', exact: true })
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByLabel('Source text')).toHaveValue('Welcome')
+  const row = page.getByRole('row').filter({ hasText: key })
+  await expect(page.getByRole('dialog', { name: 'Add string', exact: true })).toBeHidden()
+  await expect(page.getByText('String saved and published', { exact: true })).toBeVisible()
+  await expect(row).toBeFocused()
+  expect(new URL(page.url()).searchParams.has('status')).toBe(false)
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Welcome')
+  await row.click()
+  const dialog = page.getByRole('dialog', { name: 'Edit string', exact: true })
+  await expect(dialog.getByLabel('Source text')).toHaveValue('Welcome')
   await dialog.getByLabel('Source text').fill('Good morning')
   await dialog.getByRole('button', { name: 'Save as draft' }).click()
   await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
-  await expect(dialog).toBeVisible()
+  await expect(dialog).toBeHidden()
+  await expect(row).toBeFocused()
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Welcome')
+  await row.click()
   await dialog.getByRole('button', { name: 'Publish changes' }).click()
   await expect(page.getByRole('region', { name: 'Content updates' })).toBeVisible()
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: 'View in Strings' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('editor-saved-mobile.png') })
-  await dialog.getByRole('button', { name: 'View in Strings' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page).toHaveURL(new RegExp(`q=${key}`))
+  await expect(row).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath('editor-saved-mobile.png') })
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Good morning')
 })
 
-test('draft creation stays open and reuses the saved string on subsequent saves', async ({ page }) => {
+test('draft creation shows the exact saved row and typing a new search keeps focus', async ({ page }) => {
   await openDemoStrings(page)
+  const project = projectIdFromUrl(page)
+  const key = `zz_compact_draft_${Date.now()}`
+  const similar = await page.request.post(`/api/projects/${project}/strings`, {
+    data: { key: `${key}_other`, source_text: 'Other draft' },
+  })
+  expect(similar.ok()).toBeTruthy()
   await openAddStringDialog(page)
-  const key = `compact_draft_${Date.now()}`
   await fillStringForm(page, { key, source: 'Draft content' })
   await page.getByRole('button', { name: 'Save as draft' }).click()
   const dialog = page.getByRole('dialog', { name: 'Edit string', exact: true })
-  await expect(dialog).toBeVisible()
-  const project = projectIdFromUrl(page)
+  const row = page.getByRole('row').filter({ has: page.getByText(key, { exact: true }) })
+  await expect(row).toBeFocused()
+  await expect(page.getByText(`${key}_other`, { exact: true })).toHaveCount(0)
   const first = await fetchStringByKey(page, project, key)
+  expect(new URL(page.url()).searchParams.get('saved_string')).toBe(first.id)
   expect(first.status).toBe('draft')
+  await row.click()
   await dialog.getByLabel('Source text').fill('Revised draft')
   const response = page.waitForResponse((res) => res.url().endsWith('/strings/editor-save'))
   await dialog.getByRole('button', { name: 'Save as draft' }).click()
   expect((await response).ok()).toBeTruthy()
   expect((await fetchStringByKey(page, project, key)).id).toBe(first.id)
-  await expect(dialog).toBeVisible()
+  await expect(dialog).toBeHidden()
+  await expect(row).toBeFocused()
+  const search = page.getByRole('textbox', { name: 'Search strings' })
+  await search.fill(key.slice(0, -1))
+  await expect(page.getByText(`${key}_other`, { exact: true })).toBeVisible()
+  await expect(search).toBeFocused()
 })
 
 test('a competing locale edit refreshes the review and requires another confirmation', async ({ page }) => {
@@ -82,7 +103,7 @@ test('a competing locale edit refreshes the review and requires another confirma
   await expect(page.getByRole('region', { name: 'Complete proposed public content' }).getByText('Competing Japanese')).toBeVisible()
   expect((await fetchStringByKey(page, project, key)).status).toBe('draft')
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Save as draft' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Edit string', exact: true })).toBeHidden()
   const saved = await (await page.request.get(`/api/projects/${project}/strings/${entry.id}`)).json()
   expect(saved.translations.find((t: { locale: string }) => t.locale === 'en').published_value).toBe('My English')
   expect(saved.translations.find((t: { locale: string }) => t.locale === 'ja').published_value).toBe('Competing Japanese')
