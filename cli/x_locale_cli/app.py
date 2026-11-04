@@ -8,6 +8,7 @@ from typing import Any
 
 import typer
 
+from x_locale_cli import __version__
 from x_locale_cli.commands import COMMANDS
 from x_locale_cli.console import console
 from x_locale_cli.errors import XLocaleError, XLocaleExit
@@ -18,6 +19,26 @@ app = typer.Typer(
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+
+
+def _print_version(value: bool) -> None:
+    if value:
+        typer.echo(f"loc {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        callback=_print_version,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+) -> None:
+    """x-locale CLI — sync translations with your x-locale server."""
 
 
 def _register(command: Callable[..., Any]) -> None:

@@ -36,6 +36,14 @@ class AppHelpTests(unittest.TestCase):
         self.assertNotIn("Usage: tms", output)
         self.assertNotIn("TMS CLI", output)
 
+    def test_version_flag_prints_package_version(self) -> None:
+        from x_locale_cli import __version__
+
+        for flag in ("--version", "-V"):
+            result = self.runner.invoke(app, [flag])
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(result.output.strip(), f"loc {__version__}")
+
     def test_no_args_shows_help(self) -> None:
         result = self.runner.invoke(app, [])
         self.assertEqual(result.exit_code, 2, result.output)

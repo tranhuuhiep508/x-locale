@@ -4,6 +4,42 @@ Sync locale files with an x-locale server.
 
 ## Install
 
+### Standalone binary (no Python needed)
+
+Prebuilt `loc` executables are published on the repository's GitHub Releases
+(tags `cli-v*`) for Linux x64/arm64 (glibc 2.28+: Ubuntu 20.04+, Debian 10+,
+RHEL 8+), macOS x64/arm64, and Windows x64.
+
+```bash
+# macOS / Linux → installs to ~/.local/bin/loc
+curl -fsSL https://raw.githubusercontent.com/tranhuuhiep508/x-locale/master/cli/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell) → installs to %LOCALAPPDATA%\Programs\loc and adds it to PATH
+irm https://raw.githubusercontent.com/tranhuuhiep508/x-locale/master/cli/install.ps1 | iex
+```
+
+Set `LOC_VERSION=0.2.0` to pin a release (recommended in CI) and
+`LOC_INSTALL_DIR` to change the location. Both scripts verify the download
+against the release's `SHA256SUMS`. Re-run the same command to update. You can
+also download `loc-<os>-<arch>` from the release page by hand; macOS may then
+need `xattr -d com.apple.quarantine ./loc-macos-*` because the binaries are not
+signed. The installers fetch from GitHub without credentials, so the releases
+must be publicly readable.
+
+To publish a release, bump `__version__` in `x_locale_cli/__init__.py`, merge,
+then push a matching tag: `git tag cli-v0.2.0 && git push origin cli-v0.2.0`.
+`.github/workflows/cli-release.yml` tests, builds each platform with
+PyInstaller, and attaches the binaries plus `SHA256SUMS` to the release. To build
+for your current machine locally:
+
+```bash
+cd cli && uv run --group build python packaging/build_binary.py   # → dist/loc-<os>-<arch>
+```
+
+### With Python (uv)
+
 Install Git, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/). To
 install uv on macOS or Linux:
 
@@ -11,7 +47,7 @@ install uv on macOS or Linux:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**From a Git repository**
+#### From a Git repository
 
 ```bash
 uv tool install 'git+<repository-url>#subdirectory=cli'
@@ -51,7 +87,7 @@ To update an installation, repeat the chosen command with `--reinstall` and
 uv tool install --reinstall --refresh 'git+<repository-url>#subdirectory=cli'
 ```
 
-**From a local checkout**
+#### From a local checkout
 
 ```bash
 uv tool install -e ./cli
