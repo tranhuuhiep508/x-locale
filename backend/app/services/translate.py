@@ -533,6 +533,49 @@ def propose_translations(
     return proposals_from_results(items, results, fields)
 
 
+def check_review_baseline(
+    items: list[TranslateApplyItem], by_id: dict[uuid.UUID, StringEntry]
+) -> None:
+    """Reject the whole write when a reviewed source or description changed. Skips missing ids."""
+    source_conflicts = [
+        TranslationSourceConflict(
+            string_id=entry.id,
+            key=entry.key,
+            expected_source_text=item.expected_source_text,
+            source_text=entry.source_text,
+        ).model_dump(mode="json")
+        for item in items
+        if (entry := by_id.get(item.string_id)) is not None
+        and entry.source_text != item.expected_source_text
+    ]
+    if source_conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_source",
+                "message": "Source text changed. Regenerate the affected translations before saving again.",
+                "conflicts": source_conflicts,
+            },
+        )
+    conflicts = [
+        {"string_id": str(entry.id), "key": entry.key, "description": entry.description}
+        for item in items
+        if "description" in item.model_fields_set
+        and (entry := by_id.get(item.string_id)) is not None
+        and entry.description
+        not in (item.expected_description, (item.description or "").strip() or None)
+    ]
+    if conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_description",
+                "message": "Descriptions changed. Resolve each conflict, then save again.",
+                "conflicts": conflicts,
+            },
+        )
+
+
 def commit_proposals(
     db: Session,
     project: Project,
@@ -563,49 +606,7 @@ def commit_proposals(
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
-    source_conflicts = [
-        TranslationSourceConflict(
-            string_id=entry.id,
-            key=entry.key,
-            expected_source_text=item.expected_source_text,
-            source_text=entry.source_text,
-        ).model_dump(mode="json")
-        for item in items
-        if (entry := by_id.get(item.string_id)) is not None
-        and entry.source_text != item.expected_source_text
-    ]
-    if source_conflicts:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_source",
-                "message": "Source text changed. Regenerate the affected translations before applying again.",
-                "conflicts": source_conflicts,
-            },
-        )
-    conflicts = []
-    for item in items:
-        entry = by_id.get(item.string_id)
-        if entry is None or "description" not in item.model_fields_set:
-            continue
-        desired = (item.description or "").strip() or None
-        if entry.description not in (item.expected_description, desired):
-            conflicts.append(
-                {
-                    "string_id": str(entry.id),
-                    "key": entry.key,
-                    "description": entry.description,
-                }
-            )
-    if conflicts:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_description",
-                "message": "Descriptions changed. Resolve each conflict, then apply again.",
-                "conflicts": conflicts,
-            },
-        )
+    check_review_baseline(items, by_id)
     translated = 0
     locales_written: list[str] = []
     seen_locales: set[str] = set()

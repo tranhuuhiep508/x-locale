@@ -23,9 +23,9 @@ from app.schemas import (
     TranslateSaveRequest,
     TranslateSaveResult,
     TranslationOut,
-    TranslationSourceConflict,
 )
 from app.services import strings
+from app.services.translate import check_review_baseline
 from app.services.write_transactions import run_write
 
 STALE_TRANSLATION_REVIEW = "stale_translation_review"
@@ -72,41 +72,7 @@ def _check(items: list[TranslateApplyItem], by_id: dict[UUID, StringEntry]) -> N
                 "string_ids": missing,
             },
         )
-    source = [
-        TranslationSourceConflict(
-            string_id=entry.id,
-            key=entry.key,
-            expected_source_text=item.expected_source_text,
-            source_text=entry.source_text,
-        ).model_dump(mode="json")
-        for item in items
-        if (entry := by_id[item.string_id]).source_text != item.expected_source_text
-    ]
-    if source:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_source",
-                "message": "Source text changed. Regenerate the affected translations before saving again.",
-                "conflicts": source,
-            },
-        )
-    descriptions = [
-        {"string_id": str(entry.id), "key": entry.key, "description": entry.description}
-        for item in items
-        if "description" in item.model_fields_set
-        and (entry := by_id[item.string_id]).description
-        not in (item.expected_description, _description(item.description))
-    ]
-    if descriptions:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_description",
-                "message": "Descriptions changed. Resolve each conflict, then save again.",
-                "conflicts": descriptions,
-            },
-        )
+    check_review_baseline(items, by_id)
     values = []
     for item in items:
         entry = by_id[item.string_id]

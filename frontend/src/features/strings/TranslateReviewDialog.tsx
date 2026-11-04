@@ -392,7 +392,7 @@ function ProposalTreeNode({
             <AlertDescription>
               <p className="whitespace-pre-wrap">Reviewed source: {sourceConflict.expected_source_text}</p>
               <p className="whitespace-pre-wrap">Latest saved source: {sourceConflict.source_text}</p>
-              <p>Nothing from this save was saved. Regenerate changed strings before saving again.</p>
+              <p>Nothing was saved. Regenerate changed strings before saving again.</p>
               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onRemove}>Remove from review</Button>
             </AlertDescription>
           </Alert>

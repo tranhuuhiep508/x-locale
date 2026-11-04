@@ -482,6 +482,8 @@ export function StringsPage() {
   }
 
   function viewInStrings(batchId: string) {
+    // The toast action outlives the save; never drop a running write or AI job.
+    if (saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
     resetReview()
     startTransition(() => {
       navigate({ search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }) })
