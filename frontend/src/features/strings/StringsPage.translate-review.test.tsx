@@ -195,6 +195,7 @@ describe('translation review retranslation', () => {
       disconnect() {}
     })
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['vi', 'en'] })
+    vi.mocked(stringsApi.editorSave).mockResolvedValue({ id: 'saved-string', key: 'save' } as Awaited<ReturnType<typeof stringsApi.editorSave>>)
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     await screen.findByText('0 strings · 1 target language')
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))

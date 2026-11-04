@@ -49,7 +49,7 @@ interface Props {
   initialTab?: 'details' | 'history'
   onClose: () => void
   onSuccess: () => void
-  onViewInStrings?: (entry: StringEntry) => void
+  onSaved: (entry: StringEntry) => void
 }
 
 const NONE_MODULE = '__none__'
@@ -175,7 +175,7 @@ export default function StringFormDialog({
   initialTab = 'details',
   onClose,
   onSuccess,
-  onViewInStrings,
+  onSaved,
 }: Props) {
   const toast = useToast()
   const qc = useQueryClient()
@@ -183,7 +183,6 @@ export default function StringFormDialog({
   const isEdit = Boolean(baseline?.id)
   const [review, setReview] = useState<{ proposal: EditorProposal; preview: EditorPreview } | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
-  const [saved, setSaved] = useState(false)
   const reviewHeading = useRef<HTMLHeadingElement>(null)
   const publishButton = useRef<HTMLButtonElement>(null)
   const wasReviewOpen = useRef(false)
@@ -472,18 +471,6 @@ export default function StringFormDialog({
     onSuccess()
   }
 
-  function applySaved(fresh: StringEntry) {
-    setBaseline(fresh)
-    applyEntryToForm(fresh, targetLocales, {
-      setKey, setSourceText, setDescription, setModuleId, setTagIds, setStatus, setTranslations, setScores,
-    })
-    setConflict(null)
-    setMemoryUndo(null)
-    setMemorySelection({ source: fresh.source_text, chosen: {} })
-    setQaSeeds({})
-    setErrors({})
-  }
-
   function editorError(error: unknown) {
     if (error instanceof ApiError && error.status === 409) {
       const detail = (error.body as { detail?: SaveConflict & { code?: string } })?.detail
@@ -511,11 +498,7 @@ export default function StringFormDialog({
 
   const saveMut = useMutation({
     mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
-    onSuccess: (fresh, request) => {
-      applySaved(fresh)
-      setReviewOpen(false)
-      setReview(null)
-      setSaved(true)
+    onSuccess: (_fresh, request) => {
       refreshQueries()
       toast.success(request.action === 'publish' ? 'String saved and published' : 'String saved as draft')
     },
@@ -615,6 +598,10 @@ export default function StringFormDialog({
     onError: (error) => toast.error(publicationErrorMessage(error, 'Failed to discard changes')),
   })
 
+  function save(request: EditorSaveRequest) {
+    saveMut.mutate(request, { onSuccess: (entry) => onSaved(entry) })
+  }
+
   function submitAction(action: 'save_draft' | 'publish') {
     if (conflict || busy) return
     const nextErrors: FormErrors = {}
@@ -623,7 +610,7 @@ export default function StringFormDialog({
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
     if (action === 'publish') previewMut.mutate(proposal())
-    else saveMut.mutate({ proposal: proposal(), action })
+    else save({ proposal: proposal(), action })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -731,7 +718,7 @@ export default function StringFormDialog({
                 type="button"
                 disabled={busy || !publicationReady}
                 onClick={() => {
-                  if (review) saveMut.mutate({
+                  if (review) save({
                     proposal: review.proposal,
                     action: 'publish',
                     fingerprint: review.preview.fingerprint,
@@ -1172,18 +1159,6 @@ export default function StringFormDialog({
                     <Undo2 data-icon="inline-start" />
                   )}
                   Discard changes
-                </Button>
-              ) : null}
-              {saved && baseline && onViewInStrings ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => onViewInStrings(baseline)}
-                  className="border-primary/30 text-primary hover:bg-primary/5"
-                >
-                  View in Strings
                 </Button>
               ) : null}
             </div>

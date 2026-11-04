@@ -99,7 +99,7 @@ test('retranslation can reuse its own publication and clear confidence for uncha
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue('[ja] Nội dung đã phát hành')
   await dialog.getByRole('button', { name: 'Save as draft' }).click()
   await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
-  await expect(dialog).toBeVisible()
+  await expect(dialog).toBeHidden()
   const saved = await (
     await page.request.get(`/api/projects/${project.id}/strings/${row.id}`)
   ).json()

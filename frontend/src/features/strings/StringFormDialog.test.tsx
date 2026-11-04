@@ -142,6 +142,7 @@ function renderDialog(
 ) {
   const onClose = overrides.onClose ?? vi.fn()
   const onSuccess = overrides.onSuccess ?? vi.fn()
+  const onSaved = vi.fn()
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -157,10 +158,11 @@ function renderDialog(
       targetLocales={overrides.targetLocales ?? ['en']}
       onClose={onClose}
       onSuccess={onSuccess}
+      onSaved={onSaved}
     />,
     { wrapper },
   )
-  return { onClose, onSuccess }
+  return { onClose, onSuccess, onSaved }
 }
 
 const memoryMatch: TranslationMemoryMatch = {
@@ -776,25 +778,15 @@ describe('StringFormDialog translation QA', () => {
 describe('compact editor save and review', () => {
   beforeEach(polyfillPointer)
 
-  it('creates a draft, stays open, and sends later saves as updates with the refreshed baseline', async () => {
+  it('hands off the newly created draft to the catalog', async () => {
     const saved = { ...draftEntry(), key: 'new-key', source_text: 'New source' }
-    vi.mocked(stringsApi.editorSave).mockResolvedValueOnce(saved).mockResolvedValueOnce({ ...saved, description: 'More context' })
-    const { onClose, onSuccess } = renderDialog()
+    vi.mocked(stringsApi.editorSave).mockResolvedValueOnce(saved)
+    const { onSaved, onSuccess } = renderDialog()
     fireEvent.change(screen.getByLabelText('Key'), { target: { value: saved.key } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: saved.source_text } })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    await screen.findByRole('heading', { name: 'Edit string' })
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved))
     expect(onSuccess).toHaveBeenCalledTimes(1)
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'More context' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    await waitFor(() => expect(stringsApi.editorSave).toHaveBeenLastCalledWith('proj-1', {
-      action: 'save_draft', proposal: { mode: 'update', string_id: 'str-1', values: {
-        description: 'More context', expected: { description: null },
-      } },
-    }))
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(2))
-    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('reviews complete content without writing, and Back keeps input and invalidates review', async () => {
@@ -824,7 +816,7 @@ describe('compact editor save and review', () => {
     vi.mocked(stringsApi.editorSave).mockRejectedValueOnce(new ApiError(409, 'Changed', {
       detail: { code: 'publish_fingerprint_mismatch' },
     })).mockResolvedValueOnce({ ...draftEntry(), status: 'public', published_key: 'note' })
-    const { onClose } = renderDialog({ entry: draftEntry() })
+    const { onSaved } = renderDialog({ entry: draftEntry() })
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
     await waitFor(() => expect(stringsApi.editorPreview).toHaveBeenCalledTimes(2))
@@ -834,8 +826,7 @@ describe('compact editor save and review', () => {
     await waitFor(() => expect(stringsApi.editorSave).toHaveBeenLastCalledWith('proj-1', {
       action: 'publish', fingerprint: 'second', proposal: { mode: 'update', string_id: 'str-1', values: { expected: {} } },
     }))
-    await screen.findByRole('button', { name: 'Save as draft' })
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' })))
   })
 
   it('disables publication of an in-sync public string while allowing draft saves', async () => {

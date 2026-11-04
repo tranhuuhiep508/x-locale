@@ -68,13 +68,20 @@ export const tagsQuery = (projectId: string) =>
 
 export const stringsQuery = (
   projectId: string,
-  search: StringListParams & { batch_kind?: string },
+  search: StringListParams & { batch_kind?: string; saved_string?: string },
 ) => {
-  const { batch_kind: _batchKind, ...keySearch } = search
+  const { batch_kind: _batchKind, saved_string: savedString, ...keySearch } = search
   return queryOptions({
-    queryKey: queryKeys.projects.strings.list(projectId, keySearch),
-    queryFn: () => stringsApi.list(projectId, toStringListParams(search)),
-    placeholderData: (prev) => prev,
+    queryKey: savedString
+      ? [...queryKeys.projects.strings.all(projectId), 'saved', savedString]
+      : queryKeys.projects.strings.list(projectId, keySearch),
+    queryFn: async () => {
+      if (!savedString) return stringsApi.list(projectId, toStringListParams(search))
+      const entry = await stringsApi.get(projectId, savedString)
+      const items = entry.deleted_at ? [] : [entry]
+      return { items, total: items.length, page: 1, page_size: 1 }
+    },
+    placeholderData: savedString ? undefined : (prev) => prev,
   })
 }
 
