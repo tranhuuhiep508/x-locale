@@ -1,27 +1,31 @@
 # Install the standalone `loc` binary (no Python needed) on Windows.
 #
-#   irm https://<your-x-locale-host>/cli/install.ps1 | iex
-#
-# Served by your x-locale server, which fills in its own address below; when run
-# from elsewhere, set LOC_BASE_URL to the server origin.
+#   irm https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.ps1 | iex
 #
 # Environment overrides:
-#   LOC_BASE_URL     x-locale server origin, e.g. https://x-locale.example.com
+#   LOC_VERSION      release to install, e.g. 0.2.0 or cli-v0.2.0 (default: newest cli-v* release)
 #   LOC_INSTALL_DIR  install directory (default: %LOCALAPPDATA%\Programs\loc)
+#   LOC_REPO         GitHub owner/repo hosting the releases
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$baseUrl = if ($env:LOC_BASE_URL) { $env:LOC_BASE_URL } else { '__LOC_BASE_URL__' }
-if ($baseUrl -like '*LOC_BASE_URL__') {
-    throw 'Set LOC_BASE_URL to your x-locale server, e.g. https://x-locale.example.com'
-}
+$repo = if ($env:LOC_REPO) { $env:LOC_REPO } else { 'tranhuuhiep508/x-locale' }
 $installDir = if ($env:LOC_INSTALL_DIR) { $env:LOC_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\loc' }
 $asset = 'loc-windows-x64.exe'
-$base = "$($baseUrl.TrimEnd('/'))/cli"
+
+if ($env:LOC_VERSION) {
+    $tag = if ($env:LOC_VERSION -like 'cli-v*') { $env:LOC_VERSION } else { "cli-v$($env:LOC_VERSION)" }
+} else {
+    $releases = Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100"
+    $tag = ($releases | Where-Object { $_.tag_name -like 'cli-v*' } | Select-Object -First 1).tag_name
+    if (-not $tag) { throw "No cli-v* release found in $repo" }
+}
+
+$base = "https://github.com/$repo/releases/download/$tag"
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
-    Write-Host "Downloading $asset from $base ..."
+    Write-Host "Downloading $asset ($tag)..."
     Invoke-WebRequest "$base/$asset" -OutFile (Join-Path $tmp $asset) -UseBasicParsing
     Invoke-WebRequest "$base/SHA256SUMS" -OutFile (Join-Path $tmp 'SHA256SUMS') -UseBasicParsing
 

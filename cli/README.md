@@ -6,45 +6,35 @@ Sync locale files with an x-locale server.
 
 ### Standalone binary (no Python needed)
 
-Prebuilt `loc` executables for Linux x64/arm64 (glibc 2.28+: Ubuntu 20.04+,
-Debian 10+, RHEL 8+), macOS x64/arm64, and Windows x64 are served by **your
-x-locale server** under `/cli`, so users need no access to GitHub. Replace
-`<server>` with your x-locale address:
+Prebuilt `loc` executables are published on the repository's GitHub Releases
+(tags `cli-v*`) for Linux x64/arm64 (glibc 2.28+: Ubuntu 20.04+, Debian 10+,
+RHEL 8+), macOS x64/arm64, and Windows x64.
 
 ```bash
 # macOS / Linux → installs to ~/.local/bin/loc
-curl -fsSL https://<server>/cli/install.sh | sh
+curl -fsSL https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell) → installs to %LOCALAPPDATA%\Programs\loc and adds it to PATH
-irm https://<server>/cli/install.ps1 | iex
+irm https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.ps1 | iex
 ```
 
-The server fills its own address into the scripts, which verify the download
-against `SHA256SUMS`. Set `LOC_INSTALL_DIR` to change the location. To update,
-run `loc self-update` (uses `api_url` from `.x-locale/config.yaml`, or
-`--server <origin>`) or re-run the install command. macOS may require
-`xattr -d com.apple.quarantine ~/.local/bin/loc` because the binaries are not
-signed.
+Set `LOC_VERSION=0.2.0` to pin a release (recommended in CI) and
+`LOC_INSTALL_DIR` to change the location. Both scripts verify the download
+against the release's `SHA256SUMS`. Re-run the same command to update. You can
+also download `loc-<os>-<arch>` from the release page by hand; macOS may then
+need `xattr -d com.apple.quarantine ./loc-macos-*` because the binaries are not
+signed. The installers fetch from GitHub without credentials, so the releases
+must be publicly readable.
 
-#### Publishing the binaries to your server
-
-1. Bump `__version__` in `x_locale_cli/__init__.py` and merge it into `develop`
-   (or `master`). `.github/workflows/cli-release.yml` tests and builds every
-   platform and publishes GitHub Release `cli-v<version>`, which includes
-   `cli-dist.tar.gz` (the binaries, `SHA256SUMS`, `VERSION`, install scripts).
-   Pushes that do not change the version publish nothing; pull requests that
-   touch `cli/` run the same builds without publishing.
-2. On any machine that can reach GitHub (not the end users), download
-   `cli-dist.tar.gz`, or the build artifacts of the workflow run, and extract it
-   into the server's `cli-dist/` folder (mounted at `CLI_DIST_DIR=/cli-dist` by
-   `docker-compose.prod.yml`). No server restart is needed.
-3. If the server sits behind a TLS proxy, set `PUBLIC_URL=https://<server>` so
-   the served scripts use the public address.
-
-Without `CLI_DIST_DIR`, `/cli/*` returns 404. The downloads are public,
-read-only, and contain no secrets. To build
+To publish a release, bump `__version__` in `x_locale_cli/__init__.py` and merge
+it into `develop` (or `master`). `.github/workflows/cli-release.yml` then tests,
+builds each platform with PyInstaller, and publishes GitHub Release
+`cli-v<version>` with the binaries, `SHA256SUMS`, and both install scripts (the
+install commands above always fetch the newest release's scripts). Pushes that
+do not change the version, or whose release already exists, publish nothing.
+Pull requests that touch `cli/` run the same builds without publishing. To build
 for your current machine locally:
 
 ```bash

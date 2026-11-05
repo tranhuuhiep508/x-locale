@@ -51,6 +51,6 @@ created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing
 - Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`). Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
 - CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running Postgres server).
-- CLI binary: `cd cli && uv run --group build python packaging/build_binary.py` (PyInstaller, current OS only). Releases: bumping `__version__` in `cli/x_locale_cli/__init__.py` on `develop`/`master` publishes GitHub Release `cli-v<version>` (incl. `cli-dist.tar.gz`) via `.github/workflows/cli-release.yml`. The backend serves that folder (`CLI_DIST_DIR`, public `/cli/*`) so users install via `https://<server>/cli/install.sh` or `loc self-update`; see `cli/README.md`.
+- CLI binary: `cd cli && uv run --group build python packaging/build_binary.py` (PyInstaller, current OS only). Releases: bumping `__version__` in `cli/x_locale_cli/__init__.py` on `develop`/`master` publishes GitHub Release `cli-v<version>` via `.github/workflows/cli-release.yml`.
 - E2E: `npm run e2e` (Playwright; one Postgres database per run, ports `:8001` / `:5174`, one worker; does not reuse local `:8000` / `:5173`).
 - Validate backend manually: `GET /health`, `GET /api/auth/me` (session cookie, or bypass when OIDC is unset), `GET /api/bootstrap` with `X-API-Key`.

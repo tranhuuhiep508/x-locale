@@ -28,16 +28,11 @@ services:
       dockerfile: backend/Dockerfile.prod
     ports:
       - "8000:8000"
-    volumes:
-      # Extract the release's cli-dist.tar.gz here to serve `loc` downloads at /cli.
-      - ./cli-dist:/cli-dist:ro
     environment:
       - SECRET_ENABLE=${SECRET_ENABLE:-false}
       - X_LOCALE_SECRET_ID
       - AUTH_DEV_BYPASS=${AUTH_DEV_BYPASS:-false}
       - STATIC_DIR=static
-      - CLI_DIST_DIR=/cli-dist
-      - PUBLIC_URL
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
       # Bare entries are omitted when unset; explicit empty overrides stay empty.
       - AWS_DEFAULT_REGION

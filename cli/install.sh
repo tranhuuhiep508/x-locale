@@ -1,18 +1,17 @@
 #!/bin/sh
 # Install the standalone `loc` binary (no Python needed) on Linux or macOS.
 #
-#   curl -fsSL https://<your-x-locale-host>/cli/install.sh | sh
-#
-# Served by your x-locale server, which fills in its own address below; when run
-# from elsewhere, set LOC_BASE_URL to the server origin.
+#   curl -fsSL https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.sh | sh
 #
 # Environment overrides:
-#   LOC_BASE_URL     x-locale server origin, e.g. https://x-locale.example.com
+#   LOC_VERSION      release to install, e.g. 0.2.0 or cli-v0.2.0 (default: newest cli-v* release)
 #   LOC_INSTALL_DIR  install directory (default: $HOME/.local/bin)
+#   LOC_REPO         GitHub owner/repo hosting the releases
 set -eu
 
-BASE_URL="${LOC_BASE_URL:-__LOC_BASE_URL__}"
+REPO="${LOC_REPO:-tranhuuhiep508/x-locale}"
 INSTALL_DIR="${LOC_INSTALL_DIR:-$HOME/.local/bin}"
+VERSION="${LOC_VERSION:-}"
 
 fail() { echo "loc install: $*" >&2; exit 1; }
 
@@ -32,14 +31,20 @@ if [ "$os" = macos ] && [ "$arch" = x64 ] && [ "$(sysctl -in sysctl.proc_transla
 fi
 asset="loc-$os-$arch"
 
-case "$BASE_URL" in
-  *LOC_BASE_URL__) fail "set LOC_BASE_URL to your x-locale server, e.g. https://x-locale.example.com" ;;
-esac
-base="${BASE_URL%/}/cli"
+if [ -z "$VERSION" ]; then
+  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" \
+    | grep -o '"tag_name": *"cli-v[^"]*"' | head -n 1 | sed 's/.*"\(cli-v[^"]*\)"/\1/') \
+    || fail "could not list releases of $REPO"
+  [ -n "$tag" ] || fail "no cli-v* release found in $REPO"
+else
+  case "$VERSION" in cli-v*) tag="$VERSION" ;; *) tag="cli-v$VERSION" ;; esac
+fi
+
+base="https://github.com/$REPO/releases/download/$tag"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-echo "Downloading $asset from $base ..."
+echo "Downloading $asset ($tag)..."
 curl -fsSL "$base/$asset" -o "$tmp/$asset" || fail "download failed: $base/$asset"
 curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
 

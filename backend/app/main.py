@@ -18,7 +18,6 @@ from app.routers import (
     auth,
     batch,
     bootstrap,
-    cli_dist,
     jobs,
     languages,
     modules,
@@ -95,7 +94,6 @@ app.include_router(translate.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(activities.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
-app.include_router(cli_dist.router, prefix="/cli", include_in_schema=False)
 
 
 @app.exception_handler(IntegrityError)
