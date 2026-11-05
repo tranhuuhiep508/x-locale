@@ -4,7 +4,7 @@
 #   curl -fsSL https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.sh | sh
 #
 # Environment overrides:
-#   LOC_VERSION      release to install, e.g. 0.2.0 or cli-v0.2.0 (default: newest cli-v* release)
+#   LOC_VERSION      release to install, e.g. 0.2.0 or cli-v0.2.0 (default: the repo's latest release)
 #   LOC_INSTALL_DIR  install directory (default: $HOME/.local/bin)
 #   LOC_REPO         GitHub owner/repo hosting the releases
 set -eu
@@ -32,10 +32,11 @@ fi
 asset="loc-$os-$arch"
 
 if [ -z "$VERSION" ]; then
-  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" \
-    | grep -o '"tag_name": *"cli-v[^"]*"' | head -n 1 | sed 's/.*"\(cli-v[^"]*\)"/\1/') \
-    || fail "could not list releases of $REPO"
-  [ -n "$tag" ] || fail "no cli-v* release found in $REPO"
+  # Follow the "latest release" redirect instead of the rate-limited GitHub API.
+  url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") \
+    || fail "could not reach the releases of $REPO"
+  tag=${url##*/}
+  case "$tag" in cli-v*) ;; *) fail "the latest release of $REPO is not a cli-v* release; set LOC_VERSION" ;; esac
 else
   case "$VERSION" in cli-v*) tag="$VERSION" ;; *) tag="cli-v$VERSION" ;; esac
 fi

@@ -31,6 +31,8 @@ concurrency:
 env:
   # Build with uv's standalone CPython (targets old glibc/macOS), never the runner's.
   UV_PYTHON: '3.13'
+  # Pinned so every platform builds a release with the same uv.
+  UV_VERSION: '0.13.4'
   UV_PYTHON_PREFERENCE: only-managed
   NO_COLOR: '1'
 
@@ -92,6 +94,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
 
       - name: Run CLI unit tests
         run: uv run --extra dev pytest tests -m "not e2e"
@@ -106,9 +110,9 @@ jobs:
         if: ${{ matrix.manylinux }}
         run: |
           docker run --rm -v "${GITHUB_WORKSPACE}:/w" -w /w/cli \
-            -e UV_PYTHON -e UV_PYTHON_PREFERENCE -e NO_COLOR -e UV_PROJECT_ENVIRONMENT=/tmp/build-venv \
+            -e UV_VERSION -e UV_PYTHON -e UV_PYTHON_PREFERENCE -e NO_COLOR -e UV_PROJECT_ENVIRONMENT=/tmp/build-venv \
             "${{ matrix.manylinux }}" \
-            sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh && "$HOME/.local/bin/uv" run --group build python packaging/build_binary.py'
+            sh -c 'curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh && "$HOME/.local/bin/uv" run --group build python packaging/build_binary.py'
 
       - name: Run on a clean glibc 2.28 distro (AlmaLinux 8)
         if: ${{ matrix.manylinux }}
