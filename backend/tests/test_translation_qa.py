@@ -469,6 +469,18 @@ def test_deeply_unclosed_braces_are_rejected_quickly():
         assert [issue.code for issue in issues] == ["qa_limit"]
 
 
+def test_printf_zero_run_is_checked_quickly():
+    import time
+
+    # "0" fits both the flag and the width, which used to backtrack quadratically.
+    sample = "%" + "0" * (TEXT_MAX_LENGTH - 1)
+    started = time.perf_counter()
+    check_translation("hi", sample, "en")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 1, elapsed
+    assert check_translation("%05d %0*d %08.3f", "%05d %0*d %08.3f", "en") == []
+
+
 def test_qa_refuses_oversized_or_deeply_nested_input():
     oversized = check_translation("x" * (TEXT_MAX_LENGTH + 1), "y", "en")
     assert [issue.code for issue in oversized] == ["qa_limit"]

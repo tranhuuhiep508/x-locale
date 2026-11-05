@@ -65,7 +65,8 @@ _VOID_TAGS = frozenset(
 # conversion is prose: "50%off" must not read as %o. Length stays in the token
 # so %lld and %d are different. @ is the iOS object conversion.
 _PRINTF = re.compile(
-    r"%%|%(?:(?P<pos>\d+)\$)?[-+0#]*(?:\d+|\*)?(?:\.(?:\d+|\*))?"
+    # Width starts at 1-9: a leading 0 is a flag, so the two cannot backtrack.
+    r"%%|%(?:(?P<pos>\d+)\$)?[-+0#]*(?:[1-9]\d*|\*)?(?:\.(?:\d+|\*))?"
     r"(?P<len>hh|ll|h|l|L|z|j|t)?(?P<conv>[sdifouxXeEgGc@])(?![A-Za-z])"
 )
 _ICU_COLUMN = re.compile(r"line (\d+), column (\d+)")
