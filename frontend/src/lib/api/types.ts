@@ -366,6 +366,9 @@ export interface TranslateProposalItem {
   key: string
   source_text: string
   status: TranslationStatus
+  module_id?: string | null
+  module_slug?: string | null
+  module_name?: string | null
   description?: string | null
   translations: Record<string, string>
   scores?: Record<string, number>
@@ -429,6 +432,35 @@ export interface TranslateApplyResult {
   translated_count: number
   batch_id: string
   locales: string[]
+}
+
+/** Reviewed rows. Description edits are not part of review; the server rejects them. */
+export interface TranslateReviewRequest {
+  items: Array<{
+    string_id: string
+    expected_source_text: string
+    translations: Record<string, string>
+    scores?: Record<string, number>
+  }>
+}
+
+export interface TranslateReview {
+  /** Full proposed strings: the working copy after save, with published snapshots. */
+  items: StringEntry[]
+  fingerprint: string
+}
+
+export interface TranslateSaveRequest extends TranslateReviewRequest {
+  action: 'draft' | 'publish'
+  fingerprint?: string
+}
+
+export interface TranslateSaveResult {
+  action: 'draft' | 'publish'
+  translated_count: number
+  string_count: number
+  published_count: number
+  batch_id: string
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────

@@ -1,9 +1,6 @@
 import type { QaIssue } from '@/lib/api/types'
 
 export const QA_DEBOUNCE_MS = 500
-export const QA_SCAN_MIN = 9
-
-export type QaFilter = 'all' | 'issues' | 'errors'
 
 export type QaView = {
   status: 'unchecked' | 'checking' | 'ready' | 'failed'
@@ -129,12 +126,4 @@ export function presentQaIssues(issues: readonly QaIssue[]): QaIssue[] {
     presented.push(groupedAt.get(index) ?? issue)
   })
   return sortIssues(presented)
-}
-
-export function shouldShowQaIndex(stringCount: number, filter: QaFilter): boolean {
-  return stringCount >= QA_SCAN_MIN && filter !== 'all'
-}
-
-export function shouldFoldCleanLocales(stringCount: number): boolean {
-  return stringCount >= QA_SCAN_MIN
 }

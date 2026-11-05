@@ -34,6 +34,7 @@ import { describedByFor, QA_SAVE_FOOTER, QaLocaleBadge } from '@/features/string
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { PublishedChangeHint, canDiscardWorkingCopy, isReleased } from '@/features/strings/working-copy'
 import { StringHistoryPanel } from '@/features/strings/StringHistoryPanel'
+import { TranslateStepper } from '@/features/strings/TranslateReviewDialog'
 import { EditorPublicationReview } from './EditorPublicationReview'
 import { buildPublishPreview, hasPublishableChanges, isPublishFingerprintMismatch, publicationErrorMessage } from './publish-preview'
 import { queryKeys } from '@/lib/query-keys'
@@ -627,6 +628,8 @@ export default function StringFormDialog({
   const formDirty = Boolean(baseline && isFormDirty(baseline, targetLocales, formValues))
   const canDiscard =
     isEdit && baseline && !baseline.deleted_at && (serverDiscardable || formDirty)
+  const hasAnyTranslation = targetLocales.some((locale) => (translations[locale] ?? '').trim().length > 0)
+  const currentStep = reviewOpen ? 2 : translateMut.isSuccess || hasAnyTranslation ? 1 : 0
 
   return (
     <Dialog open onOpenChange={(open) => {
@@ -650,25 +653,28 @@ export default function StringFormDialog({
         }}
       >
         <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
-          <div className="flex items-center gap-2">
-            <DialogTitle>{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
-            {isEdit && !reviewOpen ? (
-              <span
-                className={cn(
-                  'rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider',
-                  status === 'public'
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                    : 'border-border/70 bg-muted/50 text-muted-foreground',
-                )}
-              >
-                {status}
-              </span>
-            ) : null}
-            {reviewOpen ? (
-              <span className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary uppercase">
-                Publication Review
-              </span>
-            ) : null}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <DialogTitle className="truncate">{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
+              {isEdit && !reviewOpen ? (
+                <span
+                  className={cn(
+                    'shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider',
+                    status === 'public'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      : 'border-border/70 bg-muted/50 text-muted-foreground',
+                  )}
+                >
+                  {status}
+                </span>
+              ) : null}
+              {reviewOpen ? (
+                <span className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary uppercase">
+                  Publication Review
+                </span>
+              ) : null}
+            </div>
+            <TranslateStepper current={currentStep} />
           </div>
           <DialogDescription>
             {reviewOpen

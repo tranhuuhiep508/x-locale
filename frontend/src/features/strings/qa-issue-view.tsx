@@ -15,45 +15,9 @@ const warningIconClass = 'text-amber-600 dark:text-amber-400'
 const CLOSE_DELAY_MS = 150
 
 export const QA_SAVE_FOOTER = 'Advisory only. You can still save.'
-export const QA_APPLY_FOOTER = 'Advisory only. You can still apply.'
+export const QA_APPLY_FOOTER = 'Advisory only. You can still save or publish.'
 
 export type QaBadgeIssue = QaIssue & { locale?: string }
-
-export function QaCountBadges({
-  errors,
-  warnings,
-  showClean = true,
-}: {
-  errors: number
-  warnings: number
-  showClean?: boolean
-}) {
-  if (errors === 0 && warnings === 0) {
-    if (!showClean) return null
-    return (
-      <Badge variant="outline" className="text-muted-foreground">
-        <CircleCheck />
-        No QA issues
-      </Badge>
-    )
-  }
-  return (
-    <>
-      {errors > 0 ? (
-        <Badge variant="destructive">
-          <OctagonX />
-          {errors === 1 ? '1 error' : `${errors} errors`}
-        </Badge>
-      ) : null}
-      {warnings > 0 ? (
-        <Badge variant="outline" className={warningBadgeClass}>
-          <TriangleAlert className={warningIconClass} />
-          {warnings === 1 ? '1 warning' : `${warnings} warnings`}
-        </Badge>
-      ) : null}
-    </>
-  )
-}
 
 function countLabel(errors: number, warnings: number) {
   const total = errors + warnings
@@ -83,11 +47,13 @@ export function QaLocaleBadge({
   locale,
   footer,
   id,
+  showClean = true,
 }: {
   view: QaView
   locale: string
   footer: string
   id?: string
+  showClean?: boolean
 }) {
   if (view.status === 'unchecked') return null
   const issues = presentQaIssues(view.issues)
@@ -101,6 +67,9 @@ export function QaLocaleBadge({
       </>
     )
   }
+  if (issues.length === 0 && view.status === 'ready' && !showClean) {
+    return null
+  }
   return (
     <span className="inline-flex items-center gap-1.5">
       {view.status === 'checking' ? <QaChecking /> : null}
@@ -109,7 +78,7 @@ export function QaLocaleBadge({
         issues={issues}
         footer={footer}
         stale={view.stale}
-        showClean={view.status === 'ready'}
+        showClean={showClean && view.status === 'ready'}
       />
       {view.status === 'failed' ? (
         <span className="text-xs text-muted-foreground">QA failed</span>

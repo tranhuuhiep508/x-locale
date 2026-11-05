@@ -20,6 +20,10 @@ from app.schemas import (
     TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
+    TranslateReviewOut,
+    TranslateReviewRequest,
+    TranslateSaveRequest,
+    TranslateSaveResult,
     TranslationMemoryRequest,
     TranslationMemoryResult,
     TranslationQaRequest,
@@ -43,6 +47,7 @@ from app.services.translate import (
     select_entries,
     serialize_descriptions,
 )
+from app.services.translate_review import review_translations, save_reviewed_translations
 from app.services.translation_memory import lookup_memory
 from app.services.translation_qa import check_translation
 
@@ -305,3 +310,23 @@ def translate_apply(
         batch_id=batch_id,
         locales=locales,
     )
+
+
+@router.post("/translate/review", response_model=TranslateReviewOut)
+def translate_review(
+    payload: TranslateReviewRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateReviewOut:
+    """Read-only: full proposed strings and the fingerprint Publish must echo."""
+    return review_translations(db, project, payload.items)
+
+
+@router.post("/translate/save", response_model=TranslateSaveResult)
+def translate_save(
+    payload: TranslateSaveRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateSaveResult:
+    """Save reviewed rows as draft, or save and publish exactly those strings atomically."""
+    return save_reviewed_translations(db, project, payload)

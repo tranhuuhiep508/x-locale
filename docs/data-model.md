@@ -218,6 +218,36 @@ identical source makes an existing proposal valid again. AI writes still affect
 only the working copy. Deploy backend and frontend together; custom Apply clients
 must send the baseline, and older browser tabs may need a reload.
 
+### Save or publish reviewed AI translations
+
+The Translate missing dialog no longer calls `/translate/apply` (kept for API
+clients). It uses two endpoints that take the same items (1–100, one per string):
+
+- `POST /api/projects/{id}/translate/review` is read-only. It returns the full
+  proposed strings (working copy after the save, with published snapshots and
+  every configured locale, empty ones included) and a `fingerprint` binding the
+  reviewed membership, values, scores, project locales, and each string's
+  complete current working and published state. Items carry no description
+  (descriptions never publish); extra fields return 422.
+- `POST /api/projects/{id}/translate/save` with `action: "draft"` writes the working
+  copy only, audited as `string.saved_draft`. With `action: "publish"` and the review
+  `fingerprint`, it writes and promotes exactly the reviewed strings (all locales,
+  including pending edits made elsewhere) in one transaction with its audit rows
+  (`string.saved_and_published`). Both use activity `batch_kind=translate` with a new
+  `batch_id`, so whole-action Undo reverses working and public changes together.
+
+Every reviewed cell fills a cell that was empty at review. The whole request is
+rejected with 409 and nothing is written when a source (`stale_translation_source`)
+or reviewed cell
+(`stale_translation_value`, filled elsewhere with different text) changed, a string
+was deleted (`stale_translation_review`), any reviewed content or baseline changed
+(`publish_fingerprint_mismatch`), a reviewed string is pending removal
+(`pending_delete_in_review`, also returned by `/translate/review` so the preview
+never shows a publish that cannot succeed), or publication would collide with a public key
+(`published_key_conflict`). Unconfigured or base locales return 400. Scope is the
+current queue page; paging stays blocked until that page is saved or its edits are
+undone, so no action spans unreviewed pages.
+
 
 ## CLI push batch workspace
 

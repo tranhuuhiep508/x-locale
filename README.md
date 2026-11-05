@@ -194,7 +194,7 @@ commit client IDs or secrets.
 - **Project references** use a permanent slug in browser URLs and new CLI configs. The API accepts either the slug or an existing project UUID in `/api/projects/{project_id}` paths; UUIDs remain the internal database identity.
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export/CLI shape. File keys are stored as-is (dots are not a module prefix). Flat import never creates modules; modular Excel uses full slugs mapped in its hidden `_meta` sheet (legacy workbooks without mappings use sheet names), and CLI uses folders. When renaming or copying an Excel worksheet, update or add its `module_slug:<sheet name>` mapping with a distinct full module slug. See [Excel import compatibility](docs/import-performance.md).
 - **Translation context** is optional plain text in Project Settings and module create/edit forms, capped at 500 characters each. AI translation combines project context, the string's module context, and its description in that order. These are mandatory translator instructions for tone, terminology, and wording. Blank context clears the setting. Context changes affect future AI requests only; they do not publish or change export, Excel metadata, or CLI sync.
-- **Translation memory** offers up to three exact or similar published translations before AI generation. Choose **Previously published → Use**, then Save or Apply. Selected cells skip AI; Smart QA remains advisory and selections never publish automatically. See [matching and deployment](docs/translation-memory.md), including the required `pg_trgm` migration.
+- **Translation memory** offers up to three exact or similar published translations before AI generation. Choose **Previously published → Use**, then Save as draft or publish. Selected cells skip AI; Smart QA remains advisory and selections never publish automatically. See [matching and deployment](docs/translation-memory.md), including the required `pg_trgm` migration.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `loc pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Shared editing:** the string dialog sends only changed fields and locales, with their original values in `expected`. Unrelated edits merge; competing changes return `409` with `detail.code=stale_editor_save`, conflicting field names, and the current string. No part of a conflicting save is applied. The dialog retains input and lets you use the latest conflicting values or keep your changes for another checked save. PATCH accepts an `expected` object matching the changed fields; locale PUT accepts the original text as `expected` (empty text is `""`). Comparisons and writes share a transaction with row locks. Existing API callers that omit `expected` retain unconditional write behavior.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
@@ -254,10 +254,20 @@ Legacy date-only bookmarks still represent full UTC days.
 
 **Translate missing** honors all active grid filters across queue pages. It
 captures the filters and relative time cutoff when review opens, reusing that
-window for paging and refreshes after Apply. Reopening review captures a fresh
+window for paging and refreshes after a save. Reopening review captures a fresh
 window. It includes only matching live strings with empty cells in the requested
 locales; filled cells and deleted strings are excluded. A Complete filter can therefore
 produce an empty queue when no other target locale is missing.
+
+Finish in the same dialog: **Save as draft** writes the working copy only (public
+strings keep their published snapshot). **Review & publish** freezes the changed
+rows on the current page and shows the full proposed public state of each string,
+including pending edits in other locales and locales that would export empty;
+**Publish** there saves and publishes exactly those strings in one transaction, with
+no second confirmation. Generation never saves. After a publish the dialog closes and
+Strings shows the published batch (`?batch_id=`). After a draft save the dialog stays
+open on the refreshed queue; if only that refresh fails, **Retry loading** repeats the
+read, not the write.
 
 ## Development
 

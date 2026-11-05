@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import HTTPException
-from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.helpers import require_max_length
 from app.limits import (
@@ -568,6 +568,9 @@ class TranslateProposalItem(BaseModel):
     key: str
     source_text: str
     status: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    module_name: str | None = None
     description: str | None = None
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
@@ -585,11 +588,20 @@ class TranslateProposalsResult(BaseModel):
     page_size: int = 50
 
 
-class TranslateApplyItem(BaseModel):
+class TranslateReviewItem(BaseModel):
+    """A reviewed row. Description edits are not part of review; unknown fields are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
     string_id: UUID
     expected_source_text: str
     translations: TextValues
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+
+
+class TranslateApplyItem(TranslateReviewItem):
+    model_config = ConfigDict(extra="ignore")
+
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     # Baseline of the stored description; may exceed TEXT_MAX_LENGTH.
     expected_description: str | None = None
@@ -612,6 +624,33 @@ class TranslateApplyResult(BaseModel):
     translated_count: int
     batch_id: UUID
     locales: list[str]
+
+
+class TranslateReviewRequest(BaseModel):
+    """Reviewed AI-review rows. Each translation fills a cell that was empty at review."""
+
+    items: list[TranslateReviewItem] = Field(min_length=1, max_length=100)
+
+
+class TranslateReviewOut(BaseModel):
+    """Full proposed strings (working copy after save) and the publication fingerprint."""
+
+    items: list[StringOut]
+    fingerprint: str
+
+
+class TranslateSaveRequest(TranslateReviewRequest):
+    action: Literal["draft", "publish"]
+    # Required for publish: the fingerprint of the review the user saw.
+    fingerprint: str | None = None
+
+
+class TranslateSaveResult(BaseModel):
+    action: Literal["draft", "publish"]
+    translated_count: int
+    string_count: int
+    published_count: int
+    batch_id: UUID
 
 
 class TranslateJobProgress(BaseModel):
