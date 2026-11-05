@@ -8,31 +8,40 @@ Sync locale files with an x-locale server.
 
 Prebuilt `loc` executables are published on the repository's GitHub Releases
 (tags `cli-v*`) for Linux x64/arm64 (glibc 2.28+: Ubuntu 20.04+, Debian 10+,
-RHEL 8+), macOS x64/arm64, and Windows x64.
+RHEL 8+) and macOS x64/arm64.
 
 ```bash
 # macOS / Linux → installs to ~/.local/bin/loc
 curl -fsSL https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.sh | sh
 ```
 
-```powershell
-# Windows (PowerShell) → installs to %LOCALAPPDATA%\Programs\loc and adds it to PATH
-irm https://github.com/tranhuuhiep508/x-locale/releases/latest/download/install.ps1 | iex
+Set `LOC_VERSION=0.2.0` to pin a release (recommended in CI) and
+`LOC_INSTALL_DIR` to change the location. The script verifies the download
+against the release's `SHA256SUMS`. Re-run the same command to update. The
+script fetches from GitHub without credentials, so the releases must be
+publicly readable.
+
+#### Offline install (computer without GitHub access)
+
+On any machine that can open GitHub, download `loc-<os>-<arch>` for the target
+computer and `SHA256SUMS` from the release page, copy both over, then run:
+
+```bash
+sha256sum -c --ignore-missing SHA256SUMS   # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
+chmod +x loc-<os>-<arch>
+mkdir -p ~/.local/bin && mv loc-<os>-<arch> ~/.local/bin/loc
+loc --version
 ```
 
-Set `LOC_VERSION=0.2.0` to pin a release (recommended in CI) and
-`LOC_INSTALL_DIR` to change the location. Both scripts verify the download
-against the release's `SHA256SUMS`. Re-run the same command to update. You can
-also download `loc-<os>-<arch>` from the release page by hand; macOS may then
-need `xattr -d com.apple.quarantine ./loc-macos-*` because the binaries are not
-signed. The installers fetch from GitHub without credentials, so the releases
-must be publicly readable.
+Add `~/.local/bin` to `PATH` if needed. macOS may require
+`xattr -d com.apple.quarantine ~/.local/bin/loc` because the binaries are not
+signed.
 
 To publish a release, bump `__version__` in `x_locale_cli/__init__.py` and merge
 it into `develop` (or `master`). `.github/workflows/cli-release.yml` then tests,
 builds each platform with PyInstaller, and publishes GitHub Release
-`cli-v<version>` with the binaries, `SHA256SUMS`, and both install scripts (the
-install commands above always fetch the newest release's scripts). Pushes that
+`cli-v<version>` with the binaries, `SHA256SUMS`, and the install script (the
+install command above always fetches the newest release's script). Pushes that
 do not change the version, or whose release already exists, publish nothing.
 Pull requests that touch `cli/` run the same builds without publishing. To build
 for your current machine locally:

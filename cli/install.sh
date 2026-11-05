@@ -18,7 +18,7 @@ fail() { echo "loc install: $*" >&2; exit 1; }
 case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=macos ;;
-  *) fail "unsupported OS $(uname -s); on Windows use install.ps1" ;;
+  *) fail "unsupported OS $(uname -s); binaries are built for Linux and macOS" ;;
 esac
 case "$(uname -m)" in
   x86_64 | amd64) arch=x64 ;;

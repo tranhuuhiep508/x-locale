@@ -83,7 +83,6 @@ jobs:
           - { os: ubuntu-24.04-arm, target: linux-arm64, manylinux: quay.io/pypa/manylinux_2_28_aarch64 }
           - { os: macos-15-intel, target: macos-x64 }
           - { os: macos-15, target: macos-arm64 }
-          - { os: windows-latest, target: windows-x64 }
     defaults:
       run:
         shell: bash
@@ -143,7 +142,7 @@ jobs:
       - name: Write checksums and add install scripts
         run: |
           (cd dist && sha256sum loc-* > SHA256SUMS && cat SHA256SUMS)
-          cp cli/install.sh cli/install.ps1 dist/
+          cp cli/install.sh dist/
 
       - name: Create GitHub Release
         env:
