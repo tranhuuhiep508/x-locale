@@ -284,6 +284,8 @@ describe('source conflict recovery', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
     await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
+    // The banner hides on click; the request is sent a tick later.
+    await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateProposals).mock.calls[1][1]).toEqual({
       scope: 'strings', string_ids: ['a'], locales: ['en'],
     })

@@ -46,7 +46,7 @@ test('batch review shows memory inline before AI and skips only the selected loc
   const use = dialog.getByRole('button', { name: 'Use match for en in destination' })
   await expect(use).toBeVisible()
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('')
-  await expect(dialog.getByText('Exact', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Exact match', { exact: true })).toBeVisible()
   await use.focus()
   await use.press('Space')
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
