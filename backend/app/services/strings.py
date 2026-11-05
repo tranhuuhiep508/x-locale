@@ -996,21 +996,36 @@ def _create_string(db: Session, project: Project, payload: StringCreate) -> Stri
     return entry
 
 
+def lock_strings(
+    db: Session, project_id: uuid.UUID, ids: Collection[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Row-lock strings, then their translations, in id order. Returns the locked ids.
+
+    Lock children too: imports and other writers can update translations directly.
+    Every writer takes these locks in the same order, so writers cannot deadlock.
+    """
+    if not ids:
+        return []
+    locked = [
+        row[0]
+        for row in db.query(StringEntry.id)
+        .filter(StringEntry.project_id == project_id, StringEntry.id.in_(ids))
+        .order_by(StringEntry.id)
+        .with_for_update()
+        .all()
+    ]
+    if locked:
+        db.query(Translation.id).filter(Translation.string_id.in_(locked)).order_by(
+            Translation.id
+        ).with_for_update().all()
+    return locked
+
+
 def _locked_editor_entry(
     db: Session, project_id: uuid.UUID, string_id: uuid.UUID
 ) -> StringEntry:
-    # Lock children too: imports and other writers can update translations directly.
-    found = (
-        db.query(StringEntry.id)
-        .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
-        .with_for_update()
-        .first()
-    )
-    if not found:
+    if not lock_strings(db, project_id, [string_id]):
         raise HTTPException(status_code=404, detail="String not found")
-    db.query(Translation.id).filter(Translation.string_id == string_id).order_by(
-        Translation.id
-    ).with_for_update().all()
     return load_string_entries(db, project_id, [string_id], refresh=True)[0]
 
 

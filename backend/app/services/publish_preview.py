@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
-from app.models import Activity, BatchKind, Project, StringEntry, Translation
+from app.models import Activity, BatchKind, Project
 from app.schemas import (
     BatchResult,
     CliPushBatchOut,
@@ -25,6 +25,7 @@ from app.services.strings import (
     is_publishable_entry,
     load_string_entries,
     lock_publication,
+    lock_strings,
     promote_string,
     resolve_string_ids,
     serialize_string,
@@ -102,14 +103,7 @@ def save_cli_push_batch(
         if not activities:
             raise HTTPException(404, detail="CLI push batch not found")
         ids = sorted({row[0] for row in activities if row[0] is not None})
-        if ids:
-            db.query(StringEntry.id).filter(
-                StringEntry.project_id == project.id,
-                StringEntry.id.in_(ids),
-            ).order_by(StringEntry.id).with_for_update().all()
-            db.query(Translation.id).filter(Translation.string_id.in_(ids)).order_by(
-                Translation.id
-            ).with_for_update().all()
+        lock_strings(db, project.id, ids)
         entries = load_string_entries(db, project.id, ids, refresh=True)
         active = [entry for entry in entries if not entry.deleted_at and not entry.pending_delete]
         active.sort(key=lambda entry: (entry.key, str(entry.id)))

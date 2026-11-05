@@ -434,7 +434,15 @@ export interface TranslateApplyResult {
   locales: string[]
 }
 
-export type TranslateReviewRequest = TranslateApplyRequest
+/** Reviewed rows. Description edits are not part of review; the server rejects them. */
+export interface TranslateReviewRequest {
+  items: Array<{
+    string_id: string
+    expected_source_text: string
+    translations: Record<string, string>
+    scores?: Record<string, number>
+  }>
+}
 
 export interface TranslateReview {
   /** Full proposed strings: the working copy after save, with published snapshots. */
@@ -442,7 +450,7 @@ export interface TranslateReview {
   fingerprint: string
 }
 
-export interface TranslateSaveRequest extends TranslateApplyRequest {
+export interface TranslateSaveRequest extends TranslateReviewRequest {
   action: 'draft' | 'publish'
   fingerprint?: string
 }

@@ -15,52 +15,42 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
-from app.models import Project, StringEntry, Translation
+from app.models import Project, StringEntry
 from app.schemas import (
     StringOut,
-    TranslateApplyItem,
+    TranslateReviewItem,
     TranslateReviewOut,
     TranslateSaveRequest,
     TranslateSaveResult,
     TranslationOut,
 )
 from app.services import strings
-from app.services.translate import check_review_baseline
+from app.services.translate import check_source_baseline
 from app.services.write_transactions import run_write
 
 STALE_TRANSLATION_REVIEW = "stale_translation_review"
 STALE_TRANSLATION_VALUE = "stale_translation_value"
 
 
-def _description(value: str | None) -> str | None:
-    return (value or "").strip() or None
-
-
-def _filled(item: TranslateApplyItem) -> dict[str, str]:
+def _filled(item: TranslateReviewItem) -> dict[str, str]:
     return {locale: value for locale, value in item.translations.items() if value.strip()}
 
 
 def _load(
-    db: Session, project: Project, items: list[TranslateApplyItem], *, lock: bool
+    db: Session, project: Project, items: list[TranslateReviewItem], *, lock: bool
 ) -> dict[UUID, StringEntry]:
     ids = [item.string_id for item in items]
     if len(set(ids)) != len(ids):
         raise HTTPException(400, detail="Each string can appear only once in a review")
     for item in items:
         strings.validate_locales(project, item.translations)
-    ordered = sorted(set(ids))
     if lock:
-        db.query(StringEntry.id).filter(
-            StringEntry.project_id == project.id, StringEntry.id.in_(ordered)
-        ).order_by(StringEntry.id).with_for_update().all()
-        db.query(Translation.id).filter(Translation.string_id.in_(ordered)).order_by(
-            Translation.id
-        ).with_for_update().all()
-    entries = strings.load_string_entries(db, project.id, ordered, refresh=lock)
+        strings.lock_strings(db, project.id, ids)
+    entries = strings.load_string_entries(db, project.id, ids, refresh=lock)
     return {entry.id: entry for entry in entries if entry.deleted_at is None}
 
 
-def _check(items: list[TranslateApplyItem], by_id: dict[UUID, StringEntry]) -> None:
+def _check(items: list[TranslateReviewItem], by_id: dict[UUID, StringEntry]) -> None:
     """Reject the whole review when anything it was based on changed."""
     missing = [str(item.string_id) for item in items if item.string_id not in by_id]
     if missing:
@@ -72,7 +62,7 @@ def _check(items: list[TranslateApplyItem], by_id: dict[UUID, StringEntry]) -> N
                 "string_ids": missing,
             },
         )
-    check_review_baseline(items, by_id)
+    check_source_baseline(items, by_id)
     values = []
     for item in items:
         entry = by_id[item.string_id]
@@ -99,10 +89,29 @@ def _check(items: list[TranslateApplyItem], by_id: dict[UUID, StringEntry]) -> N
         )
 
 
-def _project(project: Project, entry: StringEntry, item: TranslateApplyItem) -> StringOut:
+def _reject_pending_delete(
+    items: list[TranslateReviewItem], by_id: dict[UUID, StringEntry]
+) -> None:
+    """Publishing would cancel a queued removal; that has its own action."""
+    pending = sorted(
+        by_id[item.string_id].key for item in items if by_id[item.string_id].pending_delete
+    )
+    if pending:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "pending_delete_in_review",
+                "message": (
+                    f"Remove strings pending removal from this review: {', '.join(pending)}. "
+                    "Publish removals with the separate removal action."
+                ),
+                "keys": pending,
+            },
+        )
+
+
+def _project(project: Project, entry: StringEntry, item: TranslateReviewItem) -> StringOut:
     projected = strings.serialize_string(entry).model_copy(deep=True)
-    if "description" in item.model_fields_set:
-        projected.description = _description(item.description)
     by_locale = {t.locale: t for t in projected.translations}
     # Configured locales without a row export empty; show them so the consequence is visible.
     for locale in project.target_languages:
@@ -119,9 +128,9 @@ def _project(project: Project, entry: StringEntry, item: TranslateApplyItem) -> 
 
 
 def _fingerprint(
-    project: Project, items: list[TranslateApplyItem], by_id: dict[UUID, StringEntry]
+    project: Project, items: list[TranslateReviewItem], by_id: dict[UUID, StringEntry]
 ) -> str:
-    """Bind membership, reviewed values, and the full current baseline of each string."""
+    """Bind membership, reviewed values, and the full current public baseline of each string."""
     reviewed = sorted(
         (
             {
@@ -129,11 +138,6 @@ def _fingerprint(
                 "source": item.expected_source_text,
                 "translations": sorted(_filled(item).items()),
                 "scores": sorted(item.scores.items()),
-                "description": (
-                    [_description(item.description)]
-                    if "description" in item.model_fields_set
-                    else None
-                ),
             }
             for item in items
         ),
@@ -144,7 +148,6 @@ def _fingerprint(
         "project": str(project.id),
         "settings": [project.base_language, sorted(project.target_languages)],
         "reviewed": reviewed,
-        "descriptions": sorted((str(e.id), e.description) for e in entries),
         "baseline": strings.compute_publish_fingerprint(entries, include_unchanged=True),
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -152,11 +155,12 @@ def _fingerprint(
 
 
 def review_translations(
-    db: Session, project: Project, items: list[TranslateApplyItem]
+    db: Session, project: Project, items: list[TranslateReviewItem]
 ) -> TranslateReviewOut:
     with db.no_autoflush:
         by_id = _load(db, project, items, lock=False)
         _check(items, by_id)
+        _reject_pending_delete(items, by_id)
         projected = [_project(project, by_id[item.string_id], item) for item in items]
     projected.sort(key=lambda entry: (entry.key, str(entry.id)))
     return TranslateReviewOut(items=projected, fingerprint=_fingerprint(project, items, by_id))
@@ -181,20 +185,7 @@ def save_reviewed_translations(
                 current = _fingerprint(project, items, by_id)
                 if not strings.fingerprints_match(current, payload.fingerprint or ""):
                     raise HTTPException(409, detail={"code": strings.PUBLISH_FINGERPRINT_MISMATCH})
-                pending = [
-                    by_id[item.string_id].key
-                    for item in items
-                    if by_id[item.string_id].pending_delete
-                ]
-                if pending:
-                    raise HTTPException(
-                        409,
-                        detail={
-                            "code": "pending_delete_in_review",
-                            "message": "Publish removals with the separate removal action.",
-                            "keys": pending,
-                        },
-                    )
+                _reject_pending_delete(items, by_id)
         batch_id = uuid4()
         attach_batch(db, batch_id, "translate")
         if not publish:
@@ -202,8 +193,6 @@ def save_reviewed_translations(
         translated = 0
         for item in items:
             entry = by_id[item.string_id]
-            if "description" in item.model_fields_set:
-                entry.description = _description(item.description)
             saved = {t.locale: t.value or "" for t in entry.translations}
             fills = {
                 locale: value

@@ -34,8 +34,6 @@ def items(public, draft):
             "expected_source_text": "Hủy",
             "translations": {"en": "Cancel", "ja": ""},
             "scores": {"en": 80},
-            "description": "Button",
-            "expected_description": None,
         },
     ]
 
@@ -67,7 +65,6 @@ def test_review_is_read_only_and_shows_full_public_state(client, setup):
     # Missing configured locales are materialized empty so the consequence is visible.
     draft_locales = {t["locale"]: t["value"] for t in by_key["draft"]["translations"]}
     assert draft_locales == {"en": "Cancel", "fr": "", "ja": ""}
-    assert by_key["draft"]["description"] == "Button"
     assert total_activities(client, root) == before
     assert get(client, root, public)["by_locale"].get("ja", {"value": ""})["value"] == ""
 
@@ -92,7 +89,6 @@ def test_save_as_draft_writes_working_copy_only(client, setup):
     assert not saved_public["by_locale"]["ja"]["published_value"]
     saved_draft = get(client, root, draft)
     assert saved_draft["status"] == "draft"
-    assert saved_draft["description"] == "Button"
     assert saved_draft["by_locale"]["en"]["value"] == "Cancel"
     assert get(client, root, other)["translations"] == [] or all(
         not t["value"] for t in get(client, root, other)["translations"]
@@ -148,7 +144,7 @@ def test_publish_saves_and_publishes_only_reviewed_strings(client, setup):
     "change",
     [
         {"translations": {"fr": "Changed"}},  # other locale on the same string
-        {"description": "Concurrent"},
+        {"key": "renamed"},  # public export identity
     ],
 )
 def test_stale_review_rejects_publication_without_writes(client, setup, change):
@@ -222,14 +218,28 @@ def test_cell_filled_elsewhere_rejects_whole_save(client, setup, action):
     assert not get(client, root, public)["by_locale"].get("ja", {}).get("value")
 
 
-def test_stale_source_and_description_reject_draft_save(client, setup):
+def test_description_is_not_part_of_review(client, setup):
     root, public, draft, _ = setup
+    body = items(public, draft)
+    review = client.post(f"{root}/translate/review", json={"items": body}).json()
+    # Descriptions never publish, so editing one elsewhere does not invalidate the review.
     client.patch(f"{root}/strings/{draft['id']}", json={"description": "Other"})
     response = client.post(
-        f"{root}/translate/save", json={"action": "draft", "items": items(public, draft)}
+        f"{root}/translate/save",
+        json={"action": "publish", "items": body, "fingerprint": review["fingerprint"]},
     )
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "stale_translation_description"
+    assert response.status_code == 200, response.text
+    assert get(client, root, draft)["description"] == "Other"
+    with_description = [{**body[0], "description": "Button", "expected_description": None}]
+    for path, extra in (("review", {}), ("save", {"action": "draft"})):
+        response = client.post(
+            f"{root}/translate/{path}", json={"items": with_description, **extra}
+        )
+        assert response.status_code == 422
+
+
+def test_stale_source_rejects_draft_save(client, setup):
+    root, public, draft, _ = setup
     client.patch(f"{root}/strings/{public['id']}", json={"source_text": "Lưu lại"})
     response = client.post(
         f"{root}/translate/save", json={"action": "draft", "items": items(public, draft)}
@@ -260,15 +270,21 @@ def test_key_collision_rolls_back_content_and_audit(client, setup):
 
 def test_pending_delete_and_deleted_strings(client, setup):
     root, public, draft, _ = setup
-    client.delete(f"{root}/strings/{public['id']}")  # published: queues pending_delete
     body = [items(public, draft)[0]]
     review = client.post(f"{root}/translate/review", json={"items": body}).json()
+    client.delete(f"{root}/strings/{public['id']}")  # published: queues pending_delete
+    # The review step names the blocked key, so the user never sees a doomed preview.
+    response = client.post(f"{root}/translate/review", json={"items": body})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "pending_delete_in_review"
+    assert "public" in response.json()["detail"]["message"]
+    # A review taken before the removal was queued is stale; the UI then re-reviews.
     response = client.post(
         f"{root}/translate/save",
         json={"action": "publish", "items": body, "fingerprint": review["fingerprint"]},
     )
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "pending_delete_in_review"
+    assert response.json()["detail"]["code"] == "publish_fingerprint_mismatch"
     client.delete(f"{root}/strings/{draft['id']}")  # never published: deleted now
     response = client.post(
         f"{root}/translate/save", json={"action": "draft", "items": [items(public, draft)[1]]}

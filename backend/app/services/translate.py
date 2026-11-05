@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from typing import Any
@@ -29,7 +29,12 @@ from app.database import SessionLocal
 from app.helpers import require_locale_code, require_max_length
 from app.limits import TEXT_MAX_LENGTH
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
-from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceConflict
+from app.schemas import (
+    TranslateApplyItem,
+    TranslateRequest,
+    TranslateReviewItem,
+    TranslationSourceConflict,
+)
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
 from app.services.jobs import _finish, owned_job_connection
@@ -539,10 +544,10 @@ def propose_translations(
     return proposals_from_results(items, results, fields)
 
 
-def check_review_baseline(
-    items: list[TranslateApplyItem], by_id: dict[uuid.UUID, StringEntry]
+def check_source_baseline(
+    items: Sequence[TranslateReviewItem], by_id: dict[uuid.UUID, StringEntry]
 ) -> None:
-    """Reject the whole write when a reviewed source or description changed. Skips missing ids."""
+    """Reject the whole write when a reviewed source changed. Skips missing ids."""
     source_conflicts = [
         TranslationSourceConflict(
             string_id=entry.id,
@@ -561,23 +566,6 @@ def check_review_baseline(
                 "code": "stale_translation_source",
                 "message": "Source text changed. Regenerate the affected translations before saving again.",
                 "conflicts": source_conflicts,
-            },
-        )
-    conflicts = [
-        {"string_id": str(entry.id), "key": entry.key, "description": entry.description}
-        for item in items
-        if "description" in item.model_fields_set
-        and (entry := by_id.get(item.string_id)) is not None
-        and entry.description
-        not in (item.expected_description, (item.description or "").strip() or None)
-    ]
-    if conflicts:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_description",
-                "message": "Descriptions changed. Resolve each conflict, then save again.",
-                "conflicts": conflicts,
             },
         )
 
@@ -612,7 +600,24 @@ def commit_proposals(
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
-    check_review_baseline(items, by_id)
+    check_source_baseline(items, by_id)
+    conflicts = [
+        {"string_id": str(entry.id), "key": entry.key, "description": entry.description}
+        for item in items
+        if "description" in item.model_fields_set
+        and (entry := by_id.get(item.string_id)) is not None
+        and entry.description
+        not in (item.expected_description, (item.description or "").strip() or None)
+    ]
+    if conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_description",
+                "message": "Descriptions changed. Resolve each conflict, then apply again.",
+                "conflicts": conflicts,
+            },
+        )
     translated = 0
     locales_written: list[str] = []
     seen_locales: set[str] = set()
