@@ -236,7 +236,7 @@ class Module(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    slug: Mapped[str] = mapped_column(String(MODULE_SLUG_MAX_LENGTH), nullable=False)
+    slug: Mapped[str] = mapped_column(String(MODULE_SLUG_MAX_LENGTH, collation="C"), nullable=False)
     name: Mapped[str] = mapped_column(String(MODULE_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -257,7 +257,7 @@ class Tag(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH), nullable=False)
+    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH, collation="C"), nullable=False)
     color: Mapped[str] = mapped_column(
         String(TAG_COLOR_MAX_LENGTH), nullable=False, default="#64748b"
     )
@@ -361,7 +361,9 @@ class StringEntry(Base):
     key_policy_allows_duplicates: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    key: Mapped[str] = mapped_column(String(KEY_MAX_LENGTH), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(
+        String(KEY_MAX_LENGTH, collation="C"), nullable=False, index=True
+    )
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[TranslationStatus] = mapped_column(
@@ -369,7 +371,9 @@ class StringEntry(Base):
         nullable=False,
         default=TranslationStatus.draft,
     )
-    published_key: Mapped[str | None] = mapped_column(String(KEY_MAX_LENGTH), nullable=True)
+    published_key: Mapped[str | None] = mapped_column(
+        String(KEY_MAX_LENGTH, collation="C"), nullable=True
+    )
     published_module_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey(

@@ -124,7 +124,7 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "X_LOCALE_DEMO_API_KEY:" in dev
     assert "TMS_SECRET" not in dev
     assert "POSTGRES_USER: tms" not in dev
-    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in dev
+    assert 'POSTGRES_INITDB_ARGS: "--encoding=UTF8"' in dev
 
     prod = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "POSTGRES_USER: xlocale" in prod
@@ -136,7 +136,7 @@ def test_compose_uses_xlocale_postgres_and_x_locale_env():
     assert "      - X_LOCALE_SECRET\n" in prod
     assert "seed-demo" not in prod
     assert "command:" not in prod
-    assert 'POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"' in prod
+    assert 'POSTGRES_INITDB_ARGS: "--encoding=UTF8"' in prod
     for setting, default in (
         ("OPENAI_API_KEY", ""),
         ("OPENAI_MODEL", "gpt-6-luna"),
@@ -236,7 +236,7 @@ def test_docs_smoke_readme_and_agents():
     assert agents.startswith("# AGENTS.md\n\nx-locale")
     assert readme.startswith("# x-locale\n")
     assert "Node.js 22.6+" in readme
-    assert "sudo -u postgres pg_createcluster" in readme
+    assert "sudo -u postgres pg_ctlcluster 16 main start" in readme
     assert "sudo -u postgres createdb" in readme
     assert "createuser -d xlocale" in readme
     assert "--allow-production" in readme

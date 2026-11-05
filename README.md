@@ -15,7 +15,7 @@ cp .env.example .env
 docker compose up -d postgres
 ```
 
-`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
+`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. The database uses the image's default collation. The app does not need a C database: a migration pins the identifier columns to C (see [Database collation](#database-collation)).
 
 The commands below are the setup. `scripts/dev.sh` is only a local shortcut and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. For local dev with no OIDC, set `AUTH_DEV_BYPASS=true` in your `.env`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
 
@@ -46,33 +46,34 @@ The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a 
 
 ### Native Postgres
 
-Install PostgreSQL 16 and initialize a cluster with collation C.
-
-Debian and Ubuntu create a cluster named `main` when the package is installed, so `pg_createcluster 16 main` fails until that cluster is removed. Drop it when this server should listen on port 5432:
+Install PostgreSQL 16 with a UTF-8 encoding. Any collation works (see [Database collation](#database-collation)), so the `main` cluster that Debian and Ubuntu create on install is fine:
 
 ```bash
-sudo -u postgres pg_dropcluster --stop 16 main
-sudo -u postgres pg_createcluster 16 main --locale=C --encoding=UTF8
 sudo -u postgres pg_ctlcluster 16 main start
-```
-
-To keep the existing `main` cluster, add one named `xlocale` and use the port from `pg_lsclusters`:
-
-```bash
-sudo -u postgres pg_createcluster 16 xlocale --locale=C --encoding=UTF8
-sudo -u postgres pg_ctlcluster 16 xlocale start
-```
-
-```bash
 sudo -u postgres createuser -d xlocale
 sudo -u postgres psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
-sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
-sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
+sudo -u postgres createdb -O xlocale -T template0 xlocale
+sudo -u postgres createdb -O xlocale -T template0 xlocale_test
 ```
 
 `xlocale` is a `CREATEDB` role, not a superuser. `TEST_DATABASE_URL` points at `xlocale_test`. That database is the bootstrap connection for `CREATE DATABASE` and `DROP DATABASE`. The harness connects to it, not to the `postgres` database, so this role does not need access to `postgres`.
 
-Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.
+Use the URLs in `.env.example`.
+
+### Database collation
+
+The database may use any collation, for example `en_US.UTF-8`. CI runs on an ICU `en-US` cluster to prove it (Alpine's libc `en_US.UTF-8` sorts by bytes like C, so it would not). Migration `u0a38e9f1234` sets `COLLATE "C"` on `strings.key`, `strings.published_key`, `modules.slug` and `tags.name`. Those columns then sort in byte order, the same as Python `sorted()`, so export and CLI pull key order is identical on every server. Their indexes also stop depending on the OS collation rules, which can change on a glibc upgrade. Other text columns (source text, translations, labels) keep the database collation, so `ILIKE` search folds non-ASCII case (`Đăng` matches `đăng`) on a non-C database.
+
+Check the columns with:
+
+```sql
+SELECT table_name, column_name, collation_name
+FROM information_schema.columns
+WHERE (table_name, column_name) IN
+  (('strings', 'key'), ('strings', 'published_key'), ('modules', 'slug'), ('tags', 'name'));
+```
+
+Each row must show `C`. `test_identifier_columns_use_collation_c` asserts the same.
 
 ## Quick start (full Docker stack)
 
