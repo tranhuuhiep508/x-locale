@@ -1,7 +1,5 @@
 """``loc push`` — upload base-language source strings."""
 
-from __future__ import annotations
-
 from x_locale_cli.commands.options import (
     DryRunOption,
     FullPushOption,

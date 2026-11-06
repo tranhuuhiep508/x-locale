@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from collections.abc import Iterator
 from contextlib import contextmanager
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -19,6 +20,8 @@ from x_locale_cli.commands.init import _normalize_api_url
 from x_locale_cli.config import load_config, require_project_ref
 from x_locale_cli.errors import XLocaleError
 from x_locale_cli.models import Config, Layout, Stage
+
+INIT_MODULE = import_module("x_locale_cli.commands.init")
 
 DEMO_PROJECT = {
     "id": "11111111-1111-1111-1111-111111111111",
@@ -51,8 +54,8 @@ def fake_bootstrap(project: dict[str, Any] | None = None) -> Iterator[None]:
 
     payload = project if project is not None else DEMO_PROJECT
     with (
-        patch("x_locale_cli.commands.init.api_client", return_value=_Client()),
-        patch("x_locale_cli.commands.init.request_json", return_value=payload),
+        patch.object(INIT_MODULE, "api_client", return_value=_Client()),
+        patch.object(INIT_MODULE, "request_json", return_value=payload),
     ):
         yield
 
@@ -130,7 +133,7 @@ class InitCommandTests(unittest.TestCase):
         self.assertIn("Layout: modular", result.output)
 
     def test_flag_mode_skips_wizard_on_tty(self) -> None:
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             result = self._invoke(["init", "-k", "xl_secret"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("API URL", result.output)
@@ -165,7 +168,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().api_key, "xl_rotated")
 
     def test_wizard_prompts_for_omitted_values(self) -> None:
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             result = self._invoke(
                 ["init"],
                 input="https://x-locale.example.com\n\nxl_wizard_key\n./src/locales\npublic\n",
@@ -192,14 +195,14 @@ class InitCommandTests(unittest.TestCase):
         with fake_bootstrap():
             seeded = self._invoke(["init", "-k", "xl_old"])
         self.assertEqual(seeded.exit_code, 0, seeded.output)
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             cancelled = self._invoke(["init"], input="\n\nxl_new\n\n\nn\n")
         self.assertEqual(cancelled.exit_code, 1, cancelled.output)
         self.assertIn("Cancelled", cancelled.output)
         with chdir(self.root):
             self.assertEqual(load_config().api_key, "xl_old")
 
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             overwritten = self._invoke(["init"], input="\n\nxl_new\n\n\ny\n")
         self.assertEqual(overwritten.exit_code, 0, overwritten.output)
         with chdir(self.root):
@@ -208,7 +211,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().output_dir, "./locales")
 
     def test_wizard_rejects_empty_api_key_then_accepts_retry(self) -> None:
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             result = self._invoke(["init"], input="\n\n\nxl_ok\n\n\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertGreaterEqual(result.output.count("API key:"), 2)
@@ -216,7 +219,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(load_config().api_key, "xl_ok")
 
     def test_wizard_stage_is_case_insensitive_and_rejects_unknown(self) -> None:
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             result = self._invoke(["init"], input="\n\nxl_ok\n\nnope\nPUBLIC\n")
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Stage must be", result.output)
@@ -232,9 +235,10 @@ class InitCommandTests(unittest.TestCase):
                 return False
 
         with (
-            patch("x_locale_cli.commands.init.api_client", return_value=_Client()),
-            patch(
-                "x_locale_cli.commands.init.request_json",
+            patch.object(INIT_MODULE, "api_client", return_value=_Client()),
+            patch.object(
+                INIT_MODULE,
+                "request_json",
                 side_effect=XLocaleError("Bootstrap failed (401): Invalid API key"),
             ),
         ):
@@ -255,7 +259,7 @@ class InitCommandTests(unittest.TestCase):
         self.assertIn("web_url:", (self.root / ".x-locale" / "config.yaml").read_text())
 
     def test_wizard_saves_prompted_web_url(self) -> None:
-        with fake_bootstrap(), patch("x_locale_cli.commands.init._stdin_is_tty", return_value=True):
+        with fake_bootstrap(), patch.object(INIT_MODULE, "_stdin_is_tty", return_value=True):
             result = self._invoke(
                 ["init"],
                 input="https://x-locale.example.com\nhttp://localhost:5173/\nxl_wizard_key\n\n\n",

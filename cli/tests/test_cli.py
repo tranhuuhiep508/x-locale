@@ -38,7 +38,8 @@ class AppHelpTests(unittest.TestCase):
 
     def test_no_args_shows_help(self) -> None:
         result = self.runner.invoke(app, [])
-        self.assertEqual(result.exit_code, 2, result.output)
+        # Click 8.2+ exits 2 for no_args_is_help; Click 8.1 (the last release for Python 3.9) exits 0.
+        self.assertIn(result.exit_code, (0, 2), result.output)
         self.assertIn("Usage", strip_ansi(result.output))
 
     def test_push_help_uses_layout_choices(self) -> None:
