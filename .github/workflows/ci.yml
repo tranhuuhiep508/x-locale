@@ -110,13 +110,19 @@ jobs:
         run: uv run python -m benchmarks.imports --check
 
   cli:
-    name: cli-unit
+    name: cli-unit (py${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the oldest supported Python (requires-python); keep it here so 3.10+ syntax is caught.
+        python: ['3.9', '3.14']
     env:
       NO_COLOR: '1'
       FORCE_COLOR: '0'
       TERM: dumb
+      UV_PYTHON: ${{ matrix.python }}
 
     steps:
       - uses: actions/checkout@v4
@@ -124,7 +130,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: cd cli && uv sync --extra dev
+        run: cd cli && uv sync --locked --extra dev
 
       - name: Run CLI unit tests
         run: cd cli && uv run pytest tests -m "not e2e"
