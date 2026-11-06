@@ -34,7 +34,7 @@ from app.schemas import (
 )
 from app.services import strings
 from app.services.catalog import require_module_in_project
-from app.services.key_policy import key_owner
+from app.services.key_policy import key_identity, key_owner, load_key_owners
 from app.services.write_transactions import run_write
 
 _PREVIEW_ID = UUID(int=0)
@@ -259,17 +259,26 @@ def _paste_review(db: Session, project: Project, payload: PasteReviewRequest, *,
     preview while any concurrent change to these strings is still rejected.
     """
     require_module_in_project(db, project.id, payload.module_id)
+    owners = load_key_owners(db, project.id, keys={row.key for row in payload.rows})
+    allow = project.allow_duplicate_keys
+    owner_ids = {
+        row.key: owners[identity]
+        for row in payload.rows
+        if (identity := key_identity(allow, row.key, payload.module_id)) in owners
+    }
+    # One sorted lock call: every writer locks strings in id order, so saves cannot deadlock.
+    if locked and len(strings.lock_strings(db, project.id, owner_ids.values())) != len(owner_ids):
+        raise HTTPException(409, detail={"code": strings.PUBLISH_FINGERPRINT_MISMATCH})
+    entries = {
+        entry.id: entry
+        for entry in strings.load_string_entries(
+            db, project.id, list(owner_ids.values()), refresh=locked
+        )
+    }
     rows = []
     baseline = []
     for row in payload.rows:
-        owner = key_owner(db, project.id, row.key, payload.module_id)
-        entry = None
-        if owner is not None:
-            entry = (
-                strings._locked_editor_entry(db, project.id, owner[0])
-                if locked
-                else strings.get_string(db, project.id, owner[0])
-            )
+        entry = entries.get(owner_ids.get(row.key))
         proposal = _paste_proposal(payload, row, entry)
         current = strings.serialize_string(entry) if entry is not None else None
         projected = _preview(db, project, proposal, locked=False).entry

@@ -380,43 +380,22 @@ def preview_translations(
     description: str | None,
     db: Session | None = None,
 ) -> tuple[dict[str, str], dict[str, int], dict[str, list[dict[str, Any]]]]:
-    validate_locales(project, locales)
-    db = db if db is not None else object_session(project)
-    memory, _ = (
-        optional_memory(db, project, ((source_text, locale) for locale in locales))
-        if db is not None
-        else ({}, None)
+    [item] = preview_translation_batch(
+        project, module, [("preview", source_text, locales)], db, description=description
     )
-    examples = memory_examples(memory.get(source_text, {}))
-    result = translate_batch(
-        project.base_language,
-        [
-            TranslateItem(
-                id="preview",
-                source_text=source_text,
-                locales=tuple(locales),
-                context=compose_translation_context(project, module, description),
-                memory_examples=examples,
-            )
-        ],
-    )
-    cells = _cell_map(result, "preview")
-    translations = {locale: cells[locale].text for locale in locales if locale in cells}
-    return (
-        translations,
-        _scores_from_cells(cells, locales),
-        _qa_by_locale(source_text, translations),
-    )
+    return item["translations"], item["scores"], item["issues"]
 
 
 def preview_translation_batch(
     project: Project,
     module: Module | None,
     rows: list[tuple[str, str, list[str]]],
-    db: Session,
+    db: Session | None = None,
+    *,
+    description: str | None = None,
 ) -> list[dict[str, Any]]:
     """Translate unsaved ``(id, source_text, locales)`` rows in one AI batch. Stores nothing."""
-    context = compose_translation_context(project, module, None)
+    context = compose_translation_context(project, module, description)
     items = []
     for row_id, source_text, locales in rows:
         validate_locales(project, locales)
@@ -425,16 +404,14 @@ def preview_translation_batch(
                 id=row_id, source_text=source_text, locales=tuple(locales), context=context
             )
         )
-    items = with_memory(db, project, items)
+    db = db if db is not None else object_session(project)
+    if db is not None:
+        items = with_memory(db, project, items)
     results = translate_batch(project.base_language, items)
     out = []
     for item in items:
         cells = _cell_map(results, item.id)
-        translations = {
-            locale: cells[locale].text
-            for locale in item.locales
-            if locale in cells and cells[locale].text.strip()
-        }
+        translations = {locale: cells[locale].text for locale in item.locales if locale in cells}
         out.append(
             {
                 "id": item.id,
