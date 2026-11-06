@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
 import { importStringsViaApi, projectIdFromUrl } from '../helpers/api'
-import { openDemoStrings } from '../helpers/strings'
+import { openDemoStrings, searchStrings } from '../helpers/strings'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -101,7 +101,7 @@ test('stale AI proposals require targeted regeneration and preserve unrelated dr
     expect(response.ok(), await response.text()).toBeTruthy()
     rows.push(await response.json())
   }
-  await page.getByRole('textbox', { name: 'Search strings' }).fill(prefix)
+  await searchStrings(page, prefix)
   await expect(page.getByRole('row').filter({ hasText: rows[1].key })).toBeVisible()
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')
@@ -147,7 +147,7 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   const entry = await created.json()
   const untouched = await page.request.post(`${root}/strings`, { data: { key: `${prefix}_b`, source_text: 'Hủy' } })
   expect(untouched.ok()).toBeTruthy()
-  await page.getByRole('textbox', { name: 'Search strings' }).fill(`${prefix}_a`)
+  await searchStrings(page, `${prefix}_a`)
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
   await page.getByRole('button', { name: 'Translate missing' }).click()
   const dialog = page.getByRole('dialog')

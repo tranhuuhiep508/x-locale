@@ -75,11 +75,17 @@ async function reviewBatchFromActivityCard(
   cardSummary: RegExp,
   expectedBatchId: string,
   chipLabel: string,
+  { workspace }: { workspace: boolean },
 ) {
   await openActivity(page)
   const card = page.locator('div.rounded-lg').filter({ hasText: cardSummary }).first()
   await expect(card).toBeVisible()
   await card.getByRole('link', { name: 'Review this batch' }).click()
+  if (workspace) {
+    // Import batches open the batch workspace; its link reaches the filtered catalog.
+    await expect(page).toHaveURL(new RegExp(`/batches/${expectedBatchId}$`))
+    await page.getByRole('link', { name: 'View in Strings' }).click()
+  }
   await expect(page).toHaveURL(new RegExp(`batch_id=${expectedBatchId}`))
   await expect(page.getByText(chipLabel)).toBeVisible()
 }
@@ -123,7 +129,8 @@ test('happy path: Review this batch lists live, soft-deleted, and pending_delete
     page,
     /Imported · \d+ strings?/,
     batchId,
-    'Filtered to this push',
+    'Filtered to this import',
+    { workspace: true },
   )
 
   await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
@@ -137,7 +144,8 @@ test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', a
     page,
     /Imported · \d+ strings?/,
     batchId,
-    'Filtered to this push',
+    'Filtered to this import',
+    { workspace: true },
   )
 
   await searchStrings(page, liveKey)
@@ -148,7 +156,7 @@ test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', a
   await clearStringSearch(page)
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()
   await expect(page).toHaveURL(new RegExp(`batch_id=${batchId}`))
-  await expect(page.getByText('Filtered to this push')).toBeVisible()
+  await expect(page.getByText('Filtered to this import')).toBeVisible()
 
   await expect(page.getByRole('row').filter({ hasText: liveKey })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: deletedKey })).toBeVisible()
@@ -161,7 +169,7 @@ test('chip clear: drops batch filter, hides tombstone, clears selection', async 
   await page.goto(
     `/projects/${projectRef}/strings?batch_id=${batchId}&batch_kind=import&page=1`,
   )
-  await expect(page.getByText('Filtered to this push')).toBeVisible()
+  await expect(page.getByText('Filtered to this import')).toBeVisible()
 
   const liveRow = page.getByRole('row').filter({ hasText: liveKey }).first()
   await liveRow.getByRole('checkbox', { name: 'Select row' }).click()
@@ -169,7 +177,7 @@ test('chip clear: drops batch filter, hides tombstone, clears selection', async 
 
   await page.getByRole('button', { name: 'Clear batch filter' }).click()
   await expect(page).not.toHaveURL(new RegExp(`batch_id=${batchId}`))
-  await expect(page.getByText('Filtered to this push')).toHaveCount(0)
+  await expect(page.getByText('Filtered to this import')).toHaveCount(0)
   await expectRowBatchSelected(page, liveKey, false)
 
   await searchStrings(page, deletedKey)
@@ -184,7 +192,7 @@ test('Clear all: removes batch filter and selection', async ({ page }) => {
   await page.goto(
     `/projects/${projectRef}/strings?batch_id=${batchId}&batch_kind=import&page=1`,
   )
-  await expect(page.getByText('Filtered to this push')).toBeVisible()
+  await expect(page.getByText('Filtered to this import')).toBeVisible()
 
   const liveRow = page.getByRole('row').filter({ hasText: liveKey }).first()
   await liveRow.getByRole('checkbox', { name: 'Select row' }).click()
@@ -192,7 +200,7 @@ test('Clear all: removes batch filter and selection', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page).not.toHaveURL(/batch_id=/)
-  await expect(page.getByText('Filtered to this push')).toHaveCount(0)
+  await expect(page.getByText('Filtered to this import')).toHaveCount(0)
   await expectRowBatchSelected(page, liveKey, false)
 })
 
@@ -204,7 +212,7 @@ test('unknown batch_id shows batch empty state; chip remains clearable', async (
 
   await expect(page.getByText('No strings left for this batch')).toBeVisible()
   await expect(page.getByText('Clear the batch filter to see the live catalog.')).toBeVisible()
-  await expect(page.getByText('Filtered to this push')).toBeVisible()
+  await expect(page.getByText('Filtered to this import')).toBeVisible()
 
   await page.getByRole('button', { name: 'Clear batch filter' }).click()
   await expect(page).not.toHaveURL(/batch_id=/)
@@ -230,6 +238,7 @@ test('excel_import activity card: Review this batch opens kind-aware catalog', a
     /Imported from Excel · \d+ strings?/,
     excelBatchId,
     'Filtered to this Excel import',
+    { workspace: true },
   )
   await expect(page.getByRole('row').filter({ hasText: excelKey })).toBeVisible()
 })
@@ -249,6 +258,7 @@ test('translate activity card: Review this batch opens kind-aware catalog', asyn
     /AI translated \d+ strings?/,
     translateBatchId,
     'Filtered to this translation',
+    { workspace: false },
   )
   await expect(page.getByRole('row').filter({ hasText: translateKey })).toBeVisible()
 })
