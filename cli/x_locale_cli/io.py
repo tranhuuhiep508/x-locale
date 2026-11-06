@@ -243,7 +243,10 @@ def _atomic_write_text(path: Path, text: str) -> None:
     temporary = None
     try:
         # Exclusive creation keeps normal umask permissions without changing the process umask.
-        with open(path.parent / f".{uuid4().hex}.tmp", mode="x", encoding="utf-8") as stream:
+        # newline="" writes LF on every OS, so pulls are byte-identical across machines.
+        with open(
+            path.parent / f".{uuid4().hex}.tmp", mode="x", encoding="utf-8", newline=""
+        ) as stream:
             temporary = Path(stream.name)
             stream.write(text)
             stream.flush()

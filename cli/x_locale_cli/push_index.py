@@ -261,8 +261,10 @@ def atomic_write_push_index(scope: PushIndexScope, entries: dict[str, str]) -> N
     tmp_path = config_dir / _TMP_NAME
     final_path = index_file_path()
     payload = json.dumps(_index_document(scope, entries), ensure_ascii=False, indent=2) + "\n"
-    tmp_path.write_text(payload, encoding="utf-8")
-    with tmp_path.open("rb") as fh:
+    # One writable handle: Windows rejects fsync on a read-only one (EBADF).
+    with tmp_path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(payload)
+        fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp_path, final_path)
 

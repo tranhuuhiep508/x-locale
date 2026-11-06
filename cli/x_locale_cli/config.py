@@ -22,7 +22,7 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
 
 def save_config(config: Config, path: Path = CONFIG_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
+    with path.open("w", encoding="utf-8", newline="") as fh:
         yaml.safe_dump(config.to_dict(), fh, sort_keys=False)
     try:
         path.chmod(0o600)
