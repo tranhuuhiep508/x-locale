@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from typer.testing import CliRunner
 
 from tests.conftest import strip_ansi
 from x_locale_cli.app import app
+from x_locale_cli.commands import COMMANDS
 from x_locale_cli.config import CONFIG_DIR, CONFIG_FILE
 
 CLI_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,13 @@ class AppHelpTests(unittest.TestCase):
         # Click 8.2+ exits 2 for no_args_is_help; Click 8.1 (the last release for Python 3.9) exits 0.
         self.assertIn(result.exit_code, (0, 2), result.output)
         self.assertIn("Usage", strip_ansi(result.output))
+
+    def test_command_annotations_are_not_strings(self) -> None:
+        # Typer 0.23 (Python 3.9) drops Annotated option metadata when annotations are strings,
+        # so command modules must not use `from __future__ import annotations`.
+        for command in COMMANDS:
+            for param in inspect.signature(command).parameters.values():
+                self.assertNotIsInstance(param.annotation, str, f"{command.__name__}({param.name})")
 
     def test_push_help_uses_layout_choices(self) -> None:
         result = self.runner.invoke(app, ["push", "--help"])
