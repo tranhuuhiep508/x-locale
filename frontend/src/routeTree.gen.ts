@@ -20,6 +20,7 @@ import { Route as ProjectsProjectRefModulesRouteImport } from './routes/projects
 import { Route as ProjectsProjectRefSettingsRouteImport } from './routes/projects/$projectRef/settings'
 import { Route as ProjectsProjectRefStringsRouteImport } from './routes/projects/$projectRef/strings'
 import { Route as ProjectsProjectRefTagsRouteImport } from './routes/projects/$projectRef/tags'
+import { Route as ProjectsProjectRefBatchesBatchIdRouteImport } from './routes/projects/$projectRef/batches/$batchId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -81,6 +82,12 @@ const ProjectsProjectRefTagsRoute = ProjectsProjectRefTagsRouteImport.update({
   path: '/tags',
   getParentRoute: () => ProjectsProjectRefRoute,
 } as any)
+const ProjectsProjectRefBatchesBatchIdRoute =
+  ProjectsProjectRefBatchesBatchIdRouteImport.update({
+    id: '/batches/$batchId',
+    path: '/batches/$batchId',
+    getParentRoute: () => ProjectsProjectRefRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
   '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
   '/projects/$projectRef/': typeof ProjectsProjectRefIndexRoute
+  '/projects/$projectRef/batches/$batchId': typeof ProjectsProjectRefBatchesBatchIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
   '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
   '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
   '/projects/$projectRef': typeof ProjectsProjectRefIndexRoute
+  '/projects/$projectRef/batches/$batchId': typeof ProjectsProjectRefBatchesBatchIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -120,6 +129,7 @@ export interface FileRoutesById {
   '/projects/$projectRef/strings': typeof ProjectsProjectRefStringsRoute
   '/projects/$projectRef/tags': typeof ProjectsProjectRefTagsRoute
   '/projects/$projectRef/': typeof ProjectsProjectRefIndexRoute
+  '/projects/$projectRef/batches/$batchId': typeof ProjectsProjectRefBatchesBatchIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -135,6 +145,7 @@ export interface FileRouteTypes {
     | '/projects/$projectRef/strings'
     | '/projects/$projectRef/tags'
     | '/projects/$projectRef/'
+    | '/projects/$projectRef/batches/$batchId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | '/projects/$projectRef/strings'
     | '/projects/$projectRef/tags'
     | '/projects/$projectRef'
+    | '/projects/$projectRef/batches/$batchId'
   id:
     | '__root__'
     | '/'
@@ -160,6 +172,7 @@ export interface FileRouteTypes {
     | '/projects/$projectRef/strings'
     | '/projects/$projectRef/tags'
     | '/projects/$projectRef/'
+    | '/projects/$projectRef/batches/$batchId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -248,6 +261,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectRefTagsRouteImport
       parentRoute: typeof ProjectsProjectRefRoute
     }
+    '/projects/$projectRef/batches/$batchId': {
+      id: '/projects/$projectRef/batches/$batchId'
+      path: '/batches/$batchId'
+      fullPath: '/projects/$projectRef/batches/$batchId'
+      preLoaderRoute: typeof ProjectsProjectRefBatchesBatchIdRouteImport
+      parentRoute: typeof ProjectsProjectRefRoute
+    }
   }
 }
 
@@ -259,6 +279,7 @@ interface ProjectsProjectRefRouteChildren {
   ProjectsProjectRefStringsRoute: typeof ProjectsProjectRefStringsRoute
   ProjectsProjectRefTagsRoute: typeof ProjectsProjectRefTagsRoute
   ProjectsProjectRefIndexRoute: typeof ProjectsProjectRefIndexRoute
+  ProjectsProjectRefBatchesBatchIdRoute: typeof ProjectsProjectRefBatchesBatchIdRoute
 }
 
 const ProjectsProjectRefRouteChildren: ProjectsProjectRefRouteChildren = {
@@ -269,6 +290,7 @@ const ProjectsProjectRefRouteChildren: ProjectsProjectRefRouteChildren = {
   ProjectsProjectRefStringsRoute: ProjectsProjectRefStringsRoute,
   ProjectsProjectRefTagsRoute: ProjectsProjectRefTagsRoute,
   ProjectsProjectRefIndexRoute: ProjectsProjectRefIndexRoute,
+  ProjectsProjectRefBatchesBatchIdRoute: ProjectsProjectRefBatchesBatchIdRoute,
 }
 
 const ProjectsProjectRefRouteWithChildren =

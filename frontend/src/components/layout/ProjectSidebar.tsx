@@ -153,7 +153,7 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={isProjectPath(pathname, projectRef, '/activity')}
+                  isActive={isProjectPath(pathname, projectRef, '/activity') || isProjectPath(pathname, projectRef, '/batches')}
                   tooltip="Activity"
                 >
                   <Link to="/projects/$projectRef/activity" params={{ projectRef }} search={{}}>

@@ -1,6 +1,11 @@
 import { api } from '@/lib/api/client'
 import { resolveStringTimeForApi } from '@/lib/time-range'
 import type {
+  EditorProposal,
+  EditorPreview,
+  EditorSaveRequest,
+  CliPushBatch,
+  CliPushPublishRequest,
   BatchRequest,
   BatchResult,
   PublishPreviewEntries,
@@ -11,11 +16,19 @@ import type {
   StringUpdate,
   TranslateApplyRequest,
   TranslateApplyResult,
+  TranslateReview,
+  TranslateReviewRequest,
+  TranslateSaveRequest,
+  TranslateSaveResult,
   TranslatePreviewRequest,
   TranslatePreviewResult,
   TranslateProposalsResult,
   TranslateRequest,
   TranslateResult,
+  TranslationQaRequest,
+  TranslationQaResult,
+  TranslationMemoryRequest,
+  TranslationMemoryResult,
 } from '@/lib/api/types'
 
 export type StringListParams = {
@@ -76,6 +89,18 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  editorPreview: (projectId: string, proposal: EditorProposal) =>
+    api.post<EditorPreview>(`/projects/${projectId}/strings/editor-preview`, { proposal }),
+  editorSave: (projectId: string, body: EditorSaveRequest) =>
+    api.post<StringEntry>(`/projects/${projectId}/strings/editor-save`, body),
+  saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
+  publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/publish`, body),
+  cliPushBatch: (projectId: string, batchId: string) =>
+    api.get<CliPushBatch>(`/projects/${projectId}/cli-push-batches/${batchId}`),
+  translateMemory: (projectId: string, body: TranslationMemoryRequest) =>
+    api.post<TranslationMemoryResult>(`/projects/${projectId}/translate/memory`, body),
   list: (projectId: string, params: StringListParams) =>
     api.get<StringListResponse>(`/projects/${projectId}/strings`, params),
   get: (projectId: string, id: string) =>
@@ -100,4 +125,10 @@ export const stringsApi = {
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/missing`, body),
   translateApply: (projectId: string, body: TranslateApplyRequest) =>
     api.post<TranslateApplyResult>(`/projects/${projectId}/translate/apply`, body),
+  translateReview: (projectId: string, body: TranslateReviewRequest) =>
+    api.post<TranslateReview>(`/projects/${projectId}/translate/review`, body),
+  translateSave: (projectId: string, body: TranslateSaveRequest) =>
+    api.post<TranslateSaveResult>(`/projects/${projectId}/translate/save`, body),
+  translateQa: (projectId: string, body: TranslationQaRequest) =>
+    api.post<TranslationQaResult>(`/projects/${projectId}/translate/qa`, body),
 }

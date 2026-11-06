@@ -88,11 +88,16 @@ test('seed import batch with soft-deleted and pending_delete members', async ({ 
   await openDemoStrings(page)
   projectRef = projectIdFromUrl(page)
 
-  const imported = await importStringsViaApi(page, projectRef, {
-    [liveKey]: 'Batch live member',
-    [deletedKey]: 'Batch deleted member',
-    [pendingKey]: 'Batch pending delete member',
+  const response = await page.request.post(`/api/projects/${projectRef}/import`, {
+    multipart: { file: {
+      name: 'vi.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+        [liveKey]: 'Batch live member', [deletedKey]: 'Batch deleted member',
+        [pendingKey]: 'Batch pending delete member',
+      })),
+    } },
   })
+  expect(response.ok()).toBeTruthy()
+  const imported = await response.json()
   expect(imported.created).toBe(3)
   batchId = imported.batch_id
 

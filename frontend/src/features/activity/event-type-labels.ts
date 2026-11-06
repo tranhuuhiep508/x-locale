@@ -8,16 +8,20 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   'string.tagged': 'Tagged',
   'translation.updated': 'Translations updated',
   'string.published': 'Published',
+  'string.saved_draft': 'Saved as draft',
+  'string.saved_and_published': 'Saved and published',
   'string.unpublished': 'Unpublished',
   'string.pending_delete': 'Marked for deletion',
   'string.deleted': 'Deleted',
   'string.restored': 'Restored',
+  cli_push: 'CLI push',
   import: 'Import',
   translate: 'AI translate',
   batch: 'Batch action',
 }
 
 const BATCH_KIND_LABELS: Record<string, string> = {
+  cli_push: 'CLI push',
   import: 'Import',
   excel_import: 'Excel import',
   batch: 'Batch',
@@ -31,6 +35,7 @@ export const EVENT_TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'string.created', label: EVENT_TYPE_LABELS['string.created'] },
   { value: 'translation.updated', label: EVENT_TYPE_LABELS['translation.updated'] },
   { value: 'string.published', label: EVENT_TYPE_LABELS['string.published'] },
+  { value: 'cli_push', label: 'CLI push' },
   { value: 'import', label: EVENT_TYPE_LABELS.import },
   { value: 'translate', label: EVENT_TYPE_LABELS.translate },
   { value: 'batch', label: EVENT_TYPE_LABELS.batch },

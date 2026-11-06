@@ -43,6 +43,17 @@ def test_list_sort_default_matches_key_asc(client):
     assert [row["key"] for row in default] == ["a-key", "b-key"]
 
 
+def test_key_sort_matches_python_order(client):
+    """strings.key is COLLATE "C", so en_US databases still sort like sorted()."""
+    pid = _project(client)
+    keys = ["ab", "a_b", "Zebra", "a.c", "đăng", "e", "dang"]
+    for key in keys:
+        _string(client, pid, key, key)
+
+    items = _list(client, pid, page_size=50, sort="key", order="asc").json()["items"]
+    assert [row["key"] for row in items] == sorted(keys)
+
+
 @pytest.mark.parametrize(
     ("sort", "order"),
     [

@@ -114,11 +114,12 @@ def redact_database_url(url: str) -> str:
 
 
 def _create_database_sql(name: str, template: str) -> str:
-    """template0 is required for LC_COLLATE. libc C keeps comparisons on datcollate."""
-    return (
-        f'CREATE DATABASE "{name}" TEMPLATE "{template}" '
-        "LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
-    )
+    """The new database inherits the template's (the cluster's) collation.
+
+    The app does not need a C database: migration u0a38e9f1234 pins the
+    identifier columns to COLLATE "C".
+    """
+    return f'CREATE DATABASE "{name}" TEMPLATE "{template}"'
 
 
 def _terminate_own_backends(conn, name: str) -> None:

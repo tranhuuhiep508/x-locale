@@ -18,10 +18,10 @@ describe('confidenceTone', () => {
 })
 
 describe('confidenceLabel', () => {
-  it('tells the user when to review or re-translate', () => {
-    expect(confidenceLabel(92)).toContain('looks solid')
-    expect(confidenceLabel(70)).toContain('review recommended')
-    expect(confidenceLabel(40)).toContain('re-translate')
+  it('presents the score as an unverified model estimate', () => {
+    expect(confidenceLabel(92)).toBe('Model estimate 92/100 — likely fine')
+    expect(confidenceLabel(70)).toBe('Model estimate 70/100 — review recommended')
+    expect(confidenceLabel(40)).toBe('Model estimate 40/100 — consider re-translating')
   })
 })
 

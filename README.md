@@ -15,7 +15,7 @@ cp .env.example .env
 docker compose up -d postgres
 ```
 
-`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. Collation is C (`POSTGRES_INITDB_ARGS=--locale=C`). An existing volume keeps its old collation until you recreate it with `docker compose down -v`.
+`docker compose up -d postgres` creates `xlocale` and, on a new volume, `xlocale_test`. The database uses the image's default collation. The app does not need a C database: a migration pins the identifier columns to C (see [Database collation](#database-collation)).
 
 The commands below are the setup. `scripts/dev.sh` is only a local shortcut and does not read `.env` as a shell script. `.env.example` keeps `AUTH_DEV_BYPASS=false`. For local dev with no OIDC, set `AUTH_DEV_BYPASS=true` in your `.env`. `seed-demo` runs when the bypass is off. It refuses when OIDC is configured or `ENV=production` unless `--allow-production` is passed. `--force` only deletes and recreates Demo App.
 
@@ -46,33 +46,34 @@ The API, `seed-demo`, and Alembic exit if `DATABASE_URL` is missing or is not a 
 
 ### Native Postgres
 
-Install PostgreSQL 16 and initialize a cluster with collation C.
-
-Debian and Ubuntu create a cluster named `main` when the package is installed, so `pg_createcluster 16 main` fails until that cluster is removed. Drop it when this server should listen on port 5432:
+Install PostgreSQL 16 with a UTF-8 encoding. Any collation works (see [Database collation](#database-collation)), so the `main` cluster that Debian and Ubuntu create on install is fine:
 
 ```bash
-sudo -u postgres pg_dropcluster --stop 16 main
-sudo -u postgres pg_createcluster 16 main --locale=C --encoding=UTF8
 sudo -u postgres pg_ctlcluster 16 main start
-```
-
-To keep the existing `main` cluster, add one named `xlocale` and use the port from `pg_lsclusters`:
-
-```bash
-sudo -u postgres pg_createcluster 16 xlocale --locale=C --encoding=UTF8
-sudo -u postgres pg_ctlcluster 16 xlocale start
-```
-
-```bash
 sudo -u postgres createuser -d xlocale
 sudo -u postgres psql -c "ALTER USER xlocale PASSWORD 'xlocale'"
-sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale
-sudo -u postgres createdb -O xlocale -T template0 --locale-provider=libc --lc-collate=C --lc-ctype=C xlocale_test
+sudo -u postgres createdb -O xlocale -T template0 xlocale
+sudo -u postgres createdb -O xlocale -T template0 xlocale_test
 ```
 
 `xlocale` is a `CREATEDB` role, not a superuser. `TEST_DATABASE_URL` points at `xlocale_test`. That database is the bootstrap connection for `CREATE DATABASE` and `DROP DATABASE`. The harness connects to it, not to the `postgres` database, so this role does not need access to `postgres`.
 
-Use the URLs in `.env.example`. PostgreSQL 16 removed `SHOW lc_collate`. `SELECT datcollate, datlocprovider FROM pg_database WHERE datname = current_database()` must be `C` and `c`.
+Use the URLs in `.env.example`.
+
+### Database collation
+
+The database may use any collation, for example `en_US.UTF-8`. CI runs on an ICU `en-US` cluster to prove it (Alpine's libc `en_US.UTF-8` sorts by bytes like C, so it would not). Migration `u0a38e9f1234` sets `COLLATE "C"` on `strings.key`, `strings.published_key`, `modules.slug` and `tags.name`. Those columns then sort in byte order, the same as Python `sorted()`, so export and CLI pull key order is identical on every server. Their indexes also stop depending on the OS collation rules, which can change on a glibc upgrade. Other text columns (source text, translations, labels) keep the database collation, so `ILIKE` search folds non-ASCII case (`Đăng` matches `đăng`) on a non-C database.
+
+Check the columns with:
+
+```sql
+SELECT table_name, column_name, collation_name
+FROM information_schema.columns
+WHERE (table_name, column_name) IN
+  (('strings', 'key'), ('strings', 'published_key'), ('modules', 'slug'), ('tags', 'name'));
+```
+
+Each row must show `C`. `test_identifier_columns_use_collation_c` asserts the same.
 
 ## Quick start (full Docker stack)
 
@@ -194,12 +195,32 @@ commit client IDs or secrets.
 - **Project references** use a permanent slug in browser URLs and new CLI configs. The API accepts either the slug or an existing project UUID in `/api/projects/{project_id}` paths; UUIDs remain the internal database identity.
 - **Modules** group strings for lazy-loaded bundles. Project `layout` (`flat` \| `modular`) controls export/CLI shape. File keys are stored as-is (dots are not a module prefix). Flat import never creates modules; modular Excel uses full slugs mapped in its hidden `_meta` sheet (legacy workbooks without mappings use sheet names), and CLI uses folders. When renaming or copying an Excel worksheet, update or add its `module_slug:<sheet name>` mapping with a distinct full module slug. See [Excel import compatibility](docs/import-performance.md).
 - **Translation context** is optional plain text in Project Settings and module create/edit forms, capped at 500 characters each. AI translation combines project context, the string's module context, and its description in that order. These are mandatory translator instructions for tone, terminology, and wording. Blank context clears the setting. Context changes affect future AI requests only; they do not publish or change export, Excel metadata, or CLI sync.
+- **Translation memory** offers up to three exact or similar published translations before AI generation. Choose **Previously published → Use**, then Save as draft or publish. Selected cells skip AI; Smart QA remains advisory and selections never publish automatically. See [matching and deployment](docs/translation-memory.md), including the required `pg_trgm` migration.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `loc pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Shared editing:** the string dialog sends only changed fields and locales, with their original values in `expected`. Unrelated edits merge; competing changes return `409` with `detail.code=stale_editor_save`, conflicting field names, and the current string. No part of a conflicting save is applied. The dialog retains input and lets you use the latest conflicting values or keep your changes for another checked save. PATCH accepts an `expected` object matching the changed fields; locale PUT accepts the original text as `expected` (empty text is `""`). Comparisons and writes share a transaction with row locks. Existing API callers that omit `expected` retain unconditional write behavior.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
 - **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string. **Review this batch** opens the catalog at `?batch_id=` for import, Excel import, and translate cards. That filter AND-composes with the other string filters and, unlike the default catalog, includes soft-deleted members of the batch. No catalog filter is dropped when `batch_id` is set.
 
 More detail: [docs/](docs/).
+
+### CLI push batch review
+
+After `loc push`, open **Activity → CLI push → Review this batch**. The batch
+workspace shows the pushed strings, their working translations, and their
+published values. A Translate → Review → Publish stepper tracks the workflow.
+Click **Translate all** to regenerate every project target language for review,
+including existing text. Generated results and manual edits
+stay temporary in this workspace. **Save as draft** saves reviewed translations to
+the working copy without changing public exports. **Publish batch** saves and
+publishes the whole batch in one transaction. Both actions show a success toast
+and keep you on the batch screen; **View in Strings** opens the catalog filtered
+to this CLI push batch. Leaving or reloading discards only unsaved progress.
+
+This is the default workflow for new CLI push batches, with no automation setting.
+CLI commands/configuration and dashboard import/catalog workflows are unchanged.
+Older import batches retain their catalog review links. Deleted and pending-delete
+strings are excluded from this workspace. Competing edits require renewed review;
+generation or save failures never publish content.
 
 ### String filters
 
@@ -234,10 +255,20 @@ Legacy date-only bookmarks still represent full UTC days.
 
 **Translate missing** honors all active grid filters across queue pages. It
 captures the filters and relative time cutoff when review opens, reusing that
-window for paging and refreshes after Apply. Reopening review captures a fresh
+window for paging and refreshes after a save. Reopening review captures a fresh
 window. It includes only matching live strings with empty cells in the requested
 locales; filled cells and deleted strings are excluded. A Complete filter can therefore
 produce an empty queue when no other target locale is missing.
+
+Finish in the same dialog: **Save as draft** writes the working copy only (public
+strings keep their published snapshot). **Review & publish** freezes the changed
+rows on the current page and shows the full proposed public state of each string,
+including pending edits in other locales and locales that would export empty;
+**Publish** there saves and publishes exactly those strings in one transaction, with
+no second confirmation. Generation never saves. After a publish the dialog closes and
+Strings shows the published batch (`?batch_id=`). After a draft save the dialog stays
+open on the refreshed queue; if only that refresh fails, **Retry loading** repeats the
+read, not the write.
 
 ## Development
 
@@ -256,6 +287,12 @@ uv run --project cli python -m unittest discover -s cli/tests
 # Regenerate OpenAPI types (backend must be running)
 cd frontend && npm run gen:api
 ```
+
+Translation QA uses `icu-messageformat-parser==0.1.0` (the FormatJS parser).
+That release has wheels for Linux (`manylinux_2_28` x86_64 and aarch64, which
+covers `python:3.14-slim`) and macOS only: there is no Windows wheel and no
+source distribution, so `uv sync` on Windows cannot install the backend. Plural
+categories come from `babel==2.18.0` (CLDR).
 
 ## Environment
 

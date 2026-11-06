@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    DDL,
     JSON,
     Boolean,
     DateTime,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    event,
     func,
     text,
 )
@@ -37,6 +39,13 @@ from app.limits import (
     TAG_COLOR_MAX_LENGTH,
     TAG_NAME_MAX_LENGTH,
     USER_NAME_MAX_LENGTH,
+)
+
+# Tests and benchmarks create metadata directly; production uses Alembic.
+event.listen(
+    Base.metadata,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm").execute_if(dialect="postgresql"),
 )
 
 
@@ -76,6 +85,7 @@ class EntityType(str, enum.Enum):
 
 
 class BatchKind(str, enum.Enum):
+    cli_push = "cli_push"
     import_ = "import"
     excel_import = "excel_import"
     batch = "batch"
@@ -226,7 +236,7 @@ class Module(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    slug: Mapped[str] = mapped_column(String(MODULE_SLUG_MAX_LENGTH), nullable=False)
+    slug: Mapped[str] = mapped_column(String(MODULE_SLUG_MAX_LENGTH, collation="C"), nullable=False)
     name: Mapped[str] = mapped_column(String(MODULE_NAME_MAX_LENGTH), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -247,7 +257,7 @@ class Tag(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
-    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH), nullable=False)
+    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH, collation="C"), nullable=False)
     color: Mapped[str] = mapped_column(
         String(TAG_COLOR_MAX_LENGTH), nullable=False, default="#64748b"
     )
@@ -280,6 +290,15 @@ class StringTag(Base):
 class StringEntry(Base):
     __tablename__ = "strings"
     __table_args__ = (
+        Index(
+            "ix_strings_published_source_trgm",
+            "published_source_text",
+            postgresql_using="gin",
+            postgresql_ops={"published_source_text": "gin_trgm_ops"},
+            postgresql_where=text(
+                "status = 'public' AND deleted_at IS NULL AND published_source_text IS NOT NULL"
+            ),
+        ),
         Index(
             "uq_project_key_alive",
             "project_id",
@@ -342,7 +361,9 @@ class StringEntry(Base):
     key_policy_allows_duplicates: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    key: Mapped[str] = mapped_column(String(KEY_MAX_LENGTH), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(
+        String(KEY_MAX_LENGTH, collation="C"), nullable=False, index=True
+    )
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[TranslationStatus] = mapped_column(
@@ -350,7 +371,9 @@ class StringEntry(Base):
         nullable=False,
         default=TranslationStatus.draft,
     )
-    published_key: Mapped[str | None] = mapped_column(String(KEY_MAX_LENGTH), nullable=True)
+    published_key: Mapped[str | None] = mapped_column(
+        String(KEY_MAX_LENGTH, collation="C"), nullable=True
+    )
     published_module_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey(

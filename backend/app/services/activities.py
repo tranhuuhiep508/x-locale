@@ -53,7 +53,10 @@ from app.services.activity_events import (
     EVENT_DELETED,
     EVENT_PENDING_DELETE,
     EVENT_PUBLISHED,
+    EVENT_SAVED_DRAFT,
+    EVENT_TRANSLATION,
     EVENT_UNPUBLISHED,
+    PUBLICATION_EVENT_TYPES,
     UNDOABLE_BATCH_KINDS,
     ChangedField,
     batch_card_event_type,
@@ -166,7 +169,9 @@ def _history_restore_flags(activity: Activity) -> tuple[bool, str | None]:
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
     if not activity.after:
         return False, "This version cannot be restored"
-    if not is_history_restorable(activity.event_type, str(action or "update")):
+    if not is_history_restorable(
+        activity.event_type, str(action or "update"), before=activity.before, after=activity.after
+    ):
         return False, _history_restore_reject_detail(activity.event_type)
     return True, None
 
@@ -258,7 +263,7 @@ def list_activities(
     if action:
         q = q.filter(Activity.action == action)
     if event_type:
-        q = q.filter(Activity.event_type == event_type)
+        q = q.filter(_event_type_filter(event_type))
     if batch_id:
         q = q.filter(Activity.batch_id == batch_id)
     if since:
@@ -306,6 +311,14 @@ def _feed_tie_expr():
     return func.max(cast(Activity.id, String(36)))
 
 
+def _event_type_filter(event_type: str):
+    if event_type == EVENT_PUBLISHED:
+        return Activity.event_type.in_(PUBLICATION_EVENT_TYPES)
+    if event_type == EVENT_TRANSLATION:
+        return Activity.event_type.in_([EVENT_TRANSLATION, EVENT_SAVED_DRAFT])
+    return Activity.event_type == event_type
+
+
 def _apply_feed_filters(
     q,
     *,
@@ -325,11 +338,15 @@ def _apply_feed_filters(
         q = q.filter(Activity.created_at <= until)
     if event_type:
         if event_type == "import":
-            q = q.filter(Activity.batch_kind.in_([BatchKind.import_, BatchKind.excel_import]))
-        elif event_type in {"excel_import", "translate", "batch", "revert"}:
+            q = q.filter(
+                Activity.batch_kind.in_(
+                    [BatchKind.import_, BatchKind.cli_push, BatchKind.excel_import]
+                )
+            )
+        elif event_type in {"cli_push", "excel_import", "translate", "batch", "revert"}:
             q = q.filter(Activity.batch_kind == event_type)
         else:
-            q = q.filter(Activity.event_type == event_type)
+            q = q.filter(_event_type_filter(event_type))
     return q
 
 
@@ -346,7 +363,7 @@ def _locale_filter(locale: str):
 def _feed_counts(type_n: dict[str, int]) -> dict[str, int]:
     created = type_n.get(EVENT_CREATED, 0)
     deleted = type_n.get(EVENT_DELETED, 0) + type_n.get(EVENT_PENDING_DELETE, 0)
-    published = type_n.get(EVENT_PUBLISHED, 0)
+    published = sum(type_n.get(event_type, 0) for event_type in PUBLICATION_EVENT_TYPES)
     total = sum(type_n.values())
     return {
         "created": created,
@@ -390,10 +407,9 @@ def _feed_card(
     )
     is_batch = newest.batch_id is not None
     card_id = str(newest.batch_id or newest.id)
-    stored_types = [event_type for event_type, n in type_counts.items() if n]
     if is_batch:
         event_type = batch_card_event_type(kind_val)
-        summary = batch_card_summary(kind_val, stored_types, children_count)
+        summary = batch_card_summary(kind_val, type_counts, children_count)
     else:
         event_type = newest.event_type or "string.updated"
         summary = newest.summary
@@ -603,7 +619,9 @@ def restore_activity_version(
         if not activity.after:
             raise HTTPException(status_code=400, detail="This version cannot be restored")
         action = activity.action.value if hasattr(activity.action, "value") else activity.action
-        if not is_history_restorable(activity.event_type, action):
+        if not is_history_restorable(
+            activity.event_type, action, before=activity.before, after=activity.after
+        ):
             raise HTTPException(
                 status_code=400, detail=_history_restore_reject_detail(activity.event_type)
             )
@@ -695,9 +713,9 @@ def get_activity_detail(db: Session, project: Project, activity_id: uuid.UUID) -
 
 
 def _history_restore_reject_detail(event_type: str | None) -> str:
-    if event_type == EVENT_PUBLISHED or event_type == EVENT_UNPUBLISHED:
+    if event_type in PUBLICATION_EVENT_TYPES or event_type == EVENT_UNPUBLISHED:
         return (
-            "Publish and unpublish cannot be restored from History. "
+            "Publication-only and unpublish events cannot be restored from History. "
             "Use Publish or Unpublish, or Undo a batch on the Activity feed."
         )
     if event_type == EVENT_PENDING_DELETE:
@@ -769,7 +787,10 @@ def restore_last_history(db: Session, project: Project, entries: list[StringEntr
         )
         for candidate in candidates:
             if candidate.string_id not in latest_by_string and is_history_restorable(
-                candidate.event_type, candidate.action
+                candidate.event_type,
+                candidate.action,
+                before=candidate.before,
+                after=candidate.after,
             ):
                 latest_by_string[candidate.string_id] = candidate
     references = SnapshotReferences(
@@ -2016,7 +2037,9 @@ def preview_restore_activity_version(
             blocked_reason="This version cannot be restored",
         )
     action = activity.action.value if hasattr(activity.action, "value") else activity.action
-    if not is_history_restorable(activity.event_type, action):
+    if not is_history_restorable(
+        activity.event_type, action, before=activity.before, after=activity.after
+    ):
         return RestorePreviewOut(
             string_id=string_id,
             activity_id=activity_id,

@@ -36,7 +36,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -100,7 +100,7 @@
               "fr": ""
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": null,
           "event_type": "string.created",
           "locale": null,
@@ -140,7 +140,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -455,7 +455,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -519,7 +519,7 @@
               "fr": ""
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": null,
@@ -583,7 +583,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -1129,7 +1129,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -1432,7 +1432,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -1496,7 +1496,7 @@
               "fr": ""
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": null,
           "event_type": "string.created",
           "locale": null,
@@ -1536,7 +1536,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -1872,7 +1872,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -1936,7 +1936,7 @@
               "fr": ""
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": null,
@@ -2000,7 +2000,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",
@@ -2588,7 +2588,7 @@
               "fr": "Original French"
             }
           },
-          "batch_kind": "import",
+          "batch_kind": "cli_push",
           "before": {
             "deleted_at": null,
             "description": "Original context",

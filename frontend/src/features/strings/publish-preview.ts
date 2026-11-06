@@ -348,3 +348,14 @@ export function reviewPublishSource(
   if (selectedOnPage.length > 0) return { entries: selectedOnPage }
   return { filter }
 }
+
+/** Use the structured key for publication and full-state Undo collision errors. */
+export function publicationErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    const detail = (error.body as { detail?: { code?: string; key?: string } })?.detail
+    if (detail?.code === 'published_key_conflict' && typeof detail.key === 'string') {
+      return `Key '${detail.key}' is already in the public export. Rename it, or publish the other string's removal, before publishing.`
+    }
+  }
+  return error instanceof Error ? error.message : fallback
+}

@@ -308,7 +308,7 @@ def push_review_line(
     base = (web_base or "").strip().rstrip("/")
     if not batch or not ref or not is_absolute_http_url(base):
         return None
-    return f"Review: {base}/projects/{ref}/strings?batch_id={batch}&batch_kind=import"
+    return f"Review: {base}/projects/{ref}/batches/{batch}"
 
 
 def _format_duration(seconds: float) -> str:

@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stringsApi } from '@/lib/api/strings'
 import { projectsApi } from '@/lib/api/projects'
@@ -11,6 +11,25 @@ afterEach(() => {
 })
 
 describe('stringsQuery', () => {
+  it('waits for the exact saved string instead of showing previous catalog results', () => {
+    const client = new QueryClient()
+    const catalog = stringsQuery('project', {})
+    client.setQueryData(catalog.queryKey, { items: [], total: 0, page: 1, page_size: 20 })
+    const observer = new QueryObserver(client, catalog)
+
+    try {
+      observer.setOptions(stringsQuery('project', { saved_string: 'saved-id' }))
+      expect(observer.getCurrentResult()).toMatchObject({
+        status: 'pending',
+        data: undefined,
+        isPlaceholderData: false,
+      })
+    } finally {
+      observer.destroy()
+      client.clear()
+    }
+  })
+
   it('recomputes relative time bounds when the cached query refetches', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-04T10:00:00.000Z'))

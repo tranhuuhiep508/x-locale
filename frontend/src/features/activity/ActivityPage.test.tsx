@@ -218,8 +218,23 @@ describe('Activity undo published_key_conflict', () => {
     expect(toast.success).not.toHaveBeenCalled()
     expect(activitiesApi.revertBatch).toHaveBeenCalledTimes(1)
     expect(within(dialog).getByRole('heading', { name: 'Undo this batch?' })).toBeTruthy()
+    expect(within(dialog).getByText(/public content or publication status immediately/)).toBeTruthy()
     expect(screen.getByText('Imported strings')).toBeTruthy()
     catalogUntouched()
+  })
+
+  it('shows the public effect before confirming an overwrite', async () => {
+    vi.mocked(activitiesApi.revertBatchPreview).mockResolvedValue({
+      ...preview, requires_force: true, conflict_count: 1,
+    })
+    renderPage()
+    await screen.findByText('Imported strings')
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await within(dialog).findByRole('button', { name: 'Overwrite and undo' })
+    expect(within(dialog).getByText(/public content or publication status immediately/)).toBeTruthy()
+    expect(within(dialog).getByText(/History Restore changes only the working copy/)).toBeTruthy()
+    expect(activitiesApi.revertBatch).not.toHaveBeenCalled()
   })
 
   it('shows the server message when the background revert job fails', async () => {

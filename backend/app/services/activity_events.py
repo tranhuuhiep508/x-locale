@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -13,17 +14,20 @@ EVENT_TAGGED = "string.tagged"
 EVENT_UPDATED = "string.updated"
 EVENT_TRANSLATION = "translation.updated"
 EVENT_PUBLISHED = "string.published"
+EVENT_SAVED_DRAFT = "string.saved_draft"
+EVENT_SAVED_PUBLISHED = "string.saved_and_published"
+PUBLICATION_EVENT_TYPES = frozenset({EVENT_PUBLISHED, EVENT_SAVED_PUBLISHED})
 EVENT_UNPUBLISHED = "string.unpublished"
 EVENT_PENDING_DELETE = "string.pending_delete"
 EVENT_DELETED = "string.deleted"
 EVENT_RESTORED = "string.restored"
 
 BATCH_EVENT_TYPES = frozenset(
-    {"import", "excel_import", "translate", "batch", "revert"}
+    {"import", "cli_push", "excel_import", "translate", "batch", "revert"}
 )
-UNDOABLE_BATCH_KINDS = frozenset({"import", "excel_import", "translate", "batch"})
+UNDOABLE_BATCH_KINDS = frozenset({"import", "cli_push", "excel_import", "translate", "batch"})
 HISTORY_UNRESTORABLE_EVENT_TYPES = frozenset(
-    {EVENT_PUBLISHED, EVENT_UNPUBLISHED, EVENT_PENDING_DELETE, EVENT_DELETED}
+    {*PUBLICATION_EVENT_TYPES, EVENT_UNPUBLISHED, EVENT_PENDING_DELETE, EVENT_DELETED}
 )
 
 PUBLISHED_FIELDS = (
@@ -107,9 +111,7 @@ def _pending(snap: dict[str, Any] | None) -> bool:
     return bool(snap.get("pending_delete"))
 
 
-def published_fields_changed(
-    before: dict[str, Any] | None, after: dict[str, Any] | None
-) -> bool:
+def published_fields_changed(before: dict[str, Any] | None, after: dict[str, Any] | None) -> bool:
     left = before or {}
     right = after or {}
     for field in PUBLISHED_FIELDS:
@@ -120,9 +122,7 @@ def published_fields_changed(
     )
 
 
-def _working_diffs(
-    before: dict[str, Any] | None, after: dict[str, Any] | None
-) -> dict[str, bool]:
+def _working_diffs(before: dict[str, Any] | None, after: dict[str, Any] | None) -> dict[str, bool]:
     left = before or {}
     right = after or {}
     trans_before = translations_map(left.get("translations"))
@@ -142,6 +142,23 @@ def _changed_locales(before: dict[str, Any] | None, after: dict[str, Any] | None
     right = translations_map((after or {}).get("translations"))
     locales = sorted(set(left) | set(right))
     return [locale for locale in locales if left.get(locale, "") != right.get(locale, "")]
+
+
+def working_content_changed(before: dict[str, Any] | None, after: dict[str, Any] | None) -> bool:
+    """Require recorded content on both sides; lifecycle changes are not edits."""
+    if not before or not after:
+        return False
+    for field in ("key", "source_text", "description", "module_id"):
+        if field in before and field in after and before[field] != after[field]:
+            return True
+    if "tag_ids" in before and "tag_ids" in after:
+        if sorted(before["tag_ids"] or []) != sorted(after["tag_ids"] or []):
+            return True
+    return (
+        "translations" in before
+        and "translations" in after
+        and bool(_changed_locales(before, after))
+    )
 
 
 def classify_event(
@@ -171,9 +188,7 @@ def classify_event(
         return ClassifiedEvent(EVENT_RESTORED, None, f"Restored {_quote(key)}")
 
     if not _pending(before) and _pending(after):
-        return ClassifiedEvent(
-            EVENT_PENDING_DELETE, None, f"Marked {_quote(key)} for deletion"
-        )
+        return ClassifiedEvent(EVENT_PENDING_DELETE, None, f"Marked {_quote(key)} for deletion")
 
     if _pending(before) and not _pending(after) and not deleted_now:
         return ClassifiedEvent(EVENT_RESTORED, None, f"Restored {_quote(key)}")
@@ -186,10 +201,20 @@ def classify_event(
     if (before_status != "public" and after_status == "public") or published_fields_changed(
         before, after
     ):
+        if working_content_changed(before, after):
+            return ClassifiedEvent(
+                EVENT_SAVED_PUBLISHED, None, f"Saved and published {_quote(key)}"
+            )
         return ClassifiedEvent(EVENT_PUBLISHED, None, f"Published {_quote(key)}")
 
     diffs = _working_diffs(before, after)
     changed = [name for name, flag in diffs.items() if flag]
+
+    if intent == "save_draft" and working_content_changed(before, after):
+        locales = _changed_locales(before, after)
+        locale = locales[0] if len(locales) == 1 else None
+        subject = "translations of" if changed == ["translations"] else "changes to"
+        return ClassifiedEvent(EVENT_SAVED_DRAFT, locale, f"Saved {subject} {_quote(key)} as draft")
 
     if changed == ["key"]:
         old = _key(before)
@@ -264,7 +289,9 @@ def human_changed(
         if action_val == "create" and new_s is None:
             return
         rows.append(
-            ChangedField(field=field, before=old_s, after=new_s, locale=locale, scope=scope, kind=kind)
+            ChangedField(
+                field=field, before=old_s, after=new_s, locale=locale, scope=scope, kind=kind
+            )
         )
 
     add("key", left.get("key"), right.get("key"))
@@ -304,11 +331,19 @@ def human_changed(
     return rows
 
 
-def is_history_restorable(event_type: str | None, action: str | None = None) -> bool:
+def is_history_restorable(
+    event_type: str | None,
+    action: str | None = None,
+    *,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+) -> bool:
     """History restore writes working-copy text/metadata, not publish or delete lifecycle."""
     action_val = _enum_val(action) or "update"
     if action_val == "delete":
         return False
+    if event_type in PUBLICATION_EVENT_TYPES:
+        return working_content_changed(before, after)
     return (event_type or "") not in HISTORY_UNRESTORABLE_EVENT_TYPES
 
 
@@ -324,24 +359,40 @@ def batch_card_event_type(batch_kind: str | None) -> str:
     return "batch"
 
 
-def batch_card_summary(
-    batch_kind: str | None, children: list[ClassifiedEvent | str], count: int
-) -> str:
+def batch_card_summary(batch_kind: str | None, type_counts: Mapping[str, int], count: int) -> str:
     kind = _enum_val(batch_kind)
     noun = "string" if count == 1 else "strings"
-    if kind == "excel_import":
-        return f"Imported from Excel · {count} {noun}"
-    if kind == "import":
-        return f"Imported · {count} {noun}"
-    if kind == "translate":
-        return f"AI translated {count} {noun}"
     if kind == "revert":
         return f"Restored {count} {noun}"
-    types = {
-        item.event_type if isinstance(item, ClassifiedEvent) else item for item in children
+    origins = {
+        "excel_import": "Imported from Excel",
+        "cli_push": "CLI push",
+        "import": "Imported",
+        "translate": "AI translated",
     }
-    if types == {EVENT_PUBLISHED}:
-        return f"Published {count} {noun}"
+    origin = origins.get(kind)
+    types = {event_type for event_type, n in type_counts.items() if n}
+    combined = type_counts.get(EVENT_SAVED_PUBLISHED, 0)
+    published = type_counts.get(EVENT_PUBLISHED, 0)
+    if types == {EVENT_SAVED_DRAFT}:
+        summary = f"Saved translations as draft · {count} {noun}"
+    elif types == {EVENT_SAVED_PUBLISHED}:
+        summary = f"Saved and published {count} {noun}"
+    elif types == {EVENT_PUBLISHED}:
+        summary = f"Published {count} {noun}"
+    elif combined or published:
+        parts = [f"Updated {count} {noun}"]
+        for label, n in (("Saved and published", combined), ("Published", published)):
+            if n:
+                parts.append(f"{label} {n} {'string' if n == 1 else 'strings'}")
+        summary = " · ".join(parts)
+    else:
+        summary = ""
+    if summary:
+        return f"{summary} · {origin}" if origin else summary
+    if origin:
+        separator = " " if kind == "translate" else " · "
+        return f"{origin}{separator}{count} {noun}"
     if types == {EVENT_UNPUBLISHED}:
         return f"Unpublished {count} {noun}"
     if types == {EVENT_DELETED} or types == {EVENT_PENDING_DELETE}:

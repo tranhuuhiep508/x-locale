@@ -192,10 +192,27 @@ export interface StringUpdate {
   tag_ids?: string[]
   status?: TranslationStatus
   translations?: Record<string, string>
-  translation_scores?: Record<string, number>
+  translation_scores?: Record<string, number | null>
   expected?: Omit<StringUpdate, 'expected' | 'translation_scores'> & {
     translation_scores?: Record<string, number | null>
   }
+}
+
+export type EditorProposal =
+  | { mode: 'create'; values: Omit<StringCreate, 'status'> }
+  | { mode: 'update'; string_id: string; values: Omit<StringUpdate, 'status' | 'expected'> & {
+      expected: Omit<NonNullable<StringUpdate['expected']>, 'status'>
+    } }
+
+export interface EditorPreview {
+  entry: StringEntry
+  fingerprint: string
+}
+
+export interface EditorSaveRequest {
+  proposal: EditorProposal
+  action: 'save_draft' | 'publish'
+  fingerprint?: string
 }
 
 export interface TranslationUpdate {
@@ -276,6 +293,7 @@ export interface TranslateRequest extends BatchFilter {
   page?: number
   page_size?: number
   descriptions?: Record<string, string>
+  exclude_cells?: Record<string, string[]>
 }
 
 export interface TranslateResult {
@@ -292,9 +310,55 @@ export interface TranslatePreviewRequest {
   locales?: string[]
 }
 
+export interface QaIssue {
+  code: string
+  severity: 'error' | 'warning'
+  message: string
+  start: number | null
+  end: number | null
+  detail: Record<string, unknown> | null
+}
+
 export interface TranslatePreviewResult {
   translations: Record<string, string>
   scores: Record<string, number>
+  /** Key present (even `[]`) means that locale was checked. Missing key means it was not. */
+  issues?: Record<string, QaIssue[]>
+}
+
+export interface TranslationQaRequest {
+  source_text: string
+  translation: string
+  locale: string
+}
+
+export interface TranslationQaResult {
+  locale: string
+  issues: QaIssue[]
+}
+
+export interface TranslationMemoryMatch {
+  string_id: string
+  key: string
+  module_id: string | null
+  module_slug: string | null
+  matched_source_text: string
+  translation: string
+  exact: boolean
+  similarity: number
+  issues: QaIssue[]
+}
+
+export interface TranslationMemoryRequest {
+  source_text: string
+  locales?: string[]
+  string_id?: string
+  expected_source_text?: string
+}
+
+export interface TranslationMemoryResult {
+  source_text: string
+  matches: Record<string, TranslationMemoryMatch[]>
 }
 
 export interface TranslateProposalItem {
@@ -302,9 +366,20 @@ export interface TranslateProposalItem {
   key: string
   source_text: string
   status: TranslationStatus
+  module_id?: string | null
+  module_slug?: string | null
+  module_name?: string | null
   description?: string | null
   translations: Record<string, string>
   scores?: Record<string, number>
+  /** Key present (even `[]`) means that locale was checked. Missing key means it was not. */
+  issues?: Record<string, QaIssue[]>
+  memory?: Record<string, TranslationMemoryMatch[]>
+  memory_error?: string | null
+  /** Local review state, sent as exclude_cells when requesting AI. */
+  memory_selected?: string[]
+  /** Local review state: locale → id of the match the user chose. */
+  memory_choice?: Record<string, string>
 }
 
 export interface TranslateProposalsResult {
@@ -314,6 +389,25 @@ export interface TranslateProposalsResult {
   total: number
   page: number
   page_size: number
+}
+
+export interface CliPushBatch extends PublishPreviewEntries {
+  batch_id: string
+  actor_label: string
+  created_at: string | null
+  created_count: number
+  updated_count: number
+  excluded_count: number
+}
+
+export interface CliPushPublishRequest {
+  fingerprint: string
+  items: Array<{
+    string_id: string
+    expected_source_text: string
+    translations: Record<string, string>
+    scores?: Record<string, number | null>
+  }>
 }
 
 export interface TranslateApplyRequest {
@@ -338,6 +432,35 @@ export interface TranslateApplyResult {
   translated_count: number
   batch_id: string
   locales: string[]
+}
+
+/** Reviewed rows. Description edits are not part of review; the server rejects them. */
+export interface TranslateReviewRequest {
+  items: Array<{
+    string_id: string
+    expected_source_text: string
+    translations: Record<string, string>
+    scores?: Record<string, number>
+  }>
+}
+
+export interface TranslateReview {
+  /** Full proposed strings: the working copy after save, with published snapshots. */
+  items: StringEntry[]
+  fingerprint: string
+}
+
+export interface TranslateSaveRequest extends TranslateReviewRequest {
+  action: 'draft' | 'publish'
+  fingerprint?: string
+}
+
+export interface TranslateSaveResult {
+  action: 'draft' | 'publish'
+  translated_count: number
+  string_count: number
+  published_count: number
+  batch_id: string
 }
 
 // ── Jobs ───────────────────────────────────────────────────────────────

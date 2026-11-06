@@ -39,8 +39,7 @@ for (const filter of [
     await page.clock.setSystemTime(new Date(later))
     const dialog = page.getByRole('dialog')
     const secondResponse = waitForQueue()
-    const paging = dialog.getByText(/\d+–\d+ of \d+/)
-    await paging.locator('..').getByRole('button').last().click()
+    await dialog.getByRole('button', { name: 'Next page' }).click()
     const second = await secondResponse
     const secondBody = second.request().postDataJSON()
     const secondQueue = await second.json()
@@ -50,7 +49,7 @@ for (const filter of [
     await expect(dialog.locator('li')).toHaveCount(5)
 
     await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
-    const apply = dialog.getByRole('button', { name: /Apply \d+ translations?/ })
+    const apply = dialog.getByRole('button', { name: 'Save as draft', exact: true })
     await expect(apply).toBeEnabled()
     await page.clock.setSystemTime(new Date(later + 3_600_000))
     const refreshedResponse = waitForQueue()

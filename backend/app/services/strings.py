@@ -132,7 +132,7 @@ def queue_or_soft_delete(entry: StringEntry) -> bool:
     return True
 
 
-def has_unpublished_changes(entry: StringEntry) -> bool:
+def has_unpublished_changes(entry: StringEntry | StringOut) -> bool:
     if entry.deleted_at is not None:
         return False
     if entry.pending_delete:
@@ -152,7 +152,7 @@ def has_unpublished_changes(entry: StringEntry) -> bool:
     return False
 
 
-def is_publishable_entry(entry: StringEntry) -> bool:
+def is_publishable_entry(entry: StringEntry | StringOut) -> bool:
     """True when batch publish would change public for this row."""
     if entry.deleted_at is not None:
         return False
@@ -167,11 +167,13 @@ def _status_value(status: TranslationStatus | str) -> str:
     return status.value if isinstance(status, TranslationStatus) else str(status)
 
 
-def compute_publish_fingerprint(entries: Sequence[StringEntry]) -> str:
-    """Hash publishable working-copy state. Tags, activity, and no-ops are ignored."""
+def compute_publish_fingerprint(
+    entries: Sequence[StringEntry], *, include_unchanged: bool = False
+) -> str:
+    """Hash reviewed content; ordinary publication omits unchanged strings."""
     rows: list[dict[str, object]] = []
     for entry in entries:
-        if not is_publishable_entry(entry):
+        if not include_unchanged and not is_publishable_entry(entry):
             continue
         translations = sorted(entry.translations or [], key=lambda item: item.locale)
         rows.append(
@@ -487,7 +489,7 @@ def apply_translation_values(
     db: Session,
     entry: StringEntry,
     translations: dict[str, str],
-    scores: dict[str, int] | None = None,
+    scores: dict[str, int | None] | None = None,
 ) -> None:
     """Upsert locale values on an entry. Caller must validate locales.
 
@@ -940,6 +942,12 @@ def live_module_label(entry: StringEntry) -> str:
 
 
 def create_string(db: Session, project: Project, payload: StringCreate) -> StringOut:
+    entry = _create_string(db, project, payload)
+    db.commit()
+    return serialize_string(get_string(db, project.id, entry.id))
+
+
+def _create_string(db: Session, project: Project, payload: StringCreate) -> StringEntry:
     base_language = project.base_language
     # Block settings changes until creation commits, including before the first insert.
     db.refresh(project, with_for_update={"read": True})
@@ -985,25 +993,39 @@ def create_string(db: Session, project: Project, payload: StringCreate) -> Strin
         promote_string(entry)
         db.flush()
         guard_published_keys(db, project)
-    db.commit()
-    return serialize_string(get_string(db, project.id, entry.id))
+    return entry
+
+
+def lock_strings(
+    db: Session, project_id: uuid.UUID, ids: Collection[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Row-lock strings, then their translations, in id order. Returns the locked ids.
+
+    Lock children too: imports and other writers can update translations directly.
+    Every writer takes these locks in the same order, so writers cannot deadlock.
+    """
+    if not ids:
+        return []
+    locked = [
+        row[0]
+        for row in db.query(StringEntry.id)
+        .filter(StringEntry.project_id == project_id, StringEntry.id.in_(ids))
+        .order_by(StringEntry.id)
+        .with_for_update()
+        .all()
+    ]
+    if locked:
+        db.query(Translation.id).filter(Translation.string_id.in_(locked)).order_by(
+            Translation.id
+        ).with_for_update().all()
+    return locked
 
 
 def _locked_editor_entry(
     db: Session, project_id: uuid.UUID, string_id: uuid.UUID
 ) -> StringEntry:
-    # Lock children too: imports and other writers can update translations directly.
-    found = (
-        db.query(StringEntry.id)
-        .filter(StringEntry.id == string_id, StringEntry.project_id == project_id)
-        .with_for_update()
-        .first()
-    )
-    if not found:
+    if not lock_strings(db, project_id, [string_id]):
         raise HTTPException(status_code=404, detail="String not found")
-    db.query(Translation.id).filter(Translation.string_id == string_id).order_by(
-        Translation.id
-    ).with_for_update().all()
     return load_string_entries(db, project_id, [string_id], refresh=True)[0]
 
 
@@ -1025,6 +1047,13 @@ def _check_editor_expected(entry: StringEntry, payload: StringUpdate) -> None:
         "translation_scores": {t.locale: t.confidence for t in entry.translations},
     }
     conflicts = []
+    if (
+        payload.translations
+        and payload.source_text is None
+        and "source_text" in expected
+        and entry.source_text != expected["source_text"]
+    ):
+        conflicts.append("source_text")
     for field, desired in changes.items():
         if desired is None and field not in {"description", "module_id"}:
             continue
