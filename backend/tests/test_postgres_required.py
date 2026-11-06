@@ -205,39 +205,30 @@ def test_entrypoints_exit_nonzero_without_postgres(url, command):
     assert _REQUIRED in result.stderr + result.stdout
 
 
-def test_database_collation_is_c(database_engine):
-    """PG16 removed SHOW lc_collate. datcollate is the collation of this database."""
+COLLATION_C_COLUMNS = {
+    ("strings", "key"),
+    ("strings", "published_key"),
+    ("modules", "slug"),
+    ("tags", "name"),
+}
+
+
+def test_identifier_columns_use_collation_c(database_engine):
+    """Identifiers sort like Python sorted() whatever the database collation is."""
     with database_engine.connect() as conn:
-        row = conn.execute(
+        rows = conn.execute(
             text(
                 """
-                SELECT datcollate, datlocprovider
-                FROM pg_database
-                WHERE datname = current_database()
+                SELECT table_name, column_name, collation_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND (table_name, column_name) IN (
+                    ('strings', 'key'), ('strings', 'published_key'),
+                    ('modules', 'slug'), ('tags', 'name')
+                  )
                 """
             )
-        ).one()
-        datcollate = row.datcollate
-        datlocprovider = row.datlocprovider
-        shown = conn.execute(
-            text(
-                """
-                SELECT CASE
-                    WHEN EXISTS (
-                        SELECT 1 FROM pg_settings WHERE name = 'lc_collate'
-                    ) THEN current_setting('lc_collate')
-                    ELSE NULL
-                END
-                """
-            )
-        ).scalar()
-    assert datcollate == "C", (
-        f"Test database collation is {datcollate!r} with provider {datlocprovider!r}; "
-        "expected datcollate 'C' and datlocprovider 'c'."
-    )
-    assert datlocprovider == "c", (
-        f"Test database collation is {datcollate!r} with provider {datlocprovider!r}; "
-        "expected datcollate 'C' and datlocprovider 'c'."
-    )
-    if shown is not None:
-        assert shown == "C", f"lc_collate is {shown!r}; expected 'C'"
+        ).all()
+    found = {(row.table_name, row.column_name): row.collation_name for row in rows}
+    assert set(found) == COLLATION_C_COLUMNS
+    assert all(collation == "C" for collation in found.values()), found

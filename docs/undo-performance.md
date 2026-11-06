@@ -124,7 +124,7 @@ Measurements dated 2026-10-04 were taken on file-backed databases, comparing bas
 
 ## Reproduce
 
-From `backend/`, with Postgres 16 running at collation C, `DATABASE_URL` set to a
+From `backend/`, with Postgres 16 running, `DATABASE_URL` set to a
 Postgres URL on that server, and `TEST_DATABASE_URL` identifying a separate
 existing bootstrap database. The role must have permission to create/drop the
 disposable databases. The configured application database is not written:
