@@ -409,6 +409,43 @@ def preview_translations(
     )
 
 
+def preview_translation_batch(
+    project: Project,
+    module: Module | None,
+    rows: list[tuple[str, str, list[str]]],
+    db: Session,
+) -> list[dict[str, Any]]:
+    """Translate unsaved ``(id, source_text, locales)`` rows in one AI batch. Stores nothing."""
+    context = compose_translation_context(project, module, None)
+    items = []
+    for row_id, source_text, locales in rows:
+        validate_locales(project, locales)
+        items.append(
+            TranslateItem(
+                id=row_id, source_text=source_text, locales=tuple(locales), context=context
+            )
+        )
+    items = with_memory(db, project, items)
+    results = translate_batch(project.base_language, items)
+    out = []
+    for item in items:
+        cells = _cell_map(results, item.id)
+        translations = {
+            locale: cells[locale].text
+            for locale in item.locales
+            if locale in cells and cells[locale].text.strip()
+        }
+        out.append(
+            {
+                "id": item.id,
+                "translations": translations,
+                "scores": _scores_from_cells(cells, item.locales),
+                "issues": _qa_by_locale(item.source_text, translations),
+            }
+        )
+    return out
+
+
 def _status_str(entry: StringEntry) -> str:
     status = entry.status
     if isinstance(status, TranslationStatus):

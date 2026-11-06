@@ -27,6 +27,7 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 import { ImportPreviewDialog } from '@/features/sync/ImportPreviewDialog'
+import { ImportContinuation } from '@/features/batches/ImportContinuation'
 import {
   Card,
   CardContent,
@@ -89,6 +90,10 @@ export function ImportExportPage() {
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [importJobId, setImportJobId] = useState<string | null>(null)
+  const [imported, setImported] = useState<{
+    result: ImportResult
+    kind: 'import' | 'excel_import'
+  } | null>(null)
   const storedJobId = useActiveJobId(projectId, 'import')
   const trackedJobId = importJobId ?? storedJobId
 
@@ -113,6 +118,10 @@ export function ImportExportPage() {
       return
     }
     toast.success(jobSuccessMessage('import', { created: res.created, updated: res.updated }))
+    setImported({
+      result: res,
+      kind: isExcelFile(pendingFileRef.current) ? 'excel_import' : 'import',
+    })
     setPreviewResult(null)
     pendingFileRef.current = null
     refreshProjectContent(queryClient, projectId)
@@ -149,6 +158,8 @@ export function ImportExportPage() {
         setShowPreview(true)
         return
       }
+      // Offer the batch even when the project-wide watcher claimed the toast.
+      setImported({ result, kind: job.kind === 'excel_import' ? 'excel_import' : 'import' })
       setPreviewResult(null)
       pendingFileRef.current = null
       if (!won) return
@@ -205,6 +216,7 @@ export function ImportExportPage() {
       return
     }
     pendingFileRef.current = file
+    setImported(null)
     importMut.mutate({ file, dry: dryRun })
   }
 
@@ -466,6 +478,14 @@ export function ImportExportPage() {
                 error={importJob.isError ? importJob.error : undefined}
                 paused={importJob.isPaused}
                 label={importProgressLabel(importJob.data?.progress)}
+              />
+            ) : null}
+            {imported && !importBusy ? (
+              <ImportContinuation
+                projectRef={projectId}
+                result={imported.result}
+                batchKind={imported.kind}
+                from="import"
               />
             ) : null}
           </CardContent>

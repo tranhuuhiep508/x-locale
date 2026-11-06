@@ -125,6 +125,7 @@ beforeEach(() => {
     items: [entry()],
     fingerprint: 'reviewed',
     batch_id: 'push',
+    batch_kind: 'cli_push',
     actor_label: 'Dev User',
     created_at: null,
     created_count: 0,
@@ -394,6 +395,40 @@ it('uses every project target language automatically and marks the current revie
   expect(
     screen.getByText('Review', { exact: true }).closest('li')?.getAttribute('aria-current')
   ).toBe('step')
+})
+it('regenerates every target for CLI pushes', async () => {
+  show()
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await screen.findByText(/Translations are ready for review/)
+  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ overwrite: true })
+  )
+})
+it('labels import batches and only fills empty cells, keeping pasted target values', async () => {
+  const imported = entry()
+  imported.translations[1] = { ...imported.translations[1], value: '', published_value: null }
+  batch = { ...batch, batch_kind: 'import', items: [imported] }
+  show()
+  await loaded()
+  expect(screen.getByRole('heading', { name: 'Import batch' })).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Translate all' }))
+  await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalled())
+  expect(stringsApi.translateProposals).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ overwrite: false, exclude_cells: {} })
+  )
+  await screen.findByText(/Translations are ready for review/)
+  // The saved English value is not replaced by the generated proposal.
+  expect(
+    (screen.getByRole('textbox', { name: 'EN translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('Old')
+  expect(
+    (screen.getByRole('textbox', { name: 'JA translation for login.0' }) as HTMLTextAreaElement)
+      .value
+  ).toBe('生成済み')
 })
 it('keeps temporary edits when restart is cancelled and discards them only after confirmation', async () => {
   const confirm = vi.spyOn(window, 'confirm')

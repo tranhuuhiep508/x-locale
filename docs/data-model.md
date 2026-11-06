@@ -250,15 +250,23 @@ current queue page; paging stays blocked until that page is saved or its edits a
 undone, so no action spans unreviewed pages.
 
 
-## CLI push batch workspace
+## Batch workspace (CLI push and import batches)
 
-New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports keep
-`import`/`excel_import`. Historical batches are not reclassified. The endpoint
-`GET /api/projects/{project_id}/cli-push-batches/{batch_id}` resolves unique activity
-members within the project and returns metadata, active working/published rows,
-excluded lifecycle counts, and the existing publication fingerprint. An unknown,
-other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
-empty review. No additional workflow state or schema migration is required.
+New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports and
+Add many saves keep `import`/`excel_import`. Historical batches are not reclassified.
+The endpoint `GET /api/projects/{project_id}/cli-push-batches/{batch_id}` (the path
+keeps its original name) resolves unique activity members within the project for
+`cli_push`, `import`, and `excel_import` batches. It returns metadata including
+`batch_kind`, active working/published rows, excluded lifecycle counts, and the
+existing publication fingerprint. An unknown or other-project batch, another batch
+kind (translate, publication, revert), a dry run, or a no-op import returns 404; an
+entirely excluded batch returns an empty review.
+
+Import / Export keeps the `batch_id` of a successful import (direct or background
+job) and links to this workspace for that exact batch. For import batches,
+Translate all requests proposals with `overwrite=false`, so saved target values
+(pasted translations or earlier reviews) are skipped; CLI pushes still regenerate
+every target. No additional workflow state or schema migration is required.
 
 The dashboard automatically translates all configured project target languages
 (excluding the base language), with no language picker. The stepper shows Translate,
@@ -293,3 +301,31 @@ and refreshes the batch in place. View in Strings opens the catalog filtered to
 the original CLI push batch. If refresh fails, saved changes remain committed;
 Reload batch retries the read without saving or publishing again. The existing catalog,
 translation Apply, audit, Undo, export, and soft-delete semantics are retained.
+
+
+## Add many paste review
+
+Add many is the single-string editor flow applied to up to 100 pasted rows; it does
+not use the import endpoint. `POST /api/projects/{project_id}/strings/paste-review`
+resolves each key to its live owner (respecting the duplicate-key policy and the
+chosen module), builds the same create/update proposal the editor would, and returns
+each projected working copy with every configured target locale plus a fingerprint.
+Nothing is written. The fingerprint covers project settings, the module, and each
+key's current state (or absence), not the proposed values, so reviewed edits can be
+saved without another preview while a concurrent edit, publication, or creation of a
+pasted key is still rejected.
+
+`POST /api/projects/{project_id}/strings/paste-save` takes the rows, `action`
+(`draft` | `publish`), and that fingerprint. Under the publication lock (publish) and
+row locks it rebuilds the proposals, rejects a changed fingerprint with
+`publish_fingerprint_mismatch`, writes every row through the editor's create/update
+path, and for publish promotes each publishable row and checks public-key
+collisions. Rows, snapshots, and audit records commit together under one `import`
+batch, or the whole request rolls back. Draft saves keep existing public snapshots and
+status; new strings stay draft. A pasted value for a target locale on a new key uses
+the key as source, matching file imports. Selected tags are added to existing strings;
+the module applies to new strings only.
+
+`POST /api/projects/{project_id}/translate/preview-batch` translates up to 20 unsaved
+rows (`id`, `source_text`, `locales`) in one AI call with translation memory and QA,
+storing nothing. The dialog requests only empty cells.

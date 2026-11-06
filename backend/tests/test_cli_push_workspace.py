@@ -92,7 +92,7 @@ def test_cli_batch_metadata_scope_and_publication(client, monkeypatch, backgroun
     assert client.get(f"{root}/strings/{old['id']}").json()["published_source_text"] == "Mới"
 
 
-def test_workspace_excludes_deleted_and_other_projects_and_legacy_import(client):
+def test_workspace_excludes_deleted_and_other_projects(client):
     pid = make_project(client)["id"]
     result = push(client, pid, {"a": "A", "b": "B"})
     batch = workspace(client, pid, result["batch_id"])
@@ -107,10 +107,6 @@ def test_workspace_excludes_deleted_and_other_projects_and_legacy_import(client)
     assert (
         client.get(f"/api/projects/{other}/cli-push-batches/{result['batch_id']}").status_code
         == 404
-    )
-    legacy = client.post(f"/api/projects/{pid}/import", files=json_upload({"old": "Old"})).json()
-    assert (
-        client.get(f"/api/projects/{pid}/cli-push-batches/{legacy['batch_id']}").status_code == 404
     )
     assert client.get(f"/api/projects/{pid}/cli-push-batches/{uuid.uuid4()}").status_code == 404
 
@@ -603,3 +599,133 @@ def test_combined_undo_conflict_preserves_state_until_force_confirmation(client)
     restored = client.get(f"{root}/strings/{sid}").json()
     assert restored["status"] == "draft" and restored["published_key"] is None
     assert all(t["value"] == "" and t["published_value"] is None for t in restored["translations"])
+
+
+def paste(client, pid, values, locale="vi", **params):
+    """Import a pasted JSON map the way the Add many dialog does."""
+    response = client.post(
+        f"/api/projects/{pid}/import",
+        params={"locale": locale, "status": "draft", "partial": "true", **params},
+        files=json_upload(values, f"{locale}.json"),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_pasted_import_batch_opens_workspace_saves_draft_then_publishes(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    existing = client.post(
+        f"{root}/strings",
+        json={"key": "hello", "source_text": "Chào", "translations": {"en": "Hi"}},
+    ).json()
+    publish_strings(client, pid, [existing["id"]])
+    outside = client.post(f"{root}/strings", json={"key": "outside", "source_text": "Ngoài"}).json()
+    imported = paste(client, pid, {"hello": "Xin chào", "bye": "Tạm biệt"})
+    batch = workspace(client, pid, imported["batch_id"])
+    assert batch["batch_kind"] == "import"
+    assert (batch["created_count"], batch["updated_count"]) == (1, 1)
+    assert {row["key"] for row in batch["items"]} == {"hello", "bye"}
+    public_before = client.get(f"{root}/export", params={"stage": "public"}).json()
+
+    url = f"{root}/cli-push-batches/{imported['batch_id']}"
+    draft = client.post(f"{url}/draft", json=atomic_payload(batch, "Draft"))
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["batch_id"] not in {imported["batch_id"], None}
+    assert client.get(f"{root}/export", params={"stage": "public"}).json() == public_before
+    saved = workspace(client, pid, imported["batch_id"])
+    by_key = {row["key"]: row for row in saved["items"]}
+    assert by_key["bye"]["status"] == "draft"
+    assert by_key["hello"]["status"] == "public"
+    assert by_key["hello"]["published_source_text"] == "Chào"
+    assert by_key["hello"]["translations"][0]["value"] == "Draft"
+
+    published = client.post(f"{url}/publish", json=atomic_payload(saved, "Reviewed"))
+    assert published.status_code == 200, published.text
+    action_id = published.json()["batch_id"]
+    assert action_id not in {imported["batch_id"], draft.json()["batch_id"]}
+    current = {row["key"]: row for row in workspace(client, pid, imported["batch_id"])["items"]}
+    assert all(row["status"] == "public" for row in current.values())
+    assert current["hello"]["published_source_text"] == "Xin chào"
+    assert client.get(f"{root}/strings/{outside['id']}").json()["status"] == "draft"
+
+    # The import and the later publication stay separate, separately undoable actions.
+    feed = client.get(f"{root}/activities/feed").json()["items"]
+    kinds = {card["batch_id"]: card["batch_kind"] for card in feed}
+    assert kinds[imported["batch_id"]] == "import"
+    assert kinds[action_id] == "batch"
+    preview = client.get(f"{root}/activities/batch/{action_id}/revert/preview").json()
+    assert preview["can_revert"] and preview["affects_published"]
+
+
+def test_target_locale_paste_and_excel_import_batches_open_workspace(client):
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    pid = make_project(client, targets=["en", "ja"])["id"]
+    root = f"/api/projects/{pid}"
+    client.post(f"{root}/strings", json={"key": "hello", "source_text": "Xin chào"})
+    pasted = paste(client, pid, {"hello": "Hello"}, locale="en")
+    batch = workspace(client, pid, pasted["batch_id"])
+    assert batch["batch_kind"] == "import"
+    row = batch["items"][0]
+    assert row["source_text"] == "Xin chào"
+    assert {t["locale"]: t["value"] for t in row["translations"]}["en"] == "Hello"
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "common"
+    sheet.append(["key", "vi", "en"])
+    sheet.append(["bye", "Tạm biệt", "Bye"])
+    buf = BytesIO()
+    book.save(buf)
+    excel = client.post(
+        f"{root}/import",
+        files={
+            "file": (
+                "book.xlsx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert excel.status_code == 200, excel.text
+    batch = workspace(client, pid, excel.json()["batch_id"])
+    assert batch["batch_kind"] == "excel_import"
+    assert [row["key"] for row in batch["items"]] == ["bye"]
+
+
+def test_workspace_rejects_non_import_batches_and_noop_or_dry_run_imports(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    imported = paste(client, pid, {"a": "A"})
+    batch = workspace(client, pid, imported["batch_id"])
+    published = client.post(
+        f"{root}/cli-push-batches/{imported['batch_id']}/publish", json=atomic_payload(batch)
+    )
+    assert published.status_code == 200, published.text
+    publication = published.json()["batch_id"]
+    assert client.get(f"{root}/cli-push-batches/{publication}").status_code == 404
+    for result in (paste(client, pid, {"a": "A"}), paste(client, pid, {"z": "Z"}, dry_run=True)):
+        assert client.get(f"{root}/cli-push-batches/{result['batch_id']}").status_code == 404
+
+
+def test_stale_import_review_writes_nothing(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    imported = paste(client, pid, {"a": "A"})
+    batch = workspace(client, pid, imported["batch_id"])
+    row = batch["items"][0]
+    client.patch(f"{root}/strings/{row['id']}", json={"translations": {"en": "Concurrent"}})
+    publish_strings(client, pid, [row["id"]])
+    before = client.get(f"{root}/activities").json()["total"]
+    for action in ("draft", "publish"):
+        response = client.post(
+            f"{root}/cli-push-batches/{imported['batch_id']}/{action}",
+            json=atomic_payload(batch),
+        )
+        assert response.status_code == 409, response.text
+    assert client.get(f"{root}/activities").json()["total"] == before
+    current = client.get(f"{root}/strings/{row['id']}").json()
+    assert current["translations"][0]["value"] == "Concurrent"

@@ -5,7 +5,7 @@ import { hasActiveStringFilters } from '@/features/strings/StringsFilters'
 
 describe('batchFilterChipLabel', () => {
   it('is kind-aware and falls back to the push label', () => {
-    expect(batchFilterChipLabel('import')).toBe('Filtered to this push')
+    expect(batchFilterChipLabel('import')).toBe('Filtered to this import')
     expect(batchFilterChipLabel(undefined)).toBe('Filtered to this push')
     expect(batchFilterChipLabel('excel_import')).toBe('Filtered to this Excel import')
     expect(batchFilterChipLabel('translate')).toBe('Filtered to this translation')

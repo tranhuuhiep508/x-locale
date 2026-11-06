@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import json
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Module, Project, Tag, TranslationStatus
+from app.activity import attach_batch
+from app.models import Module, Project, StringEntry, Tag, TranslationStatus
 from app.schemas import (
+    EditorCreateProposal,
     EditorPreviewOut,
     EditorProposal,
     EditorSaveRequest,
+    EditorUpdateProposal,
+    EditorUpdateValues,
+    PasteReviewItem,
+    PasteReviewOut,
+    PasteReviewRequest,
+    PasteRow,
+    PasteSaveRequest,
+    PasteSaveResult,
     StringCreate,
+    StringCreateContent,
+    StringExpected,
     StringOut,
     StringUpdate,
     TagOut,
@@ -191,3 +203,165 @@ def save_editor(db: Session, project: Project, payload: EditorSaveRequest) -> St
 
     string_id = run_write(db, project.id, "save_editor", write)
     return strings.serialize_string(strings.get_string(db, project.id, string_id))
+
+
+# ── Pasted strings: the single-string editor flow applied to many rows ──────
+
+
+def _paste_proposal(
+    payload: PasteReviewRequest, row: PasteRow, entry: StringEntry | None
+) -> EditorProposal:
+    translations = dict(row.translations)
+    scores = dict(row.translation_scores)
+    if entry is None:
+        return EditorCreateProposal(
+            mode="create",
+            values=StringCreateContent(
+                key=row.key,
+                source_text=row.source_text or row.key,
+                module_id=payload.module_id,
+                tag_ids=payload.tag_ids,
+                translations={k: v for k, v in translations.items() if v},
+                translation_scores={k: v for k, v in scores.items() if v is not None},
+            ),
+        )
+    current_values = {t.locale: t.value for t in entry.translations}
+    current_scores = {t.locale: t.confidence for t in entry.translations}
+    changes: dict = {}
+    expected: dict = {}
+    if row.source_text is not None and row.source_text != entry.source_text:
+        changes["source_text"] = row.source_text
+        expected["source_text"] = entry.source_text
+    changed = {k: v for k, v in translations.items() if current_values.get(k, "") != v}
+    if changed:
+        changes["translations"] = changed
+        expected["translations"] = {k: current_values.get(k, "") for k in changed}
+    scored = {k: v for k, v in scores.items() if k in changed}
+    if scored:
+        changes["translation_scores"] = scored
+        expected["translation_scores"] = {k: current_scores.get(k) for k in scored}
+    current_tags = [tag.id for tag in entry.tags]
+    if set(payload.tag_ids) - set(current_tags):
+        changes["tag_ids"] = sorted({*current_tags, *payload.tag_ids}, key=str)
+        expected["tag_ids"] = current_tags
+    return EditorUpdateProposal(
+        mode="update",
+        string_id=entry.id,
+        values=EditorUpdateValues(**changes, expected=StringExpected(**expected)),
+    )
+
+
+def _paste_review(db: Session, project: Project, payload: PasteReviewRequest, *, locked: bool):
+    """Project every row through the editor preview and fingerprint the catalog baseline.
+
+    The fingerprint covers project settings and each key's current owner state, not the
+    proposed values, so reviewed edits can be saved as draft or published without a new
+    preview while any concurrent change to these strings is still rejected.
+    """
+    require_module_in_project(db, project.id, payload.module_id)
+    rows = []
+    baseline = []
+    for row in payload.rows:
+        owner = key_owner(db, project.id, row.key, payload.module_id)
+        entry = None
+        if owner is not None:
+            entry = (
+                strings._locked_editor_entry(db, project.id, owner[0])
+                if locked
+                else strings.get_string(db, project.id, owner[0])
+            )
+        proposal = _paste_proposal(payload, row, entry)
+        current = strings.serialize_string(entry) if entry is not None else None
+        projected = _preview(db, project, proposal, locked=False).entry
+        if entry is None:
+            # Distinct, stable ids let a review list several new strings side by side.
+            projected.id = uuid5(NAMESPACE_URL, f"x-locale-paste:{project.id}:{row.key}")
+        rows.append((row, proposal, entry, projected))
+        baseline.append([row.key, _review_state(current)])
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "project": str(project.id),
+                "settings": [
+                    project.base_language,
+                    sorted(project.target_languages),
+                    project.layout.value,
+                    project.allow_duplicate_keys,
+                ],
+                "module_id": str(payload.module_id) if payload.module_id else None,
+                "rows": baseline,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return rows, fingerprint
+
+
+def review_paste(db: Session, project: Project, payload: PasteReviewRequest) -> PasteReviewOut:
+    with db.no_autoflush:
+        rows, fingerprint = _paste_review(db, project, payload, locked=False)
+    return PasteReviewOut(
+        items=[
+            PasteReviewItem(key=row.key, mode=proposal.mode, entry=projected)
+            for row, proposal, _entry, projected in rows
+        ],
+        fingerprint=fingerprint,
+    )
+
+
+def save_paste(db: Session, project: Project, payload: PasteSaveRequest) -> PasteSaveResult:
+    def write() -> PasteSaveResult:
+        publish = payload.action == "publish"
+        if publish:
+            strings.lock_publication(db, project.id)
+        db.refresh(project, with_for_update={"read": True})
+        batch_id = uuid4()
+        attach_batch(db, batch_id, "import")
+        if not publish:
+            db.info["activity"]["intent"] = "save_draft"
+        with db.no_autoflush:
+            rows, fingerprint = _paste_review(db, project, payload, locked=True)
+            if not strings.fingerprints_match(fingerprint, payload.fingerprint):
+                raise HTTPException(409, detail={"code": strings.PUBLISH_FINGERPRINT_MISMATCH})
+            if publish:
+                if any(projected.pending_delete for *_rest, projected in rows):
+                    raise HTTPException(
+                        409, detail="Use the separate removal or restoration action"
+                    )
+                if not any(strings.is_publishable_entry(projected) for *_rest, projected in rows):
+                    raise HTTPException(409, detail={"code": "nothing_to_publish"})
+            saved = []
+            for _row, proposal, entry, _projected in rows:
+                if proposal.mode == "create":
+                    entry = strings._create_string(
+                        db, project, StringCreate(**proposal.values.model_dump())
+                    )
+                else:
+                    strings._update_string(
+                        db,
+                        project,
+                        proposal.string_id,
+                        StringUpdate(**proposal.values.model_dump(exclude_unset=True)),
+                    )
+                    entry = strings.get_string(db, project.id, proposal.string_id)
+                saved.append(entry)
+            published = 0
+            if publish:
+                for entry in saved:
+                    if strings.is_publishable_entry(entry):
+                        strings.promote_string(entry)
+                        published += 1
+        db.flush()
+        if publish:
+            strings.guard_published_keys(db, project)
+        created = sum(proposal.mode == "create" for _row, proposal, *_rest in rows)
+        return PasteSaveResult(
+            action=payload.action,
+            created=created,
+            updated=len(rows) - created,
+            published=published,
+            batch_id=batch_id,
+        )
+
+    return run_write(db, project.id, "save_paste", write)

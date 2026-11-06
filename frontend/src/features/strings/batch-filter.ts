@@ -2,6 +2,7 @@
 export function batchFilterChipLabel(batchKind: string | undefined): string {
   if (batchKind === 'excel_import') return 'Filtered to this Excel import'
   if (batchKind === 'translate') return 'Filtered to this translation'
+  if (batchKind === 'import') return 'Filtered to this import'
   return 'Filtered to this push'
 }
 

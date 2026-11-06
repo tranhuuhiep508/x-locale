@@ -64,6 +64,13 @@ export const activitySearchSchema = z.object({
 
 export type ActivitySearch = z.infer<typeof activitySearchSchema>
 
+/** Where the batch workspace's Back button returns to. */
+export const batchWorkspaceSearchSchema = z.object({
+  from: z.enum(['activity', 'strings', 'import']).optional().catch(undefined),
+})
+
+export type BatchWorkspaceSearch = z.infer<typeof batchWorkspaceSearchSchema>
+
 const translationContextSchema = z.string()
   .max(500, 'Translation context must be 500 characters or fewer')
   .nullable()

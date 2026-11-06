@@ -18,9 +18,26 @@ import { ConfidenceBadge } from '@/features/strings/confidence'
 import { contentFieldChanges } from '@/features/strings/publish-preview'
 import { useBatchWorkspace } from '@/features/batches/use-batch-workspace'
 import { BatchStepper } from '@/features/batches/BatchStepper'
+import { batchKindName } from '@/features/batches/batch-kind'
+import type { BatchWorkspaceSearch } from '@/lib/schemas'
 import { cn, formatRelativeTime } from '@/lib/utils'
 
-export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; batchId: string }) {
+const BACK_TARGETS = {
+  activity: { to: '/projects/$projectRef/activity', label: 'Back to Activity' },
+  strings: { to: '/projects/$projectRef/strings', label: 'Back to Strings' },
+  import: { to: '/projects/$projectRef/import-export', label: 'Back to Import / Export' },
+} as const
+
+export function BatchWorkspace({
+  projectRef,
+  batchId,
+  from = 'activity',
+}: {
+  projectRef: string
+  batchId: string
+  from?: BatchWorkspaceSearch['from']
+}) {
+  const back = BACK_TARGETS[from ?? 'activity']
   const workspace = useBatchWorkspace(projectRef, batchId)
   const [page, setPage] = useState(1)
   const [restartOpen, setRestartOpen] = useState(false)
@@ -82,19 +99,14 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" className="size-8" asChild>
-              <Link
-                to="/projects/$projectRef/activity"
-                params={{ projectRef }}
-                search={{}}
-                aria-label="Back to Activity"
-              >
+              <Link to={back.to} params={{ projectRef }} search={{}} aria-label={back.label}>
                 <ArrowLeft className="size-4" />
               </Link>
             </Button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="font-heading text-base font-semibold tracking-tight sm:text-lg">
-                  CLI push batch
+                  {batchKindName(batch?.batch_kind)} batch
                 </h1>
                 {batch && (
                   <Badge
@@ -118,7 +130,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
               {batch && (
                 <p className="text-xs text-muted-foreground truncate">
                   {batch.actor_label} ·{' '}
-                  {batch.created_at ? formatRelativeTime(batch.created_at) : 'CLI push'}
+                  {batch.created_at ? formatRelativeTime(batch.created_at) : batchKindName(batch.batch_kind)}
                 </p>
               )}
             </div>
@@ -573,7 +585,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 <Link
                   to="/projects/$projectRef/strings"
                   params={{ projectRef }}
-                  search={{ batch_id: batchId, batch_kind: 'cli_push' }}
+                  search={{ batch_id: batchId, batch_kind: batch?.batch_kind ?? 'cli_push' }}
                 >
                   View in Strings
                 </Link>
@@ -622,7 +634,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
           void workspace.restart()
         }}
         title="Restart this workflow?"
-        description="Your temporary translations and edits will be discarded. Start again from the saved CLI push."
+        description={`Your temporary translations and edits will be discarded. Start again from the saved ${batch?.batch_kind === 'cli_push' ? 'CLI push' : 'import'}.`}
         confirmLabel="Discard and restart"
         cancelLabel="Keep reviewing"
       />

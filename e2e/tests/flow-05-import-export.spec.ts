@@ -181,7 +181,7 @@ test('import dry-run preview, cancel leaves catalog unchanged, apply then export
   await applyPreview.getByRole('button', { name: 'Apply import' }).click()
   await expect(page.getByRole('heading', { name: 'Import preview (dry run)' })).toBeHidden()
 
-  await page.getByRole('link', { name: 'Strings' }).click()
+  await page.getByRole('link', { name: 'Strings', exact: true }).click()
   await searchStrings(page, newKey)
   await expect(page.getByRole('row').filter({ hasText: newKey })).toBeVisible()
   await searchStrings(page, 'cancel')

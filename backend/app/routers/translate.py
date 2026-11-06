@@ -15,6 +15,8 @@ from app.models import Job, JobStatus, Module
 from app.schemas import (
     TranslateApplyRequest,
     TranslateApplyResult,
+    TranslatePreviewBatchRequest,
+    TranslatePreviewBatchResult,
     TranslatePreviewRequest,
     TranslatePreviewResult,
     TranslateProposalsResult,
@@ -38,6 +40,7 @@ from app.services.translate import (
     count_work,
     list_missing_page,
     parse_descriptions,
+    preview_translation_batch,
     preview_translations,
     propose_translations,
     queued_progress,
@@ -161,6 +164,33 @@ def translate_preview(
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslatePreviewResult(translations=translations, scores=scores, issues=issues)
+
+
+@router.post("/translate/preview-batch", response_model=TranslatePreviewBatchResult)
+def translate_preview_batch(
+    payload: TranslatePreviewBatchRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslatePreviewBatchResult:
+    """Translate unsaved rows (Add many paste) without writing anything."""
+    module = None
+    if payload.module_id is not None:
+        module = (
+            db.query(Module)
+            .filter(Module.id == payload.module_id, Module.project_id == project.id)
+            .first()
+        )
+        if module is None:
+            raise HTTPException(status_code=400, detail="Unknown module")
+    rows = [
+        (item.id, item.source_text, resolve_translation_locales(project, item.locales))
+        for item in payload.items
+    ]
+    try:
+        items = preview_translation_batch(project, module, rows, db)
+    except Exception as exc:
+        raise _ai_http_error(exc) from None
+    return TranslatePreviewBatchResult(items=items)
 
 
 @router.post("/translate/memory", response_model=TranslationMemoryResult)

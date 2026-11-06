@@ -209,6 +209,39 @@ export interface EditorPreview {
   fingerprint: string
 }
 
+/** One pasted key for Add many. Omit source_text for a target-language paste. */
+export interface PasteRow {
+  key: string
+  source_text?: string
+  translations?: Record<string, string>
+  translation_scores?: Record<string, number | null>
+}
+
+export interface PasteReviewRequest {
+  module_id?: string | null
+  tag_ids?: string[]
+  rows: PasteRow[]
+}
+
+export interface PasteReview {
+  items: Array<{ key: string; mode: 'create' | 'update'; entry: StringEntry }>
+  /** Catalog baseline the rows were projected from; saves are rejected when it changes. */
+  fingerprint: string
+}
+
+export interface PasteSaveRequest extends PasteReviewRequest {
+  action: 'draft' | 'publish'
+  fingerprint: string
+}
+
+export interface PasteSaveResult {
+  action: 'draft' | 'publish'
+  created: number
+  updated: number
+  published: number
+  batch_id: string
+}
+
 export interface EditorSaveRequest {
   proposal: EditorProposal
   action: 'save_draft' | 'publish'
@@ -319,6 +352,15 @@ export interface QaIssue {
   detail: Record<string, unknown> | null
 }
 
+export interface TranslatePreviewBatchRequest {
+  module_id?: string | null
+  items: Array<{ id: string; source_text: string; locales: string[] }>
+}
+
+export interface TranslatePreviewBatchResult {
+  items: Array<TranslatePreviewResult & { id: string }>
+}
+
 export interface TranslatePreviewResult {
   translations: Record<string, string>
   scores: Record<string, number>
@@ -393,6 +435,7 @@ export interface TranslateProposalsResult {
 
 export interface CliPushBatch extends PublishPreviewEntries {
   batch_id: string
+  batch_kind: string
   actor_label: string
   created_at: string | null
   created_count: number
