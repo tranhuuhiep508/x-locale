@@ -891,10 +891,7 @@ export function StringsPage() {
         modules={modules}
         tags={tags}
         onClose={() => setAddManyOpen(false)}
-        onSuccess={() => {
-          setAddManyOpen(false)
-          invalidateStrings()
-        }}
+        onSuccess={invalidateStrings}
       />
 
       <TranslateReviewDialog

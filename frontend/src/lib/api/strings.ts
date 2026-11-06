@@ -4,6 +4,12 @@ import type {
   EditorProposal,
   EditorPreview,
   EditorSaveRequest,
+  PasteReview,
+  PasteReviewRequest,
+  PasteSaveRequest,
+  PasteSaveResult,
+  TranslatePreviewBatchRequest,
+  TranslatePreviewBatchResult,
   CliPushBatch,
   CliPushPublishRequest,
   BatchRequest,
@@ -93,6 +99,10 @@ export const stringsApi = {
     api.post<EditorPreview>(`/projects/${projectId}/strings/editor-preview`, { proposal }),
   editorSave: (projectId: string, body: EditorSaveRequest) =>
     api.post<StringEntry>(`/projects/${projectId}/strings/editor-save`, body),
+  pasteReview: (projectId: string, body: PasteReviewRequest) =>
+    api.post<PasteReview>(`/projects/${projectId}/strings/paste-review`, body),
+  pasteSave: (projectId: string, body: PasteSaveRequest) =>
+    api.post<PasteSaveResult>(`/projects/${projectId}/strings/paste-save`, body),
   saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
     api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
   publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
@@ -119,6 +129,8 @@ export const stringsApi = {
     api.post<TranslateResult>(`/projects/${projectId}/translate`, body),
   translatePreview: (projectId: string, body: TranslatePreviewRequest) =>
     api.post<TranslatePreviewResult>(`/projects/${projectId}/translate/preview`, body),
+  translatePreviewBatch: (projectId: string, body: TranslatePreviewBatchRequest) =>
+    api.post<TranslatePreviewBatchResult>(`/projects/${projectId}/translate/preview-batch`, body),
   translateProposals: (projectId: string, body: TranslateRequest) =>
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/proposals`, body),
   translateMissing: (projectId: string, body: TranslateRequest) =>

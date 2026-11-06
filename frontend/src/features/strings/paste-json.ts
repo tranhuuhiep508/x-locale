@@ -1,10 +1,10 @@
 import JSON5 from 'json5'
-import type { ImportResult } from '@/lib/api/types'
+import type { PasteReview, PasteRow, StringEntry } from '@/lib/api/types'
 
-export type PasteRow = { key: string; source_text: string }
+export type ParsedPasteRow = { key: string; source_text: string }
 
 export type ParseFlatJsonResult =
-  | { ok: true; rows: PasteRow[]; map: Record<string, string>; warning?: string }
+  | { ok: true; rows: ParsedPasteRow[]; map: Record<string, string>; warning?: string }
   | { ok: false; error: string }
 
 export const PASTE_JSON_PLACEHOLDER = `{
@@ -43,7 +43,7 @@ export function parseFlatI18nJson(text: string): ParseFlatJsonResult {
   }
 
   const obj = parsed as Record<string, unknown>
-  const rows: PasteRow[] = []
+  const rows: ParsedPasteRow[] = []
   const map: Record<string, string> = {}
   for (const [rawKey, value] of Object.entries(obj)) {
     if (!rawKey.trim()) {
@@ -106,58 +106,102 @@ function duplicateKeyWarning(text: string): string | undefined {
   return `Duplicate keys (${listed}): the later value is used.`
 }
 
-export function emptyImportPreview(): ImportResult {
-  return {
-    created: 0,
-    updated: 0,
-    total: 0,
-    dry_run: true,
-    diff: {
-      create: [],
-      update: [],
-      orphan: [],
-      create_count: 0,
-      update_count: 0,
-      orphan_count: 0,
-    },
-    batch_id: null,
-  }
-}
+/** The compact review keeps every row on one screen, like the AI translation review. */
+export const PASTE_MAX_ROWS = 100
+/** Rows per AI request; larger pastes are translated in several requests. */
+export const PASTE_AI_CHUNK = 20
 
-export function jsonMapToImportFormData(
-  map: Record<string, string>,
+/** Request rows for the first preview: the pasted text is the source or one translation. */
+export function pastedRows(
+  rows: ParsedPasteRow[],
   locale: string,
-): FormData {
-  const file = new File([JSON.stringify(map)], `${locale}.json`, {
-    type: 'application/json',
+  baseLocale: string,
+): PasteRow[] {
+  return rows.map(({ key, source_text: value }) =>
+    locale === baseLocale ? { key, source_text: value } : { key, translations: { [locale]: value } },
+  )
+}
+
+/** A pasted string being reviewed in memory. Nothing is saved until Save or Publish. */
+export type PasteDraftRow = {
+  key: string
+  mode: 'create' | 'update'
+  /** Projected working copy from the latest preview, including the pasted text. */
+  entry: StringEntry
+  source: string
+  translations: Record<string, string>
+  scores: Record<string, number | null>
+}
+
+function valuesOf(entry: StringEntry): Record<string, string> {
+  return Object.fromEntries(entry.translations.map((t) => [t.locale, t.value]))
+}
+
+/**
+ * Rows from a preview. Edits from `previous` (a refresh after a stale save) are kept
+ * wherever the user changed a value away from the earlier projection.
+ */
+export function draftRowsFromReview(
+  review: PasteReview,
+  previous: PasteDraftRow[] = [],
+): PasteDraftRow[] {
+  const before = new Map(previous.map((row) => [row.key, row]))
+  return review.items.map(({ key, mode, entry }) => {
+    const translations = valuesOf(entry)
+    const scores: Record<string, number | null> = Object.fromEntries(
+      entry.translations.map((t) => [t.locale, t.confidence]),
+    )
+    let source = entry.source_text
+    const old = before.get(key)
+    if (old) {
+      const oldBaseline = valuesOf(old.entry)
+      if (old.source !== old.entry.source_text) source = old.source
+      for (const [locale, value] of Object.entries(old.translations)) {
+        if (value !== (oldBaseline[locale] ?? '')) {
+          translations[locale] = value
+          scores[locale] = old.scores[locale] ?? null
+        }
+      }
+    }
+    return { key, mode, entry, source, translations, scores }
   })
-  const formData = new FormData()
-  formData.append('file', file)
-  return formData
 }
 
-export type PasteImportParams = {
-  locale: string
-  dry_run: string
-  status: 'draft'
-  partial: string
-  module_id?: string
-  tag_ids?: string[]
+/** Request rows carrying the reviewed source and translations. The server ignores no-ops. */
+export function draftRowsToRequest(rows: PasteDraftRow[], targetLocales: string[]): PasteRow[] {
+  return rows.map((row) => {
+    const baseline = valuesOf(row.entry)
+    const translations: Record<string, string> = {}
+    const scores: Record<string, number | null> = {}
+    for (const locale of targetLocales) {
+      const value = row.translations[locale] ?? ''
+      if (!value && !baseline[locale]) continue
+      translations[locale] = value
+      if (row.scores[locale] != null) scores[locale] = row.scores[locale]
+    }
+    // Always send the source: the projection already contains pasted text, so comparing
+    // against it would drop the paste. The server ignores a source equal to the saved one.
+    const request: PasteRow = { key: row.key, source_text: row.source, translations }
+    if (Object.keys(scores).length) request.translation_scores = scores
+    return request
+  })
 }
 
-export function pasteImportParams(options: {
-  locale: string
-  dry: boolean
-  moduleId?: string
-  tagIds?: string[]
-}): PasteImportParams {
-  const params: PasteImportParams = {
-    locale: options.locale,
-    dry_run: String(options.dry),
-    status: 'draft',
-    partial: 'true',
-  }
-  if (options.moduleId) params.module_id = options.moduleId
-  if (options.tagIds && options.tagIds.length > 0) params.tag_ids = options.tagIds
-  return params
+/** Cells AI should fill: empty targets only, so pasted or reviewed text is kept. */
+export function emptyTranslationCells(
+  rows: PasteDraftRow[],
+  targetLocales: string[],
+): Array<{ id: string; source_text: string; locales: string[] }> {
+  return rows.flatMap((row) => {
+    const locales = targetLocales.filter((locale) => !(row.translations[locale] ?? '').trim())
+    return locales.length && row.source.trim()
+      ? [{ id: row.key, source_text: row.source, locales }]
+      : []
+  })
+}
+
+export function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
 }
