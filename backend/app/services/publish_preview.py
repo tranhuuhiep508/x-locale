@@ -47,26 +47,21 @@ def list_publish_preview_entries(
     )
 
 
-# Batches whose members can be reviewed, translated, and published as one workspace.
-WORKSPACE_BATCH_KINDS = (BatchKind.cli_push, BatchKind.import_, BatchKind.excel_import)
-
-
-def _batch_activities(db: Session, project: Project, batch_id: UUID, *columns):
+def _cli_push_activities(db: Session, project: Project, batch_id: UUID, *columns):
     # Columns only: full rows carry before/after JSON for every change.
     return db.query(*columns).filter(
         Activity.project_id == project.id,
         Activity.batch_id == batch_id,
-        Activity.batch_kind.in_(WORKSPACE_BATCH_KINDS),
+        Activity.batch_kind == BatchKind.cli_push,
     )
 
 
 def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatchOut:
     activities = (
-        _batch_activities(
+        _cli_push_activities(
             db,
             project,
             batch_id,
-            Activity.batch_kind,
             Activity.string_id,
             Activity.event_type,
             Activity.actor_label,
@@ -76,7 +71,7 @@ def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatc
         .all()
     )
     if not activities:
-        raise HTTPException(404, detail="Batch not found")
+        raise HTTPException(404, detail="CLI push batch not found")
     members = {item.string_id for item in activities if item.string_id is not None}
     created = {item.string_id for item in activities if item.event_type == "string.created"}
     entries = load_string_entries(db, project.id, list(members))
@@ -86,7 +81,6 @@ def cli_push_batch(db: Session, project: Project, batch_id: UUID) -> CliPushBatc
         items=[serialize_string(entry) for entry in active],
         fingerprint=compute_publish_fingerprint(active, include_unchanged=True),
         batch_id=batch_id,
-        batch_kind=BatchKind(activities[0].batch_kind).value,
         actor_label=activities[0].actor_label,
         created_at=activities[0].created_at,
         created_count=len(created),
@@ -103,15 +97,17 @@ def save_cli_push_batch(
     def write() -> BatchResult:
         lock_publication(db, project.id)
         db.refresh(project, with_for_update={"read": True})
-        activities = _batch_activities(db, project, batch_id, Activity.string_id).distinct().all()
+        activities = (
+            _cli_push_activities(db, project, batch_id, Activity.string_id).distinct().all()
+        )
         if not activities:
-            raise HTTPException(404, detail="Batch not found")
+            raise HTTPException(404, detail="CLI push batch not found")
         ids = sorted({row[0] for row in activities if row[0] is not None})
         lock_strings(db, project.id, ids)
         entries = load_string_entries(db, project.id, ids, refresh=True)
         active = [entry for entry in entries if not entry.deleted_at and not entry.pending_delete]
         active.sort(key=lambda entry: (entry.key, str(entry.id)))
-        # Validate provenance even for an empty batch; only reviewable batch kinds resolve.
+        # Validate provenance even for an empty batch; never accept a generic import id.
         current_fingerprint = compute_publish_fingerprint(active, include_unchanged=True)
         if not fingerprints_match(current_fingerprint, payload.fingerprint):
             raise HTTPException(409, detail={"code": PUBLISH_FINGERPRINT_MISMATCH})
@@ -120,7 +116,9 @@ def save_cli_push_batch(
         for item in payload.items:
             entry = by_id.get(item.string_id)
             if entry is None or item.string_id in seen:
-                raise HTTPException(400, detail="Translations must belong to this active batch")
+                raise HTTPException(
+                    400, detail="Translations must belong to this active CLI push batch"
+                )
             seen.add(item.string_id)
             if entry.source_text != item.expected_source_text:
                 raise HTTPException(409, detail={"code": PUBLISH_FINGERPRINT_MISMATCH})

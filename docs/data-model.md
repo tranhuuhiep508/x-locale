@@ -250,23 +250,15 @@ current queue page; paging stays blocked until that page is saved or its edits a
 undone, so no action spans unreviewed pages.
 
 
-## Batch workspace (CLI push and import batches)
+## CLI push batch workspace
 
-New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports and
-Add many saves keep `import`/`excel_import`. Historical batches are not reclassified.
-The endpoint `GET /api/projects/{project_id}/cli-push-batches/{batch_id}` (the path
-keeps its original name) resolves unique activity members within the project for
-`cli_push`, `import`, and `excel_import` batches. It returns metadata including
-`batch_kind`, active working/published rows, excluded lifecycle counts, and the
-existing publication fingerprint. An unknown or other-project batch, another batch
-kind (translate, publication, revert), a dry run, or a no-op import returns 404; an
-entirely excluded batch returns an empty review.
-
-Import / Export keeps the `batch_id` of a successful import (direct or background
-job) and links to this workspace for that exact batch. For import batches,
-Translate all requests proposals with `overwrite=false`, so saved target values
-(pasted translations or earlier reviews) are skipped; CLI pushes still regenerate
-every target. No additional workflow state or schema migration is required.
+New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports keep
+`import`/`excel_import`. Historical batches are not reclassified. The endpoint
+`GET /api/projects/{project_id}/cli-push-batches/{batch_id}` resolves unique activity
+members within the project and returns metadata, active working/published rows,
+excluded lifecycle counts, and the existing publication fingerprint. An unknown,
+other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
+empty review. No additional workflow state or schema migration is required.
 
 The dashboard automatically translates all configured project target languages
 (excluding the base language), with no language picker. The stepper shows Translate,

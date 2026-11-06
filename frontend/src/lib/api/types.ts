@@ -435,7 +435,6 @@ export interface TranslateProposalsResult {
 
 export interface CliPushBatch extends PublishPreviewEntries {
   batch_id: string
-  batch_kind: string
   actor_label: string
   created_at: string | null
   created_count: number

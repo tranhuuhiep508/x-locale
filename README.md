@@ -199,7 +199,7 @@ commit client IDs or secrets.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `loc pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Shared editing:** the string dialog sends only changed fields and locales, with their original values in `expected`. Unrelated edits merge; competing changes return `409` with `detail.code=stale_editor_save`, conflicting field names, and the current string. No part of a conflicting save is applied. The dialog retains input and lets you use the latest conflicting values or keep your changes for another checked save. PATCH accepts an `expected` object matching the changed fields; locale PUT accepts the original text as `expected` (empty text is `""`). Comparisons and writes share a transaction with row locks. Existing API callers that omit `expected` retain unconditional write behavior.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
-- **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string. **Review this batch** opens the batch workspace for CLI push, import, and Excel import cards, and the catalog at `?batch_id=` for translate cards. That filter AND-composes with the other string filters and, unlike the default catalog, includes soft-deleted members of the batch. No catalog filter is dropped when `batch_id` is set.
+- **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string. **Review this batch** opens the catalog at `?batch_id=` for import, Excel import, and translate cards. That filter AND-composes with the other string filters and, unlike the default catalog, includes soft-deleted members of the batch. No catalog filter is dropped when `batch_id` is set.
 
 More detail: [docs/](docs/).
 
@@ -217,7 +217,8 @@ and keep you on the batch screen; **View in Strings** opens the catalog filtered
 to this CLI push batch. Leaving or reloading discards only unsaved progress.
 
 This is the default workflow for new CLI push batches, with no automation setting.
-CLI commands and configuration are unchanged. Deleted and pending-delete
+CLI commands/configuration and dashboard import/catalog workflows are unchanged.
+Older import batches retain their catalog review links. Deleted and pending-delete
 strings are excluded from this workspace. Competing edits require renewed review;
 generation or save failures never publish content.
 
@@ -234,16 +235,6 @@ which shows the complete proposed public content of every pasted string before
 discarding. Each save is one undoable `import` audit batch; a catalog change made
 elsewhere after the preview rejects the save, refreshes the list, and keeps your edits.
 Larger files stay on Import / Export.
-
-### Continue after a file import
-
-After **Import / Export** saves strings, the page offers **Review & publish batch**
-(the batch workspace above, for exactly that import batch) and **View in Strings**.
-Imports never publish: the imported values stay saved in the working copy even if you
-leave the review. In the workspace, **Translate all** fills only empty target cells for
-import batches. Save as draft and Publish batch are separate actions with their own
-audit batch, so import Undo and publication Undo stay independent. Dry runs and
-imports that change nothing offer no review.
 
 ### String filters
 

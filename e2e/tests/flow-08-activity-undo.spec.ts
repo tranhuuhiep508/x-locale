@@ -36,7 +36,7 @@ test('activity undo reverts a batch import', async ({ page }) => {
   await preview.getByRole('button', { name: 'Apply import' }).click()
   await expect(preview).toBeHidden()
 
-  await page.getByRole('link', { name: 'Strings', exact: true }).click()
+  await page.getByRole('link', { name: 'Strings' }).click()
   await searchStrings(page, importKey)
   await expect(page.getByRole('row').filter({ hasText: importKey })).toBeVisible()
 
@@ -51,7 +51,7 @@ test('activity undo reverts a batch import', async ({ page }) => {
   await confirm.getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByText(/Restored \d+ strings/)).toBeVisible()
 
-  await page.getByRole('link', { name: 'Strings', exact: true }).click()
+  await page.getByRole('link', { name: 'Strings' }).click()
   await searchStrings(page, importKey)
   await expect(page.getByRole('row').filter({ hasText: importKey })).toHaveCount(0)
 })

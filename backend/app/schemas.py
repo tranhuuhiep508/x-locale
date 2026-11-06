@@ -506,7 +506,6 @@ class PublishPreviewEntriesOut(BaseModel):
 
 class CliPushBatchOut(PublishPreviewEntriesOut):
     batch_id: UUID
-    batch_kind: str
     actor_label: str
     created_at: UtcDateTime | None
     created_count: int

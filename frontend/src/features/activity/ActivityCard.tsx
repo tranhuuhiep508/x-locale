@@ -14,7 +14,6 @@ import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change
 import { batchActivitiesQuery } from '@/lib/queries'
 import { Spinner } from '@/components/ui/spinner'
 import { reviewBatchTarget } from '@/features/activity/review-batch'
-import { opensBatchWorkspace } from '@/features/batches/batch-kind'
 import { batchKindLabel, eventTypeLabel } from '@/features/activity/event-type-labels'
 import { formatRelativeTime } from '@/lib/utils'
 
@@ -273,10 +272,9 @@ export function ActivityCard({
         ) : null}
         {reviewBatch ? (
           <Button variant="ghost" size="sm" asChild>
-            {opensBatchWorkspace(reviewBatch.batchKind) ? (
+            {reviewBatch.batchKind === 'cli_push' ? (
               <Link to="/projects/$projectRef/batches/$batchId"
-                params={{ projectRef: projectId, batchId: reviewBatch.batchId }}
-                search={{}}>
+                params={{ projectRef: projectId, batchId: reviewBatch.batchId }}>
                 Review this batch
               </Link>
             ) : (

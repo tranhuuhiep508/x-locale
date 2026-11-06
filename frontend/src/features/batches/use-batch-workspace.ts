@@ -165,15 +165,9 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.data])
 
-  // CLI pushes regenerate every target; imports keep saved (pasted or reviewed) target values.
-  const overwrite = query.data?.batch_kind === 'cli_push'
   const remaining = (query.data?.items ?? []).flatMap((entry) =>
     locales
-      .filter(
-        (locale) =>
-          !drafts[`${entry.id}:${locale}`] &&
-          (overwrite || !entry.translations.find((t) => t.locale === locale)?.value.trim())
-      )
+      .filter((locale) => !drafts[`${entry.id}:${locale}`])
       .map((locale) => `${entry.id}:${locale}`)
   )
   const unresolved = generationStarted ? remaining : []
@@ -194,7 +188,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         batch_id: batchId,
         deleted: false,
         pending_delete: false,
-        overwrite,
+        overwrite: true,
         locales,
         exclude_cells: Object.fromEntries(
           (query.data?.items ?? []).flatMap((entry) => {
