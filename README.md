@@ -119,7 +119,8 @@ Existing `/health` and `/api/health` endpoints remain basic process checks.
 
 ## CLI
 
-Install the CLI directly from your Git host (Git and Python 3.10+ are required):
+Install the CLI directly from your Git host (Git and Python 3.9+ are required;
+without uv, see [Install with pip](cli/README.md#install-with-pip-python-39-no-uv)):
 
 ```bash
 uv tool install 'git+<repository-url>#subdirectory=cli'
