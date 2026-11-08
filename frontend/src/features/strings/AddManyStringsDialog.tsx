@@ -37,13 +37,17 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
+  aiTargetCells,
+  cellId,
   chunk,
   draftRowsFromReview,
   draftRowsToRequest,
-  emptyTranslationCells,
+  isBlankJsonObject,
   parseFlatI18nJson,
   PASTE_AI_CHUNK,
   PASTE_JSON_PLACEHOLDER,
+  PASTE_JSON_TEMPLATE,
+  PASTE_JSON_TEMPLATE_CARET,
   PASTE_MAX_ROWS,
   pastedRows,
   type PasteDraftRow,
@@ -52,11 +56,18 @@ import {
   isPublishFingerprintMismatch,
   publicationErrorMessage,
 } from '@/features/strings/publish-preview'
+import { describedByFor, QA_APPLY_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
+import type { QaBaseline, QaView } from '@/features/strings/qa-issues'
 import { TranslatePublishReview } from '@/features/strings/TranslatePublishReview'
+import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { TranslateStepper } from '@/features/strings/TranslateReviewDialog'
 import { useToast } from '@/lib/toast'
 
 const NONE_MODULE = '__none__'
+
+const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
+
+const qaId = cellId
 
 type Stage = 'paste' | 'edit' | 'review' | 'done'
 
@@ -91,7 +102,7 @@ export function AddManyStringsDialog({
   modules: Module[]
   tags: Tag[]
   onClose: () => void
-  /** Refresh after a save; the dialog stays open on its confirmation. */
+  /** Refresh after a save. A draft save stays open on its confirmation; a publish closes. */
   onSuccess: () => void
 }) {
   const toast = useToast()
@@ -101,7 +112,7 @@ export function AddManyStringsDialog({
   const localeOptions = [baseLocale, ...targetLocales]
 
   const [stage, setStage] = useState<Stage>('paste')
-  const [text, setText] = useState('')
+  const [text, setText] = useState(PASTE_JSON_TEMPLATE)
   const [parseError, setParseError] = useState<string | null>(null)
   const [parseWarning, setParseWarning] = useState<string | null>(null)
   const [chosenLocale, setChosenLocale] = useState('')
@@ -121,6 +132,10 @@ export function AddManyStringsDialog({
   const [saved, setSaved] = useState<PasteSaveResult | null>(null)
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // QA already returned with an AI translation, so that cell is not re-checked.
+  const [qaSeeds, setQaSeeds] = useState<Record<string, QaBaseline>>({})
+  // Cells AI filled and the user has not edited since; Generate may replace them again.
+  const [aiCells, setAiCells] = useState<ReadonlySet<string>>(new Set())
   const session = useRef(0)
 
   const locale = localeOptions.includes(chosenLocale) ? chosenLocale : baseLocale
@@ -139,7 +154,7 @@ export function AddManyStringsDialog({
   function resetAll() {
     session.current += 1
     setStage('paste')
-    setText('')
+    setText(PASTE_JSON_TEMPLATE)
     setParseError(null)
     setParseWarning(null)
     setChosenLocale('')
@@ -153,6 +168,8 @@ export function AddManyStringsDialog({
     setReview(null)
     setSaved(null)
     setAiProgress(null)
+    setQaSeeds({})
+    setAiCells(new Set())
   }
 
   const previewMut = useMutation({
@@ -193,15 +210,19 @@ export function AddManyStringsDialog({
     mutationFn: (request: Parameters<typeof stringsApi.pasteSave>[1]) =>
       stringsApi.pasteSave(projectId, request),
     onSuccess: (result) => {
+      onSuccess()
+      if (result.action === 'publish') {
+        toast.success(
+          `Saved and published ${result.published} ${result.published === 1 ? 'string' : 'strings'}`
+        )
+        resetAll()
+        onClose()
+        return
+      }
       session.current += 1
       setSaved(result)
       setStage('done')
-      onSuccess()
-      toast.success(
-        result.action === 'publish'
-          ? `Saved and published ${result.created + result.updated} strings`
-          : `Saved ${result.created + result.updated} strings as draft`
-      )
+      toast.success(`Saved ${result.created + result.updated} strings as draft`)
     },
     onError: (e) => {
       if (isPublishFingerprintMismatch(e)) refreshAfterConflict()
@@ -243,7 +264,8 @@ export function AddManyStringsDialog({
   }
 
   async function generateTranslations() {
-    const cells = emptyTranslationCells(rows, targetLocales)
+    const replaceable = aiCells
+    const cells = aiTargetCells(rows, targetLocales, replaceable)
     if (!cells.length) return
     const run = session.current
     const total = cells.length
@@ -258,22 +280,38 @@ export function AddManyStringsDialog({
         if (session.current !== run) return
         const requested = new Map(items.map((item) => [item.id, item]))
         const byKey = new Map(result.items.map((item) => [item.id, item]))
+        const seeds: Record<string, QaBaseline> = {}
+        for (const item of result.items) {
+          const asked = requested.get(item.id)
+          if (!asked) continue
+          for (const cell of asked.locales) {
+            const text = item.translations[cell]
+            if (text === undefined || !item.issues || !(cell in item.issues)) continue
+            seeds[qaId(item.id, cell)] = { source: asked.source_text, text, issues: item.issues[cell] }
+          }
+        }
+        setQaSeeds((previous) => ({ ...previous, ...seeds }))
+        const filled: string[] = []
         setRows((previous) =>
           previous.map((row) => {
             const item = byKey.get(row.key)
             const asked = requested.get(row.key)
-            // Drop results for a source edited meanwhile; never replace text typed meanwhile.
+            // Drop results for a source edited meanwhile; never replace pasted or typed text.
             if (!item || !asked || asked.source_text !== row.source) return row
             const translations = { ...row.translations }
             const scores = { ...row.scores }
             for (const [cell, value] of Object.entries(item.translations)) {
-              if (!asked.locales.includes(cell) || (translations[cell] ?? '').trim()) continue
+              if (!asked.locales.includes(cell)) continue
+              const id = cellId(row.key, cell)
+              if ((translations[cell] ?? '').trim() && !replaceable.has(id)) continue
               translations[cell] = value
               scores[cell] = item.scores[cell] ?? null
+              filled.push(id)
             }
             return { ...row, translations, scores }
           })
         )
+        setAiCells((previous) => new Set([...previous, ...filled]))
         done += items.length
         setAiProgress({ done, total })
       }
@@ -293,14 +331,25 @@ export function AddManyStringsDialog({
   const aiBusy = aiProgress !== null
   const busy = previewMut.isPending || reviewMut.isPending || saveMut.isPending || aiBusy
   const hasWork = stage === 'edit' || stage === 'review'
-  const missingCells = emptyTranslationCells(rows, targetLocales).reduce(
+  const missingCells = aiTargetCells(rows, targetLocales).reduce(
     (n, item) => n + item.locales.length,
     0
   )
+  const aiTargets = aiTargetCells(rows, targetLocales, aiCells).length
   const anyTranslation = rows.some((row) =>
     targetLocales.some((cell) => (row.translations[cell] ?? '').trim())
   )
   const currentStep = stage === 'review' ? 2 : anyTranslation ? 1 : 0
+  const qaRows: QaWatchRow[] = rows.flatMap((row) =>
+    targetLocales.map((cell) => ({
+      id: qaId(row.key, cell),
+      locale: cell,
+      source: row.source,
+      text: row.translations[cell] ?? '',
+      baseline: qaSeeds[qaId(row.key, cell)] ?? { source: row.source, text: '' },
+    }))
+  )
+  const qa = useQaWatch(projectId, qaRows, open && stage === 'edit' && !aiBusy)
 
   function requestClose() {
     if (busy) return
@@ -374,14 +423,32 @@ export function AddManyStringsDialog({
                     if (parseError) setParseError(null)
                     if (parseWarning) setParseWarning(null)
                   }}
+                  onFocus={(e) => {
+                    if (text !== PASTE_JSON_TEMPLATE) return
+                    const field = e.currentTarget
+                    // After the click places the caret, move it inside the braces.
+                    requestAnimationFrame(() =>
+                      field.setSelectionRange(PASTE_JSON_TEMPLATE_CARET, PASTE_JSON_TEMPLATE_CARET)
+                    )
+                  }}
+                  onPaste={(e) => {
+                    // A whole object pasted into the empty braces replaces them.
+                    const pastedText = e.clipboardData.getData('text')
+                    if (!isBlankJsonObject(text) || !pastedText.trim().startsWith('{')) return
+                    e.preventDefault()
+                    setText(pastedText)
+                    if (parseError) setParseError(null)
+                    if (parseWarning) setParseWarning(null)
+                  }}
                   spellCheck={false}
                   autoComplete="off"
                   placeholder={PASTE_JSON_PLACEHOLDER}
                   aria-invalid={parseError ? true : undefined}
                 />
                 <FieldDescription>
-                  Up to {PASTE_MAX_ROWS} keys with string values. Nested objects, arrays, and larger
-                  files stay on Import / Export.
+                  One <code className="font-mono">"key": "value"</code> per line, at most{' '}
+                  {PASTE_MAX_ROWS} keys. Nested objects, arrays, and larger files stay on Import /
+                  Export.
                 </FieldDescription>
                 <FieldError>{parseError}</FieldError>
               </Field>
@@ -512,14 +579,16 @@ export function AddManyStringsDialog({
                   {aiProgress
                     ? `Generating translations… ${aiProgress.done}/${aiProgress.total} strings`
                     : missingCells
-                      ? `${missingCells} empty ${missingCells === 1 ? 'translation' : 'translations'}. AI fills only empty languages.`
-                      : 'Every translation is filled. Review, then save.'}
+                      ? `${missingCells} empty ${missingCells === 1 ? 'translation' : 'translations'}. AI fills empty languages and can redo its own; it never replaces your text.`
+                      : aiTargets
+                        ? 'Every translation is filled. Generate again to redo AI translations you have not edited.'
+                        : 'Every translation is filled. Review, then save.'}
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={busy || missingCells === 0}
+                  disabled={busy || aiTargets === 0}
                   onClick={() => void generateTranslations()}
                   className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
                 >
@@ -570,32 +639,54 @@ export function AddManyStringsDialog({
                             {row.source}
                           </p>
                         )}
-                        {targetLocales.map((cell) => (
-                          <div key={cell} className="flex items-start gap-2">
-                            <span className="mt-2 w-8 shrink-0 font-mono text-[11px] font-bold uppercase text-muted-foreground">
-                              {cell}
-                            </span>
-                            <Textarea
-                              aria-label={`${cell.toUpperCase()} translation for ${row.key}`}
-                              className="min-h-10 flex-1 resize-none text-sm"
-                              rows={1}
-                              value={row.translations[cell] ?? ''}
-                              disabled={busy}
-                              placeholder={`Translation for ${cell}…`}
-                              onChange={(e) => {
-                                const value = e.target.value
-                                editRow(row.key, (r) => ({
-                                  ...r,
-                                  translations: { ...r.translations, [cell]: value },
-                                  scores: { ...r.scores, [cell]: null },
-                                }))
-                              }}
-                            />
-                            <span className="mt-2 shrink-0">
-                              <ConfidenceBadge score={row.scores[cell] ?? undefined} />
-                            </span>
-                          </div>
-                        ))}
+                        {targetLocales.map((cell) => {
+                          const view = qa[qaId(row.key, cell)] ?? UNCHECKED
+                          const issuesId = `qa-paste-${row.key}-${cell}`
+                          return (
+                            <div key={cell} className="flex items-start gap-2" data-qa-status={view.status}>
+                              <span className="mt-2 w-8 shrink-0 font-mono text-[11px] font-bold uppercase text-muted-foreground">
+                                {cell}
+                              </span>
+                              <Textarea
+                                aria-label={`${cell.toUpperCase()} translation for ${row.key}`}
+                                className="min-h-10 flex-1 resize-none text-sm"
+                                rows={1}
+                                value={row.translations[cell] ?? ''}
+                                disabled={busy}
+                                placeholder={`Translation for ${cell}…`}
+                                aria-describedby={describedByFor(view, issuesId)}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  editRow(row.key, (r) => ({
+                                    ...r,
+                                    translations: { ...r.translations, [cell]: value },
+                                    scores: { ...r.scores, [cell]: null },
+                                  }))
+                                  // An edited cell is the user's text now; AI won't redo it.
+                                  setAiCells((previous) => {
+                                    const id = cellId(row.key, cell)
+                                    if (!previous.has(id)) return previous
+                                    const next = new Set(previous)
+                                    next.delete(id)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span className="mt-2 shrink-0">
+                                <ConfidenceBadge score={row.scores[cell] ?? undefined} />
+                              </span>
+                              <span className="mt-1.5 shrink-0">
+                                <QaLocaleBadge
+                                  view={view}
+                                  locale={cell}
+                                  footer={QA_APPLY_FOOTER}
+                                  id={issuesId}
+                                  showClean={false}
+                                />
+                              </span>
+                            </div>
+                          )
+                        })}
                       </div>
                     </li>
                   )
@@ -662,6 +753,8 @@ export function AddManyStringsDialog({
                   session.current += 1
                   setStage('paste')
                   setRows([])
+                  setAiCells(new Set())
+                  setQaSeeds({})
                 }}
               >
                 Back

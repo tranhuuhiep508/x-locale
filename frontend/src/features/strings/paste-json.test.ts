@@ -4,7 +4,7 @@ import {
   chunk,
   draftRowsFromReview,
   draftRowsToRequest,
-  emptyTranslationCells,
+  aiTargetCells,
   parseFlatI18nJson,
   pastedRows,
 } from './paste-json'
@@ -247,7 +247,7 @@ describe('paste review rows', () => {
     ])
   })
 
-  it('asks AI only for empty cells', () => {
+  it('asks AI only for empty or AI-filled cells', () => {
     const rows = draftRowsFromReview({
       fingerprint: 'f',
       items: [
@@ -255,8 +255,13 @@ describe('paste review rows', () => {
         { key: 'b', mode: 'create', entry: entry('b', 'B', { en: 'x', ja: 'y' }) },
       ],
     })
-    expect(emptyTranslationCells(rows, ['en', 'ja'])).toEqual([
+    expect(aiTargetCells(rows, ['en', 'ja'])).toEqual([
       { id: 'a', source_text: 'A', locales: ['ja'] },
+    ])
+    // Cells AI filled earlier (and not edited since) can be generated again.
+    expect(aiTargetCells(rows, ['en', 'ja'], new Set(['b:ja']))).toEqual([
+      { id: 'a', source_text: 'A', locales: ['ja'] },
+      { id: 'b', source_text: 'B', locales: ['ja'] },
     ])
     expect(chunk([1, 2, 3], 2)).toEqual([[1, 2], [3]])
   })

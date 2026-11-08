@@ -52,7 +52,7 @@ vi.mock('@/lib/api/catalog', () => ({
 }))
 
 vi.mock('@/lib/api/strings', () => ({
-  stringsApi: { pasteReview: vi.fn(), pasteSave: vi.fn(), translatePreviewBatch: vi.fn() },
+  stringsApi: { pasteReview: vi.fn(), pasteSave: vi.fn(), translatePreviewBatch: vi.fn(), translateQa: vi.fn() },
 }))
 
 const project: Project = {
@@ -177,6 +177,7 @@ describe('AddManyStringsDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     polyfillPointer()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({ locale: 'en', issues: [] })
   })
 
   it('previews pasted rows in place without saving anything', async () => {
@@ -199,6 +200,34 @@ describe('AddManyStringsDialog', () => {
     expect(textbox('EN translation for save').value).toBe('Save')
     expect(textbox('EN translation for e2e_new').value).toBe('')
     expect(stringsApi.pasteSave).not.toHaveBeenCalled()
+  })
+
+  it('starts with empty braces so only key/value lines are needed', async () => {
+    renderDialog()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    expect(field.value).toBe('{\n  \n}')
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
+    fireEvent.change(field, { target: { value: '{\n  "save": "Lưu lại"\n}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await waitFor(() => expect(stringsApi.pasteReview).toHaveBeenCalled())
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[0][1].rows).toEqual([
+      { key: 'save', source_text: 'Lưu lại' },
+    ])
+  })
+
+  it('replaces the empty braces when a whole object is pasted', () => {
+    renderDialog()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    fireEvent.paste(field, { clipboardData: { getData: () => '{"save": "Lưu lại"}' } })
+    expect(field.value).toBe('{"save": "Lưu lại"}')
+  })
+
+  it('keeps the browser paste once the braces have content', () => {
+    renderDialog()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    fireEvent.change(field, { target: { value: '{\n  "a": "b"\n}' } })
+    fireEvent.paste(field, { clipboardData: { getData: () => '{"save": "x"}' } })
+    expect(field.value).toBe('{\n  "a": "b"\n}')
   })
 
   it.each([
@@ -248,6 +277,91 @@ describe('AddManyStringsDialog', () => {
     expect(stringsApi.pasteSave).not.toHaveBeenCalled()
   })
 
+  it('checks edited translations with Smart QA without blocking save', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({
+      locale: 'en',
+      issues: [{
+        code: 'placeholder_missing',
+        severity: 'error',
+        message: 'Missing placeholder {n}.',
+        start: null,
+        end: null,
+        detail: null,
+      }],
+    })
+    fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
+    const badge = await screen.findByRole('button', { name: /QA for en: 1 error/ }, { timeout: 2000 })
+    expect(stringsApi.translateQa).toHaveBeenCalledWith('proj-1', {
+      source_text: 'Mới',
+      translation: 'New',
+      locale: 'en',
+    })
+    expect(badge).toBeTruthy()
+    expect(textbox('EN translation for e2e_new').getAttribute('aria-describedby')).toBe('qa-paste-e2e_new-en')
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('uses QA returned with AI translations instead of re-checking', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translateQa).mockClear()
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存' }, scores: {}, issues: { ja: [] } },
+        {
+          id: 'e2e_new',
+          translations: { en: 'New', ja: '新規' },
+          scores: {},
+          issues: {
+            en: [{ code: 'x', severity: 'warning', message: 'Check casing.', start: null, end: null, detail: null }],
+            ja: [],
+          },
+        },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    expect(await screen.findByRole('button', { name: /QA for en: 1 warning/ })).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    const checked = vi.mocked(stringsApi.translateQa).mock.calls.map(([, body]) => body.translation)
+    expect(checked).not.toContain('New')
+    expect(checked).not.toContain('保存')
+  })
+
+  it('keeps Generate with AI available and redoes only AI cells the user has not edited', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存' }, scores: {} },
+        { id: 'e2e_new', translations: { en: 'New', ja: '新規' }, scores: {} },
+      ],
+    })
+    const generate = screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement
+    fireEvent.click(generate)
+    await waitFor(() => expect(textbox('JA translation for save').value).toBe('保存'))
+    await waitFor(() => expect(generate.disabled).toBe(false))
+
+    fireEvent.change(textbox('JA translation for e2e_new'), { target: { value: 'Mine' } })
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存2' }, scores: {} },
+        { id: 'e2e_new', translations: { en: 'New 2' }, scores: {} },
+      ],
+    })
+    fireEvent.click(generate)
+    await waitFor(() => expect(textbox('JA translation for save').value).toBe('保存2'))
+    expect(vi.mocked(stringsApi.translatePreviewBatch).mock.calls[1][1].items).toEqual([
+      { id: 'save', source_text: 'Lưu lại', locales: ['ja'] },
+      { id: 'e2e_new', source_text: 'Mới', locales: ['en'] },
+    ])
+    expect(textbox('EN translation for e2e_new').value).toBe('New 2')
+    expect(textbox('JA translation for e2e_new').value).toBe('Mine')
+    expect(textbox('EN translation for save').value).toBe('Save')
+    expect(generate.disabled).toBe(false)
+  })
+
   it('saves as draft, stays open, and offers the saved batch in Strings', async () => {
     const { onSuccess, onClose } = renderDialog()
     await previewed()
@@ -273,8 +387,8 @@ describe('AddManyStringsDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('reviews the full public state, then publishes exactly the reviewed rows', async () => {
-    renderDialog()
+  it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {
+    const { onSuccess, onClose } = renderDialog()
     await previewed()
     fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
     vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce({ ...reviewed, fingerprint: 'fp-review' })
@@ -283,7 +397,9 @@ describe('AddManyStringsDialog', () => {
     expect(screen.queryByRole('list', { name: 'Pasted strings' })).toBeNull()
     vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, action: 'publish', published: 2 })
     fireEvent.click(publish)
-    expect(await screen.findByText('Saved and published 2 strings')).toBeTruthy()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings')
     const request = vi.mocked(stringsApi.pasteSave).mock.calls[0][1]
     expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-review' })
     expect(request.rows[1]).toEqual({ key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } })

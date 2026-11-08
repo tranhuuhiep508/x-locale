@@ -128,12 +128,11 @@ test('add many target-language paste: AI fills empty cells, review, then publish
   await dialog.getByRole('button', { name: 'Review & publish' }).click()
   await expect(dialog.getByText('Hello friend').first()).toBeVisible()
   await dialog.getByRole('button', { name: 'Publish', exact: true }).click()
-  await expect(dialog.getByText('Saved and published 2 strings')).toBeVisible()
+  // Publish closes the dialog and confirms with a toast.
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Saved and published 2 strings' })).toBeVisible()
+  await expect(dialog).toBeHidden()
 
   const afterPublish = await (await page.request.get(`${root}/export?stage=public&locale=en`)).json()
   expect(afterPublish.en.hello).toBe('Hello friend')
   expect(afterPublish.en.bye).toBe('Bye')
-
-  await dialog.getByRole('link', { name: 'View in Strings' }).click()
-  await expect(page).toHaveURL((url) => url.searchParams.get('batch_kind') === 'import')
 })

@@ -12,6 +12,16 @@ export const PASTE_JSON_PLACEHOLDER = `{
   "welcome.cta": "Continue"
 }`
 
+/** Prefilled so users type or paste only the key/value lines. */
+export const PASTE_JSON_TEMPLATE = '{\n  \n}'
+/** Caret position inside the template's empty line. */
+export const PASTE_JSON_TEMPLATE_CARET = 4
+
+/** True while the box holds only braces and whitespace, i.e. nothing typed yet. */
+export function isBlankJsonObject(text: string): boolean {
+  return /^\s*\{\s*\}\s*$/.test(text)
+}
+
 function valueTypeLabel(value: unknown): string {
   if (value === null) return 'null'
   if (Array.isArray(value)) return 'array'
@@ -188,12 +198,24 @@ export function draftRowsToRequest(rows: PasteDraftRow[], targetLocales: string[
 }
 
 /** Cells AI should fill: empty targets only, so pasted or reviewed text is kept. */
-export function emptyTranslationCells(
+/** Identifies one translation cell of a pasted row. */
+export function cellId(key: string, locale: string): string {
+  return `${key}:${locale}`
+}
+
+/**
+ * Cells AI may fill: empty ones, plus cells AI filled earlier that the user has not edited
+ * (`aiCells`), so Generate can run again. Pasted and typed text is never sent.
+ */
+export function aiTargetCells(
   rows: PasteDraftRow[],
   targetLocales: string[],
+  aiCells: ReadonlySet<string> = new Set(),
 ): Array<{ id: string; source_text: string; locales: string[] }> {
   return rows.flatMap((row) => {
-    const locales = targetLocales.filter((locale) => !(row.translations[locale] ?? '').trim())
+    const locales = targetLocales.filter(
+      (locale) => !(row.translations[locale] ?? '').trim() || aiCells.has(cellId(row.key, locale)),
+    )
     return locales.length && row.source.trim()
       ? [{ id: row.key, source_text: row.source, locales }]
       : []
