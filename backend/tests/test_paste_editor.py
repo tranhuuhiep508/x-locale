@@ -181,6 +181,31 @@ def test_publication_failure_rolls_back_every_row(client):
     assert client.get(f"{root}/activities").json()["total"] == before
 
 
+def test_duplicate_keys_match_only_the_chosen_module(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    assert client.patch(root, json={"allow_duplicate_keys": True}).status_code == 200
+    auth, home = (
+        client.post(f"{root}/modules", json={"slug": slug, "name": slug}).json()["id"]
+        for slug in ("auth", "home")
+    )
+    owner = client.post(
+        f"{root}/strings", json={"key": "title", "module_id": auth, "source_text": "Auth"}
+    ).json()
+    rows = [{"key": "title", "source_text": "Home"}]
+    result = review(client, pid, rows, module_id=home)
+    assert result["items"][0]["mode"] == "create"
+    response = save(client, pid, rows, result["fingerprint"], module_id=home)
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 1
+    assert client.get(f"{root}/strings/{owner['id']}").json()["source_text"] == "Auth"
+    titles = [s for s in client.get(f"{root}/strings").json()["items"] if s["key"] == "title"]
+    assert {(s["module_id"], s["source_text"]) for s in titles} == {(auth, "Auth"), (home, "Home")}
+    # The same paste into the owner's module updates it in place.
+    result = review(client, pid, [{"key": "title", "source_text": "Auth 2"}], module_id=auth)
+    assert result["items"][0]["mode"] == "update"
+
+
 def test_request_validation(client):
     pid = make_project(client)["id"]
     url = f"/api/projects/{pid}/strings/paste-review"

@@ -65,16 +65,23 @@ def _review_state(entry: StringOut | None) -> dict | None:
 
 
 def _preview(
-    db: Session, project: Project, proposal: EditorProposal, *, locked: bool
+    db: Session,
+    project: Project,
+    proposal: EditorProposal,
+    *,
+    locked: bool,
+    entry: StringEntry | None = None,
 ) -> EditorPreviewOut:
+    """``entry``: the update's string, already loaded (and locked) by the caller."""
     values = proposal.values
     strings.validate_locales(project, values.translations)
     if proposal.mode == "update":
-        entry = (
-            strings._locked_editor_entry(db, project.id, proposal.string_id)
-            if locked
-            else strings.get_string(db, project.id, proposal.string_id)
-        )
+        if entry is None:
+            entry = (
+                strings._locked_editor_entry(db, project.id, proposal.string_id)
+                if locked
+                else strings.get_string(db, project.id, proposal.string_id)
+            )
         strings._check_editor_expected(entry, StringUpdate(**values.model_dump(exclude_unset=True)))
         current = strings.serialize_string(entry)
         projected = current.model_copy(deep=True)
@@ -281,7 +288,7 @@ def _paste_review(db: Session, project: Project, payload: PasteReviewRequest, *,
         entry = entries.get(owner_ids.get(row.key))
         proposal = _paste_proposal(payload, row, entry)
         current = strings.serialize_string(entry) if entry is not None else None
-        projected = _preview(db, project, proposal, locked=False).entry
+        projected = _preview(db, project, proposal, locked=False, entry=entry).entry
         if entry is None:
             # Distinct, stable ids let a review list several new strings side by side.
             projected.id = uuid5(NAMESPACE_URL, f"x-locale-paste:{project.id}:{row.key}")
