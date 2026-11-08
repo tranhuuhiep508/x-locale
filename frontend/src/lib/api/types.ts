@@ -224,7 +224,13 @@ export interface PasteReviewRequest {
 }
 
 export interface PasteReview {
-  items: Array<{ key: string; mode: 'create' | 'update'; entry: StringEntry }>
+  /** `issues`: QA of each non-empty projected translation, by locale. */
+  items: Array<{
+    key: string
+    mode: 'create' | 'update'
+    entry: StringEntry
+    issues?: Record<string, QaIssue[]>
+  }>
   /** Catalog baseline the rows were projected from; saves are rejected when it changes. */
   fingerprint: string
 }

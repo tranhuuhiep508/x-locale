@@ -35,6 +35,7 @@ from app.schemas import (
 from app.services import strings
 from app.services.catalog import require_module_in_project
 from app.services.key_policy import key_identity, key_owner, load_key_owners
+from app.services.translation_qa import check_translation
 from app.services.write_transactions import run_write
 
 _PREVIEW_ID = UUID(int=0)
@@ -319,7 +320,19 @@ def review_paste(db: Session, project: Project, payload: PasteReviewRequest) -> 
         rows, fingerprint = _paste_review(db, project, payload, locked=False)
     return PasteReviewOut(
         items=[
-            PasteReviewItem(key=row.key, mode=proposal.mode, entry=projected)
+            PasteReviewItem(
+                key=row.key,
+                mode=proposal.mode,
+                entry=projected,
+                issues={
+                    t.locale: [
+                        issue.as_dict()
+                        for issue in check_translation(projected.source_text, t.value, t.locale)
+                    ]
+                    for t in projected.translations
+                    if t.value
+                },
+            )
             for row, proposal, _entry, projected in rows
         ],
         fingerprint=fingerprint,
@@ -341,9 +354,13 @@ def save_paste(db: Session, project: Project, payload: PasteSaveRequest) -> Past
             if not strings.fingerprints_match(fingerprint, payload.fingerprint):
                 raise HTTPException(409, detail={"code": strings.PUBLISH_FINGERPRINT_MISMATCH})
             if publish:
-                if any(projected.pending_delete for *_rest, projected in rows):
+                if pending := [row.key for row, *_rest, projected in rows if projected.pending_delete]:
                     raise HTTPException(
-                        409, detail="Use the separate removal or restoration action"
+                        409,
+                        detail=(
+                            f"Queued for deletion: {', '.join(pending)}. Publish or undo "
+                            "the deletion first, or save this paste as draft."
+                        ),
                     )
                 if not any(strings.is_publishable_entry(projected) for *_rest, projected in rows):
                     raise HTTPException(409, detail={"code": "nothing_to_publish"})
@@ -360,7 +377,7 @@ def save_paste(db: Session, project: Project, payload: PasteSaveRequest) -> Past
                         proposal.string_id,
                         StringUpdate(**proposal.values.model_dump(exclude_unset=True)),
                     )
-                    entry = strings.get_string(db, project.id, proposal.string_id)
+                    # `entry` is the same session object _update_string just refreshed and wrote.
                 saved.append(entry)
             published = 0
             if publish:

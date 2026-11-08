@@ -295,6 +295,8 @@ describe('AddManyStringsDialog', () => {
     fireEvent.change(editedTranslation, { target: { value: 'New' } })
     const editedRow = within(editedTranslation.closest('li')!)
     await editedRow.findByRole('button', { name: /QA for en: 1 error/ }, { timeout: 2000 })
+    // Only the edited cell is checked; the untouched existing "Save" is not.
+    expect(stringsApi.translateQa).toHaveBeenCalledTimes(1)
     expect(stringsApi.translateQa).toHaveBeenCalledWith('proj-1', {
       source_text: 'Mới',
       translation: 'New',
@@ -302,6 +304,36 @@ describe('AddManyStringsDialog', () => {
     })
     expect(textbox('EN translation for e2e_new').getAttribute('aria-describedby')).toBe('qa-paste-e2e_new-en')
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows QA from the preview without checking again', async () => {
+    renderDialog()
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce({
+      ...reviewed,
+      items: reviewed.items.map((item) =>
+        item.key === 'save'
+          ? {
+              ...item,
+              issues: {
+                en: [{
+                  code: 'placeholder_missing',
+                  severity: 'error',
+                  message: 'Missing placeholder {n}.',
+                  start: null,
+                  end: null,
+                  detail: null,
+                }],
+              },
+            }
+          : item
+      ),
+    })
+    paste('{"save": "Lưu lại", "e2e_new": "Mới"}')
+    await screen.findByRole('list', { name: 'Pasted strings' })
+    const saveRow = within(textbox('EN translation for save').closest('li')!)
+    await saveRow.findByRole('button', { name: /QA for en: 1 error/ })
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(stringsApi.translateQa).not.toHaveBeenCalled()
   })
 
   it('uses QA returned with AI translations instead of re-checking', async () => {

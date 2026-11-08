@@ -412,6 +412,8 @@ class PasteReviewItem(BaseModel):
     key: str
     mode: Literal["create", "update"]
     entry: StringOut
+    # QA of each non-empty projected translation, so the review checks only what the user edits.
+    issues: dict[str, list["QaIssueOut"]] = Field(default_factory=dict)
 
 
 class PasteReviewOut(BaseModel):

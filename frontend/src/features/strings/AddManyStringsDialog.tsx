@@ -51,6 +51,7 @@ import {
   PASTE_MAX_ROWS,
   pastedRows,
   type PasteDraftRow,
+  valuesOf,
 } from '@/features/strings/paste-json'
 import {
   isPublishFingerprintMismatch,
@@ -350,7 +351,12 @@ export function AddManyStringsDialog({
       locale: cell,
       source: row.source,
       text: row.translations[cell] ?? '',
-      baseline: qaSeeds[qaId(row.key, cell)] ?? { source: row.source, text: '' },
+      // Previewed text is already checked by the server; only edits are re-checked.
+      baseline: qaSeeds[qaId(row.key, cell)] ?? {
+        source: row.entry.source_text,
+        text: valuesOf(row.entry)[cell] ?? '',
+        issues: row.issues[cell],
+      },
     }))
   )
   const qa = useQaWatch(projectId, qaRows, open && stage === 'edit' && !aiBusy)

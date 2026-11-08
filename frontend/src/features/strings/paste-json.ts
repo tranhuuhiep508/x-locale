@@ -1,5 +1,5 @@
 import JSON5 from 'json5'
-import type { PasteReview, PasteRow, StringEntry } from '@/lib/api/types'
+import type { PasteReview, PasteRow, QaIssue, StringEntry } from '@/lib/api/types'
 
 export type ParsedPasteRow = { key: string; source_text: string }
 
@@ -141,9 +141,11 @@ export type PasteDraftRow = {
   source: string
   translations: Record<string, string>
   scores: Record<string, number | null>
+  /** Server QA of each projected translation; the baseline for Smart QA. */
+  issues: Record<string, QaIssue[]>
 }
 
-function valuesOf(entry: StringEntry): Record<string, string> {
+export function valuesOf(entry: StringEntry): Record<string, string> {
   return Object.fromEntries(entry.translations.map((t) => [t.locale, t.value]))
 }
 
@@ -156,7 +158,7 @@ export function draftRowsFromReview(
   previous: PasteDraftRow[] = [],
 ): PasteDraftRow[] {
   const before = new Map(previous.map((row) => [row.key, row]))
-  return review.items.map(({ key, mode, entry }) => {
+  return review.items.map(({ key, mode, entry, issues = {} }) => {
     const translations = valuesOf(entry)
     const scores: Record<string, number | null> = Object.fromEntries(
       entry.translations.map((t) => [t.locale, t.confidence]),
@@ -173,7 +175,7 @@ export function draftRowsFromReview(
         }
       }
     }
-    return { key, mode, entry, source, translations, scores }
+    return { key, mode, entry, source, translations, scores, issues }
   })
 }
 
@@ -197,7 +199,6 @@ export function draftRowsToRequest(rows: PasteDraftRow[], targetLocales: string[
   })
 }
 
-/** Cells AI should fill: empty targets only, so pasted or reviewed text is kept. */
 /** Identifies one translation cell of a pasted row. */
 export function cellId(key: string, locale: string): string {
   return `${key}:${locale}`

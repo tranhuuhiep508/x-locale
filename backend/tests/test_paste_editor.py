@@ -119,6 +119,43 @@ def test_publish_saves_and_promotes_exactly_the_pasted_strings(client):
     assert card["children_count"] == 1
 
 
+def test_publish_promotes_updated_existing_strings(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    client.post(f"{root}/strings", json={"key": "a", "source_text": "A"})
+    rows = [{"key": "a", "source_text": "A2", "translations": {"en": "A en"}}]
+    fingerprint = review(client, pid, rows)["fingerprint"]
+    response = save(client, pid, rows, fingerprint, action="publish")
+    assert response.status_code == 200, response.text
+    assert response.json()["updated"] == 1 and response.json()["published"] == 1
+    current = by_key(client, pid)["a"]
+    assert current["status"] == "public"
+    assert current["published_source_text"] == "A2"
+    assert values(current, "published_value") == {"en": "A en"}
+
+
+def test_review_returns_qa_for_projected_translations(client):
+    pid = make_project(client, targets=["en", "ja"])["id"]
+    rows = [{"key": "count", "source_text": "{n} mục", "translations": {"en": "items"}}]
+    issues = review(client, pid, rows)["items"][0]["issues"]
+    assert set(issues) == {"en"}  # empty ja is not checked
+    assert any(issue["code"] == "placeholder_missing" for issue in issues["en"])
+
+
+def test_publish_names_strings_queued_for_deletion(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    gone = client.post(f"{root}/strings", json={"key": "gone", "source_text": "Đi"}).json()
+    publish_strings(client, pid, [gone["id"]])
+    assert client.delete(f"{root}/strings/{gone['id']}").status_code in (200, 204)
+    rows = [{"key": "gone", "source_text": "Đi rồi"}, {"key": "new", "source_text": "Mới"}]
+    fingerprint = review(client, pid, rows)["fingerprint"]
+    response = save(client, pid, rows, fingerprint, action="publish")
+    assert response.status_code == 409
+    assert "gone" in response.json()["detail"] and "new" not in response.json()["detail"]
+    assert set(by_key(client, pid)) == {"gone"}
+
+
 @pytest.mark.parametrize("action", ["draft", "publish"])
 def test_stale_catalog_rejects_without_partial_writes(client, action):
     pid = make_project(client)["id"]
