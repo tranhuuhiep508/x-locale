@@ -1,7 +1,5 @@
 """``loc status`` — diff local files against x-locale without writing."""
 
-from __future__ import annotations
-
 from x_locale_cli.commands.options import LayoutOption, LocalesOption, OutputDirOption, StageOption
 from x_locale_cli.config import runtime_config
 from x_locale_cli.ops import show_status

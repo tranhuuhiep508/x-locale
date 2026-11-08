@@ -1,7 +1,5 @@
 """``loc sync`` — push then pull in one step."""
 
-from __future__ import annotations
-
 from x_locale_cli.client import api_client
 from x_locale_cli.commands.options import LayoutOption, LocalesOption, OutputDirOption, StageOption
 from x_locale_cli.config import runtime_config

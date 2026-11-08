@@ -7,7 +7,7 @@ name = "x-locale-cli"
 version = "0.1.0"
 description = "CLI for x-locale translation sync (loc init | push | pull)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = ["i18n", "l10n", "translation", "cli"]
 classifiers = [

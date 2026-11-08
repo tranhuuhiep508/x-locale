@@ -1,9 +1,7 @@
 """``loc init`` — discover the project and write ``.x-locale/config.yaml``."""
 
-from __future__ import annotations
-
 import sys
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 import typer
 from rich.markup import escape
@@ -29,31 +27,31 @@ _STAGE_CHOICES = ", ".join(item.value for item in Stage)
 
 def init(
     api_key: Annotated[
-        str | None,
+        Optional[str],
         typer.Option("-k", "--api-key", help="Project API key (xlocale_…). Prompted if omitted."),
     ] = None,
     api_url: Annotated[
-        str | None,
+        Optional[str],
         typer.Option("-u", "--api-url", help="x-locale server base URL"),
     ] = None,
     output_dir: Annotated[
-        str | None,
+        Optional[str],
         typer.Option("-o", "--output-dir", help="Directory for locale files"),
     ] = None,
     base_language: Annotated[
-        str | None,
+        Optional[str],
         typer.Option("--base-language", help="Base/source language; must match the project"),
     ] = None,
     layout: Annotated[
-        Layout | None,
+        Optional[Layout],
         typer.Option("--layout", help="Override file layout (otherwise taken from the project)"),
     ] = None,
     stage: Annotated[
-        Stage | None,
+        Optional[Stage],
         typer.Option("--stage", help="Default pull stage: draft or public"),
     ] = None,
     web_url: Annotated[
-        str | None,
+        Optional[str],
         typer.Option(
             "--web-url",
             help="Web app URL for review links. Omit to use the API origin.",
@@ -164,13 +162,13 @@ def _stdin_is_tty() -> bool:
 def _use_wizard(
     *,
     yes: bool,
-    api_key: str | None,
-    api_url: str | None,
-    output_dir: str | None,
-    layout: Layout | None,
-    stage: Stage | None,
-    base_language: str | None,
-    web_url: str | None,
+    api_key: Optional[str],
+    api_url: Optional[str],
+    output_dir: Optional[str],
+    layout: Optional[Layout],
+    stage: Optional[Stage],
+    base_language: Optional[str],
+    web_url: Optional[str],
 ) -> bool:
     """Prompt for omitted values only when `loc init` is run with no flags."""
     if yes or not _stdin_is_tty():
@@ -190,7 +188,7 @@ def _normalize_api_url(url: str) -> str:
     return cleaned.rstrip("/")
 
 
-def _resolve_web_url(value: str | None, *, prompt: bool) -> str:
+def _resolve_web_url(value: Optional[str], *, prompt: bool) -> str:
     if value is not None:
         return normalize_web_base(value)
     if not prompt:
@@ -204,7 +202,7 @@ def _resolve_web_url(value: str | None, *, prompt: bool) -> str:
 
 
 def _value_or_prompt(
-    value: str | None,
+    value: Optional[str],
     *,
     label: str,
     default: str,
@@ -217,7 +215,7 @@ def _value_or_prompt(
     return default
 
 
-def _require_api_key(value: str | None, *, prompt: bool) -> str:
+def _require_api_key(value: Optional[str], *, prompt: bool) -> str:
     if value is not None and value.strip():
         return value.strip()
     if not prompt:
@@ -230,7 +228,7 @@ def _require_api_key(value: str | None, *, prompt: bool) -> str:
         console.print("[red]API key cannot be empty.[/red]", highlight=False)
 
 
-def _resolve_stage(value: Stage | None, *, prompt: bool) -> Stage:
+def _resolve_stage(value: Optional[Stage], *, prompt: bool) -> Stage:
     if value is not None:
         return value
     if not prompt:
