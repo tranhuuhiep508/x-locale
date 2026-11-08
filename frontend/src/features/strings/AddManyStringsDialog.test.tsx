@@ -291,14 +291,15 @@ describe('AddManyStringsDialog', () => {
         detail: null,
       }],
     })
-    fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
-    const badge = await screen.findByRole('button', { name: /QA for en: 1 error/ }, { timeout: 2000 })
+    const editedTranslation = textbox('EN translation for e2e_new')
+    fireEvent.change(editedTranslation, { target: { value: 'New' } })
+    const editedRow = within(editedTranslation.closest('li')!)
+    await editedRow.findByRole('button', { name: /QA for en: 1 error/ }, { timeout: 2000 })
     expect(stringsApi.translateQa).toHaveBeenCalledWith('proj-1', {
       source_text: 'Mới',
       translation: 'New',
       locale: 'en',
     })
-    expect(badge).toBeTruthy()
     expect(textbox('EN translation for e2e_new').getAttribute('aria-describedby')).toBe('qa-paste-e2e_new-en')
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
   })
