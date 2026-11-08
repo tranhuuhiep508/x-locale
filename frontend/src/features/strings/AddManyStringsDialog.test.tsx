@@ -391,7 +391,7 @@ describe('AddManyStringsDialog', () => {
     const { onSuccess, onClose } = renderDialog()
     await previewed()
     fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
-    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce({ ...reviewed, fingerprint: 'fp-review' })
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
     const publish = await screen.findByRole('button', { name: 'Publish' })
     expect(screen.queryByRole('list', { name: 'Pasted strings' })).toBeNull()
@@ -401,8 +401,52 @@ describe('AddManyStringsDialog', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1)
     expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings')
     const request = vi.mocked(stringsApi.pasteSave).mock.calls[0][1]
-    expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-review' })
+    expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-1' })
     expect(request.rows[1]).toEqual({ key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } })
+  })
+
+  it('refreshes concurrent changes before publication review while preserving user edits', async () => {
+    renderDialog()
+    await previewed()
+    fireEvent.change(textbox('Source text for save'), { target: { value: 'My source' } })
+    fireEvent.change(textbox('JA translation for save'), { target: { value: 'Mine' } })
+    const refreshed: PasteReview = {
+      fingerprint: 'fp-2',
+      items: [
+        { key: 'save', mode: 'update', entry: entry('save', 'Lưu lại', { en: 'Concurrent', ja: '' }, 'public') },
+        reviewed.items[1],
+      ],
+    }
+    vi.mocked(stringsApi.pasteReview)
+      // The review projects the stale submitted EN value over the changed catalog.
+      .mockResolvedValueOnce({ ...reviewed, fingerprint: 'fp-2' })
+      .mockResolvedValueOnce(refreshed)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    await waitFor(() => expect(textbox('EN translation for save').value).toBe('Concurrent'))
+    expect(textbox('Source text for save').value).toBe('My source')
+    expect(textbox('JA translation for save').value).toBe('Mine')
+    expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull()
+    expect(stringsApi.pasteSave).not.toHaveBeenCalled()
+    expect(toast.info).toHaveBeenCalled()
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[2][1].rows).toEqual([
+      { key: 'save', source_text: 'Lưu lại' },
+      { key: 'e2e_new', source_text: 'Mới' },
+    ])
+
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(refreshed)
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, action: 'publish', published: 2 })
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(stringsApi.pasteSave).toHaveBeenCalled())
+    expect(vi.mocked(stringsApi.pasteSave).mock.calls[0][1]).toMatchObject({
+      action: 'publish',
+      fingerprint: 'fp-2',
+      rows: [
+        { key: 'save', source_text: 'My source', translations: { en: 'Concurrent', ja: 'Mine' } },
+        { key: 'e2e_new', source_text: 'Mới', translations: {} },
+      ],
+    })
   })
 
   it('refreshes a stale list from the pasted rows and keeps edits', async () => {

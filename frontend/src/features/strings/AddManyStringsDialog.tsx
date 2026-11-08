@@ -180,6 +180,10 @@ export function AddManyStringsDialog({
   const reviewMut = useMutation({
     mutationFn: (request: PasteReviewRequest) => stringsApi.pasteReview(projectId, request),
     onSuccess: (result, request) => {
+      if (result.fingerprint !== fingerprint) {
+        refreshAfterConflict()
+        return
+      }
       setReview({
         entries: result.items.map((item) => item.entry),
         fingerprint: result.fingerprint,
@@ -190,7 +194,7 @@ export function AddManyStringsDialog({
     onError: (e) => toast.error(publicationErrorMessage(e, 'Could not prepare the publication review')),
   })
 
-  /** Reload the catalog baseline after a stale save, keeping the user's edits. */
+  /** Reload a stale catalog baseline, keeping the user's edits. */
   function refreshAfterConflict() {
     setReview(null)
     setStage('edit')
