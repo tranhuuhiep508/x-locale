@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
-from app.models import Module, Project, StringEntry, Tag, TranslationStatus
+from app.models import Module, Project, ProjectLayout, StringEntry, Tag, TranslationStatus
 from app.schemas import (
     EditorCreateProposal,
     EditorPreviewOut,
@@ -34,7 +34,7 @@ from app.schemas import (
 )
 from app.services import strings
 from app.services.catalog import require_module_in_project
-from app.services.key_policy import key_identity, key_owner, load_key_owners
+from app.services.key_policy import ambiguous_key, key_identity, key_owner, load_key_owners
 from app.services.translation_qa import check_translation
 from app.services.write_transactions import run_write
 
@@ -269,11 +269,20 @@ def _paste_review(db: Session, project: Project, payload: PasteReviewRequest, *,
     require_module_in_project(db, project.id, payload.module_id)
     owners = load_key_owners(db, project.id, keys={row.key for row in payload.rows})
     allow = project.allow_duplicate_keys
-    owner_ids = {
-        row.key: owners[identity]
-        for row in payload.rows
-        if (identity := key_identity(allow, row.key, payload.module_id)) in owners
-    }
+    if allow and payload.module_id is None and project.layout == ProjectLayout.flat:
+        # A flat paste cannot pick a module: match the key in any module, like flat
+        # file imports, and reject a key that more than one module holds.
+        owner_ids = {}
+        for (_module, key), string_id in owners.items():
+            if key in owner_ids:
+                raise ambiguous_key(key)
+            owner_ids[key] = string_id
+    else:
+        owner_ids = {
+            row.key: owners[identity]
+            for row in payload.rows
+            if (identity := key_identity(allow, row.key, payload.module_id)) in owners
+        }
     # One sorted lock call: every writer locks strings in id order, so saves cannot deadlock.
     if locked and len(strings.lock_strings(db, project.id, owner_ids.values())) != len(owner_ids):
         raise HTTPException(409, detail={"code": strings.PUBLISH_FINGERPRINT_MISMATCH})

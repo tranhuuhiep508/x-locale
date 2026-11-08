@@ -396,12 +396,14 @@ def preview_translation_batch(
 ) -> list[dict[str, Any]]:
     """Translate unsaved ``(id, source_text, locales)`` rows in one AI batch. Stores nothing."""
     context = compose_translation_context(project, module, description)
+    # Opaque AI ids: the AI client strips response ids, so a raw caller id such as a
+    # pasted key with surrounding spaces would never match its own result.
     items = []
-    for row_id, source_text, locales in rows:
+    for index, (_row_id, source_text, locales) in enumerate(rows):
         validate_locales(project, locales)
         items.append(
             TranslateItem(
-                id=row_id, source_text=source_text, locales=tuple(locales), context=context
+                id=f"r{index}", source_text=source_text, locales=tuple(locales), context=context
             )
         )
     db = db if db is not None else object_session(project)
@@ -409,12 +411,12 @@ def preview_translation_batch(
         items = with_memory(db, project, items)
     results = translate_batch(project.base_language, items)
     out = []
-    for item in items:
+    for (row_id, *_rest), item in zip(rows, items, strict=True):
         cells = _cell_map(results, item.id)
         translations = {locale: cells[locale].text for locale in item.locales if locale in cells}
         out.append(
             {
-                "id": item.id,
+                "id": row_id,
                 "translations": translations,
                 "scores": _scores_from_cells(cells, item.locales),
                 "issues": _qa_by_locale(item.source_text, translations),

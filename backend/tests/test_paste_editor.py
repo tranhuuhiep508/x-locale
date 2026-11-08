@@ -243,6 +243,35 @@ def test_duplicate_keys_match_only_the_chosen_module(client):
     assert result["items"][0]["mode"] == "update"
 
 
+def test_flat_paste_matches_keys_in_any_module(client):
+    """A flat project hides the module picker, so a key matches whichever module owns it."""
+    pid = make_project(client, layout="flat")["id"]
+    root = f"/api/projects/{pid}"
+    assert client.patch(root, json={"allow_duplicate_keys": True}).status_code == 200
+    auth, home = (
+        client.post(f"{root}/modules", json={"slug": slug, "name": slug}).json()["id"]
+        for slug in ("auth", "home")
+    )
+    owner = client.post(
+        f"{root}/strings", json={"key": "title", "module_id": auth, "source_text": "Auth"}
+    ).json()
+    rows = [{"key": "title", "source_text": "Auth 2"}]
+    result = review(client, pid, rows)
+    assert result["items"][0]["mode"] == "update"
+    assert result["items"][0]["entry"]["id"] == owner["id"]
+    response = save(client, pid, rows, result["fingerprint"])
+    assert response.status_code == 200, response.text
+    assert response.json() == {**response.json(), "created": 0, "updated": 1}
+    titles = [s for s in client.get(f"{root}/strings").json()["items"] if s["key"] == "title"]
+    assert [(s["module_id"], s["source_text"]) for s in titles] == [(auth, "Auth 2")]
+    assert client.get(f"{root}/export", params={"stage": "draft"}).status_code == 200
+    # A key held by two modules cannot be resolved without a module: reject, never guess.
+    client.post(f"{root}/strings", json={"key": "title", "module_id": home, "source_text": "Home"})
+    response = client.post(f"{root}/strings/paste-review", json={"rows": rows})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "ambiguous_key"
+
+
 def test_request_validation(client):
     pid = make_project(client)["id"]
     url = f"/api/projects/{pid}/strings/paste-review"
@@ -275,3 +304,30 @@ def test_translate_preview_batch_translates_unsaved_rows(client, monkeypatch):
     assert set(items["b"]["translations"]) == {"ja"}
     assert client.get(f"{root}/strings").json()["total"] == 0
     assert client.get(f"{root}/activities").json()["total"] == before
+
+
+def test_translate_preview_batch_maps_results_back_to_unstripped_ids(client, monkeypatch):
+    """The AI client strips response ids; caller ids with spaces must still get results."""
+    import app.services.translate as translate_service
+
+    def provider(_source_locale, items):
+        # Mirrors app.ai._parse_response, which strips each returned id.
+        return {
+            item.id.strip(): {locale: f"{item.source_text}:{locale}" for locale in item.locales}
+            for item in items
+        }
+
+    monkeypatch.setattr(translate_service, "translate_batch", provider)
+    pid = make_project(client)["id"]
+    response = client.post(
+        f"/api/projects/{pid}/translate/preview-batch",
+        json={
+            "items": [
+                {"id": " greeting ", "source_text": "Xin chào", "locales": ["en"]},
+                {"id": "greeting", "source_text": "Chào", "locales": ["en"]},
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    items = {item["id"]: item["translations"] for item in response.json()["items"]}
+    assert items == {" greeting ": {"en": "Xin chào:en"}, "greeting": {"en": "Chào:en"}}
