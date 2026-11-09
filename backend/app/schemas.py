@@ -379,6 +379,63 @@ class EditorPreviewOut(BaseModel):
     fingerprint: str
 
 
+PASTE_MAX_ROWS = 100
+
+
+class PasteRow(BaseModel):
+    """One pasted key. Existing keys update in place; new keys are created as draft."""
+
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=512)
+    # Omitted for a target-language paste: existing strings keep their source and new
+    # strings use the key, matching file imports.
+    source_text: str | None = Field(default=None, min_length=1, max_length=TEXT_MAX_LENGTH)
+    translations: TextValues = Field(default_factory=dict)
+    translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
+
+
+class PasteReviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    module_id: UUID | None = None
+    tag_ids: list[UUID] = Field(default_factory=list)
+    rows: list[PasteRow] = Field(min_length=1, max_length=PASTE_MAX_ROWS)
+
+    @model_validator(mode="after")
+    def unique_keys(self) -> "PasteReviewRequest":
+        keys = [row.key for row in self.rows]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Each pasted key must be unique")
+        return self
+
+
+class PasteReviewItem(BaseModel):
+    key: str
+    mode: Literal["create", "update"]
+    entry: StringOut
+    # QA of each non-empty projected translation, so the review checks only what the user edits.
+    issues: dict[str, list["QaIssueOut"]] = Field(default_factory=dict)
+
+
+class PasteReviewOut(BaseModel):
+    """Projected working copy of every row and the fingerprint of the catalog it was built on."""
+
+    items: list[PasteReviewItem]
+    fingerprint: str
+
+
+class PasteSaveRequest(PasteReviewRequest):
+    action: Literal["draft", "publish"]
+    fingerprint: str = Field(min_length=1)
+
+
+class PasteSaveResult(BaseModel):
+    action: Literal["draft", "publish"]
+    created: int
+    updated: int
+    published: int
+    batch_id: UUID
+
+
 class TranslationUpdate(BaseModel):
     value: str = Field(max_length=TEXT_MAX_LENGTH)
     expected: str | None = None
@@ -550,6 +607,27 @@ class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
     issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
+
+
+class TranslatePreviewBatchItem(BaseModel):
+    id: str = Field(min_length=1, max_length=512)
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    locales: list[str] = Field(min_length=1)
+
+
+class TranslatePreviewBatchRequest(BaseModel):
+    """Translate unsaved text (for example pasted rows). Stores nothing."""
+
+    module_id: UUID | None = None
+    items: list[TranslatePreviewBatchItem] = Field(min_length=1, max_length=20)
+
+
+class TranslatePreviewBatchResultItem(TranslatePreviewResult):
+    id: str
+
+
+class TranslatePreviewBatchResult(BaseModel):
+    items: list[TranslatePreviewBatchResultItem]
 
 
 class TranslationQaRequest(BaseModel):

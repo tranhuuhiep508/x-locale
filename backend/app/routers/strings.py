@@ -15,6 +15,10 @@ from app.schemas import (
     EditorPreviewOut,
     EditorPreviewRequest,
     EditorSaveRequest,
+    PasteReviewOut,
+    PasteReviewRequest,
+    PasteSaveRequest,
+    PasteSaveResult,
     StringCreate,
     StringListOut,
     StringOut,
@@ -98,6 +102,24 @@ def editor_preview(
     from app.services.string_editor import preview_editor
 
     return preview_editor(db, project, payload.proposal)
+
+
+@router.post("/strings/paste-review")
+def paste_review(
+    payload: PasteReviewRequest, project: ProjectAccess, db: DbSession
+) -> PasteReviewOut:
+    """Read-only projection of pasted rows; nothing is written."""
+    from app.services.string_editor import review_paste
+
+    return review_paste(db, project, payload)
+
+
+@router.post("/strings/paste-save")
+def paste_save(payload: PasteSaveRequest, project: ProjectAccess, db: DbSession) -> PasteSaveResult:
+    """Save reviewed pasted rows as draft, or save and publish them, in one transaction."""
+    from app.services.string_editor import save_paste
+
+    return save_paste(db, project, payload)
 
 
 @router.post("/strings/editor-save")

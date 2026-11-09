@@ -293,3 +293,31 @@ and refreshes the batch in place. View in Strings opens the catalog filtered to
 the original CLI push batch. If refresh fails, saved changes remain committed;
 Reload batch retries the read without saving or publishing again. The existing catalog,
 translation Apply, audit, Undo, export, and soft-delete semantics are retained.
+
+
+## Add many paste review
+
+Add many is the single-string editor flow applied to up to 100 pasted rows; it does
+not use the import endpoint. `POST /api/projects/{project_id}/strings/paste-review`
+resolves each key to its live owner (respecting the duplicate-key policy and the
+chosen module), builds the same create/update proposal the editor would, and returns
+each projected working copy with every configured target locale plus a fingerprint.
+Nothing is written. The fingerprint covers project settings, the module, and each
+key's current state (or absence), not the proposed values, so reviewed edits can be
+saved without another preview while a concurrent edit, publication, or creation of a
+pasted key is still rejected.
+
+`POST /api/projects/{project_id}/strings/paste-save` takes the rows, `action`
+(`draft` | `publish`), and that fingerprint. Under the publication lock (publish) and
+row locks it rebuilds the proposals, rejects a changed fingerprint with
+`publish_fingerprint_mismatch`, writes every row through the editor's create/update
+path, and for publish promotes each publishable row and checks public-key
+collisions. Rows, snapshots, and audit records commit together under one `import`
+batch, or the whole request rolls back. Draft saves keep existing public snapshots and
+status; new strings stay draft. A pasted value for a target locale on a new key uses
+the key as source, matching file imports. Selected tags are added to existing strings;
+the module applies to new strings only.
+
+`POST /api/projects/{project_id}/translate/preview-batch` translates up to 20 unsaved
+rows (`id`, `source_text`, `locales`) in one AI call with translation memory and QA,
+storing nothing. The dialog requests only empty cells.

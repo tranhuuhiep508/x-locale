@@ -5,16 +5,19 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
 from app.ai import AIConfigurationError, log_ai_failure, safe_ai_error
 from app.auth import ProjectAccess
 from app.database import DbSession
 from app.helpers import require_locale_code
-from app.models import Job, JobStatus, Module
+from app.models import Job, JobStatus, Module, Project
 from app.schemas import (
     TranslateApplyRequest,
     TranslateApplyResult,
+    TranslatePreviewBatchRequest,
+    TranslatePreviewBatchResult,
     TranslatePreviewRequest,
     TranslatePreviewResult,
     TranslateProposalsResult,
@@ -38,6 +41,7 @@ from app.services.translate import (
     count_work,
     list_missing_page,
     parse_descriptions,
+    preview_translation_batch,
     preview_translations,
     propose_translations,
     queued_progress,
@@ -131,6 +135,16 @@ def translate(
     )
 
 
+def _project_module(db: Session, project: Project, module_id: uuid.UUID | None) -> Module | None:
+    """The request's module, or 400 when it does not belong to this project."""
+    if module_id is None:
+        return None
+    module = db.query(Module).filter(Module.id == module_id, Module.project_id == project.id).first()
+    if module is None:
+        raise HTTPException(status_code=400, detail="Unknown module")
+    return module
+
+
 @router.post("/translate/preview", response_model=TranslatePreviewResult)
 def translate_preview(
     payload: TranslatePreviewRequest,
@@ -139,16 +153,7 @@ def translate_preview(
 ) -> TranslatePreviewResult:
     locales = resolve_translation_locales(project, payload.locales)
 
-    module = None
-    if payload.module_id is not None:
-        module = (
-            db.query(Module)
-            .filter(Module.id == payload.module_id, Module.project_id == project.id)
-            .first()
-        )
-        if module is None:
-            raise HTTPException(status_code=400, detail="Unknown module")
-
+    module = _project_module(db, project, payload.module_id)
     try:
         translations, scores, issues = preview_translations(
             project,
@@ -161,6 +166,25 @@ def translate_preview(
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslatePreviewResult(translations=translations, scores=scores, issues=issues)
+
+
+@router.post("/translate/preview-batch", response_model=TranslatePreviewBatchResult)
+def translate_preview_batch(
+    payload: TranslatePreviewBatchRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslatePreviewBatchResult:
+    """Translate unsaved rows (Add many paste) without writing anything."""
+    module = _project_module(db, project, payload.module_id)
+    rows = [
+        (item.id, item.source_text, resolve_translation_locales(project, item.locales))
+        for item in payload.items
+    ]
+    try:
+        items = preview_translation_batch(project, module, rows, db)
+    except Exception as exc:
+        raise _ai_http_error(exc) from None
+    return TranslatePreviewBatchResult(items=items)
 
 
 @router.post("/translate/memory", response_model=TranslationMemoryResult)

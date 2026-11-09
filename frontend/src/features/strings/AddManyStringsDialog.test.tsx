@@ -1,37 +1,58 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ActiveJobWatcher } from '@/components/active-job-watcher'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
 import { ApiError } from '@/lib/api/client'
-import { jobsApi } from '@/lib/api/jobs'
-import { syncApi } from '@/lib/api/sync'
-import type { ImportResult, Job, Module, Project, Tag } from '@/lib/api/types'
+import { stringsApi } from '@/lib/api/strings'
+import type { Module, PasteReview, Project, StringEntry, Tag } from '@/lib/api/types'
 import { AddManyStringsDialog } from './AddManyStringsDialog'
 
-vi.mock('@/lib/toast', () => ({
-  useToast: () => ({
-    success: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-    warning: vi.fn(),
-  }),
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    children,
+    to,
+    params,
+    search,
+    onClick,
+  }: {
+    children: ReactNode
+    to: string
+    params: Record<string, string>
+    search?: Record<string, string>
+    onClick?: () => void
+  }) => {
+    const path = Object.entries(params).reduce((url, [k, v]) => url.replace('$' + k, v), to)
+    const query = new URLSearchParams(search ?? {}).toString()
+    return (
+      <a
+        href={query ? path + '?' + query : path}
+        onClick={(e) => {
+          e.preventDefault()
+          onClick?.()
+        }}
+      >
+        {children}
+      </a>
+    )
+  },
 }))
+
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+}))
+vi.mock('@/lib/toast', () => ({ useToast: () => toast }))
 
 vi.mock('@/lib/api/catalog', () => ({
   modulesApi: { create: vi.fn() },
   tagsApi: { create: vi.fn() },
 }))
 
-vi.mock('@/lib/api/sync', () => ({
-  syncApi: { importFile: vi.fn() },
-}))
-
-vi.mock('@/lib/api/jobs', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api/jobs')>()),
-  jobsApi: { get: vi.fn() },
+vi.mock('@/lib/api/strings', () => ({
+  stringsApi: { pasteReview: vi.fn(), pasteSave: vi.fn(), translatePreviewBatch: vi.fn(), translateQa: vi.fn() },
 }))
 
 const project: Project = {
@@ -40,9 +61,10 @@ const project: Project = {
   name: 'Demo App',
   slug: 'demo-app',
   base_language: 'vi',
-  target_languages: ['en'],
+  target_languages: ['en', 'ja'],
   layout: 'modular',
-  allow_duplicate_keys: false, string_count: 10,
+  allow_duplicate_keys: false,
+  string_count: 10,
   created_at: null,
   updated_at: null,
   translation_context: null,
@@ -54,405 +76,467 @@ const modules: Module[] = [
 
 const tags: Tag[] = [{ id: 'tag-ios', name: 'ios', color: '#2563eb', string_count: 0 }]
 
-const dryResult: ImportResult = {
-  created: 0,
-  updated: 0,
-  total: 2,
-  dry_run: true,
-  batch_id: null,
-  diff: {
-    create: [{ key: 'e2e_new', source_text: 'Mới' }],
-    update: [{ key: 'save', source_text: 'Lưu lại' }],
-    orphan: [],
-    create_count: 1,
-    update_count: 1,
-    orphan_count: 0,
-  },
+function entry(
+  key: string,
+  source: string,
+  values: Record<string, string>,
+  status: 'draft' | 'public' = 'draft'
+): StringEntry {
+  return {
+    id: `id-${key}`,
+    key,
+    source_text: source,
+    description: null,
+    status,
+    pending_delete: false,
+    deleted_at: null,
+    has_unpublished_changes: true,
+    published_at: null,
+    published_key: status === 'public' ? key : null,
+    published_source_text: status === 'public' ? 'Cũ' : null,
+    published_module_id: null,
+    published_module_slug: null,
+    module_id: null,
+    module_slug: null,
+    tags: [],
+    created_at: null,
+    created_by_type: null,
+    created_by_label: null,
+    updated_at: null,
+    updated_by_type: null,
+    updated_by_label: null,
+    translations: Object.entries(values).map(([locale, value]) => ({
+      id: null,
+      updated_at: null,
+      locale,
+      value,
+      published_value: status === 'public' ? 'Old' : null,
+      confidence: null,
+    })),
+  }
 }
 
-const applyResult: ImportResult = {
-  ...dryResult,
-  created: 1,
-  updated: 1,
-  dry_run: false,
-  batch_id: 'batch-1',
+const reviewed: PasteReview = {
+  fingerprint: 'fp-1',
+  items: [
+    { key: 'save', mode: 'update', entry: entry('save', 'Lưu lại', { en: 'Save', ja: '' }, 'public') },
+    { key: 'e2e_new', mode: 'create', entry: entry('e2e_new', 'Mới', { en: '', ja: '' }) },
+  ],
 }
+
+const savedDraft = { action: 'draft' as const, created: 1, updated: 1, published: 0, batch_id: 'batch-1' }
 
 function polyfillPointer() {
-  Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
-    configurable: true,
-    value: () => false,
-  })
-  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
-    configurable: true,
-    value: () => {},
-  })
-  Object.defineProperty(HTMLElement.prototype, 'releasePointerCapture', {
-    configurable: true,
-    value: () => {},
-  })
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-    configurable: true,
-    value: () => {},
-  })
-  class ResizeObserverMock {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+  for (const name of ['hasPointerCapture', 'setPointerCapture', 'releasePointerCapture', 'scrollIntoView']) {
+    Object.defineProperty(HTMLElement.prototype, name, {
+      configurable: true,
+      value: name === 'hasPointerCapture' ? () => false : () => {},
+    })
   }
-  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  )
 }
 
-function renderDialog(onSuccess = vi.fn(), onClose = vi.fn()) {
+function renderDialog() {
+  const onSuccess = vi.fn()
+  const onClose = vi.fn()
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const wrapper = ({ children }: { children: ReactNode }) => (
+  render(
     <QueryClientProvider client={client}>
-      <ActiveJobWatcher />
-      <TooltipProvider>{children}</TooltipProvider>
+      <TooltipProvider>
+        <AddManyStringsDialog open projectId="proj-1" project={project} modules={modules}
+          tags={tags} onClose={onClose} onSuccess={onSuccess} />
+      </TooltipProvider>
     </QueryClientProvider>
   )
-  const dialog = (open: boolean) => (
-    <AddManyStringsDialog open={open} projectId="proj-1" project={project} modules={modules}
-      tags={tags} onClose={onClose} onSuccess={onSuccess} />
-  )
-  const view = render(dialog(true), { wrapper })
-  return { ...view, client, onSuccess, onClose, setOpen: (open: boolean) => view.rerender(dialog(open)) }
+  return { onSuccess, onClose }
+}
 
+function paste(json: string) {
+  fireEvent.change(screen.getByLabelText('JSON'), { target: { value: json } })
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+}
+
+const textbox = (name: string) => screen.getByRole('textbox', { name }) as HTMLTextAreaElement
+
+async function previewed() {
+  vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
+  paste('{"save": "Lưu lại", "e2e_new": "Mới"}')
+  await screen.findByRole('list', { name: 'Pasted strings' })
 }
 
 describe('AddManyStringsDialog', () => {
   beforeEach(() => {
+    vi.resetAllMocks()
     polyfillPointer()
-    clearActiveJob()
-    vi.mocked(syncApi.importFile).mockReset()
-    vi.mocked(jobsApi.get).mockReset()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({ locale: 'en', issues: [] })
   })
 
-  it('polls a background import job and shows its preview', async () => {
-    const running: Job = {
-      id: 'job-1',
-      kind: 'import',
-      status: 'running',
-      result: null,
-      error: null,
-      created_at: null,
-      completed_at: null,
-      progress: { phase: 'validating', chunks_done: 0, chunks_total: 0 },
-    }
+  it('previews pasted rows in place without saving anything', async () => {
     renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      job_id: 'job-1',
-      status: 'running',
-      kind: 'import',
-    })
-    vi.mocked(jobsApi.get)
-      .mockResolvedValueOnce(running)
-      .mockResolvedValue({
-        ...running,
-        status: 'completed',
-        result: dryResult as unknown as Record<string, unknown>,
-      })
-
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"save": "Lưu lại", "e2e_new": "Mới"}' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-
-    expect(await screen.findByText('Checking keys…')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    expect(await screen.findByText(/\+ e2e_new/, undefined, { timeout: 3000 })).toBeTruthy()
-    expect(jobsApi.get).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
-    expect(screen.queryByText('Checking keys…')).toBeNull()
-  })
-
-  it('returns to the paste step when the background job fails', async () => {
-    renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      job_id: 'job-2',
-      status: 'running',
-      kind: 'import',
-    })
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'job-2',
-      kind: 'import',
-      status: 'failed',
-      result: { error: { status_code: 400, detail: 'Invalid import' } },
-      error: 'Invalid import',
-      created_at: null,
-      completed_at: null,
-      progress: null,
-    })
-
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-
-    await waitFor(() =>
-      expect(
-        (screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled,
-      ).toBe(false),
-    )
-    expect(jobsApi.get).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText('New strings')).toBeNull()
-  })
-
-  it.each([404, 503])('keeps the job after a %s poll error and retries status', async (status) => {
-    const { onClose, setOpen } = renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      job_id: 'job-retry', status: 'running', kind: 'import',
-    })
-    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(status, 'Could not check job'))
-
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-
-    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
-    expect(getActiveJob()?.jobId).toBe('job-retry')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
-    setOpen(false)
-    expect(getActiveJob()?.jobId).toBe('job-retry')
-    const calls = vi.mocked(jobsApi.get).mock.calls.length
-    await new Promise((resolve) => setTimeout(resolve, 1200))
-    expect(vi.mocked(jobsApi.get).mock.calls.length).toBe(calls)
-
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'job-retry', kind: 'import', status: 'completed',
-      result: dryResult as unknown as Record<string, unknown>, error: null,
-      created_at: null, completed_at: null, progress: null,
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
-    await waitFor(() => expect(getActiveJob()).toBeNull())
-    setOpen(true)
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    expect(getActiveJob()).toBeNull()
-    expect(syncApi.importFile).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([false, true])('keeps pending preview input across close and reopen (finishes while closed: %s)', async (finishesWhileClosed) => {
-    const { rerender, client, onClose, onSuccess } = renderDialog()
-    const dialog = (open: boolean) => (
-      <AddManyStringsDialog open={open} projectId="proj-1" project={project} modules={modules}
-        tags={tags} onClose={onClose} onSuccess={onSuccess} />
-    )
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce({
-      job_id: 'reopen-preview', status: 'running', kind: 'import',
-    })
-    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(503, 'Poll unavailable'))
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"save":"Lưu lại","e2e_new":"Mới"}' },
-    })
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Module' }), { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'Common' }))
     fireEvent.click(screen.getByRole('button', { name: 'ios' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
-    rerender(dialog(false))
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'reopen-preview', kind: 'import', status: 'completed',
-      result: dryResult as unknown as Record<string, unknown>, error: null,
-      created_at: null, completed_at: null, progress: null,
+    await previewed()
+    expect(stringsApi.pasteReview).toHaveBeenCalledWith('proj-1', {
+      module_id: 'mod-common',
+      tag_ids: ['tag-ios'],
+      rows: [
+        { key: 'save', source_text: 'Lưu lại' },
+        { key: 'e2e_new', source_text: 'Mới' },
+      ],
     })
-    if (finishesWhileClosed) {
-      await act(async () => { await client.refetchQueries({ queryKey: ['jobs', 'reopen-preview'] }) })
-    }
-    if (!finishesWhileClosed) {
-      rerender(dialog(true))
-      expect((screen.getByRole('button', { name: /Preview/ }) as HTMLButtonElement).disabled).toBe(true)
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      rerender(dialog(false))
-      fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
-    }
-    rerender(dialog(true))
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement
-    expect(apply.disabled).toBe(false)
-    vi.mocked(syncApi.importFile).mockResolvedValue(applyResult)
-    fireEvent.click(apply)
-    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
-    const [, form, params] = vi.mocked(syncApi.importFile).mock.calls[1]
-    expect(params).toMatchObject({ dry_run: 'false', module_id: 'mod-common', tag_ids: ['tag-ios'] })
-    const payload = await new Promise<string>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.readAsText(form.get('file') as File)
-    })
-    expect(JSON.parse(payload)).toEqual({ save: 'Lưu lại', e2e_new: 'Mới' })
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
-    rerender(dialog(false))
-    rerender(dialog(true))
-    expect((screen.getByLabelText('JSON') as HTMLTextAreaElement).value).toBe('')
-    expect(screen.getByRole('button', { name: 'ios' }).getAttribute('aria-pressed')).toBe('false')
+    const list = screen.getByRole('list', { name: 'Pasted strings' })
+    expect(within(list).getByText('New')).toBeTruthy()
+    expect(within(list).getByText('Update')).toBeTruthy()
+    expect(textbox('EN translation for save').value).toBe('Save')
+    expect(textbox('EN translation for e2e_new').value).toBe('')
+    expect(stringsApi.pasteSave).not.toHaveBeenCalled()
   })
 
-  it('requires a fresh preview when a resumed job has no original input', async () => {
-    rememberJob({ jobId: 'reloaded-preview', projectId: 'proj-1', kind: 'add', dryRun: true })
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'reloaded-preview', kind: 'import', status: 'completed',
-      result: dryResult as unknown as Record<string, unknown>, error: null,
-      created_at: null, completed_at: null, progress: null,
-    })
+  it('starts with empty braces so only key/value lines are needed', async () => {
     renderDialog()
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText(/Go back and paste the JSON again/)).toBeTruthy()
-    expect(syncApi.importFile).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce(applyResult)
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save":"Lưu lại"}' } })
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    expect(field.value).toBe('{\n  \n}')
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
+    fireEvent.change(field, { target: { value: '{\n  "save": "Lưu lại"\n}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(stringsApi.pasteReview).toHaveBeenCalled())
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[0][1].rows).toEqual([
+      { key: 'save', source_text: 'Lưu lại' },
+    ])
   })
 
-  it('can close an applied import after a poll error without submitting it twice', async () => {
-    const { onSuccess, onClose, setOpen } = renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce({
-      job_id: 'job-apply-retry', status: 'running', kind: 'import',
-    })
-    vi.mocked(jobsApi.get).mockRejectedValue(new ApiError(503, 'Could not check job'))
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save": "Lưu"}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(await screen.findByText('Use the job status banner to check again or stop tracking.')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Apply/ }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
-    setOpen(false)
-    expect(getActiveJob()?.jobId).toBe('job-apply-retry')
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'job-apply-retry', kind: 'import', status: 'completed',
-      result: applyResult as unknown as Record<string, unknown>, error: null,
-      created_at: null, completed_at: null, progress: null,
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
-    expect(getActiveJob()).toBeNull()
-    expect(syncApi.importFile).toHaveBeenCalledTimes(2)
-  })
-
-  it('warns on duplicate keys and still previews the later values', async () => {
+  it('replaces the empty braces when a whole object is pasted', () => {
     renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult)
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{ "save": "one", "save": "two" }' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText(/Duplicate keys \("save"\)/)).toBeTruthy()
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(false)
-    expect(syncApi.importFile).toHaveBeenCalledTimes(1)
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    fireEvent.paste(field, { clipboardData: { getData: () => '{"save": "Lưu lại"}' } })
+    expect(field.value).toBe('{"save": "Lưu lại"}')
   })
 
-  it('stops tracking an applied import and requires a fresh preview without resubmitting', async () => {
-    const { setOpen } = renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult).mockResolvedValueOnce({
-      job_id: 'stopped-apply', status: 'running', kind: 'import',
-    })
-    vi.mocked(jobsApi.get).mockResolvedValue({
-      id: 'stopped-apply', kind: 'import', status: 'running', result: null, error: null,
-      progress: null, created_at: null, completed_at: null,
-    })
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{"save":"Lưu"}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    await waitFor(() => expect(getActiveJob()?.jobId).toBe('stopped-apply'))
-    act(() => { rememberJob({ ...getActiveJob()!, pollUntil: 0 }) })
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    setOpen(false)
-    fireEvent.click(await screen.findByRole('button', { name: 'Stop tracking' }))
-    await waitFor(() => expect(getActiveJob()).toBeNull())
-    setOpen(true)
-    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false)
-    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
-    expect(syncApi.importFile).toHaveBeenCalledTimes(2)
-  })
-
-  it('rejects invalid JSON without calling import', async () => {
+  it('keeps the browser paste once the braces have content', () => {
     renderDialog()
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{not json' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText(/Invalid JSON/)).toBeTruthy()
-    expect(syncApi.importFile).not.toHaveBeenCalled()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    fireEvent.change(field, { target: { value: '{\n  "a": "b"\n}' } })
+    fireEvent.paste(field, { clipboardData: { getData: () => '{"save": "x"}' } })
+    expect(field.value).toBe('{\n  "a": "b"\n}')
   })
 
-  it('rejects nested objects without calling import', async () => {
+  it.each([
+    ['{not json', /Invalid JSON/],
+    ['{"welcome": {"en": "Hi"}}', /must have a string value/],
+    ['{}', /empty/],
+    [JSON.stringify(Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`k${i}`, 'v']))), /up to 100/],
+  ])('rejects %s without calling the API', async (json, message) => {
     renderDialog()
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"welcome": {"en": "Hi"}}' },
+    paste(json)
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(stringsApi.pasteReview).not.toHaveBeenCalled()
+  })
+
+  it('pastes into a chosen target language', async () => {
+    renderDialog()
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Language' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'EN' }))
+    paste('{"save": "Save"}')
+    await waitFor(() => expect(stringsApi.pasteReview).toHaveBeenCalled())
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[0][1].rows).toEqual([
+      { key: 'save', translations: { en: 'Save' } },
+    ])
+  })
+
+  it('generates only empty translations and keeps pasted text', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { en: 'Overwritten?', ja: '保存' }, scores: { ja: 90 } },
+        { id: 'e2e_new', translations: { en: 'New', ja: '新規' }, scores: {} },
+      ],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText(/string value/)).toBeTruthy()
-    expect(syncApi.importFile).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    await waitFor(() => expect(textbox('JA translation for save').value).toBe('保存'))
+    expect(stringsApi.translatePreviewBatch).toHaveBeenCalledWith('proj-1', {
+      module_id: null,
+      items: [
+        { id: 'save', source_text: 'Lưu lại', locales: ['ja'] },
+        { id: 'e2e_new', source_text: 'Mới', locales: ['en', 'ja'] },
+      ],
+    })
+    expect(textbox('EN translation for save').value).toBe('Save')
+    expect(textbox('EN translation for e2e_new').value).toBe('New')
+    expect(stringsApi.pasteSave).not.toHaveBeenCalled()
   })
 
-  it('shows an empty preview and disables Apply', async () => {
+  it('checks edited translations with Smart QA without blocking save', async () => {
     renderDialog()
-    fireEvent.change(screen.getByLabelText('JSON'), { target: { value: '{}' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText('New strings')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Apply/ }) as HTMLButtonElement).disabled).toBe(true)
-    expect(syncApi.importFile).not.toHaveBeenCalled()
+    await previewed()
+    vi.mocked(stringsApi.translateQa).mockResolvedValue({
+      locale: 'en',
+      issues: [{
+        code: 'placeholder_missing',
+        severity: 'error',
+        message: 'Missing placeholder {n}.',
+        start: null,
+        end: null,
+        detail: null,
+      }],
+    })
+    const editedTranslation = textbox('EN translation for e2e_new')
+    fireEvent.change(editedTranslation, { target: { value: 'New' } })
+    const editedRow = within(editedTranslation.closest('li')!)
+    await editedRow.findByRole('button', { name: /QA for en: 1 error/ }, { timeout: 2000 })
+    // Only the edited cell is checked; the untouched existing "Save" is not.
+    expect(stringsApi.translateQa).toHaveBeenCalledTimes(1)
+    expect(stringsApi.translateQa).toHaveBeenCalledWith('proj-1', {
+      source_text: 'Mới',
+      translation: 'New',
+      locale: 'en',
+    })
+    expect(textbox('EN translation for e2e_new').getAttribute('aria-describedby')).toBe('qa-paste-e2e_new-en')
+    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('dry-runs then applies through the JSON import endpoint', async () => {
+  it('shows QA from the preview without checking again', async () => {
+    renderDialog()
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce({
+      ...reviewed,
+      items: reviewed.items.map((item) =>
+        item.key === 'save'
+          ? {
+              ...item,
+              issues: {
+                en: [{
+                  code: 'placeholder_missing',
+                  severity: 'error',
+                  message: 'Missing placeholder {n}.',
+                  start: null,
+                  end: null,
+                  detail: null,
+                }],
+              },
+            }
+          : item
+      ),
+    })
+    paste('{"save": "Lưu lại", "e2e_new": "Mới"}')
+    await screen.findByRole('list', { name: 'Pasted strings' })
+    const saveRow = within(textbox('EN translation for save').closest('li')!)
+    await saveRow.findByRole('button', { name: /QA for en: 1 error/ })
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(stringsApi.translateQa).not.toHaveBeenCalled()
+  })
+
+  it('uses QA returned with AI translations instead of re-checking', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translateQa).mockClear()
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存' }, scores: {}, issues: { ja: [] } },
+        {
+          id: 'e2e_new',
+          translations: { en: 'New', ja: '新規' },
+          scores: {},
+          issues: {
+            en: [{ code: 'x', severity: 'warning', message: 'Check casing.', start: null, end: null, detail: null }],
+            ja: [],
+          },
+        },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }))
+    expect(await screen.findByRole('button', { name: /QA for en: 1 warning/ })).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    const checked = vi.mocked(stringsApi.translateQa).mock.calls.map(([, body]) => body.translation)
+    expect(checked).not.toContain('New')
+    expect(checked).not.toContain('保存')
+  })
+
+  it('keeps Generate with AI available and redoes only AI cells the user has not edited', async () => {
+    renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存' }, scores: {} },
+        { id: 'e2e_new', translations: { en: 'New', ja: '新規' }, scores: {} },
+      ],
+    })
+    const generate = screen.getByRole('button', { name: 'Generate with AI' }) as HTMLButtonElement
+    fireEvent.click(generate)
+    await waitFor(() => expect(textbox('JA translation for save').value).toBe('保存'))
+    await waitFor(() => expect(generate.disabled).toBe(false))
+
+    fireEvent.change(textbox('JA translation for e2e_new'), { target: { value: 'Mine' } })
+    vi.mocked(stringsApi.translatePreviewBatch).mockResolvedValueOnce({
+      items: [
+        { id: 'save', translations: { ja: '保存2' }, scores: {} },
+        { id: 'e2e_new', translations: { en: 'New 2' }, scores: {} },
+      ],
+    })
+    fireEvent.click(generate)
+    await waitFor(() => expect(textbox('JA translation for save').value).toBe('保存2'))
+    expect(vi.mocked(stringsApi.translatePreviewBatch).mock.calls[1][1].items).toEqual([
+      { id: 'save', source_text: 'Lưu lại', locales: ['ja'] },
+      { id: 'e2e_new', source_text: 'Mới', locales: ['en'] },
+    ])
+    expect(textbox('EN translation for e2e_new').value).toBe('New 2')
+    expect(textbox('JA translation for e2e_new').value).toBe('Mine')
+    expect(textbox('EN translation for save').value).toBe('Save')
+    expect(generate.disabled).toBe(false)
+  })
+
+  it('saves as draft, stays open, and offers the saved batch in Strings', async () => {
     const { onSuccess, onClose } = renderDialog()
-    vi.mocked(syncApi.importFile)
-      .mockResolvedValueOnce(dryResult)
-      .mockResolvedValueOnce(applyResult)
-
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"save": "Lưu lại", "e2e_new": "Mới"}' },
+    await previewed()
+    fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce(savedDraft)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    expect(await screen.findByText('Saved 2 strings as draft')).toBeTruthy()
+    expect(stringsApi.pasteSave).toHaveBeenCalledWith('proj-1', {
+      module_id: null,
+      tag_ids: [],
+      action: 'draft',
+      fingerprint: 'fp-1',
+      rows: [
+        { key: 'save', source_text: 'Lưu lại', translations: { en: 'Save' } },
+        { key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } },
+      ],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-
-    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(1))
-    const dryParams = vi.mocked(syncApi.importFile).mock.calls[0][2]
-    expect(dryParams).toMatchObject({
-      locale: 'vi',
-      dry_run: 'true',
-      status: 'draft',
-      partial: 'true',
-    })
-    expect(await screen.findByText(/\+ e2e_new/)).toBeTruthy()
-    expect(screen.getByText(/~ save/)).toBeTruthy()
-    expect(screen.getByText('Mới')).toBeTruthy()
-    expect(screen.getByText('Lưu lại')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    await waitFor(() => expect(syncApi.importFile).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(syncApi.importFile).mock.calls[1][2]).toMatchObject({
-      dry_run: 'false',
-      status: 'draft',
-      partial: 'true',
-    })
-    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(onSuccess).toHaveBeenCalledTimes(1)
     expect(onClose).not.toHaveBeenCalled()
+    const link = screen.getByRole('link', { name: 'View in Strings' })
+    expect(link.getAttribute('href')).toBe('/projects/proj-1/strings?batch_id=batch-1&batch_kind=import')
+    fireEvent.click(link)
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Cancel on preview back does not apply', async () => {
-    const { onSuccess } = renderDialog()
-    vi.mocked(syncApi.importFile).mockResolvedValueOnce(dryResult)
+  it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {
+    const { onSuccess, onClose } = renderDialog()
+    await previewed()
+    fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    const publish = await screen.findByRole('button', { name: 'Publish' })
+    expect(screen.queryByRole('list', { name: 'Pasted strings' })).toBeNull()
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, action: 'publish', published: 2 })
+    fireEvent.click(publish)
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings')
+    const request = vi.mocked(stringsApi.pasteSave).mock.calls[0][1]
+    expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-1' })
+    expect(request.rows[1]).toEqual({ key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } })
+  })
 
-    fireEvent.change(screen.getByLabelText('JSON'), {
-      target: { value: '{"e2e_new": "Mới"}' },
+  it('refreshes concurrent changes before publication review while preserving user edits', async () => {
+    renderDialog()
+    await previewed()
+    fireEvent.change(textbox('Source text for save'), { target: { value: 'My source' } })
+    fireEvent.change(textbox('JA translation for save'), { target: { value: 'Mine' } })
+    const refreshed: PasteReview = {
+      fingerprint: 'fp-2',
+      items: [
+        { key: 'save', mode: 'update', entry: entry('save', 'Lưu lại', { en: 'Concurrent', ja: '' }, 'public') },
+        reviewed.items[1],
+      ],
+    }
+    vi.mocked(stringsApi.pasteReview)
+      // The review projects the stale submitted EN value over the changed catalog.
+      .mockResolvedValueOnce({ ...reviewed, fingerprint: 'fp-2' })
+      .mockResolvedValueOnce(refreshed)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    await waitFor(() => expect(textbox('EN translation for save').value).toBe('Concurrent'))
+    expect(textbox('Source text for save').value).toBe('My source')
+    expect(textbox('JA translation for save').value).toBe('Mine')
+    expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull()
+    expect(stringsApi.pasteSave).not.toHaveBeenCalled()
+    expect(toast.info).toHaveBeenCalled()
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[2][1].rows).toEqual([
+      { key: 'save', source_text: 'Lưu lại' },
+      { key: 'e2e_new', source_text: 'Mới' },
+    ])
+
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(refreshed)
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, action: 'publish', published: 2 })
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(stringsApi.pasteSave).toHaveBeenCalled())
+    expect(vi.mocked(stringsApi.pasteSave).mock.calls[0][1]).toMatchObject({
+      action: 'publish',
+      fingerprint: 'fp-2',
+      rows: [
+        { key: 'save', source_text: 'My source', translations: { en: 'Concurrent', ja: 'Mine' } },
+        { key: 'e2e_new', source_text: 'Mới', translations: {} },
+      ],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByText(/\+ e2e_new/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy()
-    expect(syncApi.importFile).toHaveBeenCalledTimes(1)
-    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a stale list from the pasted rows and keeps edits', async () => {
+    renderDialog()
+    await previewed()
+    fireEvent.change(textbox('JA translation for save'), { target: { value: 'Mine' } })
+    vi.mocked(stringsApi.pasteSave).mockRejectedValueOnce(
+      new ApiError(409, 'Stale', { detail: { code: 'publish_fingerprint_mismatch' } })
+    )
+    vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce({
+      fingerprint: 'fp-2',
+      items: [
+        { key: 'save', mode: 'update', entry: entry('save', 'Lưu lại', { en: 'Concurrent', ja: '' }, 'public') },
+        reviewed.items[1],
+      ],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(textbox('EN translation for save').value).toBe('Concurrent'))
+    expect(textbox('JA translation for save').value).toBe('Mine')
+    expect(vi.mocked(stringsApi.pasteReview).mock.calls[1][1].rows).toEqual([
+      { key: 'save', source_text: 'Lưu lại' },
+      { key: 'e2e_new', source_text: 'Mới' },
+    ])
+    expect(toast.info).toHaveBeenCalled()
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce(savedDraft)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await screen.findByText('Saved 2 strings as draft')
+    expect(vi.mocked(stringsApi.pasteSave).mock.calls[1][1].fingerprint).toBe('fp-2')
+  })
+
+  it('keeps edits after a failed save', async () => {
+    renderDialog()
+    await previewed()
+    fireEvent.change(textbox('JA translation for save'), { target: { value: 'Mine' } })
+    vi.mocked(stringsApi.pasteSave).mockRejectedValueOnce(new ApiError(500, 'Server error'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(textbox('JA translation for save').value).toBe('Mine')
+    expect(screen.queryByText('Saved 2 strings as draft')).toBeNull()
+  })
+
+  it('asks before discarding unsaved pasted strings', async () => {
+    const { onClose } = renderDialog()
+    await previewed()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    const confirm = await screen.findByRole('alertdialog', { name: 'Discard pasted strings?' })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Keep editing' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('list', { name: 'Pasted strings' })).toBeTruthy()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog', { name: 'Discard pasted strings?' })).getByRole(
+        'button',
+        { name: 'Discard' }
+      )
+    )
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(stringsApi.pasteSave).not.toHaveBeenCalled()
   })
 })

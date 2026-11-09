@@ -290,7 +290,6 @@ its busy controls, without cancelling or resubmitting the server operation.
 Unapplied previews must be run again before Apply. The job's actual terminal
 result still controls success/failure handling; browser timeout is not failure.
 
-Add many preserves its submitted JSON, module, and tags when a pending preview
-is closed and reopened. A preview recovered after a reload has no original
-input, so Apply stays disabled until the user pastes it again and runs a new
-preview.
+Add many no longer uses the import endpoint or background jobs: it reviews up to
+100 pasted rows in memory and saves them through `strings/paste-save` (see
+`docs/data-model.md`). Larger pastes belong on Import / Export.

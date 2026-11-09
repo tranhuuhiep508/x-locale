@@ -223,6 +223,20 @@ Older import batches retain their catalog review links. Deleted and pending-dele
 strings are excluded from this workspace. Competing edits require renewed review;
 generation or save failures never publish content.
 
+### Add many (paste JSON)
+
+**Strings → Add many** follows the single-string editor flow for up to 100 keys:
+paste a flat JSON object, choose the language it is written in (source or any target),
+module, and tags, then **Preview** lists every pasted string as **New** or **Update**
+with its translations. **Generate with AI** fills only empty languages, so pasted or
+already-reviewed translations are kept; edit any cell inline. Nothing is written until
+**Save as draft** (working copy only; public content unchanged) or **Review & publish**,
+which shows the complete proposed public content of every pasted string before
+**Publish** saves and publishes them in one transaction. Closing first asks before
+discarding. Each save is one undoable `import` audit batch; a catalog change made
+elsewhere after the preview rejects the save, refreshes the list, and keeps your edits.
+Larger files stay on Import / Export.
+
 ### String filters
 
 The strings list, filtered publish preview, and filtered batch actions share the

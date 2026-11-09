@@ -265,6 +265,11 @@ async function openSourceConflict() {
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await screen.findByText('Source text changed since generation')
+  // The banner renders from the save's onError, before the save leaves the pending
+  // state; until then the buttons are disabled and a click would be dropped.
+  await waitFor(() => expect(
+    (screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled,
+  ).toBe(false))
 }
 
 describe('source conflict recovery', () => {
@@ -283,9 +288,8 @@ describe('source conflict recovery', () => {
       error: null, created_at: null, completed_at: null, progress: null,
     })
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
-    await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
-    // The banner hides on click; the request is sent a tick later.
     await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
     expect(vi.mocked(stringsApi.translateProposals).mock.calls[1][1]).toEqual({
       scope: 'strings', string_ids: ['a'], locales: ['en'],
     })
