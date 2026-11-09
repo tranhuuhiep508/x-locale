@@ -403,7 +403,13 @@ export function StringsPage() {
   // Only the latest review request may open the publication review. Back to edit or a
   // newer review abandons earlier requests; reset() alone still runs these callbacks.
   const reviewRequestId = useRef(0)
+  // Set in the click, before React Query's setTimeout(0) makes isPending true.
+  const reviewHold = useRef(0)
+  function holdReview() {
+    reviewHold.current += 1
+  }
   function requestPublicationReview(payload: ReviewPayload) {
+    holdReview()
     reviewRequestId.current += 1
     setPublishReview({ payload, review: null })
     reviewMut.mutate({ payload, requestId: reviewRequestId.current })
@@ -462,6 +468,7 @@ export function StringsPage() {
   })
 
   function resetReview() {
+    reviewHold.current = 0
     reviewRequestId.current += 1
     setReviewOpen(false)
     reviewRequestRef.current = null
@@ -486,7 +493,7 @@ export function StringsPage() {
   }
 
   function closeReview() {
-    if (saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
+    if (reviewHold.current !== 0 || saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
     resetReview()
   }
 
@@ -560,6 +567,15 @@ export function StringsPage() {
         : proposalJobQuery.data?.status === 'failed'
           ? proposalJobQuery.data.error ?? 'Translation job failed'
           : null
+  const reviewBusy = reviewGenerating || saveMut.isPending || reviewMut.isPending
+  useEffect(() => {
+    if (reviewBusy) return
+    const token = reviewHold.current
+    const timer = window.setTimeout(() => {
+      if (reviewHold.current === token) reviewHold.current = 0
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [reviewBusy])
   const hasActiveFilters = hasActiveStringFilters(search)
   const emptyCopy = catalogEmptyCopy(Boolean(search.batch_id), hasActiveFilters)
 
@@ -906,6 +922,7 @@ export function StringsPage() {
         sourceConflicts={applySourceConflicts}
         recoveryMessage={recoveryMessage}
         onRegenerate={(items) => {
+          holdReview()
           setProposalItems(items)
           setRecoveryMessage(null)
           setProposalJobId(null)
@@ -932,6 +949,7 @@ export function StringsPage() {
         onPageChange={loadMissingPage}
         onClose={closeReview}
         onTranslate={(items) => {
+          holdReview()
           setProposalItems(items)
           setProposalJobId(null)
           regenerationIds.current = null
@@ -944,6 +962,7 @@ export function StringsPage() {
           })
         }}
         onSaveDraft={(items) => {
+          holdReview()
           setSavedNotice(null)
           saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
         }}
@@ -966,6 +985,7 @@ export function StringsPage() {
         onPublish={() => {
           const frozen = publishReview
           if (!frozen?.review) return
+          holdReview()
           saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
         savedNotice={savedNotice}

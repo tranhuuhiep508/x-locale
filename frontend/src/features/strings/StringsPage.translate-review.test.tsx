@@ -60,6 +60,7 @@ let client: QueryClient
 afterEach(() => {
   cleanup()
   client.clear()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 beforeEach(() => {
@@ -225,13 +226,25 @@ describe('translation review retranslation', () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
-    fireEvent.change(await screen.findByLabelText('en'), { target: { value: 'My draft' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
-    await screen.findByText(interrupted)
-    expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
-    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)) })
-    expect(jobsApi.get).toHaveBeenCalledTimes(1)
+    // The en field is already mounted for the missing queue, so findByLabelText
+    // resolves before this click's proposals rename the button.
+    await screen.findByRole('button', { name: 'Translate again' })
+    fireEvent.change(screen.getByLabelText('en'), { target: { value: 'My draft' } })
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+      for (let i = 0; i < 40 && !screen.queryByText(interrupted); i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+      }
+      expect(screen.getByText(interrupted)).toBeTruthy()
+      expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
+      expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
+      const polls = vi.mocked(jobsApi.get).mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(jobsApi.get).toHaveBeenCalledTimes(polls)
+    } finally {
+      vi.useRealTimers()
+    }
 
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect(screen.queryByText(interrupted)).toBeNull())
@@ -260,7 +273,7 @@ async function openSourceConflict() {
   render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
-  await screen.findAllByLabelText('en')
+  await screen.findByRole('button', { name: 'Translate again' })
   fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
@@ -316,10 +329,10 @@ describe('source conflict recovery', () => {
       })
     }
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled).toBe(false))
+    await screen.findByText(outcome.endsWith('empty') ? /No replacement was produced/ : 'Generation unavailable')
+    expect((screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
-    if (outcome.endsWith('empty')) expect(screen.getByText(/No replacement was produced/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Remove from review' }))
     expect(screen.queryByText('Source text changed since generation')).toBeNull()
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('Unrelated draft')
