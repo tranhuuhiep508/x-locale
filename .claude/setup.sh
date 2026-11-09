@@ -13,7 +13,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Installs uv, root .env (AUTH_DEV_BYPASS=true), native Postgres 16 (libc C),
+# Installs uv, root .env (AUTH_DEV_BYPASS=true), native Postgres 16,
 # backend + CLI Python deps, and frontend deps (npm ci).
 bash .cursor/install.sh
 

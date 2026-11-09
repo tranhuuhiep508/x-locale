@@ -32,6 +32,39 @@ start_postgres_cluster() {
   wait_for_postgres
 }
 
+# Older cloud images ran pg_createcluster --locale=C. README, Compose, and CI
+# create the app databases with no LC_COLLATE / LC_CTYPE, so they inherit the
+# cluster. Replace a leftover C/POSIX cluster once. initdb then uses this
+# process's locale, the same as a fresh Debian/Ubuntu cluster.
+replace_legacy_c_cluster() {
+  start_postgres_cluster
+  local collate ctype collation
+  collation="$(sudo -u postgres psql -d template1 -Atqc "SELECT datcollate || '|' || datctype FROM pg_database WHERE datname = 'template1'")"
+  IFS='|' read -r collate ctype <<<"$collation"
+  if [[ "$collate" != "C" && "$collate" != "POSIX" && "$ctype" != "C" && "$ctype" != "POSIX" ]]; then
+    return 0
+  fi
+
+  local system_locale="${LC_ALL:-${LANG:-}}"
+  if [[ -z "$system_locale" || "$system_locale" == "C" || "$system_locale" == "POSIX" ]]; then
+    echo "Postgres collation is ${collate}/${ctype}; system locale is ${system_locale:-unset}, so the cluster is left as-is" >&2
+    return 0
+  fi
+
+  echo "Replacing Postgres 16 main (collation ${collate}/${ctype}) with system locale ${system_locale}"
+  sudo pg_dropcluster --stop 16 main
+  sudo LC_ALL="$system_locale" LANG="$system_locale" pg_createcluster 16 main
+  start_postgres_cluster
+
+  collation="$(sudo -u postgres psql -d template1 -Atqc "SELECT datcollate || '|' || datctype FROM pg_database WHERE datname = 'template1'")"
+  IFS='|' read -r collate ctype <<<"$collation"
+  if [[ "$collate" == "C" || "$collate" == "POSIX" || "$ctype" == "C" || "$ctype" == "POSIX" ]]; then
+    echo "Postgres collation is still ${collate}/${ctype} after recreating the cluster" >&2
+    return 1
+  fi
+  echo "Postgres template1 collation is now ${collate}/${ctype}"
+}
+
 install_postgres_packages() {
   if dpkg -s postgresql-16 >/dev/null 2>&1 && command -v pg_isready >/dev/null 2>&1; then
     return 0
@@ -41,6 +74,8 @@ install_postgres_packages() {
 }
 
 ensure_xlocale_role_and_databases() {
+  replace_legacy_c_cluster
+
   sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres <<'SQL'
 DO $$
 BEGIN
@@ -56,7 +91,6 @@ SQL
   local db
   for db in xlocale xlocale_test; do
     if [[ "$(sudo -u postgres psql -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '${db}'")" != "1" ]]; then
-      # Any collation works; migration u0a38e9f1234 pins identifier columns to C.
       sudo -u postgres createdb -O xlocale -T template0 "$db"
     fi
   done
