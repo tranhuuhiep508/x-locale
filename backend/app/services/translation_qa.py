@@ -81,8 +81,9 @@ _ICU_TYPED = re.compile(
     r"\{\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*,\s*"
     r"(?:plural|selectordinal|select|number|date|time)\b"
 )
+# Options stop at "$": an unclosed "$t(a," cannot rescan every later "$t(" (quadratic).
 _I18NEXT_T = re.compile(
-    r"\$t\(\s*(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\"|(?P<bare>[\w:.-]+))\s*(?:,[^)]*)?\)"
+    r"\$t\(\s*(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\"|(?P<bare>[\w:.-]+))\s*(?:,[^)$]*)?\)"
 )
 _VUE_LINK = re.compile(r"(?<![\w@])@(?P<mod>\.[A-Za-z]+)?:(?P<key>[\w.-]+)")
 _SELECTOR = re.compile(r"(?:=\s*-?\d+|[A-Za-z_][A-Za-z0-9_]*)")
@@ -92,8 +93,9 @@ _RAILS = re.compile(r"%\{([^{}]*)\}")
 _PLAIN_ARG = re.compile(
     r"\{\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*|\d+)\s*"
     # Only the style group may take spaces after its comma (callers strip it); overlapping
-    # \s* runs here backtracked cubically on a long unclosed "{a, number, ".
-    r"(?:\}|,\s*(?P<type>number|date|time)\s*(?:\}|,(?P<style>[^}]*)\}))"
+    # \s* runs backtracked cubically on a long unclosed "{a, number, ". The style stops at
+    # "{" so an unclosed one cannot rescan every later "{" (quadratic).
+    r"(?:\}|,\s*(?P<type>number|date|time)\s*(?:\}|,(?P<style>[^{}]*)\}))"
 )
 # A lone "{" before a word, including non-ASCII ("Nhấn { để").
 _FOLLOWING_NAME = re.compile(r"\s*(?:[^\W\d_]|_|\d)")

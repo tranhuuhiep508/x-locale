@@ -494,6 +494,22 @@ def test_unclosed_typed_argument_with_long_spaces_is_checked_quickly():
     assert check_translation("{ a , number }", "{a, number}", "en") == []
 
 
+def test_repeated_unclosed_calls_and_arguments_are_checked_quickly():
+    import collections
+    import time
+
+    from app.services.translation_qa import _add_plain_arguments
+
+    # Each unclosed start used to rescan the rest of the text: quadratic.
+    calls = "$t(-," * (TEXT_MAX_LENGTH // 5)
+    started = time.perf_counter()
+    check_translation(calls, "x", "en")
+    _add_plain_arguments("{0,date,|" * (TEXT_MAX_LENGTH // 9), collections.Counter())
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.2, elapsed
+    assert check_translation("$t(app.name, {\"count\": 1})", "$t(app.name, {\"count\": 1})", "en") == []
+
+
 def test_qa_refuses_oversized_or_deeply_nested_input():
     oversized = check_translation("x" * (TEXT_MAX_LENGTH + 1), "y", "en")
     assert [issue.code for issue in oversized] == ["qa_limit"]
