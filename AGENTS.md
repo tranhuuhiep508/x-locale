@@ -18,7 +18,7 @@ do not use `docker compose` for Postgres. Do not re-run installs unless a tool o
 
 | Service | Dir | Start (dev) | Port | Notes |
 |----------|------------|-------------------------------------------------------------------------|------|-------|
-| Postgres | n/a | `sudo pg_ctlcluster 16 main start` (already started by `.cursor/start.sh`) | 5432 | Native PostgreSQL 16, cluster default collation (any collation works; CI uses ICU `en-US`). Role `xlocale`, databases `xlocale` and `xlocale_test`. |
+| Postgres | n/a | `sudo pg_ctlcluster 16 main start` (already started by `.cursor/start.sh`) | 5432 | Native PostgreSQL 16. The cluster keeps the image locale; the app does not require one. Backend CI covers C, C.UTF-8, en_US.UTF-8, and ICU en-US. Role `xlocale`, databases `xlocale` and `xlocale_test`. |
 | Backend | `backend/` | tmux `backend`: `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
 | Frontend | `frontend/`| tmux `frontend`: `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
 | CLI | `cli/` | `uv run --project cli loc <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
@@ -44,7 +44,7 @@ created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing
 - Content writes are audited via `before_flush` → `activities`. Batch/import/translate set `batch_id` for grouped revert.
 - `allow_duplicate_keys` defaults to false on projects. When enabled, live keys are unique per module (Unassigned included). The internal `strings.key_policy_allows_duplicates` mirrors the project flag via a cascading composite FK; populate it in every insert path. Flat import/export rejects ambiguous keys. Disabling the setting or deleting a module must not merge colliding strings.
 - Modules are always stored; project `layout` only affects export/CLI pull shape.
-- `strings.key`, `strings.published_key`, `modules.slug` and `tags.name` are `COLLATE "C"` (model and migration `u0a38e9f1234`), so they sort like Python `sorted()` on any database collation. New identifier columns that are sorted or exported in order should use `String(..., collation="C")` too. Free text keeps the database collation.
+- `strings.key`, `strings.published_key`, `modules.slug`, `tags.name`, and `projects.slug` are `COLLATE "C"` (model and migrations `u0a38e9f1234`, `v1b49f0a2345`), so they sort like Python `sorted()` on any database collation. New identifier columns that are sorted or exported in order should use `String(..., collation="C")` too. Free text keeps the database collation. Email lookup uses `lower(email COLLATE "C")` so ASCII casefold does not follow the database locale.
 - Flat export uses the stored key as-is (public export uses `published_key`). Modular export groups by module slug; keys inside each file are never prefixed.
 
 ### Lint / test / build

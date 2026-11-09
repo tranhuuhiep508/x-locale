@@ -85,7 +85,10 @@ def list_members(db: Session, project_id: uuid.UUID) -> list[MemberOut]:
 
 def find_user_by_email(db: Session, email: str) -> User:
     normalized = email.strip().lower()
-    matches = db.query(User).filter(func.lower(User.email) == normalized).all()
+    # COLLATE "C" folds only A-Z, so this matches str.lower() for ASCII mail
+    # on every database locale (including Turkish, where lower('I') is not 'i').
+    folded = func.lower(User.email.collate("C"))
+    matches = db.query(User).filter(folded == normalized).all()
     if not matches:
         raise HTTPException(status_code=400, detail=UNKNOWN_EMAIL)
     if len(matches) > 1:
