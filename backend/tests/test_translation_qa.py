@@ -481,6 +481,19 @@ def test_printf_zero_run_is_checked_quickly():
     assert check_translation("%05d %0*d %08.3f", "%05d %0*d %08.3f", "en") == []
 
 
+def test_unclosed_typed_argument_with_long_spaces_is_checked_quickly():
+    import time
+
+    # Spaces after the style comma used to fit three overlapping \s* runs: cubic backtracking.
+    sample = "{a, number, " + " " * (TEXT_MAX_LENGTH - 12)
+    started = time.perf_counter()
+    check_translation("Hello {a}", sample, "en")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 1, elapsed
+    assert check_translation("{a, number, ::currency/EUR }", "{a, number, ::currency/EUR}", "en") == []
+    assert check_translation("{ a , number }", "{a, number}", "en") == []
+
+
 def test_qa_refuses_oversized_or_deeply_nested_input():
     oversized = check_translation("x" * (TEXT_MAX_LENGTH + 1), "y", "en")
     assert [issue.code for issue in oversized] == ["qa_limit"]

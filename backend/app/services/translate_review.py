@@ -7,8 +7,6 @@ those strings in the same transaction as the audit records.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -22,7 +20,6 @@ from app.schemas import (
     TranslateReviewOut,
     TranslateSaveRequest,
     TranslateSaveResult,
-    TranslationOut,
 )
 from app.services import strings
 from app.services.translate import check_source_baseline
@@ -112,11 +109,7 @@ def _reject_pending_delete(
 
 def _project(project: Project, entry: StringEntry, item: TranslateReviewItem) -> StringOut:
     projected = strings.serialize_string(entry).model_copy(deep=True)
-    by_locale = {t.locale: t for t in projected.translations}
-    # Configured locales without a row export empty; show them so the consequence is visible.
-    for locale in project.target_languages:
-        if locale != project.base_language and locale not in by_locale:
-            by_locale[locale] = TranslationOut(locale=locale, value="")
+    by_locale = strings.with_target_cells(project, projected)
     for locale, value in _filled(item).items():
         cell = by_locale[locale]
         if cell.value != value:
@@ -144,14 +137,14 @@ def _fingerprint(
         key=lambda row: row["id"],
     )
     entries = list(by_id.values())
-    payload = {
-        "project": str(project.id),
-        "settings": [project.base_language, sorted(project.target_languages)],
-        "reviewed": reviewed,
-        "baseline": strings.compute_publish_fingerprint(entries, include_unchanged=True),
-    }
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return strings.hash_review(
+        {
+            "project": str(project.id),
+            "settings": strings.review_settings(project),
+            "reviewed": reviewed,
+            "baseline": strings.compute_publish_fingerprint(entries, include_unchanged=True),
+        }
+    )
 
 
 def review_translations(

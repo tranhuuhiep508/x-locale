@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import HTTPException
@@ -30,7 +28,6 @@ from app.schemas import (
     StringOut,
     StringUpdate,
     TagOut,
-    TranslationOut,
 )
 from app.services import strings
 from app.services.catalog import require_module_in_project
@@ -119,18 +116,7 @@ def _preview(
         db, project.id, projected.key, projected.module_id, exclude=current.id if current else None
     ):
         raise HTTPException(409, detail=f"String '{projected.key}' already exists")
-    by_locale = {item.locale: item for item in projected.translations}
-    # Missing configured locales export empty; materialize them only in this DTO.
-    for locale in project.target_languages:
-        if locale != project.base_language and locale not in by_locale:
-            by_locale[locale] = TranslationOut(
-                id=_PREVIEW_ID,
-                locale=locale,
-                value="",
-                confidence=None,
-                published_value=None,
-                updated_at=None,
-            )
+    by_locale = strings.with_target_cells(project, projected)
     for locale, value in (values.translations or {}).items():
         translation = by_locale[locale]
         if translation.value != value:
@@ -147,27 +133,40 @@ def _preview(
     expected = normalized["values"].get("expected", {})
     if expected.get("tag_ids") is not None:
         expected["tag_ids"] = sorted(expected["tag_ids"])
-    payload = {
-        "project": str(project.id),
-        "settings": [
-            project.base_language,
-            sorted(project.target_languages),
-            project.layout.value,
-            project.allow_duplicate_keys,
-        ],
-        "proposal": normalized,
-        "current": _review_state(current),
-        "proposed": _review_state(projected),
-    }
-    fingerprint = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    fingerprint = strings.hash_review(
+        {
+            "project": str(project.id),
+            "settings": strings.review_settings(project),
+            "proposal": normalized,
+            "current": _review_state(current),
+            "proposed": _review_state(projected),
+        }
+    )
     return EditorPreviewOut(entry=projected, fingerprint=fingerprint)
 
 
 def preview_editor(db: Session, project: Project, proposal: EditorProposal) -> EditorPreviewOut:
     with db.no_autoflush:
         return _preview(db, project, proposal, locked=False)
+
+
+def _apply_proposal(
+    db: Session, project: Project, proposal: EditorProposal, entry: StringEntry | None = None
+) -> StringEntry:
+    """Write one reviewed proposal to the working copy and return its string.
+
+    ``entry``: the update's string, already loaded in this session (saves a query).
+    """
+    if proposal.mode == "create":
+        return strings._create_string(db, project, StringCreate(**proposal.values.model_dump()))
+    strings._update_string(
+        db,
+        project,
+        proposal.string_id,
+        StringUpdate(**proposal.values.model_dump(exclude_unset=True)),
+    )
+    # `entry` is the same session object _update_string just refreshed and wrote.
+    return entry if entry is not None else strings.get_string(db, project.id, proposal.string_id)
 
 
 def save_editor(db: Session, project: Project, payload: EditorSaveRequest) -> StringOut:
@@ -189,19 +188,7 @@ def save_editor(db: Session, project: Project, payload: EditorSaveRequest) -> St
                     raise HTTPException(409, detail={"code": "nothing_to_publish"})
             else:
                 db.info.setdefault("activity", {})["intent"] = "save_draft"
-            proposal = payload.proposal
-            if proposal.mode == "create":
-                entry = strings._create_string(
-                    db, project, StringCreate(**proposal.values.model_dump())
-                )
-            else:
-                strings._update_string(
-                    db,
-                    project,
-                    proposal.string_id,
-                    StringUpdate(**proposal.values.model_dump(exclude_unset=True)),
-                )
-                entry = strings.get_string(db, project.id, proposal.string_id)
+            entry = _apply_proposal(db, project, payload.proposal)
             if publish:
                 strings.promote_string(entry)
         db.flush()
@@ -304,23 +291,14 @@ def _paste_review(db: Session, project: Project, payload: PasteReviewRequest, *,
             projected.id = uuid5(NAMESPACE_URL, f"x-locale-paste:{project.id}:{row.key}")
         rows.append((row, proposal, entry, projected))
         baseline.append([row.key, _review_state(current)])
-    fingerprint = hashlib.sha256(
-        json.dumps(
-            {
-                "project": str(project.id),
-                "settings": [
-                    project.base_language,
-                    sorted(project.target_languages),
-                    project.layout.value,
-                    project.allow_duplicate_keys,
-                ],
-                "module_id": str(payload.module_id) if payload.module_id else None,
-                "rows": baseline,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    fingerprint = strings.hash_review(
+        {
+            "project": str(project.id),
+            "settings": strings.review_settings(project),
+            "module_id": str(payload.module_id) if payload.module_id else None,
+            "rows": baseline,
+        }
+    )
     return rows, fingerprint
 
 
@@ -375,19 +353,7 @@ def save_paste(db: Session, project: Project, payload: PasteSaveRequest) -> Past
                     raise HTTPException(409, detail={"code": "nothing_to_publish"})
             saved = []
             for _row, proposal, entry, _projected in rows:
-                if proposal.mode == "create":
-                    entry = strings._create_string(
-                        db, project, StringCreate(**proposal.values.model_dump())
-                    )
-                else:
-                    strings._update_string(
-                        db,
-                        project,
-                        proposal.string_id,
-                        StringUpdate(**proposal.values.model_dump(exclude_unset=True)),
-                    )
-                    # `entry` is the same session object _update_string just refreshed and wrote.
-                saved.append(entry)
+                saved.append(_apply_proposal(db, project, proposal, entry))
             published = 0
             if publish:
                 for entry in saved:
