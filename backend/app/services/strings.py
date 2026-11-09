@@ -200,12 +200,35 @@ def compute_publish_fingerprint(
             }
         )
     rows.sort(key=lambda row: str(row["id"]))
-    payload = {
-        "ids": [row["id"] for row in rows],
-        "rows": rows,
-    }
+    return hash_review({"ids": [row["id"] for row in rows], "rows": rows})
+
+
+def hash_review(payload: object) -> str:
+    """Stable SHA-256 of a JSON-able review payload; every review fingerprint uses this."""
     canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def review_settings(project: Project) -> list[object]:
+    """Project settings that change what a review means; part of every review fingerprint."""
+    return [
+        project.base_language,
+        sorted(project.target_languages),
+        project.layout.value,
+        project.allow_duplicate_keys,
+    ]
+
+
+def with_target_cells(project: Project, entry: StringOut) -> dict[str, TranslationOut]:
+    """``entry``'s translations by locale, plus an empty cell for each missing target.
+
+    Missing configured locales export empty; this only materializes them in the DTO.
+    """
+    by_locale = {item.locale: item for item in entry.translations}
+    for locale in project.target_languages:
+        if locale != project.base_language and locale not in by_locale:
+            by_locale[locale] = TranslationOut(locale=locale, value="")
+    return by_locale
 
 
 def fingerprints_match(expected: str, provided: str) -> bool:

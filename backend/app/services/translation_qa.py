@@ -91,7 +91,9 @@ _RAILS = re.compile(r"%\{([^{}]*)\}")
 # Complete {name} / {name, number} left in the text when the ICU parse fails.
 _PLAIN_ARG = re.compile(
     r"\{\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*|\d+)\s*"
-    r"(?:\}|,\s*(?P<type>number|date|time)\s*(?:,\s*(?P<style>[^}]*))?\s*\})"
+    # Only the style group may take spaces after its comma (callers strip it); overlapping
+    # \s* runs here backtracked cubically on a long unclosed "{a, number, ".
+    r"(?:\}|,\s*(?P<type>number|date|time)\s*(?:\}|,(?P<style>[^}]*)\}))"
 )
 # A lone "{" before a word, including non-ASCII ("Nhấn { để").
 _FOLLOWING_NAME = re.compile(r"\s*(?:[^\W\d_]|_|\d)")
