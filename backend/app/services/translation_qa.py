@@ -751,6 +751,14 @@ def _absorb_markup(markup: _Markup, full: str, view: _IcuView, *, in_plural: boo
     """
     errors: list[str] = []
     joined, origins = _join_parts(markup)
+    # HTMLParser decodes attribute values (&lt;b> becomes <b>), which hides
+    # nesting from the raw-text guard. Joined text is checked defensively.
+    if any(
+        _brace_depth(piece) > MAX_NESTING or _tag_depth(piece) > MAX_NESTING
+        for piece in (joined, *markup.attrs)
+    ):
+        view.too_deep = True
+        return errors
     if joined and not view.too_deep:
         try:
             _walk(_parse_icu(joined, in_plural=in_plural), 1, view)

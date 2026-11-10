@@ -550,6 +550,37 @@ def test_deeply_nested_tags_do_not_crash_the_worker():
     assert "qa_limit" not in _codes("<b>x</b>", "<b>y</b>")
 
 
+def test_decoded_html_attributes_do_not_crash_the_worker():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    # HTMLParser decodes attributes after the raw-text nesting checks.
+    code = (
+        "from app.limits import TEXT_MAX_LENGTH\n"
+        "from app.services.translation_qa import MAX_NESTING, check_translation\n"
+        "for encoded, count in (('&lt;b>', 5000), ('&#60;b>', 4500),\n"
+        "                       ('&#123;n, select, other &#123;', 1000),\n"
+        "                       ('&lt;b>', MAX_NESTING + 1)):\n"
+        "    text = '<a title=\"' + encoded * count + '\">x</a>'\n"
+        "    assert len(text) <= TEXT_MAX_LENGTH\n"
+        "    for source, translation in (('Hello', text), (text, 'Hello')):\n"
+        "        issues = check_translation(source, translation, 'en')\n"
+        "        assert 'qa_limit' in [issue.code for issue in issues], encoded\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    shallow = '<a title="&lt;b>{name}&lt;/b>">Hello</a>'
+    assert "qa_limit" not in _codes(shallow, shallow)
+    assert "placeholder_missing" in _codes(shallow, shallow.replace("{name}", ""))
+
+
 def _return(text: str):
     def fake_batch(source_locale, items, on_progress=None):
         return {item.id: {locale: text for locale in item.locales} for item in items}
