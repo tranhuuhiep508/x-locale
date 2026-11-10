@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import String, func, literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -84,11 +84,12 @@ def list_members(db: Session, project_id: uuid.UUID) -> list[MemberOut]:
 
 
 def find_user_by_email(db: Session, email: str) -> User:
-    normalized = email.strip().lower()
-    # COLLATE "C" folds only A-Z, so this matches str.lower() for ASCII mail
-    # on every database locale (including Turkish, where lower('I') is not 'i').
-    folded = func.lower(User.email.collate("C"))
-    matches = db.query(User).filter(folded == normalized).all()
+    # Both sides fold under COLLATE "C", which lowers only A-Z: the same result
+    # on every database locale (Turkish lower('I') is not 'i'), and non-ASCII
+    # letters stay as stored instead of being folded on one side only.
+    stored = func.lower(User.email.collate("C"))
+    typed = func.lower(literal(email.strip(), String).collate("C"))
+    matches = db.query(User).filter(stored == typed).all()
     if not matches:
         raise HTTPException(status_code=400, detail=UNKNOWN_EMAIL)
     if len(matches) > 1:

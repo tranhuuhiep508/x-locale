@@ -527,6 +527,18 @@ def test_admin_manages_members_by_email(client):
     assert ambiguous.json()["detail"] == "More than one account uses this email"
 
 
+def test_add_member_by_non_ascii_email(client):
+    pid = make_project(client, "Non ASCII Email")["id"]
+    _add_user("Đức.Nguyen@example.vn")
+    # Only A-Z fold, on every database locale; the non-ASCII letters match as stored.
+    added = client.post(
+        f"/api/projects/{pid}/members",
+        json={"email": " Đức.NGUYEN@EXAMPLE.VN ", "role": "editor"},
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["email"] == "Đức.Nguyen@example.vn"
+
+
 def test_last_admin_cannot_be_removed_demoted_or_leave(client):
     project = make_project(client, "Last Admin")
     pid = project["id"]
