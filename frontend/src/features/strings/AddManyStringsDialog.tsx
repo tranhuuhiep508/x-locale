@@ -437,9 +437,13 @@ export function AddManyStringsDialog({
                     if (text !== PASTE_JSON_TEMPLATE) return
                     const field = e.currentTarget
                     // After the click places the caret, move it inside the braces.
-                    requestAnimationFrame(() =>
+                    // Skip if, by then, the text changed or a selection was made (select-all
+                    // then type would otherwise land inside the template braces).
+                    requestAnimationFrame(() => {
+                      if (field.value !== PASTE_JSON_TEMPLATE) return
+                      if (field.selectionStart !== field.selectionEnd) return
                       field.setSelectionRange(PASTE_JSON_TEMPLATE_CARET, PASTE_JSON_TEMPLATE_CARET)
-                    )
+                    })
                   }}
                   onPaste={(e) => {
                     // A whole object pasted into the empty braces replaces them.

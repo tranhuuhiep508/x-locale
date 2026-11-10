@@ -222,6 +222,24 @@ describe('AddManyStringsDialog', () => {
     expect(field.value).toBe('{"save": "Lưu lại"}')
   })
 
+  it('moves the caret inside the empty braces on focus', async () => {
+    renderDialog()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    field.focus()
+    field.setSelectionRange(0, 0)
+    await waitFor(() => expect(field.selectionStart).toBe(4))
+    expect(field.selectionEnd).toBe(4)
+  })
+
+  it('keeps a select-all made right after focus', async () => {
+    renderDialog()
+    const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
+    field.focus()
+    field.select()
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, field.value.length])
+  })
+
   it('keeps the browser paste once the braces have content', () => {
     renderDialog()
     const field = screen.getByLabelText('JSON') as HTMLTextAreaElement
