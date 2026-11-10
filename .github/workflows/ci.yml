@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes its previous run. Pushes to master always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   frontend:
     name: frontend-quality
@@ -96,9 +101,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The ubuntu-latest image already ships psql; apt is only a fallback.
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Assert locale and create the test database
         env:
@@ -139,8 +148,70 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
+      # Each xdist worker creates its own xl_test_{epoch}_{hex} database.
       - name: Run pytest
-        run: cd backend && uv run pytest
+        run: cd backend && uv run pytest -n auto
+
+  # The benchmark gates on statement counts, which do not depend on the locale,
+  # so it runs once (ICU en-US) next to the matrix instead of inside every leg.
+  backend-benchmark:
+    name: backend-benchmark (icu-en-US)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: xlocale
+          POSTGRES_PASSWORD: xlocale
+          POSTGRES_DB: xlocale
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data
+          --health-cmd "pg_isready -U xlocale -d xlocale"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
+      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test  # pragma: allowlist secret
+      AUTH_DEV_BYPASS: "true"
+      X_LOCALE_SECRET: test-secret  # pragma: allowlist secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+
+      - name: Create the test database
+        env:
+          PGPASSWORD: xlocale
+        run: |
+          set -euo pipefail
+          # CI only. These reload-level settings are not used by Compose or production.
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync=off" \
+            -c "ALTER SYSTEM SET synchronous_commit=off" \
+            -c "ALTER SYSTEM SET full_page_writes=off" \
+            -c "SELECT pg_reload_conf()"
+          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
+          echo "provider=${provider}"
+          test "${provider}" = "i|en-US"
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
+
+      - name: Install dependencies
+        run: cd backend && uv sync --all-extras
 
       - name: Benchmark 20k-key imports
         working-directory: backend
@@ -165,6 +236,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: cli/uv.lock
 
       - name: Install dependencies
         run: cd cli && uv sync --locked --extra dev
