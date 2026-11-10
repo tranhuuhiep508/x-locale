@@ -231,20 +231,17 @@ describe('translation review retranslation', () => {
     await screen.findByRole('button', { name: 'Translate again' })
     fireEvent.change(screen.getByLabelText('en'), { target: { value: 'My draft' } })
     vi.useFakeTimers()
-    try {
-      fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
-      for (let i = 0; i < 40 && !screen.queryByText(interrupted); i++) {
-        await act(async () => { await vi.advanceTimersByTimeAsync(50) })
-      }
-      expect(screen.getByText(interrupted)).toBeTruthy()
-      expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
-      expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
-      const polls = vi.mocked(jobsApi.get).mock.calls.length
-      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
-      expect(jobsApi.get).toHaveBeenCalledTimes(polls)
-    } finally {
-      vi.useRealTimers()
+    fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
+    for (let i = 0; i < 40 && !screen.queryByText(interrupted); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(50) })
     }
+    expect(screen.getByText(interrupted)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Translate again' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('My draft')
+    const polls = vi.mocked(jobsApi.get).mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(jobsApi.get).toHaveBeenCalledTimes(polls)
+    vi.useRealTimers()
 
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
     await waitFor(() => expect(screen.queryByText(interrupted)).toBeNull())
