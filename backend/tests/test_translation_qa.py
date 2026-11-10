@@ -519,6 +519,33 @@ def test_qa_refuses_oversized_or_deeply_nested_input():
     assert deep[0].detail["limit"] == MAX_NESTING
 
 
+def test_deeply_nested_tags_do_not_crash_the_worker():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    # The native ICU parser recursed once per open tag and segfaulted the process,
+    # so run it in a child: a regression fails this test instead of the whole suite.
+    code = (
+        "from app.services.translation_qa import check_translation\n"
+        "for tag in ('b', 'x-y'):\n"
+        "    issues = check_translation('Hi <b>there</b>', f'<{tag}>' * 5000, 'de')\n"
+        "    assert 'qa_limit' in [issue.code for issue in issues], issues\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    # Just past the limit is skipped too; shallow markup is still checked.
+    deep = check_translation("Hi", "<b>" * (MAX_NESTING + 1), "en")
+    assert "qa_limit" in [issue.code for issue in deep]
+    assert "qa_limit" not in _codes("<b>x</b>", "<b>y</b>")
+
+
 def _return(text: str):
     def fake_batch(source_locale, items, on_progress=None):
         return {item.id: {locale: text for locale in item.locales} for item in items}

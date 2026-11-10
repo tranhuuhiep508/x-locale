@@ -155,6 +155,7 @@ class _Markup:
     broken: str | None = None
     part_at: list[int] = field(default_factory=list)
     attr_at: list[int] = field(default_factory=list)
+    depth: int = 0
 
 
 @dataclass
@@ -327,6 +328,10 @@ def _examine(text: str, *, in_plural: bool = False) -> _Side:
         return _Side(_scan_markup(text), None, limited="nesting")
     shielded, specials, syntax = _shield(text)
     markup = _scan_markup(shielded)
+    # The native ICU parser recurses once per open tag and segfaults the worker
+    # on a few thousand nested tags; it reads a tag only where HTMLParser does.
+    if markup.depth > MAX_NESTING:
+        return _Side(markup, None, limited="nesting")
     view = _IcuView()
     view.placeholders.update(specials)
     _add_printf(shielded, view.placeholders)
@@ -1051,6 +1056,7 @@ class _MarkupScanner(HTMLParser):
         self.attrs: list[str] = []
         self.attr_at: list[int] = []
         self.stack: list[str] = []
+        self.depth = 0
         self.broken: str | None = None
         self.scan_at = 0
 
@@ -1083,6 +1089,7 @@ class _MarkupScanner(HTMLParser):
             self.scan_at = tag_at + len(raw)
         if not void:
             self.stack.append(name)
+            self.depth = max(self.depth, len(self.stack))
 
     def handle_endtag(self, tag: str) -> None:
         name = tag.lower()
@@ -1127,6 +1134,7 @@ class _MarkupScanner(HTMLParser):
             self.broken,
             self.part_at,
             self.attr_at,
+            self.depth,
         )
 
 
