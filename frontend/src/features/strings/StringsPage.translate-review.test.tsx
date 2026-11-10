@@ -57,6 +57,12 @@ const publishedMatch: TranslationMemoryMatch = {
 }
 let client: QueryClient
 
+// Text set in a mutation's onSuccess/onError can render before React Query clears
+// isPending on its timer; until then the button is disabled and a click is dropped.
+async function waitUntilEnabled(name: string) {
+  await waitFor(() => expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false))
+}
+
 afterEach(() => {
   cleanup()
   client.clear()
@@ -228,7 +234,7 @@ describe('translation review retranslation', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
     // The en field is already mounted for the missing queue, so findByLabelText
     // resolves before this click's proposals rename the button.
-    await screen.findByRole('button', { name: 'Translate again' })
+    await waitUntilEnabled('Translate again')
     fireEvent.change(screen.getByLabelText('en'), { target: { value: 'My draft' } })
     vi.useFakeTimers()
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
@@ -270,16 +276,12 @@ async function openSourceConflict() {
   render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
-  await screen.findByRole('button', { name: 'Translate again' })
+  await waitUntilEnabled('Translate again')
   fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await screen.findByText('Source text changed since generation')
-  // The banner renders from the save's onError, before the save leaves the pending
-  // state; until then the buttons are disabled and a click would be dropped.
-  await waitFor(() => expect(
-    (screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled,
-  ).toBe(false))
+  await waitUntilEnabled('Regenerate changed strings')
 }
 
 describe('source conflict recovery', () => {
@@ -327,7 +329,7 @@ describe('source conflict recovery', () => {
     }
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
     await screen.findByText(outcome.endsWith('empty') ? /No replacement was produced/ : 'Generation unavailable')
-    expect((screen.getByRole('button', { name: 'Regenerate changed strings' }) as HTMLButtonElement).disabled).toBe(false)
+    await waitUntilEnabled('Regenerate changed strings')
     expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('My stale draft')
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Remove from review' }))
