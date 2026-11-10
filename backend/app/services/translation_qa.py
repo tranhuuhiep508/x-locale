@@ -81,6 +81,9 @@ _ICU_TYPED = re.compile(
     r"\{\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*,\s*"
     r"(?:plural|selectordinal|select|number|date|time)\b"
 )
+# Anything the ICU parser could read as <tag>, </tag> or <tag/>. Wider than the
+# parser's own name rule on purpose: an overcount only skips ICU checks.
+_TAG_TOKEN = re.compile(r"<(/?)[^\s<>/]+\s*(/?)>")
 # Options stop at "$": an unclosed "$t(a," cannot rescan every later "$t(" (quadratic).
 _I18NEXT_T = re.compile(
     r"\$t\(\s*(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\"|(?P<bare>[\w:.-]+))\s*(?:,[^)$]*)?\)"
@@ -327,6 +330,12 @@ def _examine(text: str, *, in_plural: bool = False) -> _Side:
         return _Side(_scan_markup(text), None, limited="nesting")
     shielded, specials, syntax = _shield(text)
     markup = _scan_markup(shielded)
+    # The native ICU parser recurses once per open tag and segfaults the worker
+    # on a few thousand nested tags. Count tags on the raw text, not via
+    # HTMLParser: it skips <script>/<style>/comment bodies and attribute values,
+    # which the ICU parser (or _absorb_markup) still reads as tags.
+    if _tag_depth(shielded) > MAX_NESTING:
+        return _Side(markup, None, limited="nesting")
     view = _IcuView()
     view.placeholders.update(specials)
     _add_printf(shielded, view.placeholders)
@@ -1039,6 +1048,20 @@ def _brace_depth(text: str) -> int:
                     return maximum
         elif char == "}" and depth:
             depth -= 1
+    return maximum
+
+
+def _tag_depth(text: str) -> int:
+    depth = 0
+    maximum = 0
+    for match in _TAG_TOKEN.finditer(text):
+        if match.group(2):
+            continue  # <tag/> closes itself
+        depth = max(depth - 1, 0) if match.group(1) else depth + 1
+        if depth > maximum:
+            maximum = depth
+            if maximum > MAX_NESTING:
+                return maximum
     return maximum
 
 
