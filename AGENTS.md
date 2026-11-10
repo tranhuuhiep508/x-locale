@@ -49,7 +49,7 @@ created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing
 
 ### Lint / test / build
 
-- Backend: `cd backend && uv run pytest` (Ruff available via `uv run ruff check`). Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.
+- Backend: `cd backend && uv run pytest` (add `-n auto` to run on every core with pytest-xdist, as CI does; each worker gets its own throwaway database). Ruff available via `uv run ruff check`. Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.
 - Frontend: `cd frontend && npm run build` (`tsc` via Vite) ; `npm run test` (Vitest).
 - CLI: `cd cli && uv run pytest tests -m "not e2e"` (offline unit tests; e2e markers need a running Postgres server).
 - E2E: `npm run e2e` (Playwright; one Postgres database per run, ports `:8001` / `:5174`, one worker; does not reuse local `:8000` / `:5173`).

@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes its previous run. Pushes to master always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   cli-e2e:
     name: cli-e2e
@@ -40,9 +45,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            cli/uv.lock
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The ubuntu-latest image already ships psql; apt is only a fallback.
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Assert ICU en-US and create the test database
         env:

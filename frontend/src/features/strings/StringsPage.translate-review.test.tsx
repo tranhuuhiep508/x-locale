@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
@@ -9,6 +9,12 @@ import { projectsApi } from '@/lib/api/projects'
 import { stringsApi } from '@/lib/api/strings'
 import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
 import { StringsPage } from './StringsPage'
+
+// These tests drive StringsPage through multi-step translate and job-polling chains.
+// Under a loaded CI runner a step can exceed Testing Library's 1s waitFor default
+// (two different tests here have flaked on it). Vitest isolates modules per file,
+// so this only applies to this file.
+configure({ asyncUtilTimeout: 5000 })
 
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())

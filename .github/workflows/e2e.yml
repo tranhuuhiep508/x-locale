@@ -8,11 +8,23 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes its previous run. Pushes to master always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   e2e:
-    name: e2e
+    name: e2e (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Each shard is its own runner with its own Postgres service, backend, and
+    # frontend, so shards share nothing. Specs re-seed the Demo App or create
+    # their own projects, so they do not depend on earlier specs.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     services:
       postgres:
@@ -48,6 +60,11 @@ jobs:
             e2e/package-lock.json
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            cli/uv.lock
 
       - name: Install backend dependencies
         run: cd backend && uv sync --all-extras
@@ -60,31 +77,11 @@ jobs:
 
       # Install OS libs from Ubuntu mirrors only. `playwright install --with-deps`
       # can fail when Google's chrome apt repo has a transient hash mismatch on GHA.
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Assert ICU en-US and create the test database
-        env:
-          PGPASSWORD: xlocale
-        run: |
-          # CI only. These reload-level settings are not used by Compose or production.
-          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
-            -c "ALTER SYSTEM SET fsync=off" \
-            -c "ALTER SYSTEM SET synchronous_commit=off" \
-            -c "ALTER SYSTEM SET full_page_writes=off" \
-            -c "SELECT pg_reload_conf()"
-          # The cluster is ICU en-US on purpose: Alpine (musl) libc locales sort by bytes like C,
-          # so only ICU proves the app does not depend on a C database.
-          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
-          echo "provider=${provider}"
-          test "${provider}" = "i|en-US"
-          # xlocale_test is the bootstrap database. Playwright creates the suffixed database itself.
-          psql -h localhost -U xlocale -d xlocale -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
-
-      - name: Install Playwright OS dependencies
+      # One apt-get update covers the Playwright libs and, if the image lacks it, psql.
+      - name: Install Playwright OS dependencies and PostgreSQL client
         run: |
           sudo apt-get update
+          command -v psql || sudo apt-get install -y --no-install-recommends postgresql-client
           sudo apt-get install -y --no-install-recommends \
             libasound2t64 \
             libatk-bridge2.0-0 \
@@ -106,6 +103,25 @@ jobs:
             libxkbcommon0 \
             libxrandr2
 
+      - name: Assert ICU en-US and create the test database
+        env:
+          PGPASSWORD: xlocale
+        run: |
+          # CI only. These reload-level settings are not used by Compose or production.
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync=off" \
+            -c "ALTER SYSTEM SET synchronous_commit=off" \
+            -c "ALTER SYSTEM SET full_page_writes=off" \
+            -c "SELECT pg_reload_conf()"
+          # The cluster is ICU en-US on purpose: Alpine (musl) libc locales sort by bytes like C,
+          # so only ICU proves the app does not depend on a C database.
+          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
+          echo "provider=${provider}"
+          test "${provider}" = "i|en-US"
+          # xlocale_test is the bootstrap database. Playwright creates the suffixed database itself.
+          psql -h localhost -U xlocale -d xlocale -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
+
       - name: Install Playwright browsers
         run: |
           cd e2e
@@ -113,11 +129,12 @@ jobs:
           npx playwright install chromium
 
       - name: Test the E2E database name guard
+        if: matrix.shard == 1
         run: npm run test:database-url
         working-directory: e2e
 
       - name: Run Playwright E2E
-        run: cd e2e && npm test
+        run: cd e2e && npm test -- --shard=${{ matrix.shard }}/4
         env:
           CI: true
           AI_TRANSLATE_STUB: true
@@ -145,7 +162,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             e2e/playwright-report/
             e2e/test-results/
