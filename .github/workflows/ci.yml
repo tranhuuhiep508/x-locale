@@ -245,3 +245,24 @@ jobs:
 
       - name: Run CLI unit tests
         run: cd cli && uv run pytest tests -m "not e2e"
+
+  # Summary checks for the master ruleset, which matches exact check names.
+  # Matrix jobs report "backend-quality (C)" etc., never the plain name.
+  # always() matters: a skipped required check counts as passing.
+  backend-quality:
+    name: backend-quality
+    needs: backend
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.backend.result }}" = success
+
+  cli-unit:
+    name: cli-unit
+    needs: cli
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.cli.result }}" = success

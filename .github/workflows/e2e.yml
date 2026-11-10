@@ -167,3 +167,15 @@ jobs:
             e2e/playwright-report/
             e2e/test-results/
           retention-days: 7
+
+  # Summary check for the master ruleset, which matches the exact name "e2e";
+  # shards report "e2e (1/4)" etc. always() matters: a skipped required check
+  # counts as passing.
+  e2e-result:
+    name: e2e
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.e2e.result }}" = success
