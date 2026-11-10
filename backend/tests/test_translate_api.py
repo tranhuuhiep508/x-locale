@@ -1199,3 +1199,24 @@ def test_competing_apply_descriptions_refresh_after_row_lock(client, session_fac
     stored = client.get(f"/api/projects/{pid}/strings/{sid}").json()
     assert stored["description"] == "First"
     assert all(t["value"] == "" for t in stored["translations"])
+
+
+def test_direct_translate_rejects_exclude_cells(client, monkeypatch):
+    monkeypatch.setattr(settings, "ai_translate_stub", True)
+    project = _make_project(client, "Exclude", targets=["en"])
+    pid = project["id"]
+    created = client.post(f"/api/projects/{pid}/strings", json={"key": "hi", "source_text": "Chào"})
+    sid = created.json()["id"]
+    response = client.post(
+        f"/api/projects/{pid}/translate",
+        json={
+            "scope": "strings",
+            "string_ids": [sid],
+            "locales": ["en"],
+            "overwrite": True,
+            "exclude_cells": {sid: ["en"]},
+        },
+    )
+    assert response.status_code == 400, response.text
+    string = client.get(f"/api/projects/{pid}/strings/{sid}").json()
+    assert all(t["value"] == "" for t in string["translations"])

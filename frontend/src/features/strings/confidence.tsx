@@ -12,11 +12,17 @@ export function confidenceTone(score: number): ConfidenceTone {
   return 'low'
 }
 
+export const CONFIDENCE_ESTIMATE_NOTE =
+  "The AI's own guess at quality. Not verified, and separate from QA checks."
+
 export function confidenceLabel(score: number): string {
   const tone = confidenceTone(score)
-  if (tone === 'high') return `AI confidence ${score} — looks solid`
-  if (tone === 'medium') return `AI confidence ${score} — review recommended`
-  return `AI confidence ${score} — re-translate if needed`
+  const phrase = tone === 'high'
+    ? 'likely fine'
+    : tone === 'medium'
+      ? 'review recommended'
+      : 'consider re-translating'
+  return `Model estimate ${score}/100 — ${phrase}`
 }
 
 const TONE_STYLE: Record<ConfidenceTone, string> = {
@@ -42,17 +48,21 @@ export function ConfidenceBadge({
       <TooltipTrigger asChild>
         <span
           className={cn(
-            'inline-flex h-5 w-fit min-w-5 shrink-0 self-start items-center justify-center rounded-md border px-1.5',
+            'inline-flex h-5 w-fit min-w-5 shrink-0 self-start items-center justify-center gap-1 rounded-md border px-1.5',
             'tabular-nums text-[11px] font-semibold leading-none tracking-tight',
             TONE_STYLE[tone],
             className,
           )}
-          aria-label={confidenceLabel(score)}
+          aria-label={`${confidenceLabel(score)}. ${CONFIDENCE_ESTIMATE_NOTE}`}
         >
+          <span className="font-medium opacity-70">Est.</span>
           {score}
         </span>
       </TooltipTrigger>
-      <TooltipContent>{confidenceLabel(score)}</TooltipContent>
+      <TooltipContent className="flex-col items-start gap-1">
+        <span>{confidenceLabel(score)}</span>
+        <span>{CONFIDENCE_ESTIMATE_NOTE}</span>
+      </TooltipContent>
     </Tooltip>
   )
 }

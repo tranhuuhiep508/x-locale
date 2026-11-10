@@ -5,6 +5,14 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: read
+
+# A new push to a PR supersedes its previous run. Pushes to master always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   cli-e2e:
     name: cli-e2e
@@ -18,7 +26,7 @@ jobs:
           POSTGRES_USER: xlocale
           POSTGRES_PASSWORD: xlocale
           POSTGRES_DB: xlocale
-          POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
         ports:
           - 5432:5432
         options: >-
@@ -37,11 +45,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            backend/uv.lock
+            cli/uv.lock
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The ubuntu-latest image already ships psql; apt is only a fallback.
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
-      - name: Assert collation C
+      - name: Assert ICU en-US and create the test database
         env:
           PGPASSWORD: xlocale
         run: |
@@ -51,13 +65,14 @@ jobs:
             -c "ALTER SYSTEM SET synchronous_commit=off" \
             -c "ALTER SYSTEM SET full_page_writes=off" \
             -c "SELECT pg_reload_conf()"
-          collation=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datcollate || '|' || datlocprovider::text FROM pg_database WHERE datname = current_database()")
-          echo "collation=${collation}"
-          test "${collation}" = "C|c"
-          # PostgreSQL 16 removed the lc_collate GUC. datcollate and datlocprovider are the check.
+          # The cluster is ICU en-US on purpose: Alpine (musl) libc locales sort by bytes like C,
+          # so only ICU proves the app does not depend on a C database.
+          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
+          echo "provider=${provider}"
+          test "${provider}" = "i|en-US"
           # xlocale_test is the bootstrap database the harness connects to for CREATE and DROP.
           psql -h localhost -U xlocale -d xlocale -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE xlocale_test TEMPLATE template0 LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
 
       - name: Install backend dependencies
         run: cd backend && uv sync --all-extras

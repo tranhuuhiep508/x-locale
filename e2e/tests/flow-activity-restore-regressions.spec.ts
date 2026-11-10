@@ -52,7 +52,7 @@ async function openBatchUndo(page: Page, pid: string, batch: string) {
   await page.goto(`/projects/${pid}/activity`)
   const card = page
     .locator('div.rounded-lg')
-    .filter({ has: page.locator(`a[href*="batch_id=${batch}"]`) })
+    .filter({ has: page.locator(`a[href*="batch_id=${batch}"], a[href$="/batches/${batch}"]`) })
   await card.getByRole('button', { name: 'Undo', exact: true }).click()
   return page.getByRole('alertdialog')
 }
@@ -222,7 +222,9 @@ test('forced undo explicitly warns about later publication', async ({ page }) =>
   const batch = await updateImport(page, root)
   await publish(page, root, sid)
   const dialog = await openBatchUndo(page, pid, batch)
-  await expect(dialog).toContainText('This also changes published content or publish status.')
+  await expect(dialog).toContainText(
+    'This changes public content or publication status immediately. History Restore changes only the working copy.'
+  )
   await dialog.getByRole('button', { name: 'Overwrite and undo' }).click()
   await expect(dialog).toBeHidden()
   const live = await (await page.request.get(`${root}/strings/${sid}`)).json()
@@ -237,7 +239,9 @@ test('normal undo warns before rolling back publication', async ({ page }) => {
   await page.goto(`/projects/${pid}/activity`)
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   const dialog = page.getByRole('alertdialog', { name: 'Undo this batch?' })
-  await expect(dialog).toContainText('This also changes the published snapshot or publish status.')
+  await expect(dialog).toContainText(
+    'This changes public content or publication status immediately. History Restore changes only the working copy.'
+  )
   await expect(dialog.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
   await dialog.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(dialog).toBeHidden()

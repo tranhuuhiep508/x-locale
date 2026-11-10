@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 
 from app.activity import attach_batch
 from app.ai import (
@@ -28,7 +29,12 @@ from app.database import SessionLocal
 from app.helpers import require_locale_code, require_max_length
 from app.limits import TEXT_MAX_LENGTH
 from app.models import Job, JobStatus, Module, Project, StringEntry, Translation, TranslationStatus
-from app.schemas import TranslateApplyItem, TranslateRequest, TranslationSourceConflict
+from app.schemas import (
+    TranslateApplyItem,
+    TranslateRequest,
+    TranslateReviewItem,
+    TranslationSourceConflict,
+)
 from app.services.catalog import owned_module
 from app.services.job_progress import write_job_progress
 from app.services.jobs import _finish, owned_job_connection
@@ -38,6 +44,8 @@ from app.services.strings import (
     load_string_entries,
     validate_locales,
 )
+from app.services.translation_memory import memory_examples, optional_memory
+from app.services.translation_qa import check_translation
 
 SYNC_THRESHOLD = 20
 
@@ -57,6 +65,8 @@ def _entries_query(
     eager: bool,
 ):
     validate_locales(project, locales)
+    for excluded in payload.exclude_cells.values():
+        validate_locales(project, excluded)
     query = filtered_string_query(
         db,
         project,
@@ -125,7 +135,16 @@ def list_missing_page(
         .all()
     )
     entries = _load_entries_by_ids(db, [row[0] for row in id_rows])
-    return list_missing_items(entries, locales, payload.overwrite), total, page, page_size
+    items = list_missing_items(entries, locales, payload.overwrite)
+    memory, memory_error = optional_memory(
+        db,
+        project,
+        ((item["source_text"], locale) for item in items for locale in item["translations"]),
+    )
+    for item in items:
+        item["memory"] = memory.get(item["source_text"], {})
+        item["memory_error"] = memory_error
+    return items, total, page, page_size
 
 
 def needed_locales(entry: StringEntry, locales: list[str], overwrite: bool) -> list[str]:
@@ -185,11 +204,16 @@ def work_items(
     locales: list[str],
     overwrite: bool,
     descriptions: dict[uuid.UUID, str] | None = None,
+    exclude_cells: dict[uuid.UUID, list[str]] | None = None,
 ) -> list[TranslateItem]:
     validate_locales(project, locales)
     items: list[TranslateItem] = []
     for entry in entries:
-        needed = needed_locales(entry, locales, overwrite)
+        needed = [
+            locale
+            for locale in needed_locales(entry, locales, overwrite)
+            if locale not in (exclude_cells or {}).get(entry.id, [])
+        ]
         if not needed:
             continue
         items.append(
@@ -209,8 +233,37 @@ def count_work(
     entries: list[StringEntry],
     locales: list[str],
     overwrite: bool,
+    exclude_cells: dict[uuid.UUID, list[str]] | None = None,
 ) -> int:
-    return sum(bool(needed_locales(entry, locales, overwrite)) for entry in entries)
+    return sum(
+        any(
+            locale not in (exclude_cells or {}).get(entry.id, [])
+            for locale in needed_locales(entry, locales, overwrite)
+        )
+        for entry in entries
+    )
+
+
+def with_memory(
+    db: Session,
+    project: Project,
+    items: list[TranslateItem],
+    fields: dict[str, dict[str, Any]] | None = None,
+) -> list[TranslateItem]:
+    memory, memory_error = optional_memory(
+        db, project, ((item.source_text, locale) for item in items for locale in item.locales)
+    )
+    if fields is not None:
+        for item in items:
+            fields[item.id]["memory_error"] = memory_error
+            fields[item.id]["memory"] = {
+                locale: [match.model_dump(mode="json") for match in matches]
+                for locale, matches in memory.get(item.source_text, {}).items()
+            }
+    return [
+        replace(item, memory_examples=memory_examples(memory.get(item.source_text, {})))
+        for item in items
+    ]
 
 
 def _ensure_translation(db: Session, entry: StringEntry, locale: str) -> Translation:
@@ -312,7 +365,7 @@ def apply_translations(
     locales: list[str],
     overwrite: bool,
 ) -> tuple[int, list[TranslationSourceConflict]]:
-    items = work_items(project, entries, locales, overwrite)
+    items = with_memory(db, project, work_items(project, entries, locales, overwrite))
     if not items:
         return 0, []
     results = translate_batch(project.base_language, items)
@@ -325,22 +378,51 @@ def preview_translations(
     source_text: str,
     locales: list[str],
     description: str | None,
-) -> tuple[dict[str, str], dict[str, int]]:
-    validate_locales(project, locales)
-    result = translate_batch(
-        project.base_language,
-        [
-            TranslateItem(
-                id="preview",
-                source_text=source_text,
-                locales=tuple(locales),
-                context=compose_translation_context(project, module, description),
-            )
-        ],
+    db: Session | None = None,
+) -> tuple[dict[str, str], dict[str, int], dict[str, list[dict[str, Any]]]]:
+    [item] = preview_translation_batch(
+        project, module, [("preview", source_text, locales)], db, description=description
     )
-    cells = _cell_map(result, "preview")
-    translations = {locale: cells[locale].text for locale in locales if locale in cells}
-    return translations, _scores_from_cells(cells, locales)
+    return item["translations"], item["scores"], item["issues"]
+
+
+def preview_translation_batch(
+    project: Project,
+    module: Module | None,
+    rows: list[tuple[str, str, list[str]]],
+    db: Session | None = None,
+    *,
+    description: str | None = None,
+) -> list[dict[str, Any]]:
+    """Translate unsaved ``(id, source_text, locales)`` rows in one AI batch. Stores nothing."""
+    context = compose_translation_context(project, module, description)
+    # Opaque AI ids: the AI client strips response ids, so a raw caller id such as a
+    # pasted key with surrounding spaces would never match its own result.
+    items = []
+    for index, (_row_id, source_text, locales) in enumerate(rows):
+        validate_locales(project, locales)
+        items.append(
+            TranslateItem(
+                id=f"r{index}", source_text=source_text, locales=tuple(locales), context=context
+            )
+        )
+    db = db if db is not None else object_session(project)
+    if db is not None:
+        items = with_memory(db, project, items)
+    results = translate_batch(project.base_language, items)
+    out = []
+    for (row_id, *_rest), item in zip(rows, items, strict=True):
+        cells = _cell_map(results, item.id)
+        translations = {locale: cells[locale].text for locale in item.locales if locale in cells}
+        out.append(
+            {
+                "id": row_id,
+                "translations": translations,
+                "scores": _scores_from_cells(cells, item.locales),
+                "issues": _qa_by_locale(item.source_text, translations),
+            }
+        )
+    return out
 
 
 def _status_str(entry: StringEntry) -> str:
@@ -362,6 +444,9 @@ def _proposal_dict(
         "key": entry.key,
         "source_text": entry.source_text if source_text is None else source_text,
         "status": _status_str(entry),
+        "module_id": str(entry.module_id) if entry.module_id else None,
+        "module_slug": entry.module.slug if entry.module else None,
+        "module_name": entry.module.name if entry.module else None,
         "description": description,
         "translations": translations,
         "scores": scores or {},
@@ -403,11 +488,16 @@ def queued_progress(work: int) -> dict[str, int | str]:
     }
 
 
-def _proposal_fields(entry: StringEntry, descriptions: dict[uuid.UUID, str] | None) -> dict[str, Any]:
+def _proposal_fields(
+    entry: StringEntry, descriptions: dict[uuid.UUID, str] | None
+) -> dict[str, Any]:
     return {
         "string_id": str(entry.id),
         "key": entry.key,
         "status": _status_str(entry),
+        "module_id": str(entry.module_id) if entry.module_id else None,
+        "module_slug": entry.module.slug if entry.module else None,
+        "module_name": entry.module.name if entry.module else None,
         "description": _description_for(entry, descriptions),
     }
 
@@ -437,9 +527,17 @@ def proposals_from_results(
                 "source_text": item.source_text,
                 "translations": translations,
                 "scores": _scores_from_cells(locale_map, item.locales),
+                "issues": _qa_by_locale(item.source_text, translations),
             }
         )
     return proposals
+
+
+def _qa_by_locale(source: str, translations: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
+    return {
+        locale: [issue.as_dict() for issue in check_translation(source, text, locale)]
+        for locale, text in translations.items()
+    }
 
 
 def propose_translations(
@@ -449,13 +547,43 @@ def propose_translations(
     overwrite: bool,
     descriptions: dict[uuid.UUID, str] | None = None,
     on_progress: ProgressCallback | None = None,
+    exclude_cells: dict[uuid.UUID, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
-    items = work_items(project, entries, locales, overwrite, descriptions)
+    items = work_items(project, entries, locales, overwrite, descriptions, exclude_cells)
+    fields = {str(entry.id): _proposal_fields(entry, descriptions) for entry in entries}
+    db = object_session(project)
+    if db is not None:
+        items = with_memory(db, project, items, fields)
     if not items:
         return []
     results = translate_batch(project.base_language, items, on_progress=on_progress)
-    fields = {str(entry.id): _proposal_fields(entry, descriptions) for entry in entries}
     return proposals_from_results(items, results, fields)
+
+
+def check_source_baseline(
+    items: Sequence[TranslateReviewItem], by_id: dict[uuid.UUID, StringEntry]
+) -> None:
+    """Reject the whole write when a reviewed source changed. Skips missing ids."""
+    source_conflicts = [
+        TranslationSourceConflict(
+            string_id=entry.id,
+            key=entry.key,
+            expected_source_text=item.expected_source_text,
+            source_text=entry.source_text,
+        ).model_dump(mode="json")
+        for item in items
+        if (entry := by_id.get(item.string_id)) is not None
+        and entry.source_text != item.expected_source_text
+    ]
+    if source_conflicts:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "stale_translation_source",
+                "message": "Source text changed. Regenerate the affected translations before saving again.",
+                "conflicts": source_conflicts,
+            },
+        )
 
 
 def commit_proposals(
@@ -488,40 +616,15 @@ def commit_proposals(
         .all()
     )
     by_id = {entry.id: entry for entry in entries}
-    source_conflicts = [
-        TranslationSourceConflict(
-            string_id=entry.id,
-            key=entry.key,
-            expected_source_text=item.expected_source_text,
-            source_text=entry.source_text,
-        ).model_dump(mode="json")
+    check_source_baseline(items, by_id)
+    conflicts = [
+        {"string_id": str(entry.id), "key": entry.key, "description": entry.description}
         for item in items
-        if (entry := by_id.get(item.string_id)) is not None
-        and entry.source_text != item.expected_source_text
+        if "description" in item.model_fields_set
+        and (entry := by_id.get(item.string_id)) is not None
+        and entry.description
+        not in (item.expected_description, (item.description or "").strip() or None)
     ]
-    if source_conflicts:
-        raise HTTPException(
-            409,
-            detail={
-                "code": "stale_translation_source",
-                "message": "Source text changed. Regenerate the affected translations before applying again.",
-                "conflicts": source_conflicts,
-            },
-        )
-    conflicts = []
-    for item in items:
-        entry = by_id.get(item.string_id)
-        if entry is None or "description" not in item.model_fields_set:
-            continue
-        desired = (item.description or "").strip() or None
-        if entry.description not in (item.expected_description, desired):
-            conflicts.append(
-                {
-                    "string_id": str(entry.id),
-                    "key": entry.key,
-                    "description": entry.description,
-                }
-            )
     if conflicts:
         raise HTTPException(
             409,
@@ -674,7 +777,7 @@ def run_translate_job(
                 raise HTTPException(status_code=404, detail="Project not found")
             base_language = project.base_language
             entries = _load_entries_by_ids(db, entry_ids)
-            items = work_items(project, entries, locales, overwrite)
+            items = with_memory(db, project, work_items(project, entries, locales, overwrite))
             db.commit()
         _require_job_lock(lock_conn)
         results = translate_batch(base_language, items) if items else {}
@@ -706,6 +809,7 @@ def run_propose_job(
     overwrite: bool,
     job_id: uuid.UUID,
     descriptions: dict[str, str] | None = None,
+    exclude_cells: dict[str, list[str]] | None = None,
 ) -> None:
     with _ai_job(job_id) as (owned, lock_conn):
         if not owned:
@@ -717,17 +821,21 @@ def run_propose_job(
                 raise HTTPException(status_code=404, detail="Project not found")
             base_language = project.base_language
             entries = _load_entries_by_ids(db, entry_ids)
-            items = work_items(project, entries, locales, overwrite, parsed)
+            exclusions = {uuid.UUID(key): value for key, value in (exclude_cells or {}).items()}
             fields = {str(entry.id): _proposal_fields(entry, parsed) for entry in entries}
+            items = with_memory(
+                db,
+                project,
+                work_items(project, entries, locales, overwrite, parsed, exclusions),
+                fields,
+            )
             db.commit()
 
         def on_progress(phase: ProgressPhase, chunks_done: int, chunks_total: int) -> None:
             write_job_progress(job_id, phase, chunks_done, chunks_total)
 
         _require_job_lock(lock_conn)
-        results = (
-            translate_batch(base_language, items, on_progress=on_progress) if items else {}
-        )
+        results = translate_batch(base_language, items, on_progress=on_progress) if items else {}
         _require_job_lock(lock_conn)
         proposals = proposals_from_results(items, results, fields)
         with SessionLocal() as db:

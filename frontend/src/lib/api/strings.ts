@@ -1,6 +1,17 @@
 import { api } from '@/lib/api/client'
 import { resolveStringTimeForApi } from '@/lib/time-range'
 import type {
+  EditorProposal,
+  EditorPreview,
+  EditorSaveRequest,
+  PasteReview,
+  PasteReviewRequest,
+  PasteSaveRequest,
+  PasteSaveResult,
+  TranslatePreviewBatchRequest,
+  TranslatePreviewBatchResult,
+  CliPushBatch,
+  CliPushPublishRequest,
   BatchRequest,
   BatchResult,
   PublishPreviewEntries,
@@ -11,11 +22,19 @@ import type {
   StringUpdate,
   TranslateApplyRequest,
   TranslateApplyResult,
+  TranslateReview,
+  TranslateReviewRequest,
+  TranslateSaveRequest,
+  TranslateSaveResult,
   TranslatePreviewRequest,
   TranslatePreviewResult,
   TranslateProposalsResult,
   TranslateRequest,
   TranslateResult,
+  TranslationQaRequest,
+  TranslationQaResult,
+  TranslationMemoryRequest,
+  TranslationMemoryResult,
 } from '@/lib/api/types'
 
 export type StringListParams = {
@@ -76,6 +95,22 @@ export function toStringListParams(
 }
 
 export const stringsApi = {
+  editorPreview: (projectId: string, proposal: EditorProposal) =>
+    api.post<EditorPreview>(`/projects/${projectId}/strings/editor-preview`, { proposal }),
+  editorSave: (projectId: string, body: EditorSaveRequest) =>
+    api.post<StringEntry>(`/projects/${projectId}/strings/editor-save`, body),
+  pasteReview: (projectId: string, body: PasteReviewRequest) =>
+    api.post<PasteReview>(`/projects/${projectId}/strings/paste-review`, body),
+  pasteSave: (projectId: string, body: PasteSaveRequest) =>
+    api.post<PasteSaveResult>(`/projects/${projectId}/strings/paste-save`, body),
+  saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
+  publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/publish`, body),
+  cliPushBatch: (projectId: string, batchId: string) =>
+    api.get<CliPushBatch>(`/projects/${projectId}/cli-push-batches/${batchId}`),
+  translateMemory: (projectId: string, body: TranslationMemoryRequest) =>
+    api.post<TranslationMemoryResult>(`/projects/${projectId}/translate/memory`, body),
   list: (projectId: string, params: StringListParams) =>
     api.get<StringListResponse>(`/projects/${projectId}/strings`, params),
   get: (projectId: string, id: string) =>
@@ -94,10 +129,18 @@ export const stringsApi = {
     api.post<TranslateResult>(`/projects/${projectId}/translate`, body),
   translatePreview: (projectId: string, body: TranslatePreviewRequest) =>
     api.post<TranslatePreviewResult>(`/projects/${projectId}/translate/preview`, body),
+  translatePreviewBatch: (projectId: string, body: TranslatePreviewBatchRequest) =>
+    api.post<TranslatePreviewBatchResult>(`/projects/${projectId}/translate/preview-batch`, body),
   translateProposals: (projectId: string, body: TranslateRequest) =>
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/proposals`, body),
   translateMissing: (projectId: string, body: TranslateRequest) =>
     api.post<TranslateProposalsResult>(`/projects/${projectId}/translate/missing`, body),
   translateApply: (projectId: string, body: TranslateApplyRequest) =>
     api.post<TranslateApplyResult>(`/projects/${projectId}/translate/apply`, body),
+  translateReview: (projectId: string, body: TranslateReviewRequest) =>
+    api.post<TranslateReview>(`/projects/${projectId}/translate/review`, body),
+  translateSave: (projectId: string, body: TranslateSaveRequest) =>
+    api.post<TranslateSaveResult>(`/projects/${projectId}/translate/save`, body),
+  translateQa: (projectId: string, body: TranslationQaRequest) =>
+    api.post<TranslationQaResult>(`/projects/${projectId}/translate/qa`, body),
 }

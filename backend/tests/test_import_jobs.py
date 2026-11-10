@@ -100,7 +100,7 @@ def test_large_import_returns_202_and_job_completes(
         ).all()
     assert {"changed", "added", "unrelated"} <= keys
     assert {row.batch_kind.value for row in audited} == {
-        "excel_import" if kind == "xlsx" else "import"
+        "excel_import" if kind == "xlsx" else "cli_push" if kind == "cli" else "import"
     }
 
 

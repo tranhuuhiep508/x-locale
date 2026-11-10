@@ -15,6 +15,7 @@ export type SelectionResetSearch = Pick<
   | 'pending_delete'
   | 'never_published'
   | 'q'
+  | 'saved_string'
   | 'missing_locale'
   | 'missing_any'
   | 'complete_locale'
@@ -49,6 +50,7 @@ export function useClearStringSelection(
     search.pending_delete,
     search.never_published,
     search.q,
+    search.saved_string,
     search.missing_locale,
     search.missing_any,
     search.complete_locale,

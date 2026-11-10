@@ -18,6 +18,7 @@ users ──< api_keys >── projects ──< modules
 
 - String uniqueness defaults to one live row per `(project_id, key)`. With `allow_duplicate_keys` enabled it is one live row per `(project_id, module_id, key)`, including null modules. A tombstone (`deleted_at` set) does not hold the key, so the same key can be created again. A `pending_delete` row is still live and keeps the key. The same key can exist in two modules only when the project enables that setting.
 - `module_id` is nullable (`ON DELETE SET NULL`). Unassigned strings export under `_unassigned` (Excel) or at the top level (JSON modular).
+- `strings.key`, `strings.published_key`, `modules.slug`, `tags.name`, and `projects.slug` use `COLLATE "C"` whatever the database collation is. They sort in byte order, the same as Python `sorted()`, so `ORDER BY key` (export, CLI pull, string list) and Python-side sorts (publish preview, module list) agree. Equality and uniqueness are byte-wise under every deterministic collation, so this does not change which keys collide.
 - Translation status: `draft` \| `public` on each **string** (not per locale). Working-copy fields (`key`, `source_text`, translations.`value`) are what the editor changes. `published_*` / `published_value` hold the last snapshot used by `stage=public` export. `translations.confidence` is an optional 0–100 AI self-score written by translate; manual edits, import, and CLI push clear it. `pending_delete` marks a published string for removal on the next publish. `deleted_at` is a soft tombstone: the row stays, uniqueness no longer holds that key, and both exports omit it.
 - API keys live in `api_keys` (hashed). Projects no longer store a bare `api_key` column. A key is a project-scoped catalog credential, not a membership role: it cannot delete a project or call member APIs. An Editor can revoke a key only when `api_keys.created_by` is that Editor. An Admin can revoke any key on the project. A non-member gets 404.
 - `project_members` stores `admin` | `editor` per `(project_id, user_id)`. Authorization reads membership. `projects.created_by` is audit/bootstrap only (set on create, not a permission). The migration backfills an Admin row when `created_by` is set, and skips projects where it is NULL until ops adds an Admin. Deleting a project is a hard cascade and requires the caller to send `confirm_slug` equal to the project slug. Removing a member revokes API keys that member created for the project. Every Admin write locks the project before checking the caller’s current membership and role, holding that lock through commit or rollback. Membership writes, API-key creation/revocation, and project deletion lock the project before touching API keys. API-key revocation also rechecks the caller’s current membership and role under the lock. The lock is FOR NO KEY UPDATE, compatible with foreign-key share locks, and it does not change the project timestamp. API-key creation rechecks membership under that lock, so removal cannot leave a concurrently issued key active. Role changes count Admins while holding the lock so concurrent demotions cannot remove the last Admin.
@@ -35,6 +36,30 @@ targets excluding the base. Project locale-setting writes remove the base langua
 from target lists. Existing base-language translation rows and history are retained
 but are not used by source exports. A `source_text` edit changes draft exports;
 public exports change only when the source correction is published.
+
+## Explicit editor saves and publication
+
+The single-string editor keeps edits local until **Save as draft** or the final
+**Publish** confirmation. Saving a draft preserves an existing public snapshot,
+publication status, and pending removal. Unpublish remains a separate immediate
+lifecycle action and does not save form edits.
+
+Project-scoped `POST /strings/editor-preview` accepts a `proposal` discriminated
+by `mode`: `create` with content `values`, or `update` with `string_id` and partial
+`values` including required `expected` baselines. Content values exclude status
+and lifecycle fields. The read-only response contains the complete proposed
+`entry` (including untouched/historical locales) and a `fingerprint`. Synthetic
+identifiers in create previews are never persisted or included in the fingerprint.
+
+`POST /strings/editor-save` accepts that proposal and `action: save_draft | publish`.
+Publication requires the reviewed fingerprint. It rechecks current working/public
+state, the proposal, and relevant project/catalog settings under the existing
+locks, then saves content, promotes snapshots, and captures audit in one
+transaction. HTTP 409 `publish_fingerprint_mismatch` requires a fresh review;
+`stale_editor_save` requires explicit resolution of competing field edits.
+Publication with no public change returns 409 `nothing_to_publish` without saving.
+Both successful actions return the saved `StringOut`. Legacy CRUD and batch
+publication contracts retain their existing behavior.
 
 ## Translation context
 
@@ -88,15 +113,31 @@ empty; a newly imported target-only key still uses the key as its initial source
 
 `activities` is append-only. Every string content write is captured in `before_flush` with CRUD `action` (`create` | `update` | `delete`) for revert, plus a stored `event_type` and human `summary` classified from the `before`/`after` diff (and restore intent). `ACTIVITY_RETENTION_DAYS` (default 90; 0 = keep forever) deletes activity rows older than that many days via `uv run python -m app.cli prune-activities`. Pruning is not run on API startup. Pruning removes feed, History, and Undo for those old events; it does not delete strings.
 
+Explicit review saves use `string.saved_draft`; ordinary editor changes retain their
+specific event labels. A publication that also saves recorded working-copy content
+uses `string.saved_and_published`; publication-only actions keep `string.published`.
+Both publication events require recorded before/after content evidence for History
+restoration. The Published filter includes both event values, and the translation
+filter includes review draft saves. Existing activity rows are not rewritten.
+
+Batch summaries use full SQL event counts, retaining import, CLI, Excel, or AI
+origin alongside publication wording. A combined record counts once as published;
+a draft save counts as updated. Review saves and later publication have separate
+batch IDs from the original import. Content and audit records commit or roll back
+together; temporary proposals and discarded local edits create no content audit.
+Whole-action Undo retains its full-state inverse and warns when the preview would
+change public content or publication status immediately. History Restore only
+changes the working copy.
+
 Named project snapshots are not in this pass.
 
 ### Project feed vs string History vs bulk undo
 
 | Surface | Reads | Restore |
 |---------|--------|---------|
-| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card. Counts are aggregated in SQL; batch children in the payload are capped at 50 while `children_count` is the full total. Locale filter matches `activity.locale` or a translation key in the snapshot JSON. | **Undo** only on bulk cards (`import` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert`. API and UI default `force=false`; a 409 (later edits) can be retried with `force=true` after a second confirm. Create-undo tombstones (never hard-deletes). |
-| **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string, paginated (UI loads 50 at a time) | **Restore working copy** applies that row's working-copy **content** `after` (`key`, source, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Returns HTTP 409 with `key_conflict` if the historical key is already used; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. **Not offered** for `string.published` / `string.unpublished` / `string.pending_delete` / `string.deleted` |
-| **Restore last edit** (grid batch) | Newest restorable activity `before` per selected string (skips publish / unpublish / pending_delete / deleted) | `POST /strings/batch` action `restore_last_history` |
+| **Project Activity feed** (`GET /activities/feed`) | Cards grouped by `coalesce(batch_id, id)`, paginated by card. Counts are aggregated in SQL; batch children in the payload are capped at 50 while `children_count` is the full total. Locale filter matches `activity.locale` or a translation key in the snapshot JSON. | **Undo** only on bulk cards (`import` / `cli_push` / `excel_import` / `translate` / `batch`) via `POST /activities/batch/{id}/revert`. API and UI default `force=false`; a 409 (later edits) can be retried with `force=true` after a second confirm. Create-undo tombstones (never hard-deletes). |
+| **Per-string History** (`GET /strings/{id}/activities`) | Newest-first rows for one string, paginated (UI loads 50 at a time) | **Restore working copy** applies that row's working-copy **content** `after` (`key`, source, description, translations, tags, module) as a new write (`POST /strings/{sid}/activities/{aid}/restore`). Returns HTTP 409 with `key_conflict` if the historical key is already used; never changes `status`, `published_*`, or `pending_delete`. Response includes a `notice` describing that. Combined save-and-publish records are eligible when their snapshots also record a content edit. **Not offered** for publication-only / `string.unpublished` / `string.pending_delete` / `string.deleted` records |
+| **Restore last edit** (grid batch) | Newest restorable activity `before` per selected string (includes combined save-and-publish; skips publication-only / unpublish / pending_delete / deleted) | `POST /strings/batch` action `restore_last_history` |
 
 Restore always writes a **new** activity. History restore does not use the revert batch path (that path skips capture). Revert/undo markers use `event_type=string.restored` and summary `Restored previous value of 'key'` — no stacked `Reverted:` / `Redid` prefixes.
 
@@ -111,6 +152,8 @@ Feed and History summaries show working-copy changes. Activity details and Undo 
 ### Restore and undo validation
 
 History restores only working-copy content. Its preview shows the resolved working-copy destination, excluding publish status and published snapshots. Locale values missing from a recorded translation map are cleared to empty working values; the language configuration, translation rows, and published values stay intact. Missing fields in legacy snapshots preserve their current values.
+
+History eligibility for `string.published` is derived from the existing before/after snapshots, without rewriting activity rows. A key, source, description, module, tag, or translation edit must be recorded on both sides. Tag ordering, missing versus empty translation values, and publication/lifecycle changes alone do not qualify. API eligibility flags are authoritative; frontend fallbacks require a working-copy content diff before allowing a published version.
 
 Full-state Undo previews compare the live state to the actual projected inverse operation. Later nonempty translations in newly added languages count as conflicts; additional empty working rows do not. Normal and forced confirmations warn whenever published content or publish status changes. New undo markers capture the live before/after snapshots, including retained tombstones and pending deletion; older markers are not rewritten.
 
@@ -175,3 +218,106 @@ with zero translations. Comparison is exact, including whitespace; restoring the
 identical source makes an existing proposal valid again. AI writes still affect
 only the working copy. Deploy backend and frontend together; custom Apply clients
 must send the baseline, and older browser tabs may need a reload.
+
+### Save or publish reviewed AI translations
+
+The Translate missing dialog no longer calls `/translate/apply` (kept for API
+clients). It uses two endpoints that take the same items (1–100, one per string):
+
+- `POST /api/projects/{id}/translate/review` is read-only. It returns the full
+  proposed strings (working copy after the save, with published snapshots and
+  every configured locale, empty ones included) and a `fingerprint` binding the
+  reviewed membership, values, scores, project locales, and each string's
+  complete current working and published state. Items carry no description
+  (descriptions never publish); extra fields return 422.
+- `POST /api/projects/{id}/translate/save` with `action: "draft"` writes the working
+  copy only, audited as `string.saved_draft`. With `action: "publish"` and the review
+  `fingerprint`, it writes and promotes exactly the reviewed strings (all locales,
+  including pending edits made elsewhere) in one transaction with its audit rows
+  (`string.saved_and_published`). Both use activity `batch_kind=translate` with a new
+  `batch_id`, so whole-action Undo reverses working and public changes together.
+
+Every reviewed cell fills a cell that was empty at review. The whole request is
+rejected with 409 and nothing is written when a source (`stale_translation_source`)
+or reviewed cell
+(`stale_translation_value`, filled elsewhere with different text) changed, a string
+was deleted (`stale_translation_review`), any reviewed content or baseline changed
+(`publish_fingerprint_mismatch`), a reviewed string is pending removal
+(`pending_delete_in_review`, also returned by `/translate/review` so the preview
+never shows a publish that cannot succeed), or publication would collide with a public key
+(`published_key_conflict`). Unconfigured or base locales return 400. Scope is the
+current queue page; paging stays blocked until that page is saved or its edits are
+undone, so no action spans unreviewed pages.
+
+
+## CLI push batch workspace
+
+New JSON-body CLI pushes record activity `batch_kind=cli_push`; file imports keep
+`import`/`excel_import`. Historical batches are not reclassified. The endpoint
+`GET /api/projects/{project_id}/cli-push-batches/{batch_id}` resolves unique activity
+members within the project and returns metadata, active working/published rows,
+excluded lifecycle counts, and the existing publication fingerprint. An unknown,
+other-project, or non-CLI batch returns 404; an entirely excluded batch returns an
+empty review. No additional workflow state or schema migration is required.
+
+The dashboard automatically translates all configured project target languages
+(excluding the base language), with no language picker. The stepper shows Translate,
+Review, and Publish. It generates read-only translation proposals and keeps them, manual
+edits, confidence scores, and QA findings in memory until an explicit save. It does not call
+`/translate/apply`, save on blur, or store resumable jobs. Leaving or reloading
+abandons unsaved progress and starts a new review from saved content. Other
+editors retain their existing blur-save behavior. In-app leave and restart
+confirmations use the shared shadcn dialog; browser reload/close warnings remain
+controlled by the browser. Partial AI responses leave unresolved cells visible;
+retries exclude completed or manually edited cells. Publication waits until those
+cells are generated or explicitly reviewed through manual editing.
+
+Both `POST /api/projects/{project_id}/cli-push-batches/{batch_id}/draft` and
+`POST /api/projects/{project_id}/cli-push-batches/{batch_id}/publish` accept
+the original review fingerprint and all staged translation changes. The server
+locks publication, batch strings, and their translations; verifies batch membership,
+source text, locales, and the full review fingerprint (including unchanged public
+strings); applies translations; and commits the content and audit batch together.
+Only publication promotes snapshots and validates public-key collisions. Saving
+as draft preserves existing string status and public snapshots: new strings remain
+draft and already-public strings retain their last published values. More than 100 rows
+can complete in this one transaction; there are no independently committed chunks.
+Any validation, stale-content, or publication failure rolls back the entire final
+request, including translation edits and audit records. A stale workflow must be
+restarted before publication. The original CLI push remains saved as before.
+
+Publication is still per string across all locales, including historical locales
+outside the current project targets. These remain visible but read-only. Missing
+values and QA issues remain advisory. Saving or publishing shows a success toast
+and refreshes the batch in place. View in Strings opens the catalog filtered to
+the original CLI push batch. If refresh fails, saved changes remain committed;
+Reload batch retries the read without saving or publishing again. The existing catalog,
+translation Apply, audit, Undo, export, and soft-delete semantics are retained.
+
+
+## Add many paste review
+
+Add many is the single-string editor flow applied to up to 100 pasted rows; it does
+not use the import endpoint. `POST /api/projects/{project_id}/strings/paste-review`
+resolves each key to its live owner (respecting the duplicate-key policy and the
+chosen module), builds the same create/update proposal the editor would, and returns
+each projected working copy with every configured target locale plus a fingerprint.
+Nothing is written. The fingerprint covers project settings, the module, and each
+key's current state (or absence), not the proposed values, so reviewed edits can be
+saved without another preview while a concurrent edit, publication, or creation of a
+pasted key is still rejected.
+
+`POST /api/projects/{project_id}/strings/paste-save` takes the rows, `action`
+(`draft` | `publish`), and that fingerprint. Under the publication lock (publish) and
+row locks it rebuilds the proposals, rejects a changed fingerprint with
+`publish_fingerprint_mismatch`, writes every row through the editor's create/update
+path, and for publish promotes each publishable row and checks public-key
+collisions. Rows, snapshots, and audit records commit together under one `import`
+batch, or the whole request rolls back. Draft saves keep existing public snapshots and
+status; new strings stay draft. A pasted value for a target locale on a new key uses
+the key as source, matching file imports. Selected tags are added to existing strings;
+the module applies to new strings only.
+
+`POST /api/projects/{project_id}/translate/preview-batch` translates up to 20 unsaved
+rows (`id`, `source_text`, `locales`) in one AI call with translation memory and QA,
+storing nothing. The dialog requests only empty cells.

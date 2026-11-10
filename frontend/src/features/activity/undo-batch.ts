@@ -1,6 +1,9 @@
 import { ApiError } from '@/lib/api/client'
 import type { ActivityFeedCard, RevertPreview, RevertPreviewItem } from '@/lib/api/types'
 
+const PUBLICATION_UNDO_WARNING =
+  'This changes public content or publication status immediately. History Restore changes only the working copy.'
+
 function stringNoun(count: number): string {
   return count === 1 ? 'string' : 'strings'
 }
@@ -35,14 +38,14 @@ export function undoDescription(card: ActivityFeedCard, preview?: RevertPreview)
     parts.push(`This restores ${total} ${stringNoun(total)} to their values before this action.`)
   }
   if (preview.affects_published) {
-    parts.push('This also changes the published snapshot or publish status.')
+    parts.push(PUBLICATION_UNDO_WARNING)
   }
   return parts.join(' ')
 }
 
 export function undoOverwriteDescription(preview?: RevertPreview): string {
   const publicationWarning = preview?.affects_published
-    ? ' This also changes published content or publish status.'
+    ? ` ${PUBLICATION_UNDO_WARNING}`
     : ''
   if (preview && preview.conflict_count > 0) {
     return (

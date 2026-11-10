@@ -5,6 +5,14 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: read
+
+# A new push to a PR supersedes its previous run. Pushes to master always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   frontend:
     name: frontend-quality
@@ -36,18 +44,44 @@ jobs:
         run: cd frontend && npm run build
 
   backend:
-    name: backend-quality
+    name: backend-quality (${{ matrix.locale }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Debian postgres, not Alpine: musl libc sorts like C, so an Alpine
+          # en_US.UTF-8 cluster would not exercise a real glibc collation.
+          - locale: C
+            initdb: "--locale=C --encoding=UTF8"
+            provider: c
+            collate: C
+            icu: "-"
+          - locale: C.UTF-8
+            initdb: "--locale=C.UTF-8 --encoding=UTF8"
+            provider: c
+            collate: C.UTF-8
+            icu: "-"
+          - locale: en_US.UTF-8
+            initdb: "--locale=en_US.UTF-8 --encoding=UTF8"
+            provider: c
+            collate: en_US.UTF-8
+            icu: "-"
+          - locale: icu-en-US
+            initdb: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+            provider: i
+            collate: "-"
+            icu: en-US
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16
         env:
           POSTGRES_USER: xlocale
           POSTGRES_PASSWORD: xlocale
           POSTGRES_DB: xlocale
-          POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+          POSTGRES_INITDB_ARGS: ${{ matrix.initdb }}
         ports:
           - 5432:5432
         options: >-
@@ -55,7 +89,7 @@ jobs:
           --health-cmd "pg_isready -U xlocale -d xlocale"
           --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 20
 
     env:
       DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
@@ -67,11 +101,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The ubuntu-latest image already ships psql; apt is only a fallback.
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
-      - name: Assert collation C and create the test database
+      - name: Assert locale and create the test database
         env:
           PGPASSWORD: xlocale
         run: |
@@ -82,12 +120,21 @@ jobs:
             -c "ALTER SYSTEM SET synchronous_commit=off" \
             -c "ALTER SYSTEM SET full_page_writes=off" \
             -c "SELECT pg_reload_conf()"
-          collation=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datcollate || '|' || datlocprovider::text FROM pg_database WHERE datname = current_database()")
-          echo "collation=${collation}"
-          test "${collation}" = "C|c"
-          # PostgreSQL 16 removed the lc_collate GUC. datcollate and datlocprovider are the check.
+          # template0 (and therefore xlocale_test and each pytest database) has this locale.
+          line=$(psql -h localhost -U xlocale -d xlocale -Atqc \
+            "SELECT datlocprovider::text || '|' || datcollate || '|' || coalesce(daticulocale, '') FROM pg_database WHERE datname = current_database()")
+          IFS='|' read -r provider collate icu <<< "${line}"
+          echo "provider=${provider} collate=${collate} icu=${icu}"
+          test "${provider}" = "${{ matrix.provider }}"
+          fold_locale() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/utf-8/utf8/g'; }
+          if [ "${{ matrix.collate }}" != "-" ]; then
+            test "$(fold_locale "${collate}")" = "$(fold_locale "${{ matrix.collate }}")"
+          fi
+          if [ "${{ matrix.icu }}" != "-" ]; then
+            test "${icu}" = "${{ matrix.icu }}"
+          fi
           psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE xlocale_test TEMPLATE template0 LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C'"
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
 
       - name: Install dependencies
         run: cd backend && uv sync --all-extras
@@ -101,29 +148,121 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
+      # Each xdist worker creates its own xl_test_{epoch}_{hex} database.
       - name: Run pytest
-        run: cd backend && uv run pytest
+        run: cd backend && uv run pytest -n auto
+
+  # The benchmark gates on statement counts, which do not depend on the locale,
+  # so it runs once (ICU en-US) next to the matrix instead of inside every leg.
+  backend-benchmark:
+    name: backend-benchmark (icu-en-US)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: xlocale
+          POSTGRES_PASSWORD: xlocale
+          POSTGRES_DB: xlocale
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data
+          --health-cmd "pg_isready -U xlocale -d xlocale"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
+      TEST_DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale_test  # pragma: allowlist secret
+      AUTH_DEV_BYPASS: "true"
+      X_LOCALE_SECRET: test-secret  # pragma: allowlist secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Ensure PostgreSQL client
+        run: command -v psql || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+
+      - name: Create the test database
+        env:
+          PGPASSWORD: xlocale
+        run: |
+          set -euo pipefail
+          # CI only. These reload-level settings are not used by Compose or production.
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET fsync=off" \
+            -c "ALTER SYSTEM SET synchronous_commit=off" \
+            -c "ALTER SYSTEM SET full_page_writes=off" \
+            -c "SELECT pg_reload_conf()"
+          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
+          echo "provider=${provider}"
+          test "${provider}" = "i|en-US"
+          psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE xlocale_test TEMPLATE template0"
+
+      - name: Install dependencies
+        run: cd backend && uv sync --all-extras
 
       - name: Benchmark 20k-key imports
         working-directory: backend
         run: uv run python -m benchmarks.imports --check
 
   cli:
-    name: cli-unit
+    name: cli-unit (py${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the oldest supported Python (requires-python); keep it here so 3.10+ syntax is caught.
+        python: ['3.9', '3.14']
     env:
       NO_COLOR: '1'
       FORCE_COLOR: '0'
       TERM: dumb
+      UV_PYTHON: ${{ matrix.python }}
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: cli/uv.lock
 
       - name: Install dependencies
-        run: cd cli && uv sync --extra dev
+        run: cd cli && uv sync --locked --extra dev
 
       - name: Run CLI unit tests
         run: cd cli && uv run pytest tests -m "not e2e"
+
+  # Summary checks for the master ruleset, which matches exact check names.
+  # Matrix jobs report "backend-quality (C)" etc., never the plain name.
+  # always() matters: a skipped required check counts as passing.
+  backend-quality:
+    name: backend-quality
+    needs: backend
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.backend.result }}" = success
+
+  cli-unit:
+    name: cli-unit
+    needs: cli
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.cli.result }}" = success

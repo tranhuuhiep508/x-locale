@@ -4,8 +4,10 @@ Sync locale files with an x-locale server.
 
 ## Install
 
-Install Git, Python 3.10 or newer, and [uv](https://docs.astral.sh/uv/). To
-install uv on macOS or Linux:
+The CLI supports Python 3.9 or newer. The recommended setup is Git and
+[uv](https://docs.astral.sh/uv/); if you cannot install uv, see
+[Install with pip](#install-with-pip-python-39-no-uv) below. To install uv on
+macOS or Linux:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -67,6 +69,43 @@ the updated repo to refresh the executable:
 ```bash
 uv tool install --reinstall -e ./cli
 ```
+
+### Install with pip (Python 3.9+, no uv)
+
+Use this when uv is not available, for example behind a proxy that blocks
+uv's Python downloads. It uses the Python you already have (3.9 or newer).
+
+**pip can reach PyPI or an internal package mirror**
+
+```bash
+python3 -m pip install --user 'git+<repository-url>#subdirectory=cli'
+# or, from a local checkout:
+python3 -m pip install --user ./cli
+```
+
+If `loc` is not found afterwards, add the user scripts directory to `PATH`
+(`python3 -m site --user-base` prints it; append `/bin`, or `\Scripts` on
+Windows), or run `python3 -m x_locale_cli`.
+
+**No package index at all (offline bundle)**
+
+On a machine with internet access, the same operating system, and the same
+Python minor version as the target machines, build a folder of wheels for the
+CLI and all of its dependencies:
+
+```bash
+python3 -m pip wheel ./cli -w wheels
+```
+
+Copy the `wheels` folder to the target machines and install from it:
+
+```bash
+python3 -m pip install --user --no-index --find-links ./wheels x-locale-cli
+```
+
+On Python 3.9, pip resolves older dependency releases (Typer 0.23, Click 8.1)
+because newer ones require Python 3.10+. The commands behave the same; only the
+help output's type placeholders differ slightly (`TEXT` instead of `<str>`).
 
 Update scripts and CI commands from `locale` to `loc`. Existing
 `.x-locale/config.yaml` files continue to work.
@@ -217,10 +256,10 @@ A push that creates or updates strings prints one absolute review link when a
 web origin can be resolved:
 
 ```
-Review: http://localhost:5173/projects/demo-app/strings?batch_id=<batch_id>&batch_kind=import
+Review: http://localhost:5173/projects/demo-app/batches/<batch_id>
 ```
 
-The link opens the strings catalog filtered to that import batch. Dry runs and
+The link opens the batch workspace to review, translate, and publish the push. Dry runs and
 pushes that do not create or update strings omit the line.
 
 ```

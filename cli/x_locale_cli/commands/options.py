@@ -1,27 +1,25 @@
 """Shared Typer option types reused by push, pull, sync, and status."""
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 
 from x_locale_cli.models import Layout, Stage
 
 OutputDirOption = Annotated[
-    str | None,
+    Optional[str],
     typer.Option("--output-dir", help="Override output directory"),
 ]
 LayoutOption = Annotated[
-    Layout | None,
+    Optional[Layout],
     typer.Option("--layout", help="Override layout"),
 ]
 StageOption = Annotated[
-    Stage | None,
+    Optional[Stage],
     typer.Option("--stage", help="Override stage"),
 ]
 LocalesOption = Annotated[
-    str | None,
+    Optional[str],
     typer.Option("--locales", help="Comma-separated locale list"),
 ]
 DryRunOption = Annotated[

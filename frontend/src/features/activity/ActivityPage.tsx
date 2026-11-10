@@ -38,6 +38,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { publicationErrorMessage } from '@/features/strings/publish-preview'
 import { useToast } from '@/lib/toast'
 import type { ActivitySearch } from '@/lib/schemas'
 import { dayHeading, dayKey } from '@/lib/utils'
@@ -183,7 +184,7 @@ export function ActivityPage() {
     if (e instanceof ApiError && e.status === 409) {
       void undoPreviewQuery.refetch()
     }
-    toast.error(e instanceof Error ? e.message : 'Undo failed')
+    toast.error(publicationErrorMessage(e, 'Undo failed'))
   }
 
   const undoMut = useMutation({
@@ -216,7 +217,7 @@ export function ActivityPage() {
       setUndoJobId(null)
       if (error.status === 409) void undoPreviewQuery.refetch()
       if (undoJobId && !claimFinish(undoJobId)) return
-      toast.error(error instanceof Error ? error.message : 'Undo failed')
+      toast.error(publicationErrorMessage(error, 'Undo failed'))
     },
   })
   const undoBusy = undoMut.isPending || undoJobId !== null

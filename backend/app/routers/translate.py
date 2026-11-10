@@ -5,21 +5,35 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from sqlalchemy.orm import Session
 
 from app.activity import attach_batch
 from app.ai import AIConfigurationError, log_ai_failure, safe_ai_error
 from app.auth import ProjectAccess
 from app.database import DbSession
-from app.models import Job, JobStatus, Module
+from app.helpers import require_locale_code
+from app.models import Job, JobStatus, Module, Project
 from app.schemas import (
     TranslateApplyRequest,
     TranslateApplyResult,
+    TranslatePreviewBatchRequest,
+    TranslatePreviewBatchResult,
     TranslatePreviewRequest,
     TranslatePreviewResult,
     TranslateProposalsResult,
     TranslateRequest,
     TranslateResult,
+    TranslateReviewOut,
+    TranslateReviewRequest,
+    TranslateSaveRequest,
+    TranslateSaveResult,
+    TranslationMemoryRequest,
+    TranslationMemoryResult,
+    TranslationQaRequest,
+    TranslationQaResult,
+    TranslationSourceConflict,
 )
+from app.services.strings import get_string, validate_locales
 from app.services.translate import (
     SYNC_THRESHOLD,
     apply_translations,
@@ -27,6 +41,7 @@ from app.services.translate import (
     count_work,
     list_missing_page,
     parse_descriptions,
+    preview_translation_batch,
     preview_translations,
     propose_translations,
     queued_progress,
@@ -36,6 +51,9 @@ from app.services.translate import (
     select_entries,
     serialize_descriptions,
 )
+from app.services.translate_review import review_translations, save_reviewed_translations
+from app.services.translation_memory import lookup_memory
+from app.services.translation_qa import check_translation
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["translate"])
 
@@ -64,6 +82,10 @@ def translate(
     project: ProjectAccess,
     db: DbSession,
 ) -> TranslateResult:
+    if payload.exclude_cells:
+        raise HTTPException(
+            status_code=400, detail="exclude_cells is only supported by /translate/proposals"
+        )
     locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
     work = count_work(entries, locales, payload.overwrite)
@@ -113,6 +135,16 @@ def translate(
     )
 
 
+def _project_module(db: Session, project: Project, module_id: uuid.UUID | None) -> Module | None:
+    """The request's module, or 400 when it does not belong to this project."""
+    if module_id is None:
+        return None
+    module = db.query(Module).filter(Module.id == module_id, Module.project_id == project.id).first()
+    if module is None:
+        raise HTTPException(status_code=400, detail="Unknown module")
+    return module
+
+
 @router.post("/translate/preview", response_model=TranslatePreviewResult)
 def translate_preview(
     payload: TranslatePreviewRequest,
@@ -121,27 +153,80 @@ def translate_preview(
 ) -> TranslatePreviewResult:
     locales = resolve_translation_locales(project, payload.locales)
 
-    module = None
-    if payload.module_id is not None:
-        module = (
-            db.query(Module)
-            .filter(Module.id == payload.module_id, Module.project_id == project.id)
-            .first()
-        )
-        if module is None:
-            raise HTTPException(status_code=400, detail="Unknown module")
-
+    module = _project_module(db, project, payload.module_id)
     try:
-        translations, scores = preview_translations(
+        translations, scores, issues = preview_translations(
             project,
             module,
             payload.source_text,
             locales,
             payload.description,
+            db=db,
         )
     except Exception as exc:
         raise _ai_http_error(exc) from None
-    return TranslatePreviewResult(translations=translations, scores=scores)
+    return TranslatePreviewResult(translations=translations, scores=scores, issues=issues)
+
+
+@router.post("/translate/preview-batch", response_model=TranslatePreviewBatchResult)
+def translate_preview_batch(
+    payload: TranslatePreviewBatchRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslatePreviewBatchResult:
+    """Translate unsaved rows (Add many paste) without writing anything."""
+    module = _project_module(db, project, payload.module_id)
+    rows = [
+        (item.id, item.source_text, resolve_translation_locales(project, item.locales))
+        for item in payload.items
+    ]
+    try:
+        items = preview_translation_batch(project, module, rows, db)
+    except Exception as exc:
+        raise _ai_http_error(exc) from None
+    return TranslatePreviewBatchResult(items=items)
+
+
+@router.post("/translate/memory", response_model=TranslationMemoryResult)
+def translate_memory(
+    payload: TranslationMemoryRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslationMemoryResult:
+    locales = resolve_translation_locales(project, payload.locales)
+    if payload.string_id is not None:
+        entry = get_string(db, project.id, payload.string_id)
+        if entry.deleted_at is not None:
+            raise HTTPException(404, detail="String not found")
+        if entry.source_text != payload.expected_source_text:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "stale_translation_source",
+                    "message": "Source text changed. Refresh before using translation memory.",
+                    "conflicts": [
+                        TranslationSourceConflict(
+                            string_id=entry.id,
+                            key=entry.key,
+                            expected_source_text=payload.expected_source_text,
+                            source_text=entry.source_text,
+                        ).model_dump(mode="json")
+                    ],
+                },
+            )
+    matches = lookup_memory(db, project, ((payload.source_text, locale) for locale in locales))
+    return TranslationMemoryResult(
+        source_text=payload.source_text, matches=matches.get(payload.source_text, {})
+    )
+
+
+@router.post("/translate/qa", response_model=TranslationQaResult)
+def translate_qa(payload: TranslationQaRequest, project: ProjectAccess) -> TranslationQaResult:
+    """Read-only check for the edit form. Computes issues and stores nothing."""
+    require_locale_code(payload.locale)
+    validate_locales(project, [payload.locale])
+    issues = check_translation(payload.source_text, payload.translation, payload.locale)
+    return TranslationQaResult(locale=payload.locale, issues=[issue.as_dict() for issue in issues])
 
 
 @router.post("/translate/missing", response_model=TranslateProposalsResult)
@@ -171,7 +256,7 @@ def translate_proposals(
     locales = resolve_translation_locales(project, payload.locales)
     entries = select_entries(db, project, payload, locales)
     descriptions = parse_descriptions(payload.descriptions)
-    work = count_work(entries, locales, payload.overwrite)
+    work = count_work(entries, locales, payload.overwrite, payload.exclude_cells)
     entry_ids = [e.id for e in entries]
     desc_payload = serialize_descriptions(descriptions)
 
@@ -186,6 +271,7 @@ def translate_proposals(
                 "overwrite": payload.overwrite,
                 "entry_count": len(entry_ids),
                 "descriptions": desc_payload,
+                "exclude_cells": {str(key): value for key, value in payload.exclude_cells.items()},
                 "progress": queued_progress(work),
             },
         )
@@ -202,6 +288,7 @@ def translate_proposals(
             payload.overwrite,
             job_id,
             desc_payload,
+            {str(key): value for key, value in payload.exclude_cells.items()},
         )
         return TranslateProposalsResult(
             locales=locales,
@@ -213,7 +300,14 @@ def translate_proposals(
         )
 
     try:
-        items = propose_translations(project, entries, locales, payload.overwrite, descriptions)
+        items = propose_translations(
+            project,
+            entries,
+            locales,
+            payload.overwrite,
+            descriptions,
+            exclude_cells=payload.exclude_cells,
+        )
     except Exception as exc:
         raise _ai_http_error(exc) from None
     return TranslateProposalsResult(
@@ -240,3 +334,23 @@ def translate_apply(
         batch_id=batch_id,
         locales=locales,
     )
+
+
+@router.post("/translate/review", response_model=TranslateReviewOut)
+def translate_review(
+    payload: TranslateReviewRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateReviewOut:
+    """Read-only: full proposed strings and the fingerprint Publish must echo."""
+    return review_translations(db, project, payload.items)
+
+
+@router.post("/translate/save", response_model=TranslateSaveResult)
+def translate_save(
+    payload: TranslateSaveRequest,
+    project: ProjectAccess,
+    db: DbSession,
+) -> TranslateSaveResult:
+    """Save reviewed rows as draft, or save and publish exactly those strings atomically."""
+    return save_reviewed_translations(db, project, payload)

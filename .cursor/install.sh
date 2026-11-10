@@ -31,12 +31,12 @@ if [[ ! -f .env ]]; then
 fi
 
 # The default Cloud Agent image has no Docker. Native Postgres matches the
-# README's local cluster (libc collation C) and avoids nested containers.
+# README's local setup and avoids nested containers.
 echo "Installing PostgreSQL 16..."
 # shellcheck source=postgres.sh
 source "${REPO_ROOT}/.cursor/postgres.sh"
 install_postgres_packages
-ensure_c_locale_cluster
+start_postgres_cluster
 ensure_xlocale_role_and_databases
 
 echo "Installing backend + CLI Python dependencies..."

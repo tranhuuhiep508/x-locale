@@ -245,9 +245,14 @@ def prepare_session_database(test_url: str) -> str:
     The name is ``xl_test_{epoch}_{hex}``, so two pytest processes on one server
     do not share or truncate each other's database. Stale harness databases from
     a killed run are dropped first, using the epoch stored in the name.
+
+    Under pytest-xdist only the controller sweeps. It loads this conftest before
+    any worker starts, so a worker that boots late cannot drop the deliberately
+    stale database another worker's sweep test has just created.
     """
     os.environ["TEST_DATABASE_URL"] = test_url
-    sweep_stale_harness_databases(test_url, exclude=set(_CREATED_BY_THIS_RUN))
+    if not os.environ.get("PYTEST_XDIST_WORKER"):
+        sweep_stale_harness_databases(test_url, exclude=set(_CREATED_BY_THIS_RUN))
     url = new_database_url("xl_test")
     create_database(url, exclusive=True)
     note_database_created_by_this_run(database_name(url))

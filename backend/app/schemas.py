@@ -3,11 +3,12 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import HTTPException
-from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.helpers import require_max_length
 from app.limits import (
     KEY_MAX_LENGTH,
+    LOCALE_MAX_LENGTH,
     MODULE_NAME_MAX_LENGTH,
     MODULE_SLUG_MAX_LENGTH,
     TAG_COLOR_MAX_LENGTH,
@@ -279,15 +280,21 @@ class StringOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class StringCreate(BaseModel):
+class StringCreateContent(BaseModel):
+    model_config = {"extra": "forbid"}
+
     key: str = Field(min_length=1, max_length=512)
     source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] = Field(default_factory=list)
-    status: TranslationStatus = TranslationStatus.draft
     translations: TextValues = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+
+
+class StringCreate(StringCreateContent):
+    model_config = {"extra": "ignore"}
+    status: TranslationStatus = TranslationStatus.draft
 
 
 class StringExpected(BaseModel):
@@ -308,16 +315,125 @@ class StringExpected(BaseModel):
     translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
 
 
-class StringUpdate(BaseModel):
+class StringUpdateContent(BaseModel):
+    model_config = {"extra": "forbid"}
+
     key: str | None = Field(default=None, max_length=KEY_MAX_LENGTH)
     source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
     tag_ids: list[UUID] | None = None
-    status: TranslationStatus | None = None
     translations: OptionalTextValues = None
-    translation_scores: dict[str, ConfidenceScore] | None = None
+    translation_scores: dict[str, ConfidenceScore | None] | None = None
     expected: StringExpected | None = None
+
+
+class StringUpdate(StringUpdateContent):
+    model_config = {"extra": "ignore"}
+    status: TranslationStatus | None = None
+
+
+class EditorUpdateValues(StringUpdateContent):
+    expected: StringExpected
+
+    @model_validator(mode="after")
+    def content_expected_only(self) -> "EditorUpdateValues":
+        if "status" in self.expected.model_fields_set:
+            raise ValueError("Editor proposals cannot change publication status")
+        return self
+
+
+class EditorCreateProposal(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: Literal["create"]
+    values: StringCreateContent
+
+
+class EditorUpdateProposal(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: Literal["update"]
+    string_id: UUID
+    values: EditorUpdateValues
+
+
+EditorProposal = Annotated[EditorCreateProposal | EditorUpdateProposal, Field(discriminator="mode")]
+
+
+class EditorPreviewRequest(BaseModel):
+    proposal: EditorProposal
+
+
+class EditorSaveRequest(EditorPreviewRequest):
+    action: Literal["save_draft", "publish"]
+    fingerprint: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_publication_review(self) -> "EditorSaveRequest":
+        if self.action == "publish" and not self.fingerprint:
+            raise ValueError("Publication requires a reviewed fingerprint")
+        return self
+
+
+class EditorPreviewOut(BaseModel):
+    entry: StringOut
+    fingerprint: str
+
+
+PASTE_MAX_ROWS = 100
+
+
+class PasteRow(BaseModel):
+    """One pasted key. Existing keys update in place; new keys are created as draft."""
+
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=512)
+    # Omitted for a target-language paste: existing strings keep their source and new
+    # strings use the key, matching file imports.
+    source_text: str | None = Field(default=None, min_length=1, max_length=TEXT_MAX_LENGTH)
+    translations: TextValues = Field(default_factory=dict)
+    translation_scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
+
+
+class PasteReviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    module_id: UUID | None = None
+    tag_ids: list[UUID] = Field(default_factory=list)
+    rows: list[PasteRow] = Field(min_length=1, max_length=PASTE_MAX_ROWS)
+
+    @model_validator(mode="after")
+    def unique_keys(self) -> "PasteReviewRequest":
+        keys = [row.key for row in self.rows]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Each pasted key must be unique")
+        return self
+
+
+class PasteReviewItem(BaseModel):
+    key: str
+    mode: Literal["create", "update"]
+    entry: StringOut
+    # QA of each non-empty projected translation, so the review checks only what the user edits.
+    issues: dict[str, list["QaIssueOut"]] = Field(default_factory=dict)
+
+
+class PasteReviewOut(BaseModel):
+    """Projected working copy of every row and the fingerprint of the catalog it was built on."""
+
+    items: list[PasteReviewItem]
+    fingerprint: str
+
+
+class PasteSaveRequest(PasteReviewRequest):
+    action: Literal["draft", "publish"]
+    fingerprint: str = Field(min_length=1)
+
+
+class PasteSaveResult(BaseModel):
+    action: Literal["draft", "publish"]
+    created: int
+    updated: int
+    published: int
+    batch_id: UUID
 
 
 class TranslationUpdate(BaseModel):
@@ -390,6 +506,27 @@ class PublishPreviewEntriesOut(BaseModel):
     fingerprint: str
 
 
+class CliPushBatchOut(PublishPreviewEntriesOut):
+    batch_id: UUID
+    actor_label: str
+    created_at: UtcDateTime | None
+    created_count: int
+    updated_count: int
+    excluded_count: int
+
+
+class CliPushPublishItem(BaseModel):
+    string_id: UUID
+    expected_source_text: str
+    translations: TextValues
+    scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
+
+
+class CliPushPublishRequest(BaseModel):
+    fingerprint: str = Field(min_length=1)
+    items: list[CliPushPublishItem] = Field(default_factory=list)
+
+
 # ── Translate ─────────────────────────────────────────────────────────
 
 
@@ -401,6 +538,7 @@ class TranslateRequest(BatchFilter):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=100)
     descriptions: OptionalDescriptionValues = None
+    exclude_cells: dict[UUID, list[str]] = Field(default_factory=dict)
 
 
 class TranslationSourceConflict(BaseModel):
@@ -424,9 +562,83 @@ class TranslatePreviewRequest(BaseModel):
     locales: list[str] | None = None
 
 
+class QaIssueOut(BaseModel):
+    """Advisory finding. Save, apply, and publish ignore these."""
+
+    code: str
+    severity: Literal["error", "warning"]
+    message: str
+    start: int | None = None
+    end: int | None = None
+    detail: dict[str, Any] | None = None
+
+
+class TranslationMemoryMatch(BaseModel):
+    string_id: UUID
+    key: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    matched_source_text: str
+    translation: str
+    exact: bool
+    similarity: float
+    issues: list[QaIssueOut] = Field(default_factory=list)
+
+
+class TranslationMemoryRequest(BaseModel):
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    locales: list[str] | None = None
+    string_id: UUID | None = None
+    expected_source_text: str | None = None
+
+    @model_validator(mode="after")
+    def require_source_baseline(self) -> "TranslationMemoryRequest":
+        if self.string_id is not None and self.expected_source_text is None:
+            raise ValueError("Existing string lookups require expected_source_text")
+        return self
+
+
+class TranslationMemoryResult(BaseModel):
+    source_text: str
+    matches: dict[str, list[TranslationMemoryMatch]]
+
+
 class TranslatePreviewResult(BaseModel):
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
+
+
+class TranslatePreviewBatchItem(BaseModel):
+    id: str = Field(min_length=1, max_length=512)
+    source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    locales: list[str] = Field(min_length=1)
+
+
+class TranslatePreviewBatchRequest(BaseModel):
+    """Translate unsaved text (for example pasted rows). Stores nothing."""
+
+    module_id: UUID | None = None
+    items: list[TranslatePreviewBatchItem] = Field(min_length=1, max_length=20)
+
+
+class TranslatePreviewBatchResultItem(TranslatePreviewResult):
+    id: str
+
+
+class TranslatePreviewBatchResult(BaseModel):
+    items: list[TranslatePreviewBatchResultItem]
+
+
+class TranslationQaRequest(BaseModel):
+    source_text: str = Field(max_length=TEXT_MAX_LENGTH)
+    translation: str = Field(max_length=TEXT_MAX_LENGTH)
+    locale: str = Field(min_length=1, max_length=LOCALE_MAX_LENGTH)
+
+
+class TranslationQaResult(BaseModel):
+    locale: str
+    issues: list[QaIssueOut]
 
 
 class TranslateProposalItem(BaseModel):
@@ -434,9 +646,15 @@ class TranslateProposalItem(BaseModel):
     key: str
     source_text: str
     status: str
+    module_id: UUID | None = None
+    module_slug: str | None = None
+    module_name: str | None = None
     description: str | None = None
     translations: dict[str, str]
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+    issues: dict[str, list[QaIssueOut]] = Field(default_factory=dict)
+    memory: dict[str, list[TranslationMemoryMatch]] = Field(default_factory=dict)
+    memory_error: str | None = None
 
 
 class TranslateProposalsResult(BaseModel):
@@ -448,11 +666,20 @@ class TranslateProposalsResult(BaseModel):
     page_size: int = 50
 
 
-class TranslateApplyItem(BaseModel):
+class TranslateReviewItem(BaseModel):
+    """A reviewed row. Description edits are not part of review; unknown fields are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
     string_id: UUID
     expected_source_text: str
     translations: TextValues
     scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
+
+
+class TranslateApplyItem(TranslateReviewItem):
+    model_config = ConfigDict(extra="ignore")
+
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     # Baseline of the stored description; may exceed TEXT_MAX_LENGTH.
     expected_description: str | None = None
@@ -475,6 +702,33 @@ class TranslateApplyResult(BaseModel):
     translated_count: int
     batch_id: UUID
     locales: list[str]
+
+
+class TranslateReviewRequest(BaseModel):
+    """Reviewed AI-review rows. Each translation fills a cell that was empty at review."""
+
+    items: list[TranslateReviewItem] = Field(min_length=1, max_length=100)
+
+
+class TranslateReviewOut(BaseModel):
+    """Full proposed strings (working copy after save) and the publication fingerprint."""
+
+    items: list[StringOut]
+    fingerprint: str
+
+
+class TranslateSaveRequest(TranslateReviewRequest):
+    action: Literal["draft", "publish"]
+    # Required for publish: the fingerprint of the review the user saw.
+    fingerprint: str | None = None
+
+
+class TranslateSaveResult(BaseModel):
+    action: Literal["draft", "publish"]
+    translated_count: int
+    string_count: int
+    published_count: int
+    batch_id: UUID
 
 
 class TranslateJobProgress(BaseModel):

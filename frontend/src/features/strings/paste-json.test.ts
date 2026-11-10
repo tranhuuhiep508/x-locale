@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { parseFlatI18nJson, pasteImportParams } from './paste-json'
+import type { StringEntry } from '@/lib/api/types'
+import {
+  chunk,
+  draftRowsFromReview,
+  draftRowsToRequest,
+  aiTargetCells,
+  parseFlatI18nJson,
+  pastedRows,
+} from './paste-json'
 
 describe('parseFlatI18nJson', () => {
   it('parses a flat key to source map', () => {
@@ -175,31 +183,86 @@ describe('parseFlatI18nJson', () => {
   })
 })
 
-describe('pasteImportParams', () => {
-  it('maps onto the JSON import dry-run contract', () => {
-    expect(
-      pasteImportParams({
-        locale: 'vi',
-        dry: true,
-        moduleId: 'mod-1',
-        tagIds: ['tag-1', 'tag-2'],
-      }),
-    ).toEqual({
-      locale: 'vi',
-      dry_run: 'true',
-      status: 'draft',
-      partial: 'true',
-      module_id: 'mod-1',
-      tag_ids: ['tag-1', 'tag-2'],
-    })
+describe('paste review rows', () => {
+  const entry = (key: string, source: string, values: Record<string, string>): StringEntry =>
+    ({
+      id: key,
+      key,
+      source_text: source,
+      translations: Object.entries(values).map(([locale, value]) => ({
+        id: null,
+        locale,
+        value,
+        published_value: null,
+        confidence: null,
+        updated_at: null,
+      })),
+    }) as unknown as StringEntry
+
+  it('maps pasted text to the source or to one target language', () => {
+    const rows = [{ key: 'a', source_text: 'A' }]
+    expect(pastedRows(rows, 'vi', 'vi')).toEqual([{ key: 'a', source_text: 'A' }])
+    expect(pastedRows(rows, 'en', 'vi')).toEqual([{ key: 'a', translations: { en: 'A' } }])
   })
 
-  it('omits unused module and tags', () => {
-    expect(pasteImportParams({ locale: 'en', dry: false })).toEqual({
-      locale: 'en',
-      dry_run: 'false',
-      status: 'draft',
-      partial: 'true',
+  it('keeps user edits when a stale save refreshes the preview', () => {
+    const first = draftRowsFromReview({
+      fingerprint: 'f1',
+      items: [{ key: 'a', mode: 'update', entry: entry('a', 'Nguồn', { en: 'Old', ja: '' }) }],
     })
+    first[0].translations.ja = 'Edited'
+    first[0].scores.ja = 80
+    const refreshed = draftRowsFromReview(
+      {
+        fingerprint: 'f2',
+        items: [{ key: 'a', mode: 'update', entry: entry('a', 'Nguồn', { en: 'Concurrent', ja: '' }) }],
+      },
+      first,
+    )
+    expect(refreshed[0].translations).toEqual({ en: 'Concurrent', ja: 'Edited' })
+    expect(refreshed[0].scores.ja).toBe(80)
+  })
+
+  it('sends reviewed values, scores, and the source of new strings', () => {
+    const [row] = draftRowsFromReview({
+      fingerprint: 'f',
+      items: [{ key: 'a', mode: 'create', entry: entry('a', 'Nguồn', { en: '', ja: '' }) }],
+    })
+    row.translations.en = 'Hello'
+    row.scores.en = 91
+    expect(draftRowsToRequest([row], ['en', 'ja'])).toEqual([
+      { key: 'a', source_text: 'Nguồn', translations: { en: 'Hello' }, translation_scores: { en: 91 } },
+    ])
+  })
+
+  it('sends the pasted source of updates and cleared translations', () => {
+    // The projection already holds the pasted source; it must still reach the server.
+    const [row] = draftRowsFromReview({
+      fingerprint: 'f',
+      items: [{ key: 'a', mode: 'update', entry: entry('a', 'Pasted source', { en: 'Old' }) }],
+    })
+    row.translations.en = ''
+    expect(draftRowsToRequest([row], ['en'])).toEqual([
+      { key: 'a', source_text: 'Pasted source', translations: { en: '' } },
+    ])
+  })
+
+  it('asks AI only for empty or AI-filled cells', () => {
+    const rows = draftRowsFromReview({
+      fingerprint: 'f',
+      items: [
+        { key: 'a', mode: 'create', entry: entry('a', 'A', { en: 'Pasted', ja: '' }) },
+        { key: 'b', mode: 'create', entry: entry('b', 'B', { en: 'x', ja: 'y' }) },
+      ],
+    })
+    expect(aiTargetCells(rows, ['en', 'ja'])).toEqual([
+      { id: 'a', source_text: 'A', locales: ['ja'] },
+    ])
+    // Cells AI filled earlier (and not edited since) can be generated again.
+    expect(aiTargetCells(rows, ['en', 'ja'], new Set(['b:ja']))).toEqual([
+      { id: 'a', source_text: 'A', locales: ['ja'] },
+      { id: 'b', source_text: 'B', locales: ['ja'] },
+    ])
+    expect(chunk([1, 2, 3], 2)).toEqual([[1, 2], [3]])
   })
 })

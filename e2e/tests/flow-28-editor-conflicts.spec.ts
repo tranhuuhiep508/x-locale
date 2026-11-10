@@ -42,7 +42,7 @@ test('two editors merge unrelated changes and explicitly resolve competing text'
   await expect(page.getByRole('heading', { name: 'Edit string' })).toBeHidden()
   await bob.getByLabel('en', { exact: true }).fill('Bob English')
   await bob.getByLabel('Description').fill('Bob unsaved context')
-  const conflict = bob.waitForResponse((response) => response.request().method() === 'PATCH' && response.status() === 409)
+  const conflict = bob.waitForResponse((response) => response.url().endsWith('/strings/editor-save') && response.status() === 409)
   await saveStringForm(bob, 'edit')
   await conflict
   await expect(bob.getByText('Latest saved: Alice newer English', { exact: true })).toBeVisible()

@@ -17,6 +17,7 @@ export const stringsSearchSchema = z.object({
   tag: z.string().optional(),
   untagged: booleanSearchParam,
   q: z.string().optional(),
+  saved_string: z.string().uuid().optional(),
   missing_locale: z.string().optional(),
   missing_any: booleanSearchParam,
   complete_locale: z.string().optional(),
@@ -44,8 +45,10 @@ export const stringsSearchSchema = z.object({
 export type StringsSearch = z.infer<typeof stringsSearchSchema>
 
 // Resolved defaults (use these in components)
-export function resolveStringsSearch(s: StringsSearch) {
-  return { ...s, page: s.page ?? 1, page_size: s.page_size ?? 20 }
+export function resolveStringsSearch(s: StringsSearch): StringsSearch & { page: number; page_size: number } {
+  const { saved_string, q, sort, order, page_size = 20 } = s
+  if (saved_string) return { saved_string, q, sort, order, page: 1, page_size }
+  return { ...s, page: s.page ?? 1, page_size }
 }
 
 export const activitySearchSchema = z.object({

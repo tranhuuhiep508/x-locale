@@ -146,6 +146,16 @@ function Section({ kind, rows }: { kind: PublishKind; rows: PublishPreviewRow[] 
   )
 }
 
+export function PublishPreviewContent({ preview }: { preview: PublishPreview }) {
+  return (
+    <div className="flex flex-col gap-6">
+      {PUBLISH_KIND_ORDER.map((kind) => (
+        <Section key={kind} kind={kind} rows={rowsForKind(preview, kind)} />
+      ))}
+    </div>
+  )
+}
+
 export function PublishPreviewDialog({
   open,
   preview,
@@ -201,11 +211,7 @@ export function PublishPreviewDialog({
               description="These strings are already in sync, or are deleted and cannot be published."
             />
           ) : (
-            <div className="flex flex-col gap-6">
-              {PUBLISH_KIND_ORDER.map((kind) => (
-                <Section key={kind} kind={kind} rows={rowsForKind(preview, kind)} />
-              ))}
-            </div>
+            <PublishPreviewContent preview={preview} />
           )}
         </ReviewDialogBody>
 
