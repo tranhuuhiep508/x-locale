@@ -526,11 +526,15 @@ def test_deeply_nested_tags_do_not_crash_the_worker():
 
     # The native ICU parser recursed once per open tag and segfaulted the process,
     # so run it in a child: a regression fails this test instead of the whole suite.
+    # HTMLParser reads <script>/<style>/comment bodies and attribute values as
+    # text, but the ICU parser still opens tags there.
     code = (
         "from app.services.translation_qa import check_translation\n"
-        "for tag in ('b', 'x-y'):\n"
-        "    issues = check_translation('Hi <b>there</b>', f'<{tag}>' * 5000, 'de')\n"
-        "    assert 'qa_limit' in [issue.code for issue in issues], issues\n"
+        "deep = '<b>' * 5000\n"
+        "for text in (deep, '<x-y >' * 5000, '<script>' + deep, '<style>' + deep,\n"
+        "             '<!--' + deep, '<a title=\"' + deep + '\">x</a>'):\n"
+        "    issues = check_translation('Hi <b>there</b>', text, 'de')\n"
+        "    assert 'qa_limit' in [issue.code for issue in issues], text[:20]\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

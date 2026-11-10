@@ -81,6 +81,9 @@ _ICU_TYPED = re.compile(
     r"\{\s*(?:[A-Za-z_][A-Za-z0-9_]*|\d+)\s*,\s*"
     r"(?:plural|selectordinal|select|number|date|time)\b"
 )
+# Anything the ICU parser could read as <tag>, </tag> or <tag/>. Wider than the
+# parser's own name rule on purpose: an overcount only skips ICU checks.
+_TAG_TOKEN = re.compile(r"<(/?)[^\s<>/]+\s*(/?)>")
 # Options stop at "$": an unclosed "$t(a," cannot rescan every later "$t(" (quadratic).
 _I18NEXT_T = re.compile(
     r"\$t\(\s*(?:'(?P<sq>[^']*)'|\"(?P<dq>[^\"]*)\"|(?P<bare>[\w:.-]+))\s*(?:,[^)$]*)?\)"
@@ -155,7 +158,6 @@ class _Markup:
     broken: str | None = None
     part_at: list[int] = field(default_factory=list)
     attr_at: list[int] = field(default_factory=list)
-    depth: int = 0
 
 
 @dataclass
@@ -329,8 +331,10 @@ def _examine(text: str, *, in_plural: bool = False) -> _Side:
     shielded, specials, syntax = _shield(text)
     markup = _scan_markup(shielded)
     # The native ICU parser recurses once per open tag and segfaults the worker
-    # on a few thousand nested tags; it reads a tag only where HTMLParser does.
-    if markup.depth > MAX_NESTING:
+    # on a few thousand nested tags. Count tags on the raw text, not via
+    # HTMLParser: it skips <script>/<style>/comment bodies and attribute values,
+    # which the ICU parser (or _absorb_markup) still reads as tags.
+    if _tag_depth(shielded) > MAX_NESTING:
         return _Side(markup, None, limited="nesting")
     view = _IcuView()
     view.placeholders.update(specials)
@@ -1047,6 +1051,20 @@ def _brace_depth(text: str) -> int:
     return maximum
 
 
+def _tag_depth(text: str) -> int:
+    depth = 0
+    maximum = 0
+    for match in _TAG_TOKEN.finditer(text):
+        if match.group(2):
+            continue  # <tag/> closes itself
+        depth = max(depth - 1, 0) if match.group(1) else depth + 1
+        if depth > maximum:
+            maximum = depth
+            if maximum > MAX_NESTING:
+                return maximum
+    return maximum
+
+
 class _MarkupScanner(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
@@ -1056,7 +1074,6 @@ class _MarkupScanner(HTMLParser):
         self.attrs: list[str] = []
         self.attr_at: list[int] = []
         self.stack: list[str] = []
-        self.depth = 0
         self.broken: str | None = None
         self.scan_at = 0
 
@@ -1089,7 +1106,6 @@ class _MarkupScanner(HTMLParser):
             self.scan_at = tag_at + len(raw)
         if not void:
             self.stack.append(name)
-            self.depth = max(self.depth, len(self.stack))
 
     def handle_endtag(self, tag: str) -> None:
         name = tag.lower()
@@ -1134,7 +1150,6 @@ class _MarkupScanner(HTMLParser):
             self.broken,
             self.part_at,
             self.attr_at,
-            self.depth,
         )
 
 
