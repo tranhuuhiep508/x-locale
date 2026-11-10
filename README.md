@@ -62,7 +62,7 @@ Use the URLs in `.env.example`.
 
 ### Database collation
 
-The database may use any collation, for example `en_US.UTF-8`. CI runs on an ICU `en-US` cluster to prove it (Alpine's libc `en_US.UTF-8` sorts by bytes like C, so it would not). Migration `u0a38e9f1234` sets `COLLATE "C"` on `strings.key`, `strings.published_key`, `modules.slug` and `tags.name`. Those columns then sort in byte order, the same as Python `sorted()`, so export and CLI pull key order is identical on every server. Their indexes also stop depending on the OS collation rules, which can change on a glibc upgrade. Other text columns (source text, translations, labels) keep the database collation, so `ILIKE` search folds non-ASCII case (`Đăng` matches `đăng`) on a non-C database.
+The database may use any collation, for example `en_US.UTF-8` (production) or ICU. Backend CI runs the suite on libc `C`, `C.UTF-8`, and `en_US.UTF-8`, plus ICU `en-US`, using Debian `postgres:16` (Alpine's libc locales sort by bytes like C, so they would not count as `en_US.UTF-8`). Migrations `u0a38e9f1234` and `v1b49f0a2345` set `COLLATE "C"` on `strings.key`, `strings.published_key`, `modules.slug`, `tags.name`, and `projects.slug`. Those columns then sort in byte order, the same as Python `sorted()`, so export and CLI pull key order is identical on every server. Their indexes also stop depending on the OS collation rules, which can change on a glibc upgrade. Other text columns (source text, translations, labels, project names) keep the database collation, so `ILIKE` search folds non-ASCII case (`Đăng` matches `đăng`) on a non-C database.
 
 Check the columns with:
 
@@ -70,7 +70,8 @@ Check the columns with:
 SELECT table_name, column_name, collation_name
 FROM information_schema.columns
 WHERE (table_name, column_name) IN
-  (('strings', 'key'), ('strings', 'published_key'), ('modules', 'slug'), ('tags', 'name'));
+  (('strings', 'key'), ('strings', 'published_key'), ('modules', 'slug'), ('tags', 'name'),
+   ('projects', 'slug'));
 ```
 
 Each row must show `C`. `test_identifier_columns_use_collation_c` asserts the same.

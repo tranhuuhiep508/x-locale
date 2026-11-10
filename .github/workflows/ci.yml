@@ -39,18 +39,44 @@ jobs:
         run: cd frontend && npm run build
 
   backend:
-    name: backend-quality
+    name: backend-quality (${{ matrix.locale }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Debian postgres, not Alpine: musl libc sorts like C, so an Alpine
+          # en_US.UTF-8 cluster would not exercise a real glibc collation.
+          - locale: C
+            initdb: "--locale=C --encoding=UTF8"
+            provider: c
+            collate: C
+            icu: "-"
+          - locale: C.UTF-8
+            initdb: "--locale=C.UTF-8 --encoding=UTF8"
+            provider: c
+            collate: C.UTF-8
+            icu: "-"
+          - locale: en_US.UTF-8
+            initdb: "--locale=en_US.UTF-8 --encoding=UTF8"
+            provider: c
+            collate: en_US.UTF-8
+            icu: "-"
+          - locale: icu-en-US
+            initdb: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+            provider: i
+            collate: "-"
+            icu: en-US
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16
         env:
           POSTGRES_USER: xlocale
           POSTGRES_PASSWORD: xlocale
           POSTGRES_DB: xlocale
-          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+          POSTGRES_INITDB_ARGS: ${{ matrix.initdb }}
         ports:
           - 5432:5432
         options: >-
@@ -58,7 +84,7 @@ jobs:
           --health-cmd "pg_isready -U xlocale -d xlocale"
           --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 20
 
     env:
       DATABASE_URL: postgresql+psycopg://xlocale:xlocale@localhost:5432/xlocale  # pragma: allowlist secret
@@ -74,7 +100,7 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Assert ICU en-US and create the test database
+      - name: Assert locale and create the test database
         env:
           PGPASSWORD: xlocale
         run: |
@@ -85,11 +111,19 @@ jobs:
             -c "ALTER SYSTEM SET synchronous_commit=off" \
             -c "ALTER SYSTEM SET full_page_writes=off" \
             -c "SELECT pg_reload_conf()"
-          # The cluster is ICU en-US on purpose: Alpine (musl) libc locales sort by bytes like C,
-          # so only ICU proves the app does not depend on a C database.
-          provider=$(psql -h localhost -U xlocale -d xlocale -Atqc "SELECT datlocprovider::text || '|' || daticulocale FROM pg_database WHERE datname = current_database()")
-          echo "provider=${provider}"
-          test "${provider}" = "i|en-US"
+          # template0 (and therefore xlocale_test and each pytest database) has this locale.
+          line=$(psql -h localhost -U xlocale -d xlocale -Atqc \
+            "SELECT datlocprovider::text || '|' || datcollate || '|' || coalesce(daticulocale, '') FROM pg_database WHERE datname = current_database()")
+          IFS='|' read -r provider collate icu <<< "${line}"
+          echo "provider=${provider} collate=${collate} icu=${icu}"
+          test "${provider}" = "${{ matrix.provider }}"
+          fold_locale() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/utf-8/utf8/g'; }
+          if [ "${{ matrix.collate }}" != "-" ]; then
+            test "$(fold_locale "${collate}")" = "$(fold_locale "${{ matrix.collate }}")"
+          fi
+          if [ "${{ matrix.icu }}" != "-" ]; then
+            test "${icu}" = "${{ matrix.icu }}"
+          fi
           psql -h localhost -U xlocale -d postgres -v ON_ERROR_STOP=1 \
             -c "CREATE DATABASE xlocale_test TEMPLATE template0"
 

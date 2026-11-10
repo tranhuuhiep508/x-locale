@@ -134,7 +134,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(PROJECT_NAME_MAX_LENGTH), nullable=False)
     translation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     slug: Mapped[str] = mapped_column(
-        String(PROJECT_SLUG_MAX_LENGTH), nullable=False, unique=True, index=True
+        String(PROJECT_SLUG_MAX_LENGTH, collation="C"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
     base_language: Mapped[str] = mapped_column(
         String(LOCALE_MAX_LENGTH), nullable=False, default="vi"

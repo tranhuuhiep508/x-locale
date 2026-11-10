@@ -210,6 +210,7 @@ COLLATION_C_COLUMNS = {
     ("strings", "published_key"),
     ("modules", "slug"),
     ("tags", "name"),
+    ("projects", "slug"),
 }
 
 
@@ -224,7 +225,7 @@ def test_identifier_columns_use_collation_c(database_engine):
                 WHERE table_schema = current_schema()
                   AND (table_name, column_name) IN (
                     ('strings', 'key'), ('strings', 'published_key'),
-                    ('modules', 'slug'), ('tags', 'name')
+                    ('modules', 'slug'), ('tags', 'name'), ('projects', 'slug')
                   )
                 """
             )
