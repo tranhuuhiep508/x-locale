@@ -167,10 +167,18 @@ describe('translation review retranslation', () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
-    await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'))
+    // The first proposal renders after the whole translate-missing → proposals chain,
+    // which can exceed the default 1s waitFor on a loaded CI runner.
+    await waitFor(
+      () => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'),
+      { timeout: 5000 },
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
-    await waitFor(() => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese'))
+    await waitFor(
+      () => expect((screen.getByLabelText('ja') as HTMLTextAreaElement).value).toBe('New Japanese'),
+      { timeout: 5000 },
+    )
     expect(stringsApi.translateProposals).toHaveBeenLastCalledWith('demo-app', expect.objectContaining({ exclude_cells: { a: ['en'] } }))
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English')
