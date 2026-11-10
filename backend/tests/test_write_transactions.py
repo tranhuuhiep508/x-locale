@@ -26,7 +26,8 @@ def no_retry_delay(monkeypatch):
     return delays
 
 
-@pytest.mark.parametrize("constraint", transactions.MODULE_REFERENCE_CONSTRAINTS)
+# Sorted: frozenset order varies per process, and xdist workers must collect the same order.
+@pytest.mark.parametrize("constraint", sorted(transactions.MODULE_REFERENCE_CONSTRAINTS))
 def test_retry_classifier_requires_exact_constraint_and_state(constraint):
     error = database_error("23503", constraint, integrity=True)
     assert transactions.retryable_write_code(error, restore=True) == "module_reference_conflict"

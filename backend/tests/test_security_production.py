@@ -47,7 +47,10 @@ def test_runtime_rejects_insecure_signing_secrets(secret):
         assert secret not in str(error.value)
 
 
-@pytest.mark.parametrize("secret", ["x" * 32, "é" * 16, secrets.token_urlsafe(32)])
+# Fixed id: xdist workers must collect identical test names, and the value is random.
+@pytest.mark.parametrize(
+    "secret", ["x" * 32, "é" * 16, pytest.param(secrets.token_urlsafe(32), id="token_urlsafe")]
+)
 def test_runtime_accepts_long_signing_secrets(secret):
     Settings(x_locale_secret=secret, auth_dev_bypass=False, _env_file=None).validate_for_runtime()
 
