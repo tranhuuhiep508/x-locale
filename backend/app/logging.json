@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {"()": "app.logging.CustomJsonFormatter"}
+  },
+  "filters": {
+    "healthcheck": {"()": "app.logging.HealthCheckFilter"}
+  },
+  "handlers": {
+    "console": {
+      "class": "logging.StreamHandler",
+      "stream": "ext://sys.stdout",
+      "formatter": "json",
+      "filters": ["healthcheck"]
+    }
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"handlers": [], "level": "INFO", "propagate": true},
+    "uvicorn.access": {"handlers": [], "level": "INFO", "propagate": true},
+    "sqlalchemy.engine": {"level": "WARNING"},
+    "alembic": {"level": "INFO"}
+  },
+  "root": {"handlers": ["console"], "level": "INFO"}
+}
