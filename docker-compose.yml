@@ -23,6 +23,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      SCRUM_TEAM: ${SCRUM_TEAM:-digital}
+      APP_NAME: ${APP_NAME:-x-locale}
       DATABASE_URL: postgresql+psycopg://xlocale:xlocale@postgres:5432/xlocale
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -50,9 +52,9 @@ services:
     volumes:
       - ./backend:/app
     command: >
-      sh -c "alembic upgrade head &&
+      sh -c "python -m app.cli migrate &&
              python -m app.cli seed-demo &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             uvicorn app.main:app --log-config app/logging.json --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
     build: ./frontend

@@ -42,7 +42,7 @@ export default async function globalSetup() {
     throw error
   }
   try {
-    execSync('uv run alembic upgrade head', {
+    execSync('uv run python -m app.cli migrate', {
       cwd: path.join(repoRoot, 'backend'),
       env,
       stdio: 'inherit',

@@ -172,7 +172,7 @@ def _admin(action: str, database_url: str) -> None:
 
 def migrate_database(database_url: str) -> None:
     subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
+        ["uv", "run", "python", "-m", "app.cli", "migrate"],
         cwd=BACKEND_ROOT,
         env=backend_env(database_url),
         check=True,
@@ -231,13 +231,16 @@ def start_backend_server() -> BackendServer:
             "run",
             "uvicorn",
             "app.main:app",
+            "--log-config",
+            "app/logging.json",
             "--host",
             "127.0.0.1",
             f"--port={port}",
         ],
         cwd=BACKEND_ROOT,
         env=backend_env(database_url),
-        stdout=subprocess.PIPE,
+        # Inherit pytest's capture; an unread PIPE fills with JSON logs and stalls Uvicorn.
+        stdout=None,
         stderr=subprocess.STDOUT,
         text=True,
     )

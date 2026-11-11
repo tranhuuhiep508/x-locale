@@ -16,8 +16,10 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
+ENV PYTHONUNBUFFERED=1
+
 ENV PATH="/opt/venv/bin:$PATH"
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && python -m app.cli seed-demo && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m app.cli migrate && python -m app.cli seed-demo && uvicorn app.main:app --log-config app/logging.json --host 0.0.0.0 --port 8000"]
