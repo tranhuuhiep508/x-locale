@@ -291,6 +291,7 @@ async function openSourceConflict() {
 }
 
 describe('source conflict recovery', () => {
+  // Several async UI transitions share this deadline; each wait can take up to 5s in CI.
   it.each([false, true])('regenerates only affected rows and preserves other drafts (background: %s)', async (background) => {
     await openSourceConflict()
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
@@ -319,7 +320,7 @@ describe('source conflict recovery', () => {
       { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' } },
       { string_id: 'b', expected_source_text: 'Xin chào', translations: { en: 'Unrelated draft' } },
     ])
-  })
+  }, 15_000)
 
   it.each(['empty', 'background empty', 'failure', 'background failure'] as const)('keeps drafts after %s and allows removal', async (outcome) => {
     await openSourceConflict()

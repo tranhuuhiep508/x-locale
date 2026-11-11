@@ -239,7 +239,8 @@ def start_backend_server() -> BackendServer:
         ],
         cwd=BACKEND_ROOT,
         env=backend_env(database_url),
-        stdout=subprocess.PIPE,
+        # Inherit pytest's capture; an unread PIPE fills with JSON logs and stalls Uvicorn.
+        stdout=None,
         stderr=subprocess.STDOUT,
         text=True,
     )
