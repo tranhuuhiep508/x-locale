@@ -2,7 +2,9 @@ import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import {
+  ArrowUpDown,
   Download,
+  FileCode2,
   FileSpreadsheet,
   FileText,
   Upload,
@@ -15,6 +17,7 @@ import { useJob } from '@/hooks/use-job'
 import { JobProgress } from '@/components/job-progress'
 import { importProgressLabel } from '@/lib/job-progress'
 import { modulesQuery, projectQuery } from '@/lib/queries'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -29,6 +32,7 @@ import {
 import { ImportPreviewDialog } from '@/features/sync/ImportPreviewDialog'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -36,7 +40,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import {
   DEMO_JSON_TEMPLATE,
@@ -240,24 +244,55 @@ export function ImportExportPage() {
         eyebrow="Project"
         title="Import / Export"
         description="Download snapshots of this catalog across draft/public stages, or import translations from JSON and Excel files."
+        actions={
+          project ? (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-mono text-xs uppercase">
+                {project.base_language} → {project.target_languages.filter((l) => l !== project.base_language).length} targets
+              </Badge>
+              <Badge variant="secondary" className="capitalize">
+                {project.layout} layout
+              </Badge>
+            </div>
+          ) : null
+        }
       />
+
+      {/* Pipeline Stage Architecture Banner */}
+      <Alert role="note" className="animate-stage-in sky-panel border-border/80" style={{ '--stagger': 1 } as React.CSSProperties}>
+        <ArrowUpDown className="text-primary" />
+        <AlertTitle className="font-heading text-sm">Draft working copy vs. published snapshots</AlertTitle>
+        <AlertDescription className="text-xs">
+          Imports always write to your working copy without auto-publishing. Exporting the{' '}
+          <span className="font-medium text-foreground">Published snapshot</span> reads only verified public versions.
+        </AlertDescription>
+      </Alert>
 
       <div className="grid gap-6 xl:grid-cols-2">
         {/* Export Card */}
-        <Card className="shadow-xs flex flex-col justify-between">
-          <CardHeader className="border-b border-border/50 pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Download className="size-4.5 text-primary" />
-                Export Catalog
-              </CardTitle>
-              <Badge variant="outline" className="font-mono text-[10px]">
-                Stage: {exportStage}
-              </Badge>
-            </div>
+        <Card
+          style={{ '--stagger': 2 } as React.CSSProperties}
+          className="animate-stage-in relative flex flex-col justify-between overflow-hidden shadow-xs"
+        >
+          <div
+            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+            aria-hidden="true"
+          />
+          <CardHeader className="border-b border-border/50 bg-muted/15 pb-4">
+            <CardTitle className="flex items-center gap-2.5">
+              <MarkWell>
+                <Download className="size-4" />
+              </MarkWell>
+              <span>Export Catalog</span>
+            </CardTitle>
             <CardDescription>
               Download strings in JSON or Excel format configured for your pipeline.
             </CardDescription>
+            <CardAction>
+              <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                Stage: {exportStage}
+              </Badge>
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-5 pt-5">
             <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -351,20 +386,30 @@ export function ImportExportPage() {
         </Card>
 
         {/* Import Card */}
-        <Card data-tour="import-lock" className="shadow-xs flex flex-col justify-between">
-          <CardHeader className="border-b border-border/50 pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="size-4.5 text-primary" />
-                Import Strings
-              </CardTitle>
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {dryRun ? 'Dry run enabled' : 'Direct apply'}
-              </Badge>
-            </div>
+        <Card
+          data-tour="import-lock"
+          style={{ '--stagger': 3 } as React.CSSProperties}
+          className="animate-stage-in relative flex flex-col justify-between overflow-hidden shadow-xs"
+        >
+          <div
+            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+            aria-hidden="true"
+          />
+          <CardHeader className="border-b border-border/50 bg-muted/15 pb-4">
+            <CardTitle className="flex items-center gap-2.5">
+              <MarkWell>
+                <Upload className="size-4" />
+              </MarkWell>
+              <span>Import Strings</span>
+            </CardTitle>
             <CardDescription>
               Upload JSON or Excel files. Preview and review changes safely before applying.
             </CardDescription>
+            <CardAction>
+              <Badge variant="secondary" className="font-mono text-[10px]">
+                {dryRun ? 'Dry run enabled' : 'Direct apply'}
+              </Badge>
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-5 pt-5">
             <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -450,9 +495,11 @@ export function ImportExportPage() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleFileDrop}
               disabled={importBusy}
-              className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-50"
+              className="group flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center cursor-pointer transition-all duration-200 hover:border-primary/50 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-50"
             >
-              <Upload aria-hidden="true" className="size-6 text-muted-foreground mb-2" />
+              <MarkWell className="mb-2.5 transition-transform duration-200 group-hover:-translate-y-0.5">
+                <Upload aria-hidden="true" className="size-4" />
+              </MarkWell>
               <span className="text-xs font-medium text-foreground">
                 Click to browse or drop .json / .xlsx file here
               </span>
@@ -489,69 +536,88 @@ export function ImportExportPage() {
       </div>
 
       {/* Format Documentation & Template Card */}
-      <Card data-tour="import-format" className="shadow-xs">
-        <CardHeader className="border-b border-border/50 pb-4">
-          <p className="eyebrow">Format</p>
-          <CardTitle>Import template & Schema</CardTitle>
+      <Card
+        data-tour="import-format"
+        style={{ '--stagger': 4 } as React.CSSProperties}
+        className="animate-stage-in shadow-xs"
+      >
+        <CardHeader className="border-b border-border/50 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5">
+            <MarkWell>
+              <FileCode2 className="size-4" />
+            </MarkWell>
+            <span>Import template & Schema</span>
+          </CardTitle>
           <CardDescription>
             {isModularProject
               ? 'JSON keys are stored exactly as written. Pick a module when uploading JSON. Excel exports and examples store full module slugs in a hidden _meta sheet. Before renaming or copying a worksheet, unhide _meta and update or add its module_slug:<sheet name> entry. The entry value is the full module slug and must be unique per worksheet. Legacy workbooks without mappings use sheet names as module slugs.'
               : 'JSON keys are stored exactly as written. Excel uses one strings sheet.'}
           </CardDescription>
+          <CardAction>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="font-mono text-[10px]">.json</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]">.xlsx</Badge>
+            </div>
+          </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4 pt-5">
+        <CardContent className="grid gap-5 pt-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <pre className="overflow-x-auto rounded-xl border border-border/60 bg-haze-950 p-4 font-mono text-xs text-haze-200 leading-relaxed dark:bg-black/60">
             {demoJsonText().trimEnd()}
           </pre>
-          {isModularProject ? (
-            <p className="text-xs text-muted-foreground">
-              CLI modular layout uses folders instead:{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                auth/{project?.base_language ?? 'vi'}.json
-              </code>
-              . Keys inside that file stay as-is; the folder name is the module.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              One file per language (e.g.{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                {demoJsonFilename(project?.base_language ?? 'vi')}
-              </code>
-              ). Choose the matching target locale when you import.
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2.5 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => templateMut.mutate('json')}
-              disabled={templateMut.isPending}
-            >
-              {templateMut.isPending ? (
-                <Spinner data-icon="inline-start" />
+          <div className="flex flex-col justify-between gap-4 rounded-xl border border-border/75 bg-muted/20 p-4">
+            <div className="flex flex-col gap-2">
+              <span className="eyebrow text-[10px]">Starter templates</span>
+              {isModularProject ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  CLI modular layout uses folders instead:{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                    auth/{project?.base_language ?? 'vi'}.json
+                  </code>
+                  . Keys inside that file stay as-is; the folder name is the module.
+                </p>
               ) : (
-                <Download data-icon="inline-start" />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  One file per language (e.g.{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                    {demoJsonFilename(project?.base_language ?? 'vi')}
+                  </code>
+                  ). Choose the matching target locale when you import.
+                </p>
               )}
-              JSON example
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => templateMut.mutate('xlsx')}
-              disabled={templateMut.isPending}
-            >
-              {templateMut.isPending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <FileSpreadsheet data-icon="inline-start" />
-              )}
-              Excel example
-            </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your copy
+                before importing.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => templateMut.mutate('json')}
+                disabled={templateMut.isPending}
+              >
+                {templateMut.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Download data-icon="inline-start" />
+                )}
+                JSON example
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => templateMut.mutate('xlsx')}
+                disabled={templateMut.isPending}
+              >
+                {templateMut.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <FileSpreadsheet data-icon="inline-start" />
+                )}
+                Excel example
+              </Button>
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your copy
-            before importing.
-          </p>
         </CardContent>
       </Card>
 

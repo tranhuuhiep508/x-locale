@@ -134,9 +134,14 @@ function Section({ kind, rows }: { kind: PublishKind; rows: PublishPreviewRow[] 
   if (rows.length === 0) return null
   return (
     <section className="flex flex-col gap-2.5" aria-label={PUBLISH_SECTION_LABEL[kind]}>
-      <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        {PUBLISH_SECTION_LABEL[kind]}
-      </h3>
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          {PUBLISH_SECTION_LABEL[kind]}
+        </h3>
+        <Badge variant="secondary" className="font-mono text-[11px] tabular-nums">
+          {rows.length}
+        </Badge>
+      </div>
       <ul className="flex flex-col gap-2.5">
         {rows.map((row) => (
           <PreviewRow key={row.id} row={row} />

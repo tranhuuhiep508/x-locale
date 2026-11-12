@@ -1,7 +1,8 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { Clock, RotateCcw } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
 import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob } from '@/lib/active-job'
@@ -270,11 +271,14 @@ export function ActivityPage() {
               ) : null
             }
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
-            <span data-tour="string-history">Restore one string from its History.</span>{' '}
-            <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
-          </p>
+          <Alert role="note" className="sky-panel border-border/80 py-2.5">
+            <RotateCcw className="text-primary" />
+            <AlertDescription className="text-xs leading-relaxed text-muted-foreground">
+              <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
+              <span data-tour="string-history">Restore one string from its History.</span>{' '}
+              <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
+            </AlertDescription>
+          </Alert>
           <ActivityFilters
             search={search}
             locales={locales}
@@ -322,13 +326,26 @@ export function ActivityPage() {
             />
           ) : (
             <div data-tour="activity-list" className="flex flex-col gap-6">
-            {grouped.map((group) => (
-              <section key={group.key} className="flex min-w-0 flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="eyebrow text-xs">{group.heading || 'Unknown date'}</span>
+            {grouped.map((group, groupIndex) => (
+              <section
+                key={group.key}
+                style={{ '--stagger': Math.min(groupIndex + 1, 8) } as React.CSSProperties}
+                className="animate-stage-in flex min-w-0 flex-col gap-3"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Badge variant="outline" className="rounded-md bg-muted/40 font-mono text-[11px] uppercase tracking-wider">
+                    {group.heading || 'Unknown date'}
+                  </Badge>
                   <div className="h-px flex-1 bg-border/60" />
+                  <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                    {group.cards.length} {group.cards.length === 1 ? 'entry' : 'entries'}
+                  </span>
                 </div>
-                <div className="min-w-0 divide-y divide-border/60 rounded-xl border border-border/80 bg-card shadow-2xs px-3 sm:px-4">
+                <div className="relative min-w-0 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card px-3 shadow-xs sm:px-4">
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 w-1 bg-primary/40"
+                  />
                   {group.cards.map((card) => (
                     <ActivityCard
                       key={card.id}

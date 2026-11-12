@@ -17,6 +17,7 @@ import type {
 } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -652,26 +653,26 @@ export default function StringFormDialog({
           }
         }}
       >
-        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
+        <DialogHeader className="shrink-0 border-b border-border/70 bg-muted/20 px-6 py-4 pr-12">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <DialogTitle className="truncate">{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
               {isEdit && !reviewOpen ? (
-                <span
+                <Badge
+                  variant={status === 'public' ? 'default' : 'secondary'}
                   className={cn(
-                    'shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider',
-                    status === 'public'
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                      : 'border-border/70 bg-muted/50 text-muted-foreground',
+                    'shrink-0 font-mono text-[10px] tracking-wider uppercase',
+                    status === 'public' &&
+                      'border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
                   )}
                 >
                   {status}
-                </span>
+                </Badge>
               ) : null}
               {reviewOpen ? (
-                <span className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-medium text-primary uppercase">
+                <Badge variant="outline" className="shrink-0 border-primary/40 bg-primary/10 font-mono text-[10px] text-primary uppercase">
                   Publication Review
-                </span>
+                </Badge>
               ) : null}
             </div>
             <TranslateStepper current={currentStep} />
@@ -692,7 +693,7 @@ export default function StringFormDialog({
               onValueChange={(value) => {
                 if (value === 'details' || value === 'history') setTab(value)
               }}
-              className="mt-3 justify-start"
+              className="mt-2 justify-start"
             >
               <ToggleGroupItem value="details">Details</ToggleGroupItem>
               <ToggleGroupItem value="history">History</ToggleGroupItem>
@@ -702,7 +703,7 @@ export default function StringFormDialog({
 
         {reviewOpen ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
               <div className="mb-4 flex flex-col gap-1 border-b border-border/60 pb-3">
                 <h2 tabIndex={-1} ref={reviewHeading} className="font-heading text-base font-semibold tracking-tight text-foreground">
                   Review publication
@@ -713,7 +714,7 @@ export default function StringFormDialog({
               </div>
               {review ? <EditorPublicationReview entry={review.preview.entry} /> : <p role="status">Refreshing comparison…</p>}
             </div>
-            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:justify-end">
+            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t border-border/70 bg-muted/25 px-6 py-3.5 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" disabled={busy} onClick={() => {
                 setReviewOpen(false)
                 setReview(null)
@@ -793,31 +794,31 @@ export default function StringFormDialog({
             ) : null}
             {/* Lifecycle Status Banner */}
             {isEdit && baseline?.deleted_at ? (
-              <div className="mx-5 mt-5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
-                <p className="font-medium">This string is deleted.</p>
-                <p className="text-muted-foreground">Restore it from the grid to edit again.</p>
-              </div>
+              <Alert role="status" variant="destructive" className="mx-6 mt-5 w-auto">
+                <AlertTitle>This string is deleted.</AlertTitle>
+                <AlertDescription>Restore it from the grid to edit again.</AlertDescription>
+              </Alert>
             ) : isEdit && baseline?.pending_delete ? (
-              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
-                <p>Deletion is pending. Production still has the last published snapshot until you publish the removal.</p>
-              </div>
+              <Alert role="status" className="mx-6 mt-5 w-auto border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+                <AlertDescription className="text-xs text-amber-800 dark:text-amber-200">
+                  Deletion is pending. Production still has the last published snapshot until you publish the removal.
+                </AlertDescription>
+              </Alert>
             ) : isEdit && baseline?.status === 'public' ? (
-              <div className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="relative flex size-2 shrink-0">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-                  </span>
-                  <div className="flex flex-col min-w-0">
-                    <p className="text-xs font-semibold text-foreground">
-                      Public snapshot is live.
-                    </p>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {baseline.has_unpublished_changes
-                        ? 'Production still has the last published snapshot until you publish.'
-                        : 'Saving as draft leaves it unchanged.'}
-                    </p>
-                  </div>
+              <Alert role="status" className="mx-6 mt-5 flex w-auto flex-wrap items-center justify-between gap-3 border-border/80 bg-muted/35">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <AlertTitle className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="relative flex size-2 shrink-0">
+                      <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                    </span>
+                    Public snapshot is live.
+                  </AlertTitle>
+                  <AlertDescription className="text-xs">
+                    {baseline.has_unpublished_changes
+                      ? 'Production still has the last published snapshot until you publish.'
+                      : 'Saving as draft leaves it unchanged.'}
+                  </AlertDescription>
                 </div>
                 {!baseline.pending_delete && !baseline.deleted_at ? (
                   <Button
@@ -830,12 +831,12 @@ export default function StringFormDialog({
                     Unpublish
                   </Button>
                 ) : null}
-              </div>
+              </Alert>
             ) : null}
 
-            <div className="grid gap-8 p-5 sm:grid-cols-2">
+            <div className="grid gap-8 p-6 sm:grid-cols-2">
               <div className="flex flex-col gap-4 sm:border-r sm:border-border/60 sm:pr-8">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-border/60 pb-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     String details
                   </h3>
@@ -1027,7 +1028,7 @@ export default function StringFormDialog({
               </div>
 
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Translations {targetLocales.length > 0 ? `(${targetLocales.length})` : ''}
                   </h3>
@@ -1149,7 +1150,7 @@ export default function StringFormDialog({
             </fieldset>
           </div>
 
-          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-3 rounded-none border-t bg-muted/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <DialogFooter className="mx-0 mb-0 shrink-0 flex-col gap-3 rounded-none border-t border-border/70 bg-muted/25 px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               {canDiscard ? (
                 <Button

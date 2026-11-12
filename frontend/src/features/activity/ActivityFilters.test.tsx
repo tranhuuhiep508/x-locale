@@ -49,4 +49,25 @@ describe('activity person filter', () => {
     fireEvent.blur(screen.getByRole('textbox', { name: 'Filter by person' }))
     expect(onFilter).not.toHaveBeenCalled()
   })
+
+  it('clears typed person via inline clear button without applying it on blur', () => {
+    const onFilter = vi.fn()
+    render(
+      <ActivityFilters
+        search={{}}
+        locales={['en']}
+        onFilter={onFilter}
+        onClear={vi.fn()}
+      />
+    )
+    const input = screen.getByRole('textbox', { name: 'Filter by person' })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Dev User' } })
+    const clearButton = screen.getByRole('button', { name: 'Clear person filter' })
+    const prevented = !fireEvent.mouseDown(clearButton)
+    expect(prevented).toBe(true)
+    fireEvent.click(clearButton)
+    expect(onFilter).not.toHaveBeenCalled()
+    expect((input as HTMLInputElement).value).toBe('')
+  })
 })

@@ -121,7 +121,10 @@ export function NewProjectPage() {
 
         <div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
           {/* Main Form (8 cols on lg) */}
-          <div className="min-w-0 lg:col-span-7 xl:col-span-8">
+          <div
+            className="animate-stage-in min-w-0 lg:col-span-7 xl:col-span-8"
+            style={{ '--stagger': 1 } as React.CSSProperties}
+          >
             <Card className="shadow-xs">
               <CardHeader className="border-b border-border/50 pb-4">
                 <CardTitle>Catalog Configuration</CardTitle>
@@ -269,25 +272,36 @@ export function NewProjectPage() {
           </div>
 
           {/* Right Column: Live Project Preview & Architecture Notes */}
-          <div className="min-w-0 space-y-6 lg:col-span-5 xl:col-span-4">
-            <div className="sky-panel overflow-hidden rounded-xl border border-border/80 shadow-md">
-              <div className="border-b border-border/60 bg-muted/40 px-4 py-3 flex items-center justify-between">
+          <div
+            className="animate-stage-in min-w-0 space-y-6 lg:col-span-5 xl:col-span-4"
+            style={{ '--stagger': 2 } as React.CSSProperties}
+          >
+            <div className="sky-panel relative overflow-hidden rounded-xl border border-border/85 shadow-md transition-shadow duration-300 hover:shadow-lg">
+              <div
+                aria-hidden="true"
+                className="animate-meridian-stream absolute inset-x-0 top-0 h-0.5"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-y-0 left-0 w-1 bg-primary"
+              />
+              <div className="flex items-center justify-between border-b border-border/65 bg-muted/40 px-4 py-3 pl-5">
                 <span className="eyebrow flex items-center gap-1.5 text-primary">
-                  <Sparkles className="size-3.5" />
+                  <Sparkles className="size-3.5 animate-pulse" />
                   Live Preview
                 </span>
-                <Badge variant="outline" className="font-mono text-[10px]">
+                <Badge variant="outline" className="rounded-md font-mono text-[10px] uppercase">
                   {form.layout}
                 </Badge>
               </div>
 
-              <div className="p-5 space-y-4">
+              <div className="space-y-4 p-5 pl-6">
                 <div className="flex items-start gap-3">
                   <MarkWell className="mt-0.5">
                     <Layers className="size-4" />
                   </MarkWell>
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-semibold text-base text-foreground">
+                    <h3 className="truncate font-heading text-base font-semibold text-foreground">
                       {previewName}
                     </h3>
                     <p className="font-mono text-xs text-muted-foreground wrap-anywhere">
@@ -299,19 +313,26 @@ export function NewProjectPage() {
                 <div className="space-y-1.5 border-t border-border/50 pt-3">
                   <span className="eyebrow text-[10px]">Language Matrix</span>
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <Badge variant="secondary" className="gap-1 font-mono text-[11px] font-semibold">
+                    <Badge
+                      variant="secondary"
+                      className="gap-1 rounded-md border border-primary/25 bg-primary/10 font-mono text-[11px] font-semibold text-primary"
+                    >
                       <Globe className="size-3 text-primary" />
                       {form.base_language.toUpperCase()}
-                      <span className="text-[9px] text-muted-foreground font-normal">(base)</span>
+                      <span className="font-normal text-[9px] text-primary/80">(base)</span>
                     </Badge>
                     {form.target_languages.length > 0 ? (
                       form.target_languages.map((lang) => (
-                        <Badge key={lang} variant="outline" className="font-mono text-[11px]">
+                        <Badge
+                          key={lang}
+                          variant="outline"
+                          className="animate-galley-swap rounded-md font-mono text-[11px]"
+                        >
                           {lang.toUpperCase()}
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-xs text-muted-foreground italic">
+                      <span className="text-xs italic text-muted-foreground">
                         No target languages selected yet
                       </span>
                     )}
@@ -319,21 +340,21 @@ export function NewProjectPage() {
                 </div>
 
                 {form.translation_context && (
-                  <div className="space-y-1 rounded-lg bg-muted/30 p-2.5 border border-border/60 text-xs">
-                    <span className="eyebrow text-[10px] text-primary flex items-center gap-1">
+                  <div className="animate-galley-swap space-y-1 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs">
+                    <span className="eyebrow flex items-center gap-1 text-[10px] text-primary">
                       <Sparkles className="size-3" />
                       AI Context Attached
                     </span>
-                    <p className="text-muted-foreground line-clamp-3 italic">
+                    <p className="line-clamp-3 italic text-muted-foreground">
                       "{form.translation_context}"
                     </p>
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-border/60 bg-muted/20 px-4 py-2.5 text-[11px] text-muted-foreground flex items-center justify-between">
+              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2.5 pl-6 font-mono text-[11px] text-muted-foreground">
                 <span>0 strings (initial)</span>
-                <span>Ready to initialize</span>
+                <span>stage: draft</span>
               </div>
             </div>
 

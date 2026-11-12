@@ -73,6 +73,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { jobsApi } from '@/lib/api/jobs'
 import { ApiError } from '@/lib/api/client'
@@ -723,13 +724,13 @@ export function StringsPage() {
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       data-tour-ready={tourReady ? 'strings' : undefined}
     >
-      <div className="flex shrink-0 flex-col gap-5 border-b px-4 py-5 sm:px-6">
+      <div className="flex shrink-0 flex-col gap-4 border-b border-border/80 bg-background/60 px-4 py-4 sm:px-6 sm:py-5">
         <PageHeader
           eyebrow="Catalog"
           title="Strings"
           description={`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
           actions={
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
               <DataTableViewOptions table={table} />
               <Button
                 size="sm"
@@ -759,6 +760,7 @@ export function StringsPage() {
                 <ListPlus data-icon="inline-start" />
                 Add many
               </Button>
+              <Separator orientation="vertical" className="mx-0.5 hidden h-5 sm:block" />
               <Button size="sm" onClick={() => openEditor(null)}>
                 <Plus data-icon="inline-start" />
                 Add string
@@ -835,7 +837,7 @@ export function StringsPage() {
       </div>
 
       {total > 0 ? (
-        <div className="shrink-0 border-t px-4">
+        <div className="shrink-0 border-t border-border/80 bg-card/90 px-4 backdrop-blur-xs sm:px-6">
           <DataTablePagination
             table={table}
             center={

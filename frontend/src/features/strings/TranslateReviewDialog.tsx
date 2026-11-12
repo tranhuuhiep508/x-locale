@@ -15,6 +15,7 @@ import type {
   TranslationSourceConflict,
 } from '@/lib/api/types'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -269,15 +270,15 @@ function ProposalTreeNode({
       id={`proposal-${item.string_id}`}
       className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs"
     >
-      <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/20 px-4 py-3">
+      <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/25 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <code className="font-mono text-xs break-all text-muted-foreground" translate="no">
+          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium break-all text-foreground/90" translate="no">
             {item.key}
           </code>
           {moduleLabel ? (
-            <span className="rounded border border-border/70 bg-background/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <Badge variant="outline" className="font-mono text-[11px] font-normal text-muted-foreground">
               {moduleLabel}
-            </span>
+            </Badge>
           ) : null}
         </div>
         <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap wrap-anywhere text-foreground">

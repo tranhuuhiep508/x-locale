@@ -93,4 +93,44 @@ describe('project delete confirm', () => {
     await waitFor(() => expect(projectsApi.delete).toHaveBeenCalledWith('demo-app', 'demo-app'))
     expect(screen.queryByText(/undefined/)).toBeNull()
   })
+
+  it('filters projects by search query and layout, then resets both via Clear filter', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    queryClient.setQueryData(queryKeys.projects.list(), [
+      { ...project, role: 'admin' },
+      {
+        ...project,
+        id: '660e8400-e29b-41d4-a716-446655440001',
+        slug: 'portal-suite',
+        name: 'Portal Suite',
+        base_language: 'en',
+        target_languages: ['ja'],
+        layout: 'modular' as const,
+        role: 'editor' as const,
+      },
+    ])
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ProjectListPage />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByText('Demo App')).toBeTruthy()
+    expect(screen.getByText('Portal Suite')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Modular' }))
+    expect(screen.queryByText('Demo App')).toBeNull()
+    expect(screen.getByText('Portal Suite')).toBeTruthy()
+
+    const search = screen.getByRole('textbox', { name: 'Filter projects' })
+    fireEvent.change(search, { target: { value: 'demo' } })
+    expect(screen.getByText('No projects match your filter')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filter' }))
+    expect((search as HTMLInputElement).value).toBe('')
+    expect(screen.getByText('Demo App')).toBeTruthy()
+    expect(screen.getByText('Portal Suite')).toBeTruthy()
+  })
 })

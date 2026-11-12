@@ -220,25 +220,36 @@ export function ActivityCard({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg py-4">
+    <div className="group/activity relative flex min-w-0 flex-col gap-3 rounded-lg py-4 transition-colors">
       <div className="flex min-w-0 flex-col gap-2">
-        <p className="text-sm font-medium wrap-anywhere text-foreground">{card.summary}</p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <p className="text-sm font-medium wrap-anywhere text-foreground">{card.summary}</p>
+          {card.locale ? (
+            <Badge variant="secondary" className="font-mono text-[10px] uppercase">
+              {card.locale}
+            </Badge>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <Badge variant="outline">
+          <Badge variant="outline" className="bg-background/70">
             {isBatch && card.batch_kind
               ? batchKindLabel(card.batch_kind)
               : eventTypeLabel(card.event_type)}
           </Badge>
-          <span className="wrap-anywhere">{card.actor_label}</span>
+          <span className="font-medium text-foreground/80 wrap-anywhere">{card.actor_label}</span>
           <span aria-hidden="true">·</span>
-          <span>{formatRelativeTime(card.created_at)}</span>
-          {card.locale ? <span className="font-mono uppercase">{card.locale}</span> : null}
-          {isBatch && parts.length > 0 ? <span>{parts.join(' · ')}</span> : null}
+          <span className="font-mono text-[11px]">{formatRelativeTime(card.created_at)}</span>
+          {isBatch && parts.length > 0 ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-[11px] text-foreground/80">{parts.join(' · ')}</span>
+            </>
+          ) : null}
         </div>
       </div>
 
       {!isBatch && visibleChanges.length > 0 ? (
-        <div className="flex min-w-0 flex-col gap-1 rounded-md bg-muted/50 p-2.5">
+        <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/65 bg-muted/35 p-3">
           {visibleChanges.map((change) => (
             <ChangeLine key={changeKey(change)} change={change} />
           ))}

@@ -5,10 +5,13 @@ import {
   AlignLeft,
   ArrowRight,
   ArrowUpRight,
+  Boxes,
   GitCompareArrows,
   Globe2,
-  Settings2,
+  KeyRound,
   Layers,
+  Settings2,
+  Tags,
 } from 'lucide-react'
 import { ActivityCard } from '@/features/activity/ActivityCard'
 import {
@@ -33,7 +36,6 @@ import {
 } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MarkWell, PageBody, PageHeader } from '@/components/layout/PageHeader'
 import type { StringsSearch } from '@/lib/schemas'
@@ -49,6 +51,7 @@ function StatCard({
   to,
   search,
   accent,
+  stagger = 1,
 }: {
   icon: ElementType
   label: string
@@ -58,40 +61,50 @@ function StatCard({
   to: '/projects/$projectRef/strings' | '/projects/$projectRef/settings'
   search?: StringsSearch
   accent?: boolean
+  stagger?: number
 }) {
   return (
     <Link
       to={to}
       params={{ projectRef }}
       search={search}
-      className="group relative min-w-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ '--stagger': stagger } as React.CSSProperties}
+      className="animate-stage-in group relative min-w-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Card
         size="sm"
-        className={`h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-          accent ? 'border-primary/40 bg-primary/5' : ''
+        className={`relative h-full overflow-hidden border transition-all duration-300 ease-drift hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${
+          accent ? 'border-primary/45 bg-primary/5' : 'border-border/85'
         }`}
       >
+        <div
+          aria-hidden="true"
+          className={`absolute inset-y-0 left-0 w-1 origin-center transition-transform duration-300 ease-drift ${
+            accent ? 'scale-y-100 bg-primary' : 'scale-y-0 bg-primary group-hover:scale-y-100'
+          }`}
+        />
         <CardHeader>
-          <CardDescription className="min-h-10 sm:min-h-5 font-medium">{label}</CardDescription>
+          <CardDescription className="min-h-10 font-mono text-xs font-medium uppercase tracking-wider sm:min-h-5">
+            {label}
+          </CardDescription>
           <CardAction className="hidden sm:block">
-            <MarkWell className={accent ? 'bg-primary/20 text-primary ring-primary/30' : ''}>
+            <MarkWell className={accent ? 'border-primary/35 bg-primary/15 text-primary' : ''}>
               <Icon className="size-4" />
             </MarkWell>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        <CardContent className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
             {value === undefined ? (
               <Skeleton className="h-8 w-12" aria-label={`Loading ${label.toLowerCase()}`} />
             ) : (
-              <p className="text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
+              <p className="font-heading text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
                 {value}
               </p>
             )}
             <ArrowUpRight
               aria-hidden="true"
-              className="hidden size-4 text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5 group-hover:translate-y-[-1px] group-hover:text-primary sm:block"
+              className="hidden size-4 text-muted-foreground transition-transform duration-200 ease-drift group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary sm:block"
             />
           </div>
           <p className="hidden text-xs text-muted-foreground sm:block">{description}</p>
@@ -123,23 +136,25 @@ function LanguageCoverage({
     translated == null ? null : total === 0 ? 0 : Math.round((translated / total) * 100)
 
   return (
-    <li className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
+    <li className="flex min-w-0 flex-col gap-2.5 py-4 first:pt-0 last:pb-0">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <Badge variant="outline" className="font-mono text-xs font-semibold">
+          <Badge variant="outline" className="rounded-md bg-muted/40 font-mono text-xs font-semibold">
             {locale.toUpperCase()}
           </Badge>
           <h3 className="min-w-0 font-medium text-foreground wrap-anywhere">{name}</h3>
         </div>
         {percent == null ? (
           unavailable ? (
-            <span className="text-xs text-muted-foreground">Unavailable</span>
+            <span className="font-mono text-xs text-muted-foreground">Unavailable</span>
           ) : (
             <Skeleton className="h-5 w-10" />
           )
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold tabular-nums text-foreground">{percent}%</span>
+            <span className="font-heading text-sm font-semibold tabular-nums text-foreground">
+              {percent}%
+            </span>
           </div>
         )}
       </div>
@@ -156,7 +171,7 @@ function LanguageCoverage({
         />
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs tabular-nums text-muted-foreground">
+        <p className="font-mono text-xs tabular-nums text-muted-foreground">
           {translated == null
             ? unavailable
               ? 'Couldn’t load coverage.'
@@ -181,7 +196,7 @@ function LanguageCoverage({
                     ? { complete_locale: locale }
                     : { missing_locale: locale }
               }
-              className="text-xs font-medium hover:text-primary transition-colors"
+              className="text-xs font-medium transition-colors hover:text-primary"
             >
               {total === 0
                 ? 'View strings'
@@ -246,6 +261,17 @@ export function ProjectOverviewPage() {
   const languageName = (locale: string) =>
     languages.find((language) => language.code === locale)?.name ?? locale
 
+  const overallPercent = (() => {
+    if (!coverage.data || targetLocales.length === 0 || total === 0) return null
+    let sumTranslated = 0
+    for (const locale of targetLocales) {
+      const missing = coverageByLocale.get(locale)?.missing
+      if (missing == null) return null
+      sumTranslated += Math.max(0, total - missing)
+    }
+    return Math.round((sumTranslated / (total * targetLocales.length)) * 100)
+  })()
+
   return (
     <PageBody className="mx-auto w-full max-w-7xl pb-16">
       {/* Overview Page Header */}
@@ -281,6 +307,7 @@ export function ProjectOverviewPage() {
           projectRef={projectRef}
           to="/projects/$projectRef/strings"
           search={{}}
+          stagger={1}
         />
         <StatCard
           icon={Globe2}
@@ -289,6 +316,7 @@ export function ProjectOverviewPage() {
           description="Target languages"
           projectRef={projectRef}
           to="/projects/$projectRef/settings"
+          stagger={2}
         />
         <StatCard
           icon={GitCompareArrows}
@@ -299,29 +327,54 @@ export function ProjectOverviewPage() {
           to="/projects/$projectRef/strings"
           search={{ has_unpublished_changes: true }}
           accent={Boolean(publish.data?.total && publish.data.total > 0)}
+          stagger={3}
         />
       </div>
 
-      {/* Main Content Layout: Coverage Matrix + Activity Stream & CLI */}
+      {/* Main Content Layout: Coverage Matrix + Architecture & Activity Stream */}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         {/* Translation Coverage Card */}
-        <Card className="min-w-0 overflow-hidden shadow-xs">
+        <Card
+          style={{ '--stagger': 4 } as React.CSSProperties}
+          className="animate-stage-in relative min-w-0 overflow-hidden shadow-xs"
+        >
+          <div
+            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+            aria-hidden="true"
+          />
           <CardHeader>
             <CardTitle>
               <h2>Translation coverage</h2>
             </CardTitle>
             <CardDescription>Filled working-copy text in each target language.</CardDescription>
+            {overallPercent != null ? (
+              <CardAction>
+                <Badge
+                  variant="secondary"
+                  className="rounded-md border border-primary/25 bg-primary/10 font-mono text-xs font-semibold tabular-nums text-primary"
+                >
+                  {overallPercent}% overall
+                </Badge>
+              </CardAction>
+            ) : null}
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-5">
             {/* Base language highlight pill */}
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/30 px-3.5 py-3">
-              <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="relative flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-lg border border-border/75 bg-muted/30 px-3.5 py-3">
+              <div
+                aria-hidden="true"
+                className="absolute inset-y-0 left-0 w-1 bg-primary"
+              />
+              <div className="flex min-w-0 flex-col gap-0.5 pl-1">
                 <p className="eyebrow text-[10px]">Base language</p>
                 <p className="font-semibold text-foreground wrap-anywhere">
                   {languageName(project.base_language)}
                 </p>
               </div>
-              <Badge variant="secondary" className="font-mono text-xs font-semibold">
+              <Badge
+                variant="secondary"
+                className="rounded-md border border-primary/25 bg-primary/10 font-mono text-xs font-semibold text-primary"
+              >
                 {project.base_language.toUpperCase()}
               </Badge>
             </div>
@@ -361,8 +414,11 @@ export function ProjectOverviewPage() {
           </CardFooter>
         </Card>
 
-        {/* Right Column: Recent Activity */}
-        <div className="space-y-6">
+        {/* Right Column: Recent Activity & Catalog Architecture */}
+        <div
+          className="animate-stage-in flex flex-col gap-6"
+          style={{ '--stagger': 5 } as React.CSSProperties}
+        >
           {/* Recent Activity Card */}
           <Card size="sm" className="min-w-0 shadow-xs">
             <CardHeader className="items-center">
@@ -411,33 +467,71 @@ export function ProjectOverviewPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
 
-      {/* Overview Footer Metadata Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Link
-            to="/projects/$projectRef/modules"
-            params={{ projectRef }}
-            className="hover:text-foreground hover:underline transition-colors flex items-center gap-1.5"
-          >
-            <Layers className="size-3 text-primary" />
-            {modulesResult.data ? `${modulesResult.data.length} modules` : 'Modules'}
-          </Link>
-          <Separator orientation="vertical" className="h-3" />
-          <Link
-            to="/projects/$projectRef/tags"
-            params={{ projectRef }}
-            className="hover:text-foreground hover:underline transition-colors"
-          >
-            {tagsResult.data ? `${tagsResult.data.length} tags` : 'Tags'}
-          </Link>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[11px]">
-            {project.layout === 'modular' ? 'Modular' : 'Flat'} export layout
-          </Badge>
+          {/* Catalog Structure & Export Architecture Card */}
+          <Card size="sm" className="min-w-0 shadow-xs">
+            <CardHeader>
+              <CardTitle>
+                <h2>Catalog structure</h2>
+              </CardTitle>
+              <CardDescription>Organization, taxonomy, and export layout.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-2.5">
+              <Link
+                to="/projects/$projectRef/modules"
+                params={{ projectRef }}
+                className="group flex flex-col justify-between gap-2 rounded-lg border border-border/75 bg-muted/25 p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.04]"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <Boxes className="size-4 text-primary" />
+                  <ArrowUpRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
+                </div>
+                <div>
+                  <p className="font-heading text-sm font-semibold text-foreground">
+                    {modulesResult.data ? `${modulesResult.data.length} modules` : 'Modules'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Feature namespaces</p>
+                </div>
+              </Link>
+
+              <Link
+                to="/projects/$projectRef/tags"
+                params={{ projectRef }}
+                className="group flex flex-col justify-between gap-2 rounded-lg border border-border/75 bg-muted/25 p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.04]"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <Tags className="size-4 text-primary" />
+                  <ArrowUpRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
+                </div>
+                <div>
+                  <p className="font-heading text-sm font-semibold text-foreground">
+                    {tagsResult.data ? `${tagsResult.data.length} tags` : 'Tags'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Cross-cutting labels</p>
+                </div>
+              </Link>
+
+              <div className="flex flex-col justify-between gap-1.5 rounded-lg border border-border/75 bg-muted/20 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="eyebrow text-[10px]">Export shape</span>
+                  <Layers className="size-3.5 text-muted-foreground" />
+                </div>
+                <p className="font-mono text-xs font-medium text-foreground">
+                  {project.layout === 'modular' ? 'Modular' : 'Flat'} export layout
+                </p>
+              </div>
+
+              <div className="flex flex-col justify-between gap-1.5 rounded-lg border border-border/75 bg-muted/20 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="eyebrow text-[10px]">Key policy</span>
+                  <KeyRound className="size-3.5 text-muted-foreground" />
+                </div>
+                <p className="font-mono text-xs font-medium text-foreground">
+                  {project.allow_duplicate_keys ? 'Per-module keys' : 'Unique project keys'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </PageBody>

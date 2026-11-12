@@ -435,8 +435,12 @@ export function StringsFilters({
   return (
     <section
       aria-label="String filters"
-      className="flex min-w-0 flex-col gap-3.5 rounded-xl border border-border/80 bg-card p-3.5 shadow-xs"
+      className="sky-panel relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-border/80 p-3 shadow-xs sm:p-3.5"
     >
+      <div
+        className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+        aria-hidden="true"
+      />
       <div className="flex flex-wrap items-center gap-2">
         <InputGroup data-tour="search" className="min-w-0 flex-1 md:basis-56">
           <InputGroupInput
@@ -516,12 +520,11 @@ export function StringsFilters({
       <div
         id="string-review-filters"
         className={cn(
-          'flex min-w-0 flex-wrap items-center gap-2',
+          'flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 pt-2.5',
           !filtersOpen && 'hidden md:flex'
         )}
       >
-        <Separator />
-        <span className="sr-only md:not-sr-only md:mr-1 md:text-xs md:font-medium md:text-muted-foreground">
+        <span className="sr-only md:not-sr-only md:mr-1 md:font-mono md:text-[11px] md:font-semibold md:tracking-wider md:text-muted-foreground md:uppercase">
           Refine
         </span>
         {locales.length > 0 ? (
@@ -568,7 +571,7 @@ export function StringsFilters({
 
       {hasFilters || onReviewPublish ? (
         <>
-          <Separator />
+          <Separator className="bg-border/60" />
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <ul
               aria-label="Active filters"
@@ -576,7 +579,11 @@ export function StringsFilters({
             >
               {activeChips.map((chip) => (
                 <li key={chip.id} className="min-w-0 max-w-full shrink-0">
-                  <Badge variant="secondary" asChild className="h-7 max-w-full">
+                  <Badge
+                    variant="secondary"
+                    asChild
+                    className="h-7 max-w-full border border-border/70 bg-secondary/80 transition-colors hover:border-primary/40 hover:bg-accent"
+                  >
                     <button
                       type="button"
                       title={chip.label}

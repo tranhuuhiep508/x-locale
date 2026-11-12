@@ -15,14 +15,22 @@ export function ReviewDialogContent({ className, ...props }: ComponentProps<type
 }
 
 export function ReviewDialogHeader({ className, ...props }: ComponentProps<typeof DialogHeader>) {
-  return <DialogHeader className={cn('shrink-0 border-b px-5 py-4 pr-12', className)} {...props} />
+  return (
+    <DialogHeader
+      className={cn(
+        'shrink-0 border-b border-border/70 bg-muted/20 px-6 py-4 pr-12',
+        className
+      )}
+      {...props}
+    />
+  )
 }
 
 export function ReviewDialogBody({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'relative min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4',
+        'relative min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5',
         className
       )}
       {...props}
@@ -34,7 +42,7 @@ export function ReviewDialogFooter({ className, ...props }: ComponentProps<typeo
   return (
     <DialogFooter
       className={cn(
-        'mx-0 mb-0 shrink-0 flex-row flex-wrap justify-end rounded-none px-5 py-3',
+        'mx-0 mb-0 shrink-0 flex-row flex-wrap items-center justify-end gap-2 rounded-none border-t border-border/70 bg-muted/25 px-6 py-3.5',
         className
       )}
       {...props}

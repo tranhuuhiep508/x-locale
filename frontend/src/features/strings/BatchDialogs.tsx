@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { FolderGit2, FolderX } from 'lucide-react'
 import type { Module, Tag } from '@/lib/api/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -33,34 +35,36 @@ export function BatchMoveDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Move to module</DialogTitle>
-          <DialogDescription>Choose a module for the selected strings.</DialogDescription>
+          <DialogDescription>Choose a target module for the selected strings.</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+        <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-0.5">
           <Button
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground italic"
+            variant="outline"
+            className="h-auto min-h-10 w-full justify-start gap-2.5 border-dashed border-border/80 bg-muted/20 px-3.5 py-2.5 text-muted-foreground italic hover:border-border hover:bg-muted/50 hover:text-foreground"
             disabled={isLoading}
             onClick={() => onSelect(null)}
           >
+            <FolderX className="size-4 shrink-0 text-muted-foreground" />
             — No module —
           </Button>
           {modules.map((m) => (
             <Button
               key={m.id}
-              variant="ghost"
-              className="h-auto min-h-10 w-full justify-start py-2"
+              variant="outline"
+              className="h-auto min-h-11 w-full justify-between gap-3 border-border/70 bg-card/70 px-3.5 py-2.5 hover:border-primary/40 hover:bg-accent/50"
               disabled={isLoading}
               onClick={() => onSelect(m.id)}
             >
-              <span className="flex min-w-0 flex-col items-start gap-0.5">
-                <span className="max-w-full truncate">{m.name}</span>
-                <span className="max-w-full truncate font-mono text-xs text-muted-foreground">
-                  {m.slug}
-                </span>
+              <span className="flex min-w-0 items-center gap-2.5">
+                <FolderGit2 className="size-4 shrink-0 text-primary/80" />
+                <span className="max-w-full truncate font-medium">{m.name}</span>
               </span>
+              <Badge variant="secondary" className="shrink-0 font-mono text-[11px] font-normal">
+                {m.slug}
+              </Badge>
             </Button>
           ))}
         </div>
@@ -96,17 +100,24 @@ export function BatchTagDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add tags</DialogTitle>
-          <DialogDescription>Apply tags to all selected strings.</DialogDescription>
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle>Add tags</DialogTitle>
+            {selected.length > 0 ? (
+              <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+                {selected.length} selected
+              </Badge>
+            ) : null}
+          </div>
+          <DialogDescription>Apply tags to all selected strings. Existing tags are kept.</DialogDescription>
         </DialogHeader>
-        <FieldGroup className="max-h-64 gap-1 overflow-y-auto">
+        <FieldGroup className="max-h-72 gap-1.5 overflow-y-auto pr-0.5">
           {tags.map((t) => (
             <Field
               key={t.id}
               orientation="horizontal"
-              className="gap-2 rounded-md px-3 py-2 hover:bg-muted"
+              className="gap-2.5 rounded-xl border border-border/70 bg-card/70 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-data-[state=checked]:border-primary/45 has-data-[state=checked]:bg-primary/5"
             >
               <Checkbox
                 id={`batch-tag-${t.id}`}
@@ -118,9 +129,9 @@ export function BatchTagDialog({
                   )
                 }
               />
-              <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 wrap-anywhere">
+              <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 cursor-pointer wrap-anywhere">
                 <span
-                  className="size-3 shrink-0 rounded-full"
+                  className="size-3 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/15"
                   style={{ backgroundColor: t.color }}
                 />
                 {t.name}

@@ -588,7 +588,7 @@ export function AddManyStringsDialog({
             </FieldGroup>
           ) : stage === 'edit' ? (
             <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-2.5">
                 <p className="text-xs text-muted-foreground" aria-live="polite">
                   {aiProgress
                     ? `Generating translations… ${aiProgress.done}/${aiProgress.total} strings`

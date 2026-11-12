@@ -42,11 +42,19 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Separator } from '@/components/ui/separator'
 import { PageBody, PageHeader, PageSection } from '@/components/layout/PageHeader'
 import { ProjectMembersSection } from '@/features/settings/ProjectMembersSection'
 import { useToast } from '@/lib/toast'
@@ -169,7 +177,7 @@ export function SettingsPage() {
 
   return (
     <PageBody
-      className="mx-auto w-full max-w-5xl gap-8"
+      className="mx-auto w-full max-w-6xl gap-8 pb-16"
       data-tour-ready={membersQuery.isSuccess ? 'settings' : undefined}
     >
       <PageHeader
@@ -188,234 +196,308 @@ export function SettingsPage() {
         }
       />
 
-      <div data-tour="settings-general" className="flex flex-col gap-8">
-      <PageSection
-        title="Project details"
-        description="Choose the name, source language, and file layout for your catalog."
-      >
-        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
-          <CardContent className="pt-6">
-            <FieldGroup>
-              <Field data-invalid={errors.name ? 'true' : undefined}>
-                <FieldLabel htmlFor="project_name">Project name</FieldLabel>
-                <Input
-                  id="project_name"
-                  value={form.name}
-                  disabled={!isAdmin}
-                  aria-invalid={errors.name ? true : undefined}
-                  onChange={(e) => setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))}
+      <div className="grid items-start gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
+        {/* Sticky Architectural Section Rail */}
+        <nav
+          aria-label="Settings sections"
+          className="hidden lg:sticky lg:top-20 lg:flex lg:flex-col lg:gap-1.5"
+        >
+          <span className="eyebrow mb-1 px-2.5 text-[10px]">Configuration</span>
+          <a
+            href="#settings-general-section"
+            className="flex items-center justify-between rounded-lg border border-transparent px-2.5 py-1.5 text-sm font-medium text-foreground/85 transition-colors hover:border-border/70 hover:bg-muted/50 hover:text-foreground"
+          >
+            <span>Catalog & Locales</span>
+            {isDirty ? (
+              <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
+            ) : null}
+          </a>
+          <a
+            href="#settings-context-section"
+            className="flex items-center justify-between rounded-lg border border-transparent px-2.5 py-1.5 text-sm font-medium text-foreground/85 transition-colors hover:border-border/70 hover:bg-muted/50 hover:text-foreground"
+          >
+            <span>AI Context</span>
+          </a>
+          <Separator className="my-1" />
+          <span className="eyebrow mb-1 px-2.5 text-[10px]">Access & Sync</span>
+          <a
+            href="#settings-members-section"
+            className="flex items-center justify-between rounded-lg border border-transparent px-2.5 py-1.5 text-sm font-medium text-foreground/85 transition-colors hover:border-border/70 hover:bg-muted/50 hover:text-foreground"
+          >
+            <span>Members</span>
+          </a>
+          <a
+            href="#settings-api-keys-section"
+            className="flex items-center justify-between rounded-lg border border-transparent px-2.5 py-1.5 text-sm font-medium text-foreground/85 transition-colors hover:border-border/70 hover:bg-muted/50 hover:text-foreground"
+          >
+            <span>API Keys & CLI</span>
+            <Badge variant="outline" className="font-mono text-[10px] tabular-nums">
+              {apiKeys.length}
+            </Badge>
+          </a>
+        </nav>
+
+        <div className="flex min-w-0 flex-col gap-8">
+          <div id="settings-general-section" data-tour="settings-general" className="flex flex-col gap-8">
+            <PageSection
+              title="Project details"
+              description="Choose the name, source language, and file layout for your catalog."
+            >
+              <Card className="relative overflow-hidden border-border/80 shadow-xs">
+                <div
+                  className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+                  aria-hidden="true"
                 />
-                <FieldError>{errors.name}</FieldError>
-              </Field>
+                <CardHeader className="border-b border-border/60 bg-muted/15">
+                  <CardTitle className="text-sm">Catalog identity & export policy</CardTitle>
+                  <CardDescription>
+                    Controls how strings are indexed in the studio and structured on CLI pull.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5">
+                  <FieldGroup>
+                    <Field data-invalid={errors.name ? 'true' : undefined}>
+                      <FieldLabel htmlFor="project_name">Project name</FieldLabel>
+                      <Input
+                        id="project_name"
+                        value={form.name}
+                        disabled={!isAdmin}
+                        aria-invalid={errors.name ? true : undefined}
+                        onChange={(e) => setSaveForm((f) => ({ ...(f ?? form), name: e.target.value }))}
+                      />
+                      <FieldError>{errors.name}</FieldError>
+                    </Field>
 
-              <FieldGroup className="grid gap-4 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="base_language">Base language</FieldLabel>
-                  <Select
-                    value={form.base_language}
-                    disabled={!isAdmin || !project?.can_change_base_language}
-                    onValueChange={(v) =>
-                      setSaveForm((f) => ({
-                        ...(f ?? form),
-                        base_language: v,
-                        target_languages: (f ?? form).target_languages.filter((l) => l !== v),
-                      }))
-                    }
-                  >
-                    <SelectTrigger id="base_language" className="w-full" aria-describedby="base_language_help">
-                      <SelectValue placeholder="Base language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {languages.map((l) => (
-                          <SelectItem key={l.code} value={l.code}>
-                            {l.name} ({l.code})
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription id="base_language_help">
-                    Base language can only be changed before any strings are added, including deleted strings.
-                    To use a different base language afterward, create a new project.
-                  </FieldDescription>
-                </Field>
+                    <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="base_language">Base language</FieldLabel>
+                        <Select
+                          value={form.base_language}
+                          disabled={!isAdmin || !project?.can_change_base_language}
+                          onValueChange={(v) =>
+                            setSaveForm((f) => ({
+                              ...(f ?? form),
+                              base_language: v,
+                              target_languages: (f ?? form).target_languages.filter((l) => l !== v),
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="base_language" className="w-full" aria-describedby="base_language_help">
+                            <SelectValue placeholder="Base language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {languages.map((l) => (
+                                <SelectItem key={l.code} value={l.code}>
+                                  {l.name} ({l.code})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldDescription id="base_language_help">
+                          Base language can only be changed before any strings are added, including deleted strings.
+                          To use a different base language afterward, create a new project.
+                        </FieldDescription>
+                      </Field>
 
-                <Field>
-                  <div className="flex items-center justify-between">
-                    <FieldLabel htmlFor="layout">Layout</FieldLabel>
-                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <FolderTree className="size-3" />
-                      {form.layout === 'modular' ? 'Folder per module' : 'Single file per locale'}
-                    </span>
-                  </div>
-                  <Select
-                    value={form.layout}
+                      <Field>
+                        <div className="flex items-center justify-between">
+                          <FieldLabel htmlFor="layout">Layout</FieldLabel>
+                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <FolderTree className="size-3" />
+                            {form.layout === 'modular' ? 'Folder per module' : 'Single file per locale'}
+                          </span>
+                        </div>
+                        <Select
+                          value={form.layout}
+                          disabled={!isAdmin}
+                          onValueChange={(v) =>
+                            setSaveForm((f) => ({
+                              ...(f ?? form),
+                              layout: v as 'flat' | 'modular',
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="layout" className="w-full">
+                            <SelectValue placeholder="Layout" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="flat">Flat</SelectItem>
+                              <SelectItem value="modular">Modular</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </FieldGroup>
+                    <Separator />
+                    <Field data-tour="dup-keys" orientation="horizontal" data-disabled={!isAdmin || undefined}>
+                      <div className="flex flex-1 flex-col gap-1">
+                        <FieldLabel htmlFor="allow_duplicate_keys">Allow duplicate keys across modules</FieldLabel>
+                        <FieldDescription id="allow_duplicate_keys_description">
+                          Allow the same key in different modules. Keys must still be unique within each module.
+                        </FieldDescription>
+                      </div>
+                      <Switch
+                        id="allow_duplicate_keys"
+                        aria-describedby="allow_duplicate_keys_description"
+                        checked={form.allow_duplicate_keys}
+                        disabled={!isAdmin}
+                        onCheckedChange={(allow_duplicate_keys) =>
+                          setSaveForm((f) => ({ ...(f ?? form), allow_duplicate_keys }))
+                        }
+                      />
+                    </Field>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+            </PageSection>
+
+            <PageSection
+              title="Target languages"
+              description="Select the languages you translate into. The source language is excluded."
+            >
+              <Card className="relative overflow-hidden border-border/80 shadow-xs">
+                <CardContent className="pt-5">
+                  <TargetLanguagePicker
+                    languages={targetLangs}
+                    value={form.target_languages}
                     disabled={!isAdmin}
-                    onValueChange={(v) =>
-                      setSaveForm((f) => ({
-                        ...(f ?? form),
-                        layout: v as 'flat' | 'modular',
-                      }))
+                    onChange={(target_languages) =>
+                      setSaveForm((f) => ({ ...(f ?? form), target_languages }))
                     }
-                  >
-                    <SelectTrigger id="layout" className="w-full">
-                      <SelectValue placeholder="Layout" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="flat">Flat</SelectItem>
-                        <SelectItem value="modular">Modular</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </FieldGroup>
-              <Field data-tour="dup-keys" orientation="horizontal" data-disabled={!isAdmin || undefined}>
-                <div className="flex flex-1 flex-col gap-1">
-                  <FieldLabel htmlFor="allow_duplicate_keys">Allow duplicate keys across modules</FieldLabel>
-                  <FieldDescription id="allow_duplicate_keys_description">
-                    Allow the same key in different modules. Keys must still be unique within each module.
-                  </FieldDescription>
-                </div>
-                <Switch
-                  id="allow_duplicate_keys"
-                  aria-describedby="allow_duplicate_keys_description"
-                  checked={form.allow_duplicate_keys}
-                  disabled={!isAdmin}
-                  onCheckedChange={(allow_duplicate_keys) =>
-                    setSaveForm((f) => ({ ...(f ?? form), allow_duplicate_keys }))
-                  }
-                />
-              </Field>
-            </FieldGroup>
-          </CardContent>
-        </Card>
-      </PageSection>
-
-      <PageSection
-        title="Target languages"
-        description="Select the languages you translate into. The source language is excluded."
-      >
-        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
-          <CardContent className="pt-6">
-            <TargetLanguagePicker
-              languages={targetLangs}
-              value={form.target_languages}
-              disabled={!isAdmin}
-              onChange={(target_languages) =>
-                setSaveForm((f) => ({ ...(f ?? form), target_languages }))
-              }
-            />
-          </CardContent>
-        </Card>
-      </PageSection>
-      </div>
-
-      <div data-tour="settings-context">
-      <PageSection
-        title="Translation context"
-        description="Give translators and AI shared guidance on tone and terminology."
-      >
-        <Card className="relative overflow-hidden border-border/80 shadow-xs before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-linear-to-r before:from-transparent before:via-primary/20 before:to-transparent">
-          <CardContent className="pt-6">
-            <FieldGroup>
-              <TranslationContextField
-                id="project_translation_context"
-                value={form.translation_context ?? ''}
-                error={errors.translation_context}
-                disabled={!isAdmin}
-                onChange={(translation_context) =>
-                  setSaveForm((f) => ({ ...(f ?? form), translation_context }))
-                }
-              />
-            </FieldGroup>
-          </CardContent>
-        </Card>
-      </PageSection>
-      </div>
-
-      {isAdmin ? (
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          {isDirty ? (
-            <p role="status" className="text-sm font-medium text-amber-600 dark:text-amber-400">
-              Unsaved changes
-            </p>
-          ) : null}
-          <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending} size="default">
-            {updateMut.isPending ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-            Save changes
-          </Button>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Only project admins can change these settings.</p>
-      )}
-
-      <div data-tour="members">
-      <PageSection
-        title="Members"
-        description="Admins add people who have already signed in. Editors can work in the catalog but cannot change settings or membership."
-      >
-        <ProjectMembersSection projectId={projectId} isAdmin={isAdmin} />
-      </PageSection>
-      </div>
-
-      {/* API Keys */}
-      <PageSection
-        title="API keys"
-        description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project. Editors can revoke only keys they created."
-      >
-        <div data-tour="api-keys" className="flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted/40 p-4 shadow-2xs">
-            <div className="flex items-start gap-2.5 text-xs text-muted-foreground">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-card text-foreground">
-                <Terminal className="size-3.5" />
-              </div>
-              <div className="flex flex-col gap-1 leading-relaxed">
-                <span>
-                  Connect your repository: Run{' '}
-                  <code data-tour="loc-init" className="rounded bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere">{cliInitCommand()}</code>,
-                  then <code>loc pull</code> to download translations.
-                </span>
-                <span data-tour="loc-push">
-                  <code>loc push</code> sends base-language strings that changed since the last push.
-                </span>
-                <span data-tour="push-limits">
-                  A deleted key or a different base language rejects the push. Large pushes run in the background.
-                </span>
-              </div>
-            </div>
-            <Button size="sm" onClick={openGenerateKey} className="shrink-0 self-start sm:self-auto">
-              <Plus data-icon="inline-start" />
-              Generate key
-            </Button>
+                  />
+                </CardContent>
+              </Card>
+            </PageSection>
           </div>
 
-          {apiKeys.length > 0 ? (
-            <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
-              <DataTableToolbar
-                search={apiKeyFilter}
-                onSearchChange={setApiKeyFilter}
-                placeholder="Search keys…"
-              />
-              <DataTable table={apiKeyTable} />
-              <DataTablePagination table={apiKeyTable} />
-            </div>
-          ) : (
-            <EmptyState
-              icon={<KeyRound className="size-6 text-muted-foreground" />}
-              title="No API keys yet"
-              description="Generate a personal key for the CLI. The secret is created automatically and shown once."
-              action={
-                <Button size="sm" onClick={openGenerateKey}>
-                  <Plus data-icon="inline-start" />
-                  Generate key
-                </Button>
-              }
-            />
-          )}
+          <div id="settings-context-section" data-tour="settings-context">
+            <PageSection
+              title="Translation context"
+              description="Give translators and AI shared guidance on tone and terminology."
+            >
+              <Card className="relative overflow-hidden border-border/80 shadow-xs">
+                <CardContent className="pt-5">
+                  <FieldGroup>
+                    <TranslationContextField
+                      id="project_translation_context"
+                      value={form.translation_context ?? ''}
+                      error={errors.translation_context}
+                      disabled={!isAdmin}
+                      onChange={(translation_context) =>
+                        setSaveForm((f) => ({ ...(f ?? form), translation_context }))
+                      }
+                    />
+                  </FieldGroup>
+                </CardContent>
+                <CardFooter className="justify-between border-t border-border/60 bg-muted/20">
+                  {isAdmin ? (
+                    <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        {isDirty ? (
+                          <Badge
+                            role="status"
+                            variant="outline"
+                            className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          >
+                            Unsaved changes
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            All project settings are up to date.
+                          </span>
+                        )}
+                      </div>
+                      <Button onClick={saveSettings} disabled={!isDirty || updateMut.isPending} size="default">
+                        {updateMut.isPending ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
+                        Save changes
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Only project admins can change these settings.</p>
+                  )}
+                </CardFooter>
+              </Card>
+            </PageSection>
+          </div>
+
+          <div id="settings-members-section" data-tour="members">
+            <PageSection
+              title="Members"
+              description="Admins add people who have already signed in. Editors can work in the catalog but cannot change settings or membership."
+            >
+              <ProjectMembersSection projectId={projectId} isAdmin={isAdmin} />
+            </PageSection>
+          </div>
+
+          {/* API Keys */}
+          <div id="settings-api-keys-section">
+            <PageSection
+              title="API keys"
+              description="A personal key for CLI sync. It identifies you in the activity log — do not share it. Generating a new key revokes your previous personal key for this project. Editors can revoke only keys they created."
+            >
+              <div data-tour="api-keys" className="flex flex-col gap-4">
+                <Alert role="note" className="border-border/80 bg-muted/35 shadow-2xs">
+                  <Terminal className="text-primary" />
+                  <AlertTitle className="flex flex-wrap items-center justify-between gap-2 font-heading text-sm">
+                    <span>CLI repository sync</span>
+                    <Button size="sm" onClick={openGenerateKey}>
+                      <Plus data-icon="inline-start" />
+                      Generate key
+                    </Button>
+                  </AlertTitle>
+                  <AlertDescription className="mt-1 flex flex-col gap-1 text-xs leading-relaxed">
+                    <span>
+                      Connect your repository: Run{' '}
+                      <code
+                        data-tour="loc-init"
+                        className="rounded border border-border/70 bg-background px-1.5 py-0.5 font-mono font-medium text-foreground wrap-anywhere"
+                      >
+                        {cliInitCommand()}
+                      </code>
+                      , then <code>loc pull</code> to download translations.
+                    </span>
+                    <span data-tour="loc-push">
+                      <code>loc push</code> sends base-language strings that changed since the last push.
+                    </span>
+                    <span data-tour="push-limits">
+                      A deleted key or a different base language rejects the push. Large pushes run in the background.
+                    </span>
+                  </AlertDescription>
+                </Alert>
+
+                {apiKeys.length > 0 ? (
+                  <Card className="border-border/80 shadow-xs">
+                    <CardContent className="flex flex-col gap-4 pt-5">
+                      <DataTableToolbar
+                        search={apiKeyFilter}
+                        onSearchChange={setApiKeyFilter}
+                        placeholder="Search keys…"
+                      />
+                      <DataTable table={apiKeyTable} />
+                      <DataTablePagination table={apiKeyTable} />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <EmptyState
+                    icon={<KeyRound className="size-6 text-muted-foreground" />}
+                    title="No API keys yet"
+                    description="Generate a personal key for the CLI. The secret is created automatically and shown once."
+                    action={
+                      <Button size="sm" onClick={openGenerateKey}>
+                        <Plus data-icon="inline-start" />
+                        Generate key
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
+            </PageSection>
+          </div>
         </div>
-      </PageSection>
+      </div>
 
       <Dialog
         open={showNewKey}

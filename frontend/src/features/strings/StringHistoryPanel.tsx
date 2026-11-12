@@ -158,13 +158,16 @@ export function StringHistoryPanel({
           const visibleChanges = activity.changed.slice(0, VISIBLE_CHANGES)
           const extra = Math.max(0, activity.changed_count - visibleChanges.length)
           return (
-            <li key={activity.id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3">
+            <li
+              key={activity.id}
+              className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/80 bg-card/80 p-3.5 shadow-2xs transition-colors hover:border-border"
+            >
               <div className="min-w-0 flex-1">
-                <p className="text-sm wrap-anywhere text-foreground">{activity.summary}</p>
-                <p className="mt-1 text-xs wrap-anywhere text-muted-foreground">
+                <p className="text-sm font-medium wrap-anywhere text-foreground">{activity.summary}</p>
+                <p className="mt-0.5 text-xs wrap-anywhere text-muted-foreground">
                   {activity.actor_label} · {formatRelativeTime(activity.created_at)}
                 </p>
-                <div className="mt-2 flex flex-col gap-1">
+                <div className="mt-2.5 flex flex-col gap-1 rounded-lg border border-border/60 bg-muted/25 px-3 py-2">
                   {visibleChanges.map((change) => (
                     <ChangeLine key={changeKey(change)} change={change} />
                   ))}
@@ -179,7 +182,7 @@ export function StringHistoryPanel({
                   ) : null}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-1">
+              <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/60 pt-2">
                 <Button
                   type="button"
                   variant="ghost"

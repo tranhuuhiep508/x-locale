@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { UserPlus } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -97,16 +99,22 @@ export function ProjectMembersSection({
 
   return (
     <Card className="border-border/80 shadow-xs">
-      <CardContent className="flex flex-col gap-4 pt-6">
+      <CardHeader className="border-b border-border/60 bg-muted/15">
+        <CardTitle className="text-sm">Team roster & permissions</CardTitle>
+        <CardDescription>
+          {members.length} {members.length === 1 ? 'member' : 'members'} with access to this catalog
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 pt-5">
         {isAdmin ? (
           <form
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3.5"
             onSubmit={(event) => {
               event.preventDefault()
               if (email.trim()) addMut.mutate()
             }}
           >
-            <FieldGroup>
+            <FieldGroup className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <Field>
                 <FieldLabel htmlFor="member-email">Email</FieldLabel>
                 <Input
@@ -143,69 +151,74 @@ export function ProjectMembersSection({
             </div>
           </form>
         ) : (
-          <p className="text-sm text-muted-foreground">Only admins can add or change members.</p>
+          <Alert role="note" className="border-border/75 bg-muted/30">
+            <AlertDescription>Only admins can add or change members.</AlertDescription>
+          </Alert>
         )}
 
         {members.length === 0 ? (
           <p className="text-sm text-muted-foreground">No members yet.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {members.map((member, index) => {
-              const soleAdmin = member.role === 'admin' && adminCount < 2
-              const isSelf = me?.id === member.user_id
-              return (
-                <li
-                  key={member.user_id}
-                  className="flex flex-col gap-3 rounded-lg border border-border/80 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {member.name || member.email}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">{member.email}</p>
-                  </div>
-                  {isAdmin ? (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={member.role}
-                        disabled={soleAdmin || roleMut.isPending}
-                        onValueChange={(value) => {
-                          if (value === 'admin' || value === 'editor') {
-                            roleMut.mutate({ userId: member.user_id, next: value })
-                          }
-                        }}
-                      >
-                        <SelectTrigger aria-label={`Role for ${member.email}`} className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="editor">Editor</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={soleAdmin || removeMut.isPending}
-                        data-tour={index === 0 ? 'member-remove' : undefined}
-                        aria-label={isSelf ? `Leave ${member.email}` : `Remove ${member.email}`}
-                        onClick={() => setPendingRemoval(member)}
-                      >
-                        {isSelf ? 'Leave' : 'Remove'}
-                      </Button>
+          <>
+            <Separator />
+            <ul className="flex flex-col gap-2">
+              {members.map((member, index) => {
+                const soleAdmin = member.role === 'admin' && adminCount < 2
+                const isSelf = me?.id === member.user_id
+                return (
+                  <li
+                    key={member.user_id}
+                    className="flex flex-col gap-3 rounded-lg border border-border/80 bg-background/60 px-3.5 py-2.5 transition-colors hover:border-primary/30 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {member.name || member.email}
+                      </p>
+                      <p className="truncate font-mono text-xs text-muted-foreground">{member.email}</p>
                     </div>
-                  ) : (
-                    <Badge variant="secondary" className="capitalize">
-                      {member.role}
-                    </Badge>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                    {isAdmin ? (
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={member.role}
+                          disabled={soleAdmin || roleMut.isPending}
+                          onValueChange={(value) => {
+                            if (value === 'admin' || value === 'editor') {
+                              roleMut.mutate({ userId: member.user_id, next: value })
+                            }
+                          }}
+                        >
+                          <SelectTrigger aria-label={`Role for ${member.email}`} className="w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="admin">Admin</SelectItem>
+                              <SelectItem value="editor">Editor</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={soleAdmin || removeMut.isPending}
+                          data-tour={index === 0 ? 'member-remove' : undefined}
+                          aria-label={isSelf ? `Leave ${member.email}` : `Remove ${member.email}`}
+                          onClick={() => setPendingRemoval(member)}
+                        >
+                          {isSelf ? 'Leave' : 'Remove'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <Badge variant="secondary" className="capitalize">
+                        {member.role}
+                      </Badge>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </>
         )}
       </CardContent>
       <ConfirmDialog

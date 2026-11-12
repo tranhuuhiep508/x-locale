@@ -56,14 +56,16 @@
   --color-ember-400: oklch(0.66 0.185 27);
 
   /* Geist carries Vietnamese, Cyrillic and Latin-Extended, which this product
-     needs for source and target text. IBM Plex Mono is deliberately a different
-     voice: sans is what humans wrote, mono is what the system knows. */
+     needs for source and target text. Bricolage Grotesque anchors display
+     headings and numeric gauges with architectural character; IBM Plex Mono is
+     the machine voice for keys, locale codes, and CLI commands. */
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-heading: var(--font-sans);
+  --font-heading: "Bricolage Grotesque", "Geist Variable", ui-sans-serif,
+    system-ui, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 
   --ease-drift: cubic-bezier(0.32, 0.72, 0, 1);
@@ -390,11 +392,102 @@
 
 /* Keep the blue horizon as the single accent in otherwise quiet app chrome. */
 @utility sky-chrome {
-  background-color: var(--card);
+  background-color: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(14px);
   background-image: var(--horizon);
   background-repeat: no-repeat;
   background-position: bottom center;
   background-size: 100% 1px;
+}
+
+/* Architectural coordinate grid for studio showcases and empty galleys. */
+@utility galley-grid {
+  background-image: linear-gradient(to right, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Orchestrated entrance and interactive motion utilities. */
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes galley-swap {
+  from {
+    opacity: 0;
+    transform: translate3d(8px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes meridian-stream {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes ambient-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -12px, 0) scale(1.05);
+  }
+}
+
+@keyframes cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@utility animate-stage-in {
+  animation: stage-in 420ms var(--ease-drift) both;
+  animation-delay: calc(var(--stagger, 0) * 55ms);
+}
+
+@utility animate-galley-swap {
+  animation: galley-swap 280ms var(--ease-drift) both;
+}
+
+@utility animate-meridian-stream {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 25%, transparent) 25%,
+    var(--primary) 50%,
+    color-mix(in oklch, var(--primary) 25%, transparent) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: meridian-stream 6s linear infinite;
+}
+
+@utility animate-ambient-drift {
+  animation: ambient-drift 14s ease-in-out infinite;
+}
+
+@utility animate-cursor-blink {
+  animation: cursor-blink 1.1s steps(1) infinite;
 }
 
 /* The system's own voice: column headers, locale codes, metadata labels. */

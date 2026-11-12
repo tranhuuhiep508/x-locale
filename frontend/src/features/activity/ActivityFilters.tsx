@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 import {
   Select,
   SelectContent,
@@ -44,7 +49,7 @@ export function ActivityFilters({
   return (
     <section
       aria-label="Activity filters"
-      className="flex min-w-0 flex-wrap items-center gap-2.5 rounded-xl border border-border/80 bg-card p-3 shadow-xs"
+      className="sky-panel flex min-w-0 flex-wrap items-center gap-2.5 rounded-xl border border-border/80 p-3 shadow-xs"
     >
       <InputGroup className="min-w-0 basis-full sm:flex-1 sm:basis-48">
         <InputGroupInput
@@ -60,6 +65,21 @@ export function ActivityFilters({
         <InputGroupAddon>
           <Search />
         </InputGroupAddon>
+        {person ? (
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              size="icon-xs"
+              aria-label="Clear person filter"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setPerson('')
+                if (search.actor) onFilter({ actor: undefined })
+              }}
+            >
+              <X />
+            </InputGroupButton>
+          </InputGroupAddon>
+        ) : null}
       </InputGroup>
       <Select
         value={search.event_type || 'all'}

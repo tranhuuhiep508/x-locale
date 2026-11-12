@@ -184,19 +184,32 @@ export function TagsPage() {
           />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
-          <div className="shrink-0 border-b border-border/60 p-4">
+        <div
+          style={{ '--stagger': 1 } as React.CSSProperties}
+          className="animate-stage-in relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs"
+        >
+          <div
+            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+            aria-hidden="true"
+          />
+          <div className="shrink-0 border-b border-border/60 bg-muted/15 p-3.5 sm:px-4">
             <DataTableToolbar
               search={globalFilter}
               onSearchChange={setGlobalFilter}
               placeholder="Search tags…"
-            />
+            >
+              {globalFilter ? (
+                <Badge variant="outline" className="font-mono text-xs tabular-nums">
+                  {table.getFilteredRowModel().rows.length} match{table.getFilteredRowModel().rows.length !== 1 ? 'es' : ''}
+                </Badge>
+              ) : null}
+            </DataTableToolbar>
           </div>
           <div className="min-h-0 flex-1 bg-card">
             <DataTable table={table} />
           </div>
           {table.getFilteredRowModel().rows.length > 0 ? (
-            <div className="shrink-0 border-t border-border/60 px-4">
+            <div className="shrink-0 border-t border-border/60 bg-muted/15 px-4">
               <DataTablePagination table={table} />
             </div>
           ) : null}

@@ -10,7 +10,7 @@ export function MarkWell({
   return (
     <span
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15',
+        'flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary transition-all duration-300 ease-drift group-hover:scale-105 group-hover:border-primary/40 group-hover:bg-primary/15 group-hover:shadow-2xs',
         className
       )}
     >
@@ -35,9 +35,14 @@ export function PageHeader({
   className?: string
 }) {
   return (
-    <div className={cn('flex flex-wrap items-center justify-between gap-4', className)}>
+    <div className={cn('animate-stage-in flex flex-wrap items-end justify-between gap-4', className)}>
       <div className="min-w-0">
-        {eyebrow ? <p className="eyebrow mb-1.5">{eyebrow}</p> : null}
+        {eyebrow ? (
+          <p className="eyebrow mb-1.5 inline-flex items-center gap-2">
+            <span aria-hidden="true" className="h-2.5 w-0.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+            {eyebrow}
+          </p>
+        ) : null}
         <TitleTag
           className={cn(
             'font-heading font-semibold tracking-tight text-foreground',
@@ -47,7 +52,7 @@ export function PageHeader({
           {title}
         </TitleTag>
         {description ? (
-          <div className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</div>
+          <div className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</div>
         ) : null}
       </div>
       {actions ? (

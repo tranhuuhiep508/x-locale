@@ -40,30 +40,45 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="gap-4 px-3 py-4 group-data-[collapsible=icon]:px-2">
+      <SidebarHeader className="gap-3.5 px-3 py-4 group-data-[collapsible=icon]:px-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="All projects">
-              <Link to="/">
-                <ArrowLeft />
+              <Link to="/" className="group/back">
+                <ArrowLeft className="transition-transform duration-200 ease-drift group-hover/back:-translate-x-0.5" />
                 <span>All projects</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="rounded-xl border border-border/70 bg-card/80 p-3 shadow-2xs group-data-[collapsible=icon]:hidden">
-          <div className="flex items-center justify-between mb-1">
-            <span className="eyebrow text-[10px]">Project</span>
-            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground uppercase font-medium">
-              {project.layout}
-            </span>
+        <div className="group/passport relative overflow-hidden rounded-xl border border-border/80 bg-card p-3 shadow-2xs transition-all duration-300 ease-drift hover:border-primary/40 hover:shadow-sm group-data-[collapsible=icon]:hidden">
+          <div
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 w-1 bg-primary/85 transition-all duration-300 group-hover/passport:w-1.5"
+          />
+          <div className="pl-1.5">
+            <div className="mb-1 flex items-center justify-between gap-1.5">
+              <span className="eyebrow flex items-center gap-1.5 text-[10px]">
+                <span className="size-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+                Project
+              </span>
+              <span className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[9px] font-medium uppercase text-muted-foreground">
+                {project.layout}
+              </span>
+            </div>
+            <h2
+              className="truncate font-heading text-sm font-semibold tracking-tight text-foreground"
+              title={project.name}
+            >
+              {project.name}
+            </h2>
+            <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
+              <span className="truncate">{project.slug}</span>
+              <span className="shrink-0 text-[10px] text-primary">
+                {project.base_language.toUpperCase()} → {project.target_languages.filter((l) => l !== project.base_language).length}
+              </span>
+            </div>
           </div>
-          <h2 className="truncate text-sm font-semibold tracking-tight text-foreground" title={project.name}>
-            {project.name}
-          </h2>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-            {project.slug}
-          </p>
         </div>
       </SidebarHeader>
       <SidebarContent>

@@ -76,7 +76,7 @@ function CatalogSortableHeader({
     <button
       type="button"
       className={cn(
-        '-ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-left text-xs font-medium',
+        '-ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-left font-mono text-[11px] font-medium tracking-wider uppercase',
         'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         isActive && 'text-foreground',
       )}

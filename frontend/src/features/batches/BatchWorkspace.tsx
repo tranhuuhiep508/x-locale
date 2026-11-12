@@ -141,7 +141,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
         />
       ) : batch ? (
         <>
-          <div className="overflow-hidden rounded-xl border bg-card shadow-2xs">
+          <div className="sky-panel relative overflow-hidden rounded-2xl border border-border/80 bg-card shadow-xs">
+            <div
+              className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+              aria-hidden="true"
+            />
             <div className="flex flex-col gap-3 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex min-w-0 flex-col gap-1.5">

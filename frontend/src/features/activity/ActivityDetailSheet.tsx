@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { InfoIcon, RotateCcwIcon } from 'lucide-react'
 import type { ActivityChange } from '@/lib/api/types'
 import { activityDetailQuery } from '@/lib/queries'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -160,30 +162,39 @@ export function ActivityDetailSheet({
               )}
 
               {detail.revert_of ? (
-                <p className="text-xs wrap-anywhere text-muted-foreground">
-                  Reverts: {detail.revert_of.summary} (
-                  {formatRelativeTime(detail.revert_of.created_at)})
-                </p>
+                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs wrap-anywhere text-muted-foreground">
+                  <RotateCcwIcon className="size-3.5 shrink-0 text-primary" />
+                  <span>
+                    Reverts: <span className="font-medium text-foreground">{detail.revert_of.summary}</span> (
+                    {formatRelativeTime(detail.revert_of.created_at)})
+                  </span>
+                </div>
               ) : null}
               {detail.reverted_by ? (
-                <p className="text-xs wrap-anywhere text-muted-foreground">
-                  Reverted by: {detail.reverted_by.summary} (
-                  {formatRelativeTime(detail.reverted_by.created_at)})
-                </p>
+                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs wrap-anywhere text-muted-foreground">
+                  <RotateCcwIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    Reverted by: <span className="font-medium text-foreground">{detail.reverted_by.summary}</span> (
+                    {formatRelativeTime(detail.reverted_by.created_at)})
+                  </span>
+                </div>
               ) : null}
 
               {!detail.is_history_restorable &&
               detail.restore_blocked_reason &&
               (onRestore || detail.string_id) ? (
-                <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  {detail.restore_blocked_reason}
-                </p>
+                <Alert role="note" className="border-border/80 bg-muted/40 py-2.5">
+                  <InfoIcon className="size-4 text-muted-foreground" />
+                  <AlertDescription className="text-xs text-muted-foreground">
+                    {detail.restore_blocked_reason}
+                  </AlertDescription>
+                </Alert>
               ) : null}
             </div>
           )}
         </div>
 
-        <SheetFooter className="shrink-0 flex-row flex-wrap justify-end gap-2 border-t">
+        <SheetFooter className="shrink-0 flex-row flex-wrap items-center justify-end gap-2">
           {detail?.string_key ? (
             <Button variant="ghost" size="sm" asChild>
               <Link
