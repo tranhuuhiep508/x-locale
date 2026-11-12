@@ -261,20 +261,18 @@ export function ActivityPage() {
           <PageHeader
             title="Activity"
             badge={
-              <>
-                {total > 0 ? (
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {total} {total === 1 ? 'event' : 'events'}
-                  </Badge>
-                ) : null}
-                <span className="sr-only">
-                  <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
-                  <span data-tour="string-history">Restore one string from its History.</span>{' '}
-                  <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
-                </span>
-              </>
+              total > 0 ? (
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {total} {total === 1 ? 'event' : 'events'}
+                </Badge>
+              ) : null
             }
           />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
+            <span data-tour="string-history">Restore one string from its History.</span>{' '}
+            <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
+          </p>
           <ActivityFilters
             search={search}
             locales={locales}
