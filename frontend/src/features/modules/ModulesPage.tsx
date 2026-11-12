@@ -145,37 +145,52 @@ export function ModulesPage() {
   })
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 sm:py-6 gap-4">
-      <PageHeader
-        eyebrow="Catalog"
-        title="Modules"
-        description="Group related strings and share translation context."
-        className="shrink-0"
-        actions={
-          <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-2.5 border-b border-border/80 bg-background/60 px-4 py-2.5 sm:px-6 sm:py-3">
+        <PageHeader
+          title="Modules"
+          badge={
             <Badge variant="secondary" className="font-mono text-xs">
               {modules.length} module{modules.length !== 1 ? 's' : ''}
             </Badge>
-            <Button
-              size="sm"
-              onClick={() => {
-                resetForm()
-                setShowCreate(true)
-              }}
-            >
-              <Plus data-icon="inline-start" />
-              New module
-            </Button>
-          </div>
-        }
-      />
+          }
+          actions={
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              {modules.length > 0 ? (
+                <DataTableToolbar
+                  search={globalFilter}
+                  onSearchChange={setGlobalFilter}
+                  placeholder="Search modules…"
+                >
+                  {globalFilter ? (
+                    <Badge variant="outline" className="font-mono text-xs tabular-nums">
+                      {table.getFilteredRowModel().rows.length} match
+                      {table.getFilteredRowModel().rows.length !== 1 ? 'es' : ''}
+                    </Badge>
+                  ) : null}
+                </DataTableToolbar>
+              ) : null}
+              <Button
+                size="sm"
+                onClick={() => {
+                  resetForm()
+                  setShowCreate(true)
+                }}
+              >
+                <Plus data-icon="inline-start" />
+                New module
+              </Button>
+            </div>
+          }
+        />
+      </div>
 
-      {isLoading ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <Spinner />
-        </div>
-      ) : modules.length === 0 ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="min-h-0 flex-1 bg-card">
+        {isLoading ? (
+          <div className="flex h-48 items-center justify-center">
+            <Spinner />
+          </div>
+        ) : modules.length === 0 ? (
           <EmptyState
             icon={<Boxes />}
             title="No modules yet"
@@ -192,39 +207,16 @@ export function ModulesPage() {
               </Button>
             }
           />
+        ) : (
+          <DataTable table={table} />
+        )}
+      </div>
+
+      {modules.length > 0 && table.getFilteredRowModel().rows.length > 0 ? (
+        <div className="shrink-0 border-t border-border/80 bg-card/90 px-4 backdrop-blur-xs sm:px-6">
+          <DataTablePagination table={table} />
         </div>
-      ) : (
-        <div
-          style={{ '--stagger': 1 } as React.CSSProperties}
-          className="animate-stage-in relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs"
-        >
-          <div
-            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
-            aria-hidden="true"
-          />
-          <div className="shrink-0 border-b border-border/60 bg-muted/15 p-3.5 sm:px-4">
-            <DataTableToolbar
-              search={globalFilter}
-              onSearchChange={setGlobalFilter}
-              placeholder="Search modules…"
-            >
-              {globalFilter ? (
-                <Badge variant="outline" className="font-mono text-xs tabular-nums">
-                  {table.getFilteredRowModel().rows.length} match{table.getFilteredRowModel().rows.length !== 1 ? 'es' : ''}
-                </Badge>
-              ) : null}
-            </DataTableToolbar>
-          </div>
-          <div className="min-h-0 flex-1 bg-card">
-            <DataTable table={table} />
-          </div>
-          {table.getFilteredRowModel().rows.length > 0 ? (
-            <div className="shrink-0 border-t border-border/60 bg-muted/15 px-4">
-              <DataTablePagination table={table} />
-            </div>
-          ) : null}
-        </div>
-      )}
+      ) : null}
 
       {/* Create / Edit dialog */}
       <Dialog

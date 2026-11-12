@@ -49,9 +49,9 @@ export function ActivityFilters({
   return (
     <section
       aria-label="Activity filters"
-      className="sky-panel flex min-w-0 flex-wrap items-center gap-2.5 rounded-xl border border-border/80 p-3 shadow-xs"
+      className="flex min-w-0 flex-wrap items-center gap-2"
     >
-      <InputGroup className="min-w-0 basis-full sm:flex-1 sm:basis-48">
+      <InputGroup className="min-w-0 basis-full sm:max-w-xs sm:flex-1 sm:basis-48">
         <InputGroupInput
           aria-label="Filter by person"
           placeholder="Person"

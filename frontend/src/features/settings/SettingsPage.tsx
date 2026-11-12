@@ -177,13 +177,12 @@ export function SettingsPage() {
 
   return (
     <PageBody
-      className="mx-auto w-full max-w-6xl gap-8 pb-16"
+      className="mx-auto w-full max-w-6xl pb-12"
       data-tour-ready={membersQuery.isSuccess ? 'settings' : undefined}
     >
       <PageHeader
-        eyebrow="Project"
+        className="border-b border-border/70 pb-3"
         title="Settings"
-        description="Name, languages, and layout for this catalog."
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="font-mono text-xs">
@@ -196,7 +195,7 @@ export function SettingsPage() {
         }
       />
 
-      <div className="grid items-start gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[200px_minmax(0,1fr)]">
         {/* Sticky Architectural Section Rail */}
         <nav
           aria-label="Settings sections"

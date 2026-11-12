@@ -20,43 +20,45 @@ export function MarkWell({
 }
 
 export function PageHeader({
-  eyebrow,
+  leading,
   title,
-  description,
+  badge,
   actions,
   titleAs: TitleTag = 'h1',
   className,
 }: {
-  eyebrow?: string
+  leading?: React.ReactNode
   title: React.ReactNode
-  description?: React.ReactNode
+  badge?: React.ReactNode
   actions?: React.ReactNode
   titleAs?: 'h1' | 'h2'
   className?: string
 }) {
   return (
-    <div className={cn('animate-stage-in flex flex-wrap items-end justify-between gap-4', className)}>
-      <div className="min-w-0">
-        {eyebrow ? (
-          <p className="eyebrow mb-1.5 inline-flex items-center gap-2">
-            <span aria-hidden="true" className="h-2.5 w-0.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-            {eyebrow}
-          </p>
-        ) : null}
+    <div
+      className={cn(
+        'animate-stage-in flex flex-wrap items-center justify-between gap-x-4 gap-y-2',
+        className
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {leading}
+        <span
+          aria-hidden="true"
+          className="h-4 w-0.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]"
+        />
         <TitleTag
           className={cn(
             'font-heading font-semibold tracking-tight text-foreground',
-            TitleTag === 'h1' ? 'text-2xl leading-tight sm:text-3xl' : 'text-xl'
+            TitleTag === 'h1' ? 'text-lg leading-tight sm:text-xl' : 'text-base leading-tight'
           )}
         >
           {title}
         </TitleTag>
-        {description ? (
-          <div className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</div>
-        ) : null}
+        {badge}
       </div>
       {actions ? (
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">{actions}</div>
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">{actions}</div>
       ) : null}
     </div>
   )
@@ -73,7 +75,9 @@ export function PageBody({
   return (
     <div
       className={cn(
-        contained ? 'container py-8 sm:py-10' : 'flex flex-col gap-7 px-4 py-6 sm:px-6 sm:py-8',
+        contained
+          ? 'container flex flex-col gap-4 py-4 sm:gap-5 sm:py-5'
+          : 'flex flex-col gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5',
         className
       )}
       {...props}

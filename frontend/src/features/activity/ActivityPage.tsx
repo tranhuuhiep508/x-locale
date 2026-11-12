@@ -1,8 +1,7 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Clock, RotateCcw } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Clock } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
 import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob } from '@/lib/active-job'
@@ -257,28 +256,25 @@ export function ActivityPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-tour-ready={isSuccess ? 'activity' : undefined}>
-      <div className="shrink-0 border-b px-4 py-5 sm:px-6">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      <div className="shrink-0 border-b border-border/80 bg-background/60 px-4 py-2.5 sm:px-6 sm:py-3">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2.5">
           <PageHeader
-            eyebrow="Project"
             title="Activity"
-            description="Review catalog edits, imports, and publication changes."
-            actions={
-              total > 0 ? (
-                <Badge variant="secondary" className="font-mono text-xs">
-                  {total} {total === 1 ? 'event' : 'events'}
-                </Badge>
-              ) : null
+            badge={
+              <>
+                {total > 0 ? (
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {total} {total === 1 ? 'event' : 'events'}
+                  </Badge>
+                ) : null}
+                <span className="sr-only">
+                  <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
+                  <span data-tour="string-history">Restore one string from its History.</span>{' '}
+                  <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
+                </span>
+              </>
             }
           />
-          <Alert role="note" className="sky-panel border-border/80 py-2.5">
-            <RotateCcw className="text-primary" />
-            <AlertDescription className="text-xs leading-relaxed text-muted-foreground">
-              <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
-              <span data-tour="string-history">Restore one string from its History.</span>{' '}
-              <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
-            </AlertDescription>
-          </Alert>
           <ActivityFilters
             search={search}
             locales={locales}
@@ -289,7 +285,7 @@ export function ActivityPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 py-5">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 py-4">
           {isLoading ? (
             <div className="flex flex-col gap-3" aria-label="Loading activity">
               <Skeleton className="h-5 w-24" />

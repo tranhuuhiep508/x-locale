@@ -9,7 +9,6 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -435,14 +434,10 @@ export function StringsFilters({
   return (
     <section
       aria-label="String filters"
-      className="sky-panel relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-border/80 p-3 shadow-xs sm:p-3.5"
+      className="flex min-w-0 flex-col gap-2"
     >
-      <div
-        className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
-        aria-hidden="true"
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <InputGroup data-tour="search" className="min-w-0 flex-1 md:basis-56">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <InputGroup data-tour="search" className="min-w-0 flex-1 md:max-w-64 md:basis-52">
           <InputGroupInput
             placeholder="Search keys or text…"
             value={searchInput}
@@ -482,7 +477,7 @@ export function StringsFilters({
         <div
           id="string-filters"
           className={cn(
-            'flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto',
+            'flex w-full min-w-0 flex-wrap items-center gap-1.5 md:w-auto',
             !filtersOpen && 'hidden md:flex'
           )}
         >
@@ -515,106 +510,100 @@ export function StringsFilters({
             />
           ) : null}
         </div>
-      </div>
 
-      <div
-        id="string-review-filters"
-        className={cn(
-          'flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 pt-2.5',
-          !filtersOpen && 'hidden md:flex'
-        )}
-      >
-        <span className="sr-only md:not-sr-only md:mr-1 md:font-mono md:text-[11px] md:font-semibold md:tracking-wider md:text-muted-foreground md:uppercase">
-          Refine
-        </span>
-        {locales.length > 0 ? (
-          <FilterSelect label="Translation" value={translation} onValueChange={applyTranslation}>
-            <SelectItem value={TRANSLATION_ALL}>All translations</SelectItem>
-            <SelectItem value={MISSING_ANY}>Missing any target</SelectItem>
-            <SelectSeparator />
-            <SelectLabel>Missing in locale</SelectLabel>
-            {locales.map((locale) => (
-              <SelectItem key={`missing-${locale}`} value={`missing:${locale}`}>
-                Missing {locale}
-              </SelectItem>
-            ))}
-            <SelectSeparator />
-            <SelectLabel>Complete in locale</SelectLabel>
-            {locales.map((locale) => (
-              <SelectItem key={`complete-${locale}`} value={`complete:${locale}`}>
-                Complete {locale}
-              </SelectItem>
-            ))}
-          </FilterSelect>
-        ) : null}
-        <span data-tour="time-filter" className="inline-flex max-w-full">
-        <TimeRangePicker
-          className="max-w-full w-auto"
-          value={{
-            period: search.period,
-            since: search.since,
-            until: search.until,
-            updated_within_days: search.updated_within_days,
-          }}
-          onChange={(updates) => onFilter(updates)}
-        />
-        </span>
-        <FilterSelect label="AI" value={confidence} onValueChange={applyConfidence}>
-          <SelectItem value={CONFIDENCE_ALL}>Any</SelectItem>
-          <SelectItem value="review">Needs review</SelectItem>
-          <SelectItem value="low">Low</SelectItem>
-          {confidence.startsWith('threshold:') ? (
-            <SelectItem value={confidence}>≤ {search.max_confidence}</SelectItem>
+        <div
+          id="string-review-filters"
+          className={cn(
+            'flex w-full min-w-0 flex-wrap items-center gap-1.5 md:w-auto',
+            !filtersOpen && 'hidden md:flex'
+          )}
+        >
+          {locales.length > 0 ? (
+            <FilterSelect label="Translation" value={translation} onValueChange={applyTranslation}>
+              <SelectItem value={TRANSLATION_ALL}>All translations</SelectItem>
+              <SelectItem value={MISSING_ANY}>Missing any target</SelectItem>
+              <SelectSeparator />
+              <SelectLabel>Missing in locale</SelectLabel>
+              {locales.map((locale) => (
+                <SelectItem key={`missing-${locale}`} value={`missing:${locale}`}>
+                  Missing {locale}
+                </SelectItem>
+              ))}
+              <SelectSeparator />
+              <SelectLabel>Complete in locale</SelectLabel>
+              {locales.map((locale) => (
+                <SelectItem key={`complete-${locale}`} value={`complete:${locale}`}>
+                  Complete {locale}
+                </SelectItem>
+              ))}
+            </FilterSelect>
           ) : null}
-        </FilterSelect>
+          <span data-tour="time-filter" className="inline-flex max-w-full">
+          <TimeRangePicker
+            className="max-w-full w-auto"
+            value={{
+              period: search.period,
+              since: search.since,
+              until: search.until,
+              updated_within_days: search.updated_within_days,
+            }}
+            onChange={(updates) => onFilter(updates)}
+          />
+          </span>
+          <FilterSelect label="AI" value={confidence} onValueChange={applyConfidence}>
+            <SelectItem value={CONFIDENCE_ALL}>Any</SelectItem>
+            <SelectItem value="review">Needs review</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            {confidence.startsWith('threshold:') ? (
+              <SelectItem value={confidence}>≤ {search.max_confidence}</SelectItem>
+            ) : null}
+          </FilterSelect>
+        </div>
       </div>
 
       {hasFilters || onReviewPublish ? (
-        <>
-          <Separator className="bg-border/60" />
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <ul
-              aria-label="Active filters"
-              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible"
-            >
-              {activeChips.map((chip) => (
-                <li key={chip.id} className="min-w-0 max-w-full shrink-0">
-                  <Badge
-                    variant="secondary"
-                    asChild
-                    className="h-7 max-w-full border border-border/70 bg-secondary/80 transition-colors hover:border-primary/40 hover:bg-accent"
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <ul
+            aria-label="Active filters"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible"
+          >
+            {activeChips.map((chip) => (
+              <li key={chip.id} className="min-w-0 max-w-full shrink-0">
+                <Badge
+                  variant="secondary"
+                  asChild
+                  className="h-6 max-w-full border border-border/70 bg-secondary/80 transition-colors hover:border-primary/40 hover:bg-accent"
+                >
+                  <button
+                    type="button"
+                    title={chip.label}
+                    aria-label={
+                      chip.id === 'batch' ? 'Clear batch filter' : `Remove ${chip.id} filter`
+                    }
+                    onClick={() => {
+                      if (chip.id === 'search') onSearchInputChange('')
+                      onFilter(chip.updates)
+                    }}
                   >
-                    <button
-                      type="button"
-                      title={chip.label}
-                      aria-label={
-                        chip.id === 'batch' ? 'Clear batch filter' : `Remove ${chip.id} filter`
-                      }
-                      onClick={() => {
-                        if (chip.id === 'search') onSearchInputChange('')
-                        onFilter(chip.updates)
-                      }}
-                    >
-                      <span className="min-w-0 max-w-64 truncate">{chip.label}</span>
-                      <X data-icon="inline-end" />
-                    </button>
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-            {onReviewPublish ? (
-              <Button variant="outline" size="sm" onClick={onReviewPublish}>
-                <GitCompareArrows data-icon="inline-start" />
-                Review publish changes
-              </Button>
-            ) : null}
-            {hasFilters ? (
-              <Button variant="ghost" size="sm" onClick={onClear}>
-                Clear
-              </Button>
-            ) : null}
-          </div>
-        </>
+                    <span className="min-w-0 max-w-64 truncate">{chip.label}</span>
+                    <X data-icon="inline-end" />
+                  </button>
+                </Badge>
+              </li>
+            ))}
+          </ul>
+          {onReviewPublish ? (
+            <Button variant="outline" size="sm" onClick={onReviewPublish}>
+              <GitCompareArrows data-icon="inline-start" />
+              Review publish changes
+            </Button>
+          ) : null}
+          {hasFilters ? (
+            <Button variant="ghost" size="sm" onClick={onClear}>
+              Clear
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </section>
   )

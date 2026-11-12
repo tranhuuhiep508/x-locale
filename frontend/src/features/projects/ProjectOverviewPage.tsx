@@ -84,7 +84,7 @@ function StatCard({
           }`}
         />
         <CardHeader>
-          <CardDescription className="min-h-10 font-mono text-xs font-medium uppercase tracking-wider sm:min-h-5">
+          <CardDescription className="font-mono text-xs font-medium uppercase tracking-wider">
             {label}
           </CardDescription>
           <CardAction className="hidden sm:block">
@@ -93,12 +93,12 @@ function StatCard({
             </MarkWell>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-1.5">
+        <CardContent className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
             {value === undefined ? (
-              <Skeleton className="h-8 w-12" aria-label={`Loading ${label.toLowerCase()}`} />
+              <Skeleton className="h-7 w-12" aria-label={`Loading ${label.toLowerCase()}`} />
             ) : (
-              <p className="font-heading text-2xl font-bold tracking-tight tabular-nums text-foreground sm:text-3xl">
+              <p className="font-heading text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
                 {value}
               </p>
             )}
@@ -273,21 +273,20 @@ export function ProjectOverviewPage() {
   })()
 
   return (
-    <PageBody className="mx-auto w-full max-w-7xl pb-16">
+    <PageBody className="mx-auto w-full max-w-7xl pb-12">
       {/* Overview Page Header */}
       <PageHeader
-        eyebrow="Project"
+        className="border-b border-border/70 pb-3"
         title="Overview"
-        description={project.name}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
+            <Button size="sm" variant="outline" asChild>
               <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
                 <Settings2 data-icon="inline-start" />
                 Settings
               </Link>
             </Button>
-            <Button asChild className="shadow-xs">
+            <Button size="sm" asChild className="shadow-xs">
               <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
                 Open catalog
                 <ArrowRight data-icon="inline-end" />

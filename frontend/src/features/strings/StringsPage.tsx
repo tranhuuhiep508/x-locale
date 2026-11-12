@@ -724,11 +724,14 @@ export function StringsPage() {
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       data-tour-ready={tourReady ? 'strings' : undefined}
     >
-      <div className="flex shrink-0 flex-col gap-4 border-b border-border/80 bg-background/60 px-4 py-4 sm:px-6 sm:py-5">
+      <div className="flex shrink-0 flex-col gap-2.5 border-b border-border/80 bg-background/60 px-4 py-2.5 sm:px-6 sm:py-3">
         <PageHeader
-          eyebrow="Catalog"
           title="Strings"
-          description={`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
+          badge={
+            <span className="sr-only">
+              {`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
+            </span>
+          }
           actions={
             <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
               <DataTableViewOptions table={table} />

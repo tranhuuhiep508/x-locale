@@ -34,7 +34,6 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
-import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ApiError } from '@/lib/api/client'
 import { projectsApi } from '@/lib/api/projects'
@@ -81,137 +80,86 @@ export function ProjectListPage() {
     })
   }, [projects, searchQuery, layoutFilter])
 
-  const totalStrings = useMemo(
-    () => projects.reduce((sum, p) => sum + (p.string_count || 0), 0),
-    [projects]
-  )
-
-  const uniqueLocalesCount = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of projects) {
-      if (p.base_language) set.add(p.base_language)
-      for (const t of p.target_languages) set.add(t)
-    }
-    return set.size
-  }, [projects])
-
   return (
     <AppShell>
-      <PageBody contained data-tour-ready="projects" className="flex flex-col gap-7 pb-16">
-        {/* Workspace Page Header */}
-        <PageHeader
-          eyebrow="Workspace"
-          title="Projects"
-          description="Manage localization catalogs, review working drafts, and publish verified snapshots."
-          actions={
-            <div className="flex items-center gap-2.5">
-              <Button asChild className="shadow-xs">
-                <Link to="/projects/new" data-tour="new-project">
-                  <Plus data-icon="inline-start" />
-                  New project
-                </Link>
-              </Button>
-            </div>
-          }
-        />
-
-        {/* Architectural Command & Telemetry Ledger (Only shown when there are projects) */}
-        {projects.length > 0 && (
-          <div
-            className="animate-stage-in sky-panel relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border/80 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4"
-            style={{ '--stagger': 1 } as React.CSSProperties}
-          >
-            <div
-              className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
-              aria-hidden="true"
-            />
-            <div className="flex flex-1 flex-wrap items-center gap-3">
-              <InputGroup className="min-w-52 flex-1 sm:max-w-xs">
-                <InputGroupAddon>
-                  <Search />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter by name, slug, or locale..."
-                  aria-label="Filter projects"
-                />
-                {searchQuery ? (
-                  <InputGroupAddon align="inline-end">
-                    <InputGroupButton
-                      size="icon-xs"
-                      aria-label="Clear search"
-                      onClick={() => setSearchQuery('')}
-                    >
-                      <X />
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                ) : null}
-              </InputGroup>
-
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={layoutFilter}
-                aria-label="Filter by layout"
-                onValueChange={(value) => {
-                  if (value === 'all' || value === 'modular' || value === 'flat') {
-                    setLayoutFilter(value)
-                  }
-                }}
-              >
-                <ToggleGroupItem value="all">All</ToggleGroupItem>
-                <ToggleGroupItem value="modular">Modular</ToggleGroupItem>
-                <ToggleGroupItem value="flat">Flat</ToggleGroupItem>
-              </ToggleGroup>
-
-              <div className="hidden items-center gap-3 font-mono text-xs text-muted-foreground lg:flex">
-                <Separator orientation="vertical" className="h-4" />
-                <span>
-                  <strong className="font-semibold text-foreground tabular-nums">
-                    {projects.length}
-                  </strong>{' '}
-                  {projects.length === 1 ? 'catalog' : 'catalogs'}
-                </span>
-                <span aria-hidden="true" className="text-border">
-                  ·
-                </span>
-                <span>
-                  <strong className="font-semibold text-foreground tabular-nums">
-                    {totalStrings.toLocaleString()}
-                  </strong>{' '}
-                  strings
-                </span>
-                <span aria-hidden="true" className="text-border">
-                  ·
-                </span>
-                <span>
-                  <strong className="font-semibold text-foreground tabular-nums">
-                    {uniqueLocalesCount}
-                  </strong>{' '}
-                  locales
-                </span>
+      <PageBody contained data-tour-ready="projects" className="pb-12">
+        <div className="flex flex-col gap-2.5 border-b border-border/70 pb-3">
+          <PageHeader
+            title="Projects"
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                {projects.length > 0 && (
+                  <div
+                    data-tour="cli-sync-hint"
+                    className="group/cli inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1 font-mono text-xs transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5"
+                  >
+                    <Terminal className="size-3.5 shrink-0 text-primary transition-transform duration-200 ease-drift group-hover/cli:translate-x-0.5" />
+                    <span className="text-muted-foreground">$</span>
+                    <span className="font-medium text-foreground">loc push / loc pull</span>
+                  </div>
+                )}
+                <Button size="sm" asChild className="shadow-xs">
+                  <Link to="/projects/new" data-tour="new-project">
+                    <Plus data-icon="inline-start" />
+                    New project
+                  </Link>
+                </Button>
               </div>
-            </div>
+            }
+          />
 
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+          {projects.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <InputGroup className="min-w-52 flex-1 sm:max-w-xs">
+                  <InputGroupAddon>
+                    <Search />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Filter by name, slug, or locale..."
+                    aria-label="Filter projects"
+                  />
+                  {searchQuery ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-xs"
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery('')}
+                      >
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={layoutFilter}
+                  aria-label="Filter by layout"
+                  onValueChange={(value) => {
+                    if (value === 'all' || value === 'modular' || value === 'flat') {
+                      setLayoutFilter(value)
+                    }
+                  }}
+                >
+                  <ToggleGroupItem value="all">All</ToggleGroupItem>
+                  <ToggleGroupItem value="modular">Modular</ToggleGroupItem>
+                  <ToggleGroupItem value="flat">Flat</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
               {searchQuery || layoutFilter !== 'all' ? (
                 <Badge variant="secondary" className="animate-galley-swap font-mono text-xs">
                   {filteredProjects.length} match{filteredProjects.length !== 1 ? 'es' : ''}
                 </Badge>
               ) : null}
-              <div
-                data-tour="cli-sync-hint"
-                className="group/cli inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1.5 font-mono text-xs transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5"
-              >
-                <Terminal className="size-3.5 shrink-0 text-primary transition-transform duration-200 ease-drift group-hover/cli:translate-x-0.5" />
-                <span className="text-muted-foreground">$</span>
-                <span className="font-medium text-foreground">loc push / loc pull</span>
-              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Empty State */}
         {projects.length === 0 ? (

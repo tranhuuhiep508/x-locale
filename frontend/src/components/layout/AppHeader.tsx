@@ -52,7 +52,7 @@ export function AppHeader({
     <header className="sky-chrome sticky top-0 z-30 shrink-0 border-b border-border/60">
       <div
         className={cn(
-          'flex h-14 items-center gap-2.5 sm:gap-3',
+          'flex h-12 items-center gap-2.5 sm:gap-3',
           contained ? 'container' : 'px-3.5 sm:px-5',
         )}
       >

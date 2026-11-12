@@ -103,21 +103,18 @@ export function NewProjectPage() {
 
   return (
     <AppShell>
-      <PageBody contained data-tour-ready="project-new" className="flex flex-col gap-6 pb-16">
-        <div>
-          <Link
-            to="/"
-            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Back to all projects
-          </Link>
-          <PageHeader
-            eyebrow="Workspace"
-            title="Create new project"
-            description="Configure your translation catalog, choose base and target languages, and set context guidelines for AI translations."
-          />
-        </div>
+      <PageBody contained data-tour-ready="project-new" className="pb-12">
+        <PageHeader
+          className="border-b border-border/70 pb-3"
+          leading={
+            <Button variant="ghost" size="icon-sm" asChild>
+              <Link to="/" aria-label="Back to all projects">
+                <ArrowLeft className="size-4" />
+              </Link>
+            </Button>
+          }
+          title="Create new project"
+        />
 
         <div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
           {/* Main Form (8 cols on lg) */}

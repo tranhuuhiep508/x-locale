@@ -2,7 +2,6 @@ import { getRouteApi } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import {
-  ArrowUpDown,
   Download,
   FileCode2,
   FileSpreadsheet,
@@ -17,7 +16,6 @@ import { useJob } from '@/hooks/use-job'
 import { JobProgress } from '@/components/job-progress'
 import { importProgressLabel } from '@/lib/job-progress'
 import { modulesQuery, projectQuery } from '@/lib/queries'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -238,12 +236,11 @@ export function ImportExportPage() {
   return (
     <PageBody
       data-tour-ready={project ? 'import' : undefined}
-      className="mx-auto w-full max-w-6xl pb-16"
+      className="mx-auto w-full max-w-6xl pb-12"
     >
       <PageHeader
-        eyebrow="Project"
+        className="border-b border-border/70 pb-3"
         title="Import / Export"
-        description="Download snapshots of this catalog across draft/public stages, or import translations from JSON and Excel files."
         actions={
           project ? (
             <div className="flex items-center gap-2">
@@ -258,17 +255,7 @@ export function ImportExportPage() {
         }
       />
 
-      {/* Pipeline Stage Architecture Banner */}
-      <Alert role="note" className="animate-stage-in sky-panel border-border/80" style={{ '--stagger': 1 } as React.CSSProperties}>
-        <ArrowUpDown className="text-primary" />
-        <AlertTitle className="font-heading text-sm">Draft working copy vs. published snapshots</AlertTitle>
-        <AlertDescription className="text-xs">
-          Imports always write to your working copy without auto-publishing. Exporting the{' '}
-          <span className="font-medium text-foreground">Published snapshot</span> reads only verified public versions.
-        </AlertDescription>
-      </Alert>
-
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         {/* Export Card */}
         <Card
           style={{ '--stagger': 2 } as React.CSSProperties}
