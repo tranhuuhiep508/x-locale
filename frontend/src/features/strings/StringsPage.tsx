@@ -733,11 +733,15 @@ export function StringsPage() {
             </span>
           }
           actions={
-            <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+            <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end w-full sm:w-auto">
               <DataTableViewOptions table={table} />
+
+              <Separator orientation="vertical" className="hidden h-5 sm:block text-border/60" />
+
               <Button
                 size="sm"
                 variant="outline"
+                className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-primary/30 text-foreground hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-colors"
                 onClick={() => {
                   reviewRequestRef.current = search.saved_string
                     ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
@@ -753,21 +757,34 @@ export function StringsPage() {
                 disabled={missingMut.isPending || reviewOpen}
               >
                 {missingMut.isPending ? (
-                  <Spinner data-icon="inline-start" />
+                  <Spinner data-icon="inline-start" className="size-3.5" />
                 ) : (
-                  <Wand2 data-icon="inline-start" />
+                  <Wand2 data-icon="inline-start" className="size-3.5 text-primary" />
                 )}
                 Translate missing
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setAddManyOpen(true)}>
-                <ListPlus data-icon="inline-start" />
-                Add many
-              </Button>
-              <Separator orientation="vertical" className="mx-0.5 hidden h-5 sm:block" />
-              <Button size="sm" onClick={() => openEditor(null)}>
-                <Plus data-icon="inline-start" />
-                Add string
-              </Button>
+
+              <Separator orientation="vertical" className="hidden h-5 sm:block text-border/60" />
+
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/70 text-foreground hover:bg-muted/40 transition-colors"
+                  onClick={() => setAddManyOpen(true)}
+                >
+                  <ListPlus data-icon="inline-start" className="size-3.5 text-muted-foreground" />
+                  Add many
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
+                  onClick={() => openEditor(null)}
+                >
+                  <Plus data-icon="inline-start" className="size-3.5" />
+                  Add string
+                </Button>
+              </div>
             </div>
           }
         />

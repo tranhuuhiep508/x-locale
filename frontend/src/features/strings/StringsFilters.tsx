@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, GitCompareArrows, Search, SlidersHorizontal, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { batchFilterChipLabel } from '@/features/strings/batch-filter'
 import { CONFIDENCE_LOW_MAX, CONFIDENCE_REVIEW_MAX } from '@/features/strings/confidence'
 import type { Module, Tag } from '@/lib/api/types'
@@ -163,19 +164,38 @@ function filterOptions(options: FilterOption[], query: string, selectedValue: st
 function FilterSelect({
   label,
   value,
+  isActive,
   onValueChange,
   children,
 }: {
   label: string
   value: string
+  isActive?: boolean
   onValueChange: (value: string) => void
   children: ReactNode
 }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger aria-label={label} className="max-w-full min-w-0">
-        <span className="text-muted-foreground">{label}</span>
-        <SelectValue />
+      <SelectTrigger
+        aria-label={label}
+        className={cn(
+          'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors shrink-0',
+          isActive && 'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+        )}
+      >
+        {isActive ? (
+          <>
+            <span className="text-muted-foreground/80 font-normal">{label}:</span>
+            <SelectValue />
+          </>
+        ) : (
+          <>
+            <span className="font-normal text-muted-foreground">{label}</span>
+            <span className="sr-only">
+              <SelectValue />
+            </span>
+          </>
+        )}
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>{children}</SelectGroup>
@@ -189,12 +209,14 @@ function FilterSearchSelect({
   value,
   options,
   searchPlaceholder,
+  isActive,
   onValueChange,
 }: {
   label: string
   value: string
   options: FilterOption[]
   searchPlaceholder: string
+  isActive?: boolean
   onValueChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -217,10 +239,24 @@ function FilterSearchSelect({
       }}
     >
       <PopoverTrigger asChild>
-        <Button variant="outline" aria-label={label} className="max-w-full min-w-0">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="max-w-40 truncate font-normal">{selected.label}</span>
-          <ChevronDown data-icon="inline-end" />
+        <Button
+          variant="outline"
+          aria-label={label}
+          size="sm"
+          className={cn(
+            'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors shrink-0',
+            isActive && 'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+          )}
+        >
+          {isActive ? (
+            <>
+              <span className="text-muted-foreground/80 font-normal">{label}:</span>
+              <span className="max-w-32 truncate font-medium text-foreground">{selected.label}</span>
+            </>
+          ) : (
+            <span className="font-normal text-muted-foreground">{label}</span>
+          )}
+          <ChevronDown data-icon="inline-end" className="size-3.5 opacity-60 ml-0.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -235,7 +271,7 @@ function FilterSearchSelect({
       >
         <InputGroup>
           <InputGroupAddon>
-            <Search />
+            <Search className="size-3.5 text-muted-foreground" />
           </InputGroupAddon>
           <InputGroupInput
             placeholder={searchPlaceholder}
@@ -253,7 +289,7 @@ function FilterSearchSelect({
         <div className="max-h-64 overflow-auto" role="listbox" aria-label={label}>
           <div className="flex flex-col p-0.5">
             {visible.length === 0 ? (
-              <p className="px-1.5 py-2 text-center text-sm text-muted-foreground">No matches</p>
+              <p className="px-1.5 py-2 text-center text-xs text-muted-foreground">No matches</p>
             ) : (
               visible.map((option) => {
                 const isSelected = option.value === value
@@ -264,13 +300,15 @@ function FilterSearchSelect({
                     role="option"
                     aria-selected={isSelected}
                     className={cn(
-                      'relative flex w-full cursor-default items-center rounded-md py-1 pr-8 pl-1.5 text-left text-sm outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent',
-                      isSelected && 'bg-accent'
+                      'relative flex w-full cursor-default items-center rounded-md py-1.5 pr-8 pl-2 text-left text-xs outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent',
+                      isSelected && 'bg-accent font-medium text-accent-foreground'
                     )}
                     onClick={() => choose(option.value)}
                   >
                     <span className="min-w-0 wrap-anywhere">{option.label}</span>
-                    {isSelected ? <Check className="pointer-events-none absolute right-2" /> : null}
+                    {isSelected ? (
+                      <Check className="pointer-events-none absolute right-2 size-3.5 text-primary" />
+                    ) : null}
                   </button>
                 )
               })
@@ -278,7 +316,7 @@ function FilterSearchSelect({
           </div>
         </div>
         {truncated ? (
-          <p className="px-1.5 pb-1 text-xs text-muted-foreground">
+          <p className="px-1.5 pb-1 text-[11px] text-muted-foreground">
             Showing {visible.length} of {matchCount}. Type to narrow.
           </p>
         ) : null}
@@ -310,8 +348,18 @@ export function StringsFilters({
   onClear,
   onReviewPublish,
 }: StringsFiltersProps) {
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const hasFilters = hasActiveStringFilters(search)
+  const status = statusValue(search)
+  const translation = translationValue(search)
+  const confidence = confidenceValue(search)
+
+  const isStatusActive = status !== STATUS_ALL
+  const isModuleActive = Boolean(search.module || search.unassigned_module)
+  const isTagActive = Boolean(search.tag || search.untagged)
+  const isTranslationActive = translation !== TRANSLATION_ALL
+  const isTimeActive = hasActiveTimeFilter(search)
+  const isConfidenceActive = search.max_confidence != null
+
   const moduleOptions = useMemo<FilterOption[]>(
     () => [
       ALL_OPTION,
@@ -324,6 +372,7 @@ export function StringsFilters({
     ],
     [modules]
   )
+
   const tagOptions = useMemo<FilterOption[]>(
     () => [
       ALL_OPTION,
@@ -375,14 +424,15 @@ export function StringsFilters({
       label: search.saved_string ? 'Saved string' : `Search: ${search.q}`,
       updates: { q: undefined },
     })
-  const status = statusValue(search)
-  if (status !== STATUS_ALL)
+
+  if (isStatusActive)
     activeChips.push({
       id: 'status',
       label: STATUS_LABELS[status] ?? status,
       updates: statusFilterUpdates(STATUS_ALL),
     })
-  if (search.module || search.unassigned_module) {
+
+  if (isModuleActive) {
     const name = search.unassigned_module
       ? 'Unassigned'
       : (modules.find((module) => module.id === search.module)?.name ?? search.module)
@@ -392,15 +442,15 @@ export function StringsFilters({
       updates: moduleFilterUpdates('all'),
     })
   }
-  if (search.tag || search.untagged) {
+
+  if (isTagActive) {
     const name = search.untagged
       ? 'Untagged'
       : (tags.find((tag) => tag.id === search.tag)?.name ?? search.tag)
     activeChips.push({ id: 'tag', label: `Tag: ${name}`, updates: tagFilterUpdates('all') })
   }
-  const translation = translationValue(search)
-  const confidence = confidenceValue(search)
-  if (translation !== TRANSLATION_ALL) {
+
+  if (isTranslationActive) {
     const label = search.missing_any
       ? 'Missing any target'
       : search.missing_locale
@@ -412,9 +462,11 @@ export function StringsFilters({
       updates: translationFilterUpdates(TRANSLATION_ALL),
     })
   }
-  if (hasActiveTimeFilter(search))
+
+  if (isTimeActive)
     activeChips.push({ id: 'time', label: timeRangeLabel(search), updates: clearTimeSearch() })
-  if (search.max_confidence != null) {
+
+  if (isConfidenceActive) {
     const label =
       confidenceValue(search) === 'low'
         ? 'Low AI confidence'
@@ -423,29 +475,28 @@ export function StringsFilters({
           : `AI confidence ≤ ${search.max_confidence}`
     activeChips.push({ id: 'confidence', label, updates: { max_confidence: undefined } })
   }
+
   if (search.batch_id)
     activeChips.push({
       id: 'batch',
       label: batchFilterChipLabel(search.batch_kind),
       updates: { batch_id: undefined, batch_kind: undefined },
     })
-  const refinementCount = activeChips.filter((chip) => chip.id !== 'search').length
 
   return (
-    <section
-      aria-label="String filters"
-      className="flex min-w-0 flex-col gap-2"
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <InputGroup data-tour="search" className="min-w-0 flex-1 md:max-w-64 md:basis-52">
+    <section aria-label="String filters" className="flex min-w-0 flex-col gap-2">
+      {/* Compact Single-Row Filter Bar */}
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <InputGroup data-tour="search" className="min-w-0 flex-1 sm:max-w-xs md:max-w-sm">
           <InputGroupInput
             placeholder="Search keys or text…"
             value={searchInput}
             onChange={(event) => onSearchInputChange(event.target.value)}
             aria-label="Search strings"
+            className="h-8 text-xs"
           />
           <InputGroupAddon>
-            <Search />
+            <Search className="size-3.5 text-muted-foreground" />
           </InputGroupAddon>
           {searchInput ? (
             <InputGroupAddon align="inline-end">
@@ -457,31 +508,21 @@ export function StringsFilters({
                   onFilter({ q: undefined })
                 }}
               >
-                <X />
+                <X className="size-3" />
               </InputGroupButton>
             </InputGroupAddon>
           ) : null}
         </InputGroup>
-        <Button
-          variant="outline"
-          className="md:hidden"
-          aria-expanded={filtersOpen}
-          aria-controls="string-filters string-review-filters"
-          onClick={() => setFiltersOpen((open) => !open)}
-        >
-          <SlidersHorizontal data-icon="inline-start" />
-          Filters
-          {refinementCount > 0 ? <Badge variant="secondary">{refinementCount}</Badge> : null}
-        </Button>
 
-        <div
-          id="string-filters"
-          className={cn(
-            'flex w-full min-w-0 flex-wrap items-center gap-1.5 md:w-auto',
-            !filtersOpen && 'hidden md:flex'
-          )}
-        >
-          <FilterSelect label="Status" value={status} onValueChange={applyStatus}>
+        <Separator orientation="vertical" className="hidden h-5 sm:block mx-0.5 text-border/60" />
+
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+          <FilterSelect
+            label="Status"
+            value={status}
+            isActive={isStatusActive}
+            onValueChange={applyStatus}
+          >
             <SelectItem value={STATUS_ALL}>All</SelectItem>
             {Object.entries(STATUS_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
@@ -489,37 +530,38 @@ export function StringsFilters({
               </SelectItem>
             ))}
           </FilterSelect>
+
           {modules.length > 0 || search.module || search.unassigned_module ? (
-            <span data-tour="modules" className="inline-flex max-w-full">
-            <FilterSearchSelect
-              label="Module"
-              value={search.unassigned_module ? UNASSIGNED_MODULE : (search.module ?? 'all')}
-              options={moduleOptions}
-              searchPlaceholder="Search modules…"
-              onValueChange={applyModule}
-            />
+            <span data-tour="modules" className="inline-flex shrink-0">
+              <FilterSearchSelect
+                label="Module"
+                value={search.unassigned_module ? UNASSIGNED_MODULE : (search.module ?? 'all')}
+                options={moduleOptions}
+                searchPlaceholder="Search modules…"
+                isActive={isModuleActive}
+                onValueChange={applyModule}
+              />
             </span>
           ) : null}
+
           {tags.length > 0 || search.tag || search.untagged ? (
             <FilterSearchSelect
               label="Tag"
               value={search.untagged ? UNTAGGED : (search.tag ?? 'all')}
               options={tagOptions}
               searchPlaceholder="Search tags…"
+              isActive={isTagActive}
               onValueChange={applyTag}
             />
           ) : null}
-        </div>
 
-        <div
-          id="string-review-filters"
-          className={cn(
-            'flex w-full min-w-0 flex-wrap items-center gap-1.5 md:w-auto',
-            !filtersOpen && 'hidden md:flex'
-          )}
-        >
           {locales.length > 0 ? (
-            <FilterSelect label="Translation" value={translation} onValueChange={applyTranslation}>
+            <FilterSelect
+              label="Translation"
+              value={translation}
+              isActive={isTranslationActive}
+              onValueChange={applyTranslation}
+            >
               <SelectItem value={TRANSLATION_ALL}>All translations</SelectItem>
               <SelectItem value={MISSING_ANY}>Missing any target</SelectItem>
               <SelectSeparator />
@@ -538,19 +580,31 @@ export function StringsFilters({
               ))}
             </FilterSelect>
           ) : null}
-          <span data-tour="time-filter" className="inline-flex max-w-full">
-          <TimeRangePicker
-            className="max-w-full w-auto"
-            value={{
-              period: search.period,
-              since: search.since,
-              until: search.until,
-              updated_within_days: search.updated_within_days,
-            }}
-            onChange={(updates) => onFilter(updates)}
-          />
+
+          <span data-tour="time-filter" className="inline-flex shrink-0">
+            <TimeRangePicker
+              placeholder="Time"
+              className={cn(
+                'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors',
+                isTimeActive &&
+                  'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+              )}
+              value={{
+                period: search.period,
+                since: search.since,
+                until: search.until,
+                updated_within_days: search.updated_within_days,
+              }}
+              onChange={(updates) => onFilter(updates)}
+            />
           </span>
-          <FilterSelect label="AI" value={confidence} onValueChange={applyConfidence}>
+
+          <FilterSelect
+            label="AI"
+            value={confidence}
+            isActive={isConfidenceActive}
+            onValueChange={applyConfidence}
+          >
             <SelectItem value={CONFIDENCE_ALL}>Any</SelectItem>
             <SelectItem value="review">Needs review</SelectItem>
             <SelectItem value="low">Low</SelectItem>
@@ -558,21 +612,48 @@ export function StringsFilters({
               <SelectItem value={confidence}>≤ {search.max_confidence}</SelectItem>
             ) : null}
           </FilterSelect>
+
+          {onReviewPublish ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReviewPublish}
+              className="h-8 text-xs gap-1.5 shrink-0 border-primary/30 text-primary hover:bg-primary/10"
+            >
+              <GitCompareArrows data-icon="inline-start" className="size-3.5" />
+              Review publish changes
+            </Button>
+          ) : null}
+
+          {hasFilters ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              className="h-8 text-xs text-muted-foreground hover:text-foreground px-2 shrink-0"
+            >
+              Clear
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      {hasFilters || onReviewPublish ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {/* Active Filter Badges (Only shown when criteria are active) */}
+      {hasFilters ? (
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          <span className="text-[11px] font-medium text-muted-foreground shrink-0">
+            Active:
+          </span>
           <ul
             aria-label="Active filters"
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible"
+            className="flex min-w-0 flex-wrap items-center gap-1.5"
           >
             {activeChips.map((chip) => (
               <li key={chip.id} className="min-w-0 max-w-full shrink-0">
                 <Badge
                   variant="secondary"
                   asChild
-                  className="h-6 max-w-full border border-border/70 bg-secondary/80 transition-colors hover:border-primary/40 hover:bg-accent"
+                  className="h-6 max-w-full gap-1 border border-border/70 bg-secondary/80 text-secondary-foreground transition-colors hover:border-primary/40 hover:bg-accent px-2 py-0 text-xs"
                 >
                   <button
                     type="button"
@@ -585,24 +666,15 @@ export function StringsFilters({
                       onFilter(chip.updates)
                     }}
                   >
-                    <span className="min-w-0 max-w-64 truncate">{chip.label}</span>
-                    <X data-icon="inline-end" />
+                    <span className="min-w-0 max-w-64 truncate text-[11px] font-normal">
+                      {chip.label}
+                    </span>
+                    <X data-icon="inline-end" className="size-3 text-muted-foreground hover:text-foreground" />
                   </button>
                 </Badge>
               </li>
             ))}
           </ul>
-          {onReviewPublish ? (
-            <Button variant="outline" size="sm" onClick={onReviewPublish}>
-              <GitCompareArrows data-icon="inline-start" />
-              Review publish changes
-            </Button>
-          ) : null}
-          {hasFilters ? (
-            <Button variant="ghost" size="sm" onClick={onClear}>
-              Clear
-            </Button>
-          ) : null}
         </div>
       ) : null}
     </section>
