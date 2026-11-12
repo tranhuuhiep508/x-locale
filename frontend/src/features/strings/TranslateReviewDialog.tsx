@@ -76,28 +76,28 @@ export function TranslateStepper({ current }: { current: number }) {
             key={step.label}
             aria-current={active ? 'step' : undefined}
             className={cn(
-              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs transition-all',
+              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs transition-all duration-300 ease-drift',
               active
-                ? 'bg-background font-semibold text-foreground shadow-xs ring-1 ring-border/50'
+                ? 'bg-background font-semibold text-foreground shadow-xs ring-1 ring-border/50 scale-[1.02]'
                 : complete
-                  ? 'font-medium text-primary'
+                  ? 'font-medium text-primary hover:text-primary/90'
                   : 'text-muted-foreground/60',
             )}
           >
             <span
               aria-hidden="true"
               className={cn(
-                'flex size-3.5 items-center justify-center rounded-full font-mono text-[9px]',
+                'flex size-3.5 items-center justify-center rounded-full font-mono text-[9px] transition-all duration-300 ease-drift',
                 active
-                  ? 'bg-primary font-bold text-primary-foreground'
+                  ? 'bg-primary font-bold text-primary-foreground shadow-xs'
                   : complete
-                    ? 'bg-primary/15 text-primary'
+                    ? 'bg-primary/15 text-primary scale-95'
                     : 'bg-muted text-muted-foreground',
               )}
             >
-              {complete ? <Check className="size-2.5 stroke-[2.5]" /> : index + 1}
+              {complete ? <Check className="size-2.5 stroke-[2.5] animate-in zoom-in-50 duration-200" /> : index + 1}
             </span>
-            <span className="font-medium">
+            <span className="font-medium transition-colors duration-200">
               {step.label}
               <span className="sr-only">
                 {complete ? ', complete' : active ? ', current step' : ', upcoming'}
@@ -567,6 +567,14 @@ export function TranslateReviewDialog({
   })
   const publishCount = publishReview?.length ?? 0
   const currentStep = reviewing ? 2 : generated || applyCount > 0 ? 1 : 0
+  const [prevReviewing, setPrevReviewing] = useState(reviewing)
+  const [stepDirection, setStepDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
+
+  if (reviewing !== prevReviewing) {
+    setPrevReviewing(reviewing)
+    setStepDirection(reviewing ? 'forward' : 'backward')
+  }
+
   const description = reviewing
     ? reviewLoading && !publishReview
       ? 'Comparing changes…'
@@ -660,10 +668,18 @@ export function TranslateReviewDialog({
 
         <ReviewDialogBody>
           {reviewing ? (
-            <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+            <div
+              key="publish-step"
+              className={cn(
+                'min-w-0 flex-1',
+                stepDirection === 'forward' ? 'animate-step-in-right' : 'animate-step-in-left'
+              )}
+            >
+              <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+            </div>
           ) : showInitialSpinner ? (
             <div
-              className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
+              className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground animate-step-fade"
               aria-live="polite"
             >
               <Spinner />
@@ -682,9 +698,22 @@ export function TranslateReviewDialog({
               description="Every target locale already has text."
             />
           ) : (
-            <div className="relative flex flex-col gap-3" aria-busy={pagingInPlace || generating}>
+            <div
+              key="review-step"
+              className={cn(
+                'relative flex min-w-0 flex-1 flex-col gap-3',
+                stepDirection === 'initial'
+                  ? generated
+                    ? 'animate-step-fade'
+                    : undefined
+                  : stepDirection === 'backward'
+                    ? 'animate-step-in-left'
+                    : 'animate-step-in-right'
+              )}
+              aria-busy={pagingInPlace || generating}
+            >
               {pagingInPlace ? (
-                <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16">
+                <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16 animate-step-fade">
                   <Spinner />
                 </div>
               ) : null}
@@ -738,7 +767,10 @@ export function TranslateReviewDialog({
 
         <ReviewDialogFooter>
           {reviewing ? (
-            <>
+            <div
+              key="publish-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" type="button" onClick={onBackToEdit} disabled={applying}>
                 <ArrowLeft data-icon="inline-start" />
                 Back to edit
@@ -755,9 +787,12 @@ export function TranslateReviewDialog({
                 )}
                 {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
               </Button>
-            </>
+            </div>
           ) : (
-            <>
+            <div
+              key="review-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 type="button"
@@ -818,7 +853,7 @@ export function TranslateReviewDialog({
                   </Button>
                 </>
               ) : null}
-            </>
+            </div>
           )}
         </ReviewDialogFooter>
       </ReviewDialogContent>

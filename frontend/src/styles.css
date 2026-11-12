@@ -460,6 +460,52 @@
   }
 }
 
+/* Step navigation transitions (e.g. Translate -> Review -> Publish) */
+@keyframes step-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes step-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes step-fade {
+  from {
+    opacity: 0;
+    transform: scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-step-in-right {
+  animation: step-in-right 280ms var(--ease-drift) both;
+}
+
+@utility animate-step-in-left {
+  animation: step-in-left 280ms var(--ease-drift) both;
+}
+
+@utility animate-step-fade {
+  animation: step-fade 240ms var(--ease-drift) both;
+}
+
 @utility animate-stage-in {
   animation: stage-in 420ms var(--ease-drift) both;
   animation-delay: calc(var(--stagger, 0) * 55ms);
@@ -617,8 +663,12 @@
 @media (prefers-reduced-motion: reduce) {
   .driver-popover.xl-tour,
   .driver-overlay,
-  .driver-active-element {
+  .driver-active-element,
+  .animate-step-in-right,
+  .animate-step-in-left,
+  .animate-step-fade {
     transition: none !important;
     animation: none !important;
+    transform: none !important;
   }
 }

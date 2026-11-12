@@ -631,6 +631,13 @@ export default function StringFormDialog({
     isEdit && baseline && !baseline.deleted_at && (serverDiscardable || formDirty)
   const hasAnyTranslation = targetLocales.some((locale) => (translations[locale] ?? '').trim().length > 0)
   const currentStep = reviewOpen ? 2 : translateMut.isSuccess || hasAnyTranslation ? 1 : 0
+  const [prevReviewOpen, setPrevReviewOpen] = useState(reviewOpen)
+  const [stepDirection, setStepDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
+
+  if (reviewOpen !== prevReviewOpen) {
+    setPrevReviewOpen(reviewOpen)
+    setStepDirection(reviewOpen ? 'forward' : 'backward')
+  }
 
   return (
     <Dialog open onOpenChange={(open) => {
@@ -702,7 +709,13 @@ export default function StringFormDialog({
         </DialogHeader>
 
         {reviewOpen ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            key="review-screen"
+            className={cn(
+              'flex min-h-0 flex-1 flex-col overflow-hidden',
+              stepDirection === 'backward' ? 'animate-step-in-left' : 'animate-step-in-right'
+            )}
+          >
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
               <div className="mb-4 flex flex-col gap-1 border-b border-border/60 pb-3">
                 <h2 tabIndex={-1} ref={reviewHeading} className="font-heading text-base font-semibold tracking-tight text-foreground">
@@ -714,7 +727,7 @@ export default function StringFormDialog({
               </div>
               {review ? <EditorPublicationReview entry={review.preview.entry} /> : <p role="status">Refreshing comparison…</p>}
             </div>
-            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t border-border/70 bg-muted/25 px-6 py-3.5 sm:flex-row sm:justify-end">
+            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col-reverse gap-2 rounded-none border-t border-border/70 bg-muted/25 px-6 py-3.5 sm:flex-row sm:justify-end animate-step-fade">
               <Button type="button" variant="outline" disabled={busy} onClick={() => {
                 setReviewOpen(false)
                 setReview(null)
@@ -738,7 +751,13 @@ export default function StringFormDialog({
             </DialogFooter>
           </div>
         ) : isEdit && tab === 'history' && baseline ? (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          <div
+            key="history-screen"
+            className={cn(
+              'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4',
+              stepDirection === 'backward' ? 'animate-step-in-left' : undefined
+            )}
+          >
             <StringHistoryPanel
               projectId={projectId}
               stringId={baseline.id}
@@ -764,8 +783,12 @@ export default function StringFormDialog({
           </div>
         ) : (
         <form
+          key="form-screen"
           onSubmit={handleSubmit}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          className={cn(
+            'flex min-h-0 flex-1 flex-col overflow-hidden',
+            stepDirection === 'backward' ? 'animate-step-in-left' : undefined
+          )}
         >
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <fieldset disabled={busy} className="m-0 border-0 p-0 min-w-0">

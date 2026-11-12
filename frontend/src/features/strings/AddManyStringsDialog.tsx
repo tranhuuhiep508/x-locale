@@ -63,6 +63,7 @@ import { TranslatePublishReview } from '@/features/strings/TranslatePublishRevie
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { TranslateStepper } from '@/features/strings/TranslateReviewDialog'
 import { useToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 const NONE_MODULE = '__none__'
 
@@ -345,6 +346,14 @@ export function AddManyStringsDialog({
     targetLocales.some((cell) => (row.translations[cell] ?? '').trim())
   )
   const currentStep = stage === 'review' ? 2 : anyTranslation ? 1 : 0
+  const stageOrder: Record<string, number> = { paste: 0, edit: 1, review: 2, done: 3 }
+  const [prevStage, setPrevStage] = useState(stage)
+  const [stageDirection, setStageDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
+
+  if (stage !== prevStage) {
+    setStageDirection((stageOrder[stage] ?? 0) >= (stageOrder[prevStage] ?? 0) ? 'forward' : 'backward')
+    setPrevStage(stage)
+  }
   const qaRows: QaWatchRow[] = rows.flatMap((row) =>
     targetLocales.map((cell) => ({
       id: qaId(row.key, cell),
@@ -420,7 +429,18 @@ export function AddManyStringsDialog({
               {parseWarning}
             </p>
           ) : null}
-          {stage === 'paste' ? (
+          <div
+            key={`stage-${stage}`}
+            className={cn(
+              'min-w-0 flex-1',
+              stageDirection === 'initial'
+                ? undefined
+                : stageDirection === 'forward'
+                  ? 'animate-step-in-right'
+                  : 'animate-step-in-left'
+            )}
+          >
+            {stage === 'paste' ? (
             <FieldGroup className="grid gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
               <Field data-invalid={parseError ? true : undefined}>
                 <FieldLabel htmlFor="add-many-json">JSON</FieldLabel>
@@ -744,11 +764,15 @@ export function AddManyStringsDialog({
               </div>
             </div>
           ) : null}
+          </div>
         </ReviewDialogBody>
 
         <ReviewDialogFooter>
           {stage === 'paste' ? (
-            <>
+            <div
+              key="paste-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" onClick={requestClose} disabled={busy}>
                 Cancel
               </Button>
@@ -756,9 +780,12 @@ export function AddManyStringsDialog({
                 {previewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
                 Preview
               </Button>
-            </>
+            </div>
           ) : stage === 'edit' ? (
-            <>
+            <div
+              key="edit-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 className="mr-auto"
@@ -786,9 +813,12 @@ export function AddManyStringsDialog({
                 {reviewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
                 Review &amp; publish
               </Button>
-            </>
+            </div>
           ) : stage === 'review' ? (
-            <>
+            <div
+              key="review-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 className="mr-auto"
@@ -815,14 +845,17 @@ export function AddManyStringsDialog({
                 {saveMut.isPending ? <Spinner data-icon="inline-start" /> : null}
                 Publish
               </Button>
-            </>
+            </div>
           ) : (
-            <>
+            <div
+              key="done-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" onClick={resetAll}>
                 Add more
               </Button>
               <Button onClick={requestClose}>Done</Button>
-            </>
+            </div>
           )}
         </ReviewDialogFooter>
         <ConfirmDialog

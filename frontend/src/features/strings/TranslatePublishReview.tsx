@@ -24,7 +24,7 @@ export function TranslatePublishReview({
   const preview = buildPublishPreview(entries)
   const empty = emptyPublicLocales(entries)
   return (
-    <div className="flex flex-col gap-4" aria-busy={loading}>
+    <div className="flex flex-col gap-4 animate-step-fade" aria-busy={loading}>
       {empty.length > 0 ? (
         <Alert>
           <AlertTitle>

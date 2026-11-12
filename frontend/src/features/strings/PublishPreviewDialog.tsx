@@ -216,7 +216,9 @@ export function PublishPreviewDialog({
               description="These strings are already in sync, or are deleted and cannot be published."
             />
           ) : (
-            <PublishPreviewContent preview={preview} />
+            <div className="animate-step-fade min-w-0 flex-1">
+              <PublishPreviewContent preview={preview} />
+            </div>
           )}
         </ReviewDialogBody>
 
