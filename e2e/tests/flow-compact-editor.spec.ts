@@ -8,7 +8,6 @@ test.beforeAll(() => resetDemoDatabase())
 test('publishing closes the editor and focuses the saved row even when filters hide it', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openDemoStrings(page)
-  await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await setStatusFilter(page, 'Draft')
   await expect(page).toHaveURL(/[?&]status=draft(?:&|$)/)
   const key = `compact_${Date.now()}`
