@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { ConfidenceBadge } from '@/features/strings/confidence'
 import { MatchBar } from '@/features/strings/translation-memory-view'
 import { describedByFor, QA_APPLY_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import type { QaBaseline, QaView } from '@/features/strings/qa-issues'
@@ -163,6 +164,7 @@ function ProposalLocaleRow({
   stringId,
   locale,
   value,
+  score,
   view,
   disabled,
   onChange,
@@ -174,6 +176,7 @@ function ProposalLocaleRow({
   stringId: string
   locale: string
   value: string
+  score?: number | null
   view: QaView
   disabled: boolean
   onChange: (value: string) => void
@@ -232,13 +235,16 @@ function ProposalLocaleRow({
           ) : null}
         </div>
         {!selected ? (
-          <QaLocaleBadge
-            view={view}
-            locale={locale}
-            footer={QA_APPLY_FOOTER}
-            id={issuesId}
-            showClean={false}
-          />
+          <div className="flex items-center gap-1.5 shrink-0 pt-1.5">
+            <ConfidenceBadge score={score} />
+            <QaLocaleBadge
+              view={view}
+              locale={locale}
+              footer={QA_APPLY_FOOTER}
+              id={issuesId}
+              showClean={false}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -318,6 +324,7 @@ function ProposalTreeNode({
             stringId={item.string_id}
             locale={locale}
             value={value}
+            score={item.scores?.[locale]}
             bestMatch={sourceConflict ? undefined : item.memory?.[locale]?.[0]}
             selected={item.memory_selected?.includes(locale) ?? false}
             sourceKey={item.key}
