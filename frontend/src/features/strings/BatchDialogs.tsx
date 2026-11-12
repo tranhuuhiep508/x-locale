@@ -58,12 +58,16 @@ export function BatchMoveDialog({
               disabled={isLoading}
               onClick={() => onSelect(m.id)}
             >
-              <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex min-w-0 flex-1 items-center gap-2.5">
                 <FolderGit2 className="size-4 shrink-0 text-primary/80" />
-                <span className="max-w-full truncate font-medium">{m.name}</span>
+                <span className="truncate font-medium">{m.name}</span>
               </span>
-              <Badge variant="secondary" className="shrink-0 font-mono text-[11px] font-normal">
-                {m.slug}
+              <Badge
+                variant="secondary"
+                className="max-w-[45%] shrink-0 font-mono text-[11px] font-normal"
+                title={m.slug}
+              >
+                <span className="truncate">{m.slug}</span>
               </Badge>
             </Button>
           ))}
