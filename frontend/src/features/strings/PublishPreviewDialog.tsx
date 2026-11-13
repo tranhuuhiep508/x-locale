@@ -204,7 +204,7 @@ export function PublishPreviewDialog({
         <ReviewDialogBody>
           {loading || !preview ? (
             <div
-              className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
+              className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
               aria-live="polite"
             >
               <Spinner />

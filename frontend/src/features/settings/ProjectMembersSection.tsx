@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ApiError } from '@/lib/api/client'
 import { projectsApi } from '@/lib/api/projects'
@@ -99,12 +99,6 @@ export function ProjectMembersSection({
 
   return (
     <Card className="border-border/80 shadow-xs">
-      <CardHeader className="border-b border-border/60 bg-muted/15">
-        <CardTitle className="text-sm">Team roster & permissions</CardTitle>
-        <CardDescription>
-          {members.length} {members.length === 1 ? 'member' : 'members'} with access to this catalog
-        </CardDescription>
-      </CardHeader>
       <CardContent className="flex flex-col gap-4 pt-5">
         {isAdmin ? (
           <form
@@ -145,8 +139,10 @@ export function ProjectMembersSection({
             </FieldGroup>
             <div>
               <Button type="submit" size="sm" disabled={!email.trim() || addMut.isPending}>
-                {addMut.isPending ? <Spinner data-icon="inline-start" /> : <UserPlus data-icon="inline-start" />}
-                Add member
+                <PendingLabel pending={addMut.isPending}>
+                  <UserPlus className="size-3.5" aria-hidden="true" />
+                  Add member
+                </PendingLabel>
               </Button>
             </div>
           </form>

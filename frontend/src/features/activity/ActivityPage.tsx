@@ -1,7 +1,7 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { CalendarDays, Clock, HelpCircle, History, RotateCcw, ShieldAlert } from 'lucide-react'
 import { activitiesApi } from '@/lib/api/activities'
 import { ApiError } from '@/lib/api/client'
 import { claimFinish, jobSuccessMessage, refreshProjectContent, rememberJob } from '@/lib/active-job'
@@ -17,7 +17,7 @@ import { JobProgress } from '@/components/job-progress'
 import { undoProgressLabel } from '@/lib/job-progress'
 import { queryKeys } from '@/lib/query-keys'
 import { activityFeedQuery, batchRevertPreviewQuery, projectQuery } from '@/lib/queries'
-import { ActivityCard } from '@/features/activity/ActivityCard'
+import { ActivityCard, activityVisualMeta } from '@/features/activity/ActivityCard'
 import { ActivityDetailSheet } from '@/features/activity/ActivityDetailSheet'
 import { PreviewFailure } from '@/features/activity/PreviewFailure'
 import { changeDisplayValue, changeFieldLabel } from '@/features/activity/change-labels'
@@ -35,15 +35,34 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { publicationErrorMessage } from '@/features/strings/publish-preview'
 import { useToast } from '@/lib/toast'
 import type { ActivitySearch } from '@/lib/schemas'
-import { dayHeading, dayKey } from '@/lib/utils'
+import { cn, dayHeading, dayKey } from '@/lib/utils'
 
 const routeApi = getRouteApi('/projects/$projectRef/activity')
+
+const LEDGER_RULES = [
+  {
+    tour: 'batch-undo',
+    icon: RotateCcw,
+    text: 'Undo a whole import, translation, or batch from the list.',
+  },
+  {
+    tour: 'string-history',
+    icon: History,
+    text: 'Restore one string from its History.',
+  },
+  {
+    tour: 'restore-limits',
+    icon: ShieldAlert,
+    text: 'Publish, unpublish, and deletes are not in History.',
+  },
+] as const
 
 function changeKey(change: ActivityChange) {
   return `${change.scope}:${change.field}:${change.locale ?? ''}:${change.before}:${change.after}`
@@ -68,13 +87,13 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
       {preview.blocked_reason ? (
         <p
           role="alert"
-          className="rounded-md border border-destructive/30 p-2 text-sm text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-sm text-destructive"
         >
           {preview.blocked_reason}
         </p>
       ) : null}
       {preview.conflict_count > 0 ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
           <p className="font-medium">
             {preview.conflict_count} {preview.conflict_count === 1 ? 'string was' : 'strings were'}{' '}
             edited since this action:
@@ -92,16 +111,16 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
           {conflictsCaption ? <p className="mt-1 text-destructive/80">{conflictsCaption}</p> : null}
         </div>
       ) : null}
-      <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border p-2">
+      <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border border-border/80 bg-muted/20 p-2.5">
         {visible.map((item) => (
           <li key={item.activity_id} className="text-xs text-muted-foreground">
             <div className="flex flex-wrap items-baseline gap-1">
-              <span className="font-mono text-foreground/80">{item.string_key ?? 'string'}</span>
+              <span className="font-mono text-foreground/85">{item.string_key ?? 'string'}</span>
               <span>{outcomeLabel(item)}</span>
             </div>
             {item.changes.map((change) => (
               <p key={changeKey(change)} className="truncate">
-                <span className="font-medium text-foreground/70">
+                <span className="font-medium text-foreground/75">
                   {changeFieldLabel(change)}
                   {change.scope === 'published' ? ' (published)' : ''}
                 </span>{' '}
@@ -120,6 +139,23 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
         ) : null}
       </ul>
       {itemsCaption ? <p className="text-xs text-muted-foreground">{itemsCaption}</p> : null}
+    </div>
+  )
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-label="Loading activity">
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-6 w-28 rounded-md" />
+        <div className="h-px flex-1 bg-border/60" />
+        <Skeleton className="h-4 w-16 rounded-md" />
+      </div>
+      <div className="flex flex-col gap-3 pl-9">
+        <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+      </div>
     </div>
   )
 }
@@ -255,24 +291,71 @@ export function ActivityPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-tour-ready={isSuccess ? 'activity' : undefined}>
-      <div className="shrink-0 border-b border-border/80 bg-background/60 px-4 py-2.5 sm:px-6 sm:py-3">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2.5">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      data-tour-ready={isSuccess ? 'activity' : undefined}
+    >
+      <div className="galley-grid shrink-0 border-b border-border/80 bg-card/85 px-4 py-3 backdrop-blur-md sm:px-6 sm:py-4">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
           <PageHeader
             title="Activity"
             badge={
-              total > 0 ? (
-                <Badge variant="secondary" className="font-mono text-xs">
-                  {total} {total === 1 ? 'event' : 'events'}
-                </Badge>
-              ) : null
+              <div className="flex items-center gap-1.5">
+                {total > 0 ? (
+                  <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+                    {total} {total === 1 ? 'event' : 'events'}
+                  </Badge>
+                ) : null}
+                {filtered ? (
+                  <Badge
+                    variant="outline"
+                    className="border-primary/30 bg-primary/8 font-mono text-[11px] text-primary"
+                  >
+                    Filtered
+                  </Badge>
+                ) : null}
+              </div>
+            }
+            actions={
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-tour="batch-undo"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <HelpCircle data-icon="inline-start" />
+                    Undo rules
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-3">
+                  <p className="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                    Undo &amp; history rules
+                  </p>
+                  <ul className="flex flex-col gap-2">
+                    {LEDGER_RULES.map((rule) => {
+                      const RuleIcon = rule.icon
+                      return (
+                        <li
+                          key={rule.tour}
+                          className="flex items-start gap-2 text-xs leading-snug text-muted-foreground"
+                        >
+                          <RuleIcon
+                            aria-hidden="true"
+                            className="mt-0.5 size-3.5 shrink-0 text-primary/80"
+                          />
+                          <span>{rule.text}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </PopoverContent>
+              </Popover>
             }
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            <span data-tour="batch-undo">Undo a whole import, translation, or batch from the list.</span>{' '}
-            <span data-tour="string-history">Restore one string from its History.</span>{' '}
-            <span data-tour="restore-limits">Publish, unpublish, and deletes are not in History.</span>
-          </p>
+
           <ActivityFilters
             search={search}
             locales={locales}
@@ -283,83 +366,98 @@ export function ActivityPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 py-4">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-5">
           {isLoading ? (
-            <div className="flex flex-col gap-3" aria-label="Loading activity">
-              <Skeleton className="h-5 w-24" />
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
-            </div>
+            <ActivitySkeleton />
           ) : isError ? (
-            <EmptyState
-              title="Couldn’t load activity"
-              description="Try loading the catalog changes again."
-              action={
-                <Button variant="outline" onClick={() => void refetch()}>
-                  Retry
-                </Button>
-              }
-            />
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={<Clock />}
-              title={filtered ? 'No matching activity' : 'No activity yet'}
-              description={
-                filtered
-                  ? 'Try another person, event type, language, or date range.'
-                  : 'Import Excel, edit a string, or publish a batch to see it here.'
-              }
-              action={
-                filtered ? (
-                  <Button variant="outline" onClick={clearFilters}>
-                    Clear filters
+            <div className="rounded-xl border border-dashed border-border/80 bg-card/50 py-6">
+              <EmptyState
+                title="Couldn’t load activity"
+                description="Try loading the catalog changes again."
+                action={
+                  <Button variant="outline" onClick={() => void refetch()}>
+                    Retry
                   </Button>
-                ) : undefined
-              }
-            />
+                }
+              />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/80 bg-card/50 py-6">
+              <EmptyState
+                icon={<Clock />}
+                title={filtered ? 'No matching activity' : 'No activity yet'}
+                description={
+                  filtered
+                    ? 'Try another person, event type, language, or date range.'
+                    : 'Import Excel, edit a string, or publish a batch to see it here.'
+                }
+                action={
+                  filtered ? (
+                    <Button variant="outline" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
           ) : (
-            <div data-tour="activity-list" className="flex flex-col gap-6">
-            {grouped.map((group, groupIndex) => (
-              <section
-                key={group.key}
-                style={{ '--stagger': Math.min(groupIndex + 1, 8) } as React.CSSProperties}
-                className="animate-stage-in flex min-w-0 flex-col gap-3"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Badge variant="outline" className="rounded-md bg-muted/40 font-mono text-[11px] uppercase tracking-wider">
-                    {group.heading || 'Unknown date'}
-                  </Badge>
-                  <div className="h-px flex-1 bg-border/60" />
-                  <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-                    {group.cards.length} {group.cards.length === 1 ? 'entry' : 'entries'}
-                  </span>
-                </div>
-                <div className="relative min-w-0 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card px-3 shadow-xs sm:px-4">
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-y-0 left-0 w-1 bg-primary/40"
-                  />
-                  {group.cards.map((card) => (
-                    <ActivityCard
-                      key={card.id}
-                      card={card}
-                      projectId={projectId}
-                      onUndo={setUndoTarget}
-                      onOpenDetail={setDetailId}
+            <div data-tour="activity-list" className="flex flex-col gap-7">
+              {grouped.map((group, groupIndex) => (
+                <section
+                  key={group.key}
+                  style={{ '--stagger': Math.min(groupIndex + 1, 8) } as React.CSSProperties}
+                  className="animate-stage-in flex min-w-0 flex-col gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 py-1 font-mono text-[11px] font-medium tracking-wider text-foreground uppercase shadow-2xs">
+                      <CalendarDays aria-hidden="true" className="size-3 text-primary" />
+                      {group.heading || 'Unknown date'}
+                    </span>
+                    <div className="h-px flex-1 bg-border/70" />
+                    <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                      {group.cards.length} {group.cards.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </div>
+
+                  <div className="relative flex flex-col gap-3 pl-9 sm:pl-10">
+                    <div
+                      aria-hidden="true"
+                      className="absolute top-4 bottom-4 left-[13.5px] w-px bg-border/80 sm:left-[15.5px]"
                     />
-                  ))}
-                </div>
-              </section>
-            ))}
+                    {group.cards.map((card) => {
+                      const visual = activityVisualMeta(card)
+                      const NodeIcon = visual.icon
+                      return (
+                        <div key={card.id} className="relative min-w-0">
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'absolute top-4 -left-9 flex size-7 items-center justify-center rounded-md border shadow-2xs ring-4 ring-background sm:-left-10 sm:size-8',
+                              visual.nodeClass
+                            )}
+                          >
+                            <NodeIcon className="size-3.5" />
+                          </span>
+                          <ActivityCard
+                            card={card}
+                            projectId={projectId}
+                            onUndo={setUndoTarget}
+                            onOpenDetail={setDetailId}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>
       </div>
 
       {data && total > 0 ? (
-        <div className="shrink-0 border-t bg-card px-4 sm:px-6">
-          <div className="mx-auto w-full max-w-5xl">
+        <div className="shrink-0 border-t border-border/80 bg-card/85 px-4 backdrop-blur-md sm:px-6">
+          <div className="mx-auto w-full max-w-6xl">
             {totalPages > 1 ? (
               <DataPagination
                 page={search.page}
@@ -368,7 +466,7 @@ export function ActivityPage() {
                 onPageChange={(page) => setSearch({ page })}
               />
             ) : (
-              <p className="py-3 text-xs tabular-nums text-muted-foreground">
+              <p className="py-3 font-mono text-xs text-muted-foreground tabular-nums">
                 {total} {total === 1 ? 'event' : 'events'}
                 {filtered ? ' matching your filters' : ''}
               </p>
@@ -421,7 +519,10 @@ export function ActivityPage() {
         variant={undoOverwrite ? 'destructive' : 'default'}
         isLoading={undoBusy && !undoJob.isError && !undoJob.isPaused}
         confirmDisabled={
-          undoBusy || undoPreviewQuery.isFetching || undoPreviewQuery.isError || !undoPreview?.can_revert
+          undoBusy ||
+          undoPreviewQuery.isFetching ||
+          undoPreviewQuery.isError ||
+          !undoPreview?.can_revert
         }
         contentClassName="sm:max-w-lg"
       />

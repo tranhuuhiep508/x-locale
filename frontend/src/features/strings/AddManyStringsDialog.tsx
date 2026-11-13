@@ -31,10 +31,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
+import { CreateModulePopover, SingleTagField } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
   aiTargetCells,
@@ -560,50 +559,21 @@ export function AddManyStringsDialog({
                   </Field>
                 ) : null}
 
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel>Tags</FieldLabel>
-                    <CreateTagPopover
-                      projectId={projectId}
-                      tags={tagOptions}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedTags((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created]
-                        )
-                        setTagIds((prev) =>
-                          prev.includes(created.id) ? prev : [...prev, created.id]
-                        )
-                      }}
-                    />
-                  </div>
-                  {tagOptions.length > 0 ? (
-                    <ToggleGroup
-                      type="multiple"
-                      variant="outline"
-                      className="flex flex-wrap justify-start"
-                      value={tagIds}
-                      onValueChange={setTagIds}
-                    >
-                      {tagOptions.map((t) => (
-                        <ToggleGroupItem key={t.id} value={t.id} size="sm">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: t.color }}
-                          />
-                          {t.name}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  ) : (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  )}
-                  {tagOptions.length > 0 ? (
-                    <FieldDescription>Added to every pasted string.</FieldDescription>
-                  ) : null}
-                </Field>
+                <SingleTagField
+                  id="add-many-tag"
+                  projectId={projectId}
+                  tags={tagOptions}
+                  tagId={tagIds[0] ?? ''}
+                  disabled={busy}
+                  description="Added to every pasted string."
+                  onSelect={(nextTagId) => setTagIds(nextTagId ? [nextTagId] : [])}
+                  onCreated={(created) => {
+                    setCreatedTags((prev) =>
+                      prev.some((item) => item.id === created.id) ? prev : [...prev, created]
+                    )
+                    setTagIds([created.id])
+                  }}
+                />
               </FieldGroup>
             </FieldGroup>
           ) : stage === 'edit' ? (
@@ -627,7 +597,7 @@ export function AddManyStringsDialog({
                   className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
                 >
                   {aiBusy ? (
-                    <Spinner data-icon="inline-start" />
+                    <Spinner data-icon="inline-start" className="size-3.5" />
                   ) : (
                     <Wand2 data-icon="inline-start" className="size-3.5" />
                   )}
@@ -777,8 +747,7 @@ export function AddManyStringsDialog({
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>
-                {previewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Preview
+                <PendingLabel pending={previewMut.isPending}>Preview</PendingLabel>
               </Button>
             </div>
           ) : stage === 'edit' ? (
@@ -801,8 +770,7 @@ export function AddManyStringsDialog({
                 Back
               </Button>
               <Button variant="secondary" disabled={busy || !fingerprint} onClick={saveDraft}>
-                {saveMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Save as draft
+                <PendingLabel pending={saveMut.isPending}>Save as draft</PendingLabel>
               </Button>
               <Button
                 disabled={busy || !fingerprint}
@@ -810,8 +778,7 @@ export function AddManyStringsDialog({
                   reviewMut.mutate({ ...scope(), rows: draftRowsToRequest(rows, targetLocales) })
                 }
               >
-                {reviewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Review &amp; publish
+                <PendingLabel pending={reviewMut.isPending}>Review &amp; publish</PendingLabel>
               </Button>
             </div>
           ) : stage === 'review' ? (
@@ -842,8 +809,7 @@ export function AddManyStringsDialog({
                   })
                 }
               >
-                {saveMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Publish
+                <PendingLabel pending={saveMut.isPending}>Publish</PendingLabel>
               </Button>
             </div>
           ) : (

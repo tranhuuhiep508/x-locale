@@ -31,12 +31,14 @@ export async function clearStringSearch(page: Page) {
 }
 
 export async function openAddStringDialog(page: Page) {
-  await page.getByRole('button', { name: 'Add string' }).click()
+  await page.getByRole('button', { name: 'Add string' }).first().click()
+  await page.getByRole('menuitem', { name: 'Add single string' }).click()
   await expect(page.getByRole('heading', { name: 'Add string' })).toBeVisible()
 }
 
 export async function openAddManyDialog(page: Page) {
-  await page.getByRole('button', { name: 'Add many' }).click()
+  await page.getByRole('button', { name: 'Add string' }).first().click()
+  await page.getByRole('menuitem', { name: 'Add many' }).click()
   await expect(page.getByRole('heading', { name: 'Add many' })).toBeVisible()
 }
 

@@ -15,7 +15,7 @@ export function TranslatePublishReview({
 }) {
   if (!entries) {
     return (
-      <div className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" aria-live="polite">
+      <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" aria-live="polite">
         {loading ? <Spinner /> : null}
         Preparing publication review…
       </div>

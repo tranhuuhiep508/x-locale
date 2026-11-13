@@ -25,8 +25,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Spinner } from '@/components/ui/spinner'
-import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
+import { PendingLabel, Spinner } from '@/components/ui/spinner'
+import { CreateModulePopover, SingleTagField } from '@/features/strings/CatalogCreatePopovers'
 import { TranslationMemoryPanel } from '@/features/strings/translation-memory-view'
 import { useTranslationMemory } from '@/features/strings/use-translation-memory'
 import { ConfidenceBadge, dropScore, mergeScores } from '@/features/strings/confidence'
@@ -55,7 +55,6 @@ interface Props {
 }
 
 const NONE_MODULE = '__none__'
-const NONE_TAG = '__none__'
 
 /** Portaled popover/select layers sit outside dialog content in the DOM. */
 function isNestedOverlayTarget(target: EventTarget | null) {
@@ -200,14 +199,6 @@ export default function StringFormDialog({
   const [description, setDescription] = useState(entry?.description ?? '')
   const [moduleId, setModuleId] = useState(entry?.module_id ?? '')
   const [tagIds, setTagIds] = useState(() => entry?.tags.map((tag) => tag.id) ?? [])
-  const tagId = tagIds[0] ?? ''
-  const setTagId = (value: string) => {
-    if (!value) {
-      setTagIds([])
-      return
-    }
-    setTagIds([value, ...tagIds.slice(1).filter((id) => id !== value)])
-  }
   const [status, setStatus] = useState<TranslationStatus>(() => entry?.status ?? 'draft')
   const [translations, setTranslations] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
@@ -303,7 +294,6 @@ export default function StringFormDialog({
   }) ?? [])]
   const moduleOptions = [...modules, ...createdModules.filter((item) => !modules.some((m) => m.id === item.id))]
   const tagOptions = [...tags, ...createdTags.filter((item) => !tags.some((t) => t.id === item.id))]
-  const selectedTag = tagOptions.find((item) => item.id === tagId)
   const selectedModuleName = moduleOptions.find((item) => item.id === moduleId)?.name
 
   const formValues = {
@@ -454,7 +444,7 @@ export default function StringFormDialog({
     }
   }
   const qaRows: QaWatchRow[] = targetLocales.map((locale) => ({
-    id: locale,
+    id: `${baseline?.id ?? 'new'}:${locale}`,
     locale,
     source: sourceText,
     text: translations[locale] ?? '',
@@ -661,14 +651,14 @@ export default function StringFormDialog({
         }}
       >
         <DialogHeader className="shrink-0 border-b border-border/70 bg-muted/20 px-6 py-4 pr-12">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <DialogTitle className="truncate">{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
               {isEdit && !reviewOpen ? (
                 <Badge
                   variant={status === 'public' ? 'default' : 'secondary'}
                   className={cn(
-                    'shrink-0 font-mono text-[10px] tracking-wider uppercase',
+                    'min-w-14 shrink-0 justify-center font-mono text-[10px] tracking-wider uppercase',
                     status === 'public' &&
                       'border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
                   )}
@@ -745,8 +735,9 @@ export default function StringFormDialog({
                   })
                 }}
               >
-                {saveMut.isPending && <Spinner data-icon="inline-start" />}
-                {review && !publicationReady ? 'Nothing to publish' : 'Publish'}
+                <PendingLabel pending={saveMut.isPending}>
+                  {review && !publicationReady ? 'Nothing to publish' : 'Publish'}
+                </PendingLabel>
               </Button>
             </DialogFooter>
           </div>
@@ -831,10 +822,7 @@ export default function StringFormDialog({
               <Alert role="status" className="mx-6 mt-5 flex w-auto flex-wrap items-center justify-between gap-3 border-border/80 bg-muted/35">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <AlertTitle className="flex items-center gap-2 text-xs font-semibold">
-                    <span className="relative flex size-2 shrink-0">
-                      <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-                    </span>
+                    <span className="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
                     Public snapshot is live.
                   </AlertTitle>
                   <AlertDescription className="text-xs">
@@ -982,70 +970,20 @@ export default function StringFormDialog({
                       ) : null}
                     </Field>
 
-                    <Field>
-                      <div className="flex items-center gap-1">
-                        <FieldLabel htmlFor="string-tag" className="text-xs font-medium">Tag</FieldLabel>
-                        <CreateTagPopover
-                          projectId={projectId}
-                          tags={tagOptions}
-                          disabled={busy}
-                          onCreated={(created) => {
-                            setCreatedTags((prev) =>
-                              prev.some((item) => item.id === created.id) ? prev : [...prev, created],
-                            )
-                            setTagId(created.id)
-                          }}
-                        />
-                      </div>
-                      <Select
-                        value={tagId || NONE_TAG}
-                        onValueChange={(v) => {
-                          if (v === NONE_TAG) {
-                            setTagId('')
-                            return
-                          }
-                          if (!v) return
-                          setTagId(v)
-                        }}
-                      >
-                        <SelectTrigger id="string-tag" className="w-full">
-                          <SelectValue placeholder="— None —">
-                            {selectedTag ? (
-                              <span className="flex items-center gap-2">
-                                <span
-                                  className="size-2 rounded-full shrink-0"
-                                  style={{ backgroundColor: selectedTag.color }}
-                                />
-                                <span>{selectedTag.name}</span>
-                              </span>
-                            ) : (
-                              '— None —'
-                            )}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value={NONE_TAG}>— None —</SelectItem>
-                            {tagOptions.map((t) => (
-                              <SelectItem key={t.id} value={t.id}>
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className="size-2 rounded-full shrink-0"
-                                    style={{ backgroundColor: t.color }}
-                                  />
-                                  <span>{t.name}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      {tagOptions.length === 0 ? (
-                        <FieldDescription>
-                          None yet. Create one without leaving this form.
-                        </FieldDescription>
-                      ) : null}
-                    </Field>
+                    <SingleTagField
+                      id="string-tag"
+                      projectId={projectId}
+                      tags={tagOptions}
+                      tagId={tagIds[0] ?? ''}
+                      disabled={busy}
+                      onSelect={(nextTagId) => setTagIds(nextTagId ? [nextTagId] : [])}
+                      onCreated={(created) => {
+                        setCreatedTags((prev) =>
+                          prev.some((item) => item.id === created.id) ? prev : [...prev, created],
+                        )
+                        setTagIds([created.id])
+                      }}
+                    />
                   </div>
                 </FieldGroup>
               </div>
@@ -1072,7 +1010,7 @@ export default function StringFormDialog({
                     className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
                   >
                     {translateMut.isPending ? (
-                      <Spinner data-icon="inline-start" />
+                      <Spinner data-icon="inline-start" className="size-3.5" />
                     ) : (
                       <Wand2 data-icon="inline-start" className="size-3.5" />
                     )}
@@ -1097,13 +1035,6 @@ export default function StringFormDialog({
                     onRetry={memory.retry}
                   />
                 ) : null}
-                {translateMut.isPending || translateMut.isSuccess ? (
-                  <p className="text-xs text-muted-foreground">
-                    {translateMut.isPending
-                      ? 'Generating translations…'
-                      : 'Review AI text, then Save. Add description context and Auto-translate again if needed.'}
-                  </p>
-                ) : null}
                 {targetLocales.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No target locales configured for this project.
@@ -1111,11 +1042,13 @@ export default function StringFormDialog({
                 ) : (
                   <FieldGroup className="gap-3">
                     {targetLocales.map((locale) => {
-                      const view = qaViews[locale] ?? { status: 'unchecked' as const, issues: [], stale: false }
+                      const view =
+                        qaViews[`${baseline?.id ?? 'new'}:${locale}`] ??
+                        { status: 'unchecked' as const, issues: [], stale: false }
                       const issuesId = `qa-edit-${locale}`
                       return (
                       <Field key={locale} className="rounded-xl border border-border/80 bg-card p-3.5 shadow-2xs transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20" data-qa-status={view.status}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-h-6 items-center gap-2">
                           <span className="font-mono text-xs font-bold uppercase rounded bg-muted/80 px-2 py-0.5 text-foreground shrink-0">
                             <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-bold cursor-pointer">
                               {locale}
@@ -1165,8 +1098,12 @@ export default function StringFormDialog({
                     })}
                   </FieldGroup>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  QA re-checks a translation shortly after you stop typing. It never blocks Save.
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {translateMut.isPending
+                    ? 'Generating translations…'
+                    : translateMut.isSuccess
+                      ? 'Review AI text, then Save. Add description context and Auto-translate again if needed.'
+                      : 'QA re-checks a translation shortly after you stop typing. It never blocks Save.'}
                 </p>
               </div>
             </div>
@@ -1184,9 +1121,9 @@ export default function StringFormDialog({
                   onClick={() => setConfirmDiscard(true)}
                 >
                   {discardMut.isPending ? (
-                    <Spinner data-icon="inline-start" />
+                    <Spinner data-icon="inline-start" className="size-3.5" />
                   ) : (
-                    <Undo2 data-icon="inline-start" />
+                    <Undo2 data-icon="inline-start" className="size-3.5" />
                   )}
                   Discard changes
                 </Button>
@@ -1206,8 +1143,7 @@ export default function StringFormDialog({
                 variant="secondary"
                 disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at)}
               >
-                {saveMut.isPending && <Spinner data-icon="inline-start" />}
-                Save as draft
+                <PendingLabel pending={saveMut.isPending}>Save as draft</PendingLabel>
               </Button>
               <Button
                 ref={publishButton}
@@ -1215,8 +1151,9 @@ export default function StringFormDialog({
                 disabled={busy || Boolean(conflict) || Boolean(baseline?.deleted_at || baseline?.pending_delete)}
                 onClick={() => submitAction('publish')}
               >
-                {previewMut.isPending && <Spinner data-icon="inline-start" />}
-                {isEdit ? 'Publish changes' : 'Create and publish'}
+                <PendingLabel pending={previewMut.isPending}>
+                  {isEdit ? 'Publish changes' : 'Create and publish'}
+                </PendingLabel>
               </Button>
             </div>
           </DialogFooter>

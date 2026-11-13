@@ -21,7 +21,7 @@ import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { MatchBar } from '@/features/strings/translation-memory-view'
@@ -608,7 +608,7 @@ export function TranslateReviewDialog({
         }}
       >
         <ReviewDialogHeader>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <DialogTitle className="truncate">
               {reviewing
                 ? 'Review Publication'
@@ -657,8 +657,7 @@ export function TranslateReviewDialog({
               <AlertDescription>
                 <p>{refreshError}</p>
                 <Button type="button" variant="outline" size="sm" disabled={loadingQueue} onClick={onRetryRefresh}>
-                  {loadingQueue ? <Spinner data-icon="inline-start" /> : null}
-                  Retry loading
+                  <PendingLabel pending={loadingQueue}>Retry loading</PendingLabel>
                 </Button>
               </AlertDescription>
             </Alert>
@@ -686,7 +685,7 @@ export function TranslateReviewDialog({
             </div>
           ) : showInitialSpinner ? (
             <div
-              className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground animate-step-fade"
+              className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground animate-step-fade"
               aria-live="polite"
             >
               <Spinner />

@@ -209,6 +209,8 @@ describe('translation review retranslation', () => {
     ))
     fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Add string' })[0])
+    expect(await screen.findByRole('menuitem', { name: 'Add many' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add single string' }))
     fireEvent.change(await screen.findByLabelText('Key'), { target: { value: 'save' } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Lưu' } })
     expect(screen.queryByLabelText(/^vi$/i)).toBeNull()

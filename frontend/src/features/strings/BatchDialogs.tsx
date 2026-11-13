@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel } from '@/components/ui/spinner'
 
 export function BatchMoveDialog({
   open,
@@ -148,8 +148,7 @@ export function BatchTagDialog({
             Cancel
           </Button>
           <Button onClick={() => onApply(selected)} disabled={selected.length === 0 || isLoading}>
-            {isLoading && <Spinner data-icon="inline-start" />}
-            Add tags
+            <PendingLabel pending={isLoading}>Add tags</PendingLabel>
           </Button>
         </DialogFooter>
       </DialogContent>

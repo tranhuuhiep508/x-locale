@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { InfoIcon, RotateCcwIcon } from 'lucide-react'
+import { ExternalLink, InfoIcon, RotateCcwIcon } from 'lucide-react'
 import type { ActivityChange } from '@/lib/api/types'
 import { activityDetailQuery } from '@/lib/queries'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -29,22 +29,35 @@ function ChangeRow({ change }: { change: ActivityChange }) {
   const isChanged = change.before !== change.after
   return (
     <div className="flex min-w-0 flex-col gap-2.5 px-3.5 py-3 text-xs">
-      <span className="font-medium text-foreground/90">{label}</span>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-foreground/90">{label}</span>
+        {isChanged ? (
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary">
+            Modified
+          </span>
+        ) : null}
+      </div>
+      <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Before</span>
-          <p className="rounded-lg border border-border/70 bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+            Before
+          </span>
+          <p className="rounded-md border border-border/70 bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
             {changeDisplayValue(change, change.before)}
           </p>
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">After</span>
-          <p className={cn(
-            "rounded-lg border p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere",
-            isChanged
-              ? "border-primary/25 bg-primary/5 text-foreground font-medium"
-              : "border-border/70 bg-muted/40 text-foreground"
-          )}>
+          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">
+            After
+          </span>
+          <p
+            className={cn(
+              'rounded-md border p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere',
+              isChanged
+                ? 'border-primary/25 bg-primary/5 font-medium text-foreground'
+                : 'border-border/70 bg-muted/40 text-foreground'
+            )}
+          >
             {changeDisplayValue(change, change.after)}
           </p>
         </div>
@@ -64,15 +77,18 @@ function ChangeGroupSection({
   const other = changes.filter((change) => change.kind !== 'translation')
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="px-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        {changeScopeLabel(scope)}
-      </h3>
-      <div className="flex flex-col divide-y divide-border/60 rounded-xl border border-border/80 bg-card shadow-2xs overflow-hidden">
+      <div className="flex items-center gap-2 px-0.5">
+        <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          {changeScopeLabel(scope)}
+        </h3>
+        <div className="h-px flex-1 bg-border/60" />
+      </div>
+      <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-lg border border-border/80 bg-card shadow-2xs">
         {other.map((change) => (
           <ChangeRow key={change.field} change={change} />
         ))}
         {translations.length > 0 && other.length > 0 ? (
-          <div className="bg-muted/30 px-3.5 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="bg-muted/35 px-3.5 py-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             Translations
           </div>
         ) : null}
@@ -113,17 +129,17 @@ export function ActivityDetailSheet({
   return (
     <Sheet open={activityId !== null} onOpenChange={(next) => !next && onOpenChange(false)}>
       <SheetContent className="flex flex-col gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
-        <SheetHeader className="shrink-0 border-b pr-12">
-          <SheetTitle className="leading-snug wrap-anywhere">
+        <SheetHeader className="galley-grid shrink-0 border-b bg-card/90 pr-12">
+          <SheetTitle className="font-heading leading-snug wrap-anywhere">
             {detail?.summary ?? 'Activity details'}
           </SheetTitle>
           <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {detail ? (
               <>
-                <span className="font-medium wrap-anywhere text-foreground/80">
+                <span className="font-medium wrap-anywhere text-foreground/85">
                   {detail.actor_label}
                 </span>
-                <span>·</span>
+                <span aria-hidden="true">·</span>
                 <span title={formatDate(detail.created_at)}>
                   {formatRelativeTime(detail.created_at)}
                 </span>
@@ -148,7 +164,7 @@ export function ActivityDetailSheet({
           ) : (
             <div className="flex flex-col gap-4">
               {groups.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
                   No field changes recorded for this event.
                 </p>
               ) : (
@@ -162,20 +178,24 @@ export function ActivityDetailSheet({
               )}
 
               {detail.revert_of ? (
-                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs wrap-anywhere text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-lg border border-border/75 bg-muted/30 px-3 py-2.5 text-xs wrap-anywhere text-muted-foreground">
                   <RotateCcwIcon className="size-3.5 shrink-0 text-primary" />
                   <span>
-                    Reverts: <span className="font-medium text-foreground">{detail.revert_of.summary}</span> (
-                    {formatRelativeTime(detail.revert_of.created_at)})
+                    Reverts:{' '}
+                    <span className="font-medium text-foreground">{detail.revert_of.summary}</span>{' '}
+                    ({formatRelativeTime(detail.revert_of.created_at)})
                   </span>
                 </div>
               ) : null}
               {detail.reverted_by ? (
-                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs wrap-anywhere text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-lg border border-border/75 bg-muted/30 px-3 py-2.5 text-xs wrap-anywhere text-muted-foreground">
                   <RotateCcwIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span>
-                    Reverted by: <span className="font-medium text-foreground">{detail.reverted_by.summary}</span> (
-                    {formatRelativeTime(detail.reverted_by.created_at)})
+                    Reverted by:{' '}
+                    <span className="font-medium text-foreground">
+                      {detail.reverted_by.summary}
+                    </span>{' '}
+                    ({formatRelativeTime(detail.reverted_by.created_at)})
                   </span>
                 </div>
               ) : null}
@@ -194,7 +214,7 @@ export function ActivityDetailSheet({
           )}
         </div>
 
-        <SheetFooter className="shrink-0 flex-row flex-wrap items-center justify-end gap-2">
+        <SheetFooter className="shrink-0 flex-row flex-wrap items-center justify-end gap-2 border-t bg-card/70">
           {detail?.string_key ? (
             <Button variant="ghost" size="sm" asChild>
               <Link
@@ -202,6 +222,7 @@ export function ActivityDetailSheet({
                 params={{ projectRef: projectId }}
                 search={{ q: detail.string_key }}
               >
+                <ExternalLink data-icon="inline-start" />
                 Open string
               </Link>
             </Button>

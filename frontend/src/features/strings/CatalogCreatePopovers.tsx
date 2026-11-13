@@ -9,6 +9,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { moduleCreateSchema, tagCreateSchema } from '@/lib/schemas'
 import type { ModuleCreateForm, TagCreateForm } from '@/lib/schemas'
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import {
   Popover,
   PopoverContent,
@@ -16,7 +17,15 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { PendingLabel } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
 import { nextTagColor } from './catalog-create'
 
@@ -97,8 +106,7 @@ function CreateModuleForm({
           Cancel
         </Button>
         <Button type="submit" disabled={createMut.isPending}>
-          {createMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-          Create
+          <PendingLabel pending={createMut.isPending}>Create</PendingLabel>
         </Button>
       </div>
     </form>
@@ -172,8 +180,7 @@ function CreateTagForm({
           Cancel
         </Button>
         <Button type="submit" disabled={createMut.isPending}>
-          {createMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-          Create
+          <PendingLabel pending={createMut.isPending}>Create</PendingLabel>
         </Button>
       </div>
     </form>
@@ -268,5 +275,94 @@ export function CreateTagPopover({
         />
       </PopoverContent>
     </Popover>
+  )
+}
+
+const NONE_TAG = '__none__'
+
+export function SingleTagField({
+  id,
+  projectId,
+  tags,
+  tagId,
+  disabled,
+  description,
+  onSelect,
+  onCreated,
+}: {
+  id: string
+  projectId: string
+  tags: Tag[]
+  tagId: string
+  disabled?: boolean
+  description?: string
+  onSelect: (tagId: string) => void
+  onCreated: (tag: Tag) => void
+}) {
+  const selectedTag = tags.find((tag) => tag.id === tagId)
+  const resolvedDescription =
+    tags.length === 0 ? 'None yet. Create one without leaving this form.' : description
+
+  return (
+    <Field>
+      <div className="flex items-center justify-between gap-2">
+        <FieldLabel htmlFor={id}>Tag</FieldLabel>
+        <CreateTagPopover
+          projectId={projectId}
+          tags={tags}
+          disabled={disabled}
+          onCreated={onCreated}
+        />
+      </div>
+      <Select
+        value={tagId || NONE_TAG}
+        onValueChange={(value) => {
+          if (value === NONE_TAG) {
+            onSelect('')
+            return
+          }
+          // Native bubble <select> emits '' when the chosen id is not a
+          // mounted <option> yet (dropdown closed after inline create).
+          if (!value) return
+          onSelect(value)
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue placeholder="— None —">
+            {selectedTag ? (
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: selectedTag.color }}
+                />
+                <span className="truncate">{selectedTag.name}</span>
+              </span>
+            ) : (
+              '— None —'
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value={NONE_TAG}>— None —</SelectItem>
+            {tags.map((tag) => (
+              <SelectItem key={tag.id} value={tag.id}>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: tag.color }}
+                  />
+                  <span>{tag.name}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      {resolvedDescription ? <FieldDescription>{resolvedDescription}</FieldDescription> : null}
+    </Field>
   )
 }

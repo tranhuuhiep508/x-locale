@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ApiError } from '@/lib/api/client'
@@ -89,14 +90,31 @@ export function ProjectListPage() {
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 {projects.length > 0 && (
-                  <div
-                    data-tour="cli-sync-hint"
-                    className="group/cli inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1 font-mono text-xs transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5"
-                  >
-                    <Terminal className="size-3.5 shrink-0 text-primary transition-transform duration-200 ease-drift group-hover/cli:translate-x-0.5" />
-                    <span className="text-muted-foreground">$</span>
-                    <span className="font-medium text-foreground">loc push / loc pull</span>
-                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        data-tour="cli-sync-hint"
+                        className="group/cli h-8 gap-1.5 rounded-lg border border-border/70 bg-muted/35 px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
+                      >
+                        <Terminal className="size-3.5 shrink-0 text-primary transition-transform duration-200 ease-drift group-hover/cli:translate-x-0.5" />
+                        <span>CLI sync</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 p-3.5">
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs font-semibold text-foreground">Sync from code or CI</p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Developers can pull or push translations with the CLI. Create an API key inside any project&apos;s Settings.
+                        </p>
+                        <code className="rounded-md border border-border/70 bg-muted/50 px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                          loc push / loc pull
+                        </code>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 )}
                 <Button size="sm" asChild className="shadow-xs">
                   <Link to="/projects/new" data-tour="new-project">
@@ -219,7 +237,7 @@ export function ProjectListPage() {
                       to="/projects/$projectRef/strings"
                       params={{ projectRef: p.slug }}
                       search={{}}
-                      className="flex min-w-0 items-start gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-w-0 items-start gap-3 rounded-md outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <MarkWell className="mt-0.5">
                         <Layers className="size-4" />
@@ -243,7 +261,7 @@ export function ProjectListPage() {
                     </Link>
 
                     {p.role === 'admin' ? (
-                      <CardAction>
+                      <CardAction className="relative z-10">
                         <Button
                           variant="ghost"
                           size="icon-xs"
@@ -251,6 +269,7 @@ export function ProjectListPage() {
                           className="text-muted-foreground transition-colors hover:text-destructive"
                           onClick={(e) => {
                             e.preventDefault()
+                            e.stopPropagation()
                             setSlugConfirm('')
                             setDeleteTarget(p)
                             setDeleteOpen(true)
@@ -323,7 +342,7 @@ export function ProjectListPage() {
                       <Link
                         to="/projects/$projectRef"
                         params={{ projectRef: p.slug }}
-                        className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        className="relative z-10 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
                       >
                         <LayoutDashboard className="size-3" />
                         <span>Overview</span>

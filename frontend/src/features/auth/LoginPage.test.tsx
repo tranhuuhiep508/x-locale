@@ -16,10 +16,11 @@ describe('LoginPage', () => {
   it('renders the interactive locale switcher tabs and updates target translation', () => {
     render(<LoginPage />)
 
-    // Check that locale tabs exist
+    // Check that English source and target locale tabs exist (English is not selectable as a target tab)
     expect(screen.getByText('Tiếng Việt')).toBeDefined()
     expect(screen.getByText('English')).toBeDefined()
     expect(screen.getByText('日本語')).toBeDefined()
+    expect(screen.queryByRole('button', { name: /English/i })).toBeNull()
 
     // Click on Japanese tab
     const jaButton = screen.getByRole('button', { name: /日本語/i })

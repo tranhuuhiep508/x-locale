@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, GitCompareArrows, Search, SlidersHorizontal, X } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Check, ChevronDown, GitCompareArrows, Search, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {

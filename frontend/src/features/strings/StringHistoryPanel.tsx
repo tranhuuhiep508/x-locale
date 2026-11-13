@@ -138,7 +138,7 @@ export function StringHistoryPanel({
 
   if (isLoading) {
     return (
-      <div className="flex h-40 items-center justify-center">
+      <div className="flex min-h-48 items-center justify-center">
         <Spinner />
       </div>
     )
@@ -229,7 +229,9 @@ export function StringHistoryPanel({
           disabled={isFetchingNextPage}
           onClick={() => fetchNextPage()}
         >
-          {isFetchingNextPage ? 'Loading…' : 'Load older'}
+          <span className="inline-flex min-w-20 justify-center">
+            {isFetchingNextPage ? 'Loading…' : 'Load older'}
+          </span>
         </Button>
       ) : null}
 

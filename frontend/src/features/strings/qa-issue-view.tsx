@@ -35,7 +35,7 @@ function breakdown(errors: number, warnings: number) {
 
 export function QaChecking() {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+    <span className="inline-flex h-5 items-center gap-1 whitespace-nowrap text-xs leading-none text-muted-foreground">
       <Spinner className="size-3" role="presentation" aria-hidden="true" />
       Checking…
     </span>

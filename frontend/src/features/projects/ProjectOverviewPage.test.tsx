@@ -226,4 +226,66 @@ describe('project overview', () => {
     await screen.findByText('Couldn’t load activity')
     expect(screen.queryByText('No activity yet')).toBeNull()
   })
+
+  it('surfaces project readiness, module slugs, and tag pills in the blueprint', async () => {
+    vi.mocked(modulesApi.list).mockResolvedValue([
+      {
+        id: 'm1',
+        slug: 'auth',
+        name: 'Auth',
+        description: null,
+        translation_context: null,
+        position: 0,
+        string_count: 4,
+      },
+      {
+        id: 'm2',
+        slug: 'billing',
+        name: 'Billing',
+        description: null,
+        translation_context: null,
+        position: 1,
+        string_count: 6,
+      },
+    ])
+    vi.mocked(tagsApi.list).mockResolvedValue([
+      { id: 't1', name: 'Release 2.0', color: '#2563eb', string_count: 5 },
+    ])
+    renderOverview()
+
+    await screen.findByRole('heading', { name: 'Demo App' })
+    await screen.findByText('85%')
+    expect(
+      (await screen.findByRole('link', { name: 'Review publish queue (4)' })).getAttribute('href')
+    ).toBe('/projects/demo-app/strings?has_unpublished_changes=true')
+    expect(await screen.findByText('auth')).toBeTruthy()
+    expect(screen.getByText('billing')).toBeTruthy()
+    expect(screen.getByText('Release 2.0')).toBeTruthy()
+  })
+
+  it('filters target languages by completion when more than four targets exist', async () => {
+    const locales = ['en', 'ja', 'fr', 'de', 'es']
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: locales })
+    vi.mocked(projectsApi.coverage).mockResolvedValue({
+      total: 10,
+      locales: [
+        { locale: 'en', translated: 10, missing: 0 },
+        { locale: 'ja', translated: 10, missing: 0 },
+        { locale: 'fr', translated: 6, missing: 4 },
+        { locale: 'de', translated: 0, missing: 10 },
+        { locale: 'es', translated: 10, missing: 0 },
+      ],
+    })
+    renderOverview()
+
+    await waitFor(() => expect(screen.getAllByRole('progressbar')).toHaveLength(5))
+
+    fireEvent.click(screen.getByRole('radio', { name: /Needs work \(2\)/ }))
+    await waitFor(() => expect(screen.getAllByRole('progressbar')).toHaveLength(2))
+    expect(screen.getByRole('progressbar', { name: 'fr translation coverage' })).toBeTruthy()
+    expect(screen.getByRole('progressbar', { name: 'de translation coverage' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('radio', { name: /Complete \(3\)/ }))
+    await waitFor(() => expect(screen.getAllByRole('progressbar')).toHaveLength(3))
+  })
 })

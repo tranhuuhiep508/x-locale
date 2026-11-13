@@ -96,9 +96,9 @@ const DEMO_LOCALES: DemoLocale[] = [
 ]
 
 export function LoginPage() {
-  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(2)
+  const [selectedLocaleIndex, setSelectedLocaleIndex] = useState(1)
 
-  const activeLocale = DEMO_LOCALES[selectedLocaleIndex]
+  const activeLocale = DEMO_LOCALES[selectedLocaleIndex] ?? DEMO_LOCALES[1]
 
   return (
     <div className="relative flex min-h-svh flex-col overflow-x-hidden bg-background text-foreground">
@@ -157,15 +157,15 @@ export function LoginPage() {
                       <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
                       <span className="relative inline-flex size-2 rounded-full bg-primary" />
                     </span>
-                    <span className="truncate font-mono text-xs font-medium text-foreground">
-                      demo-app
+                    <span className="truncate text-xs font-semibold text-foreground">
+                      Live Workspace
                     </span>
-                    <span className="font-mono text-xs text-muted-foreground">/ catalog-galley</span>
+                    <span className="text-xs text-muted-foreground">· Interactive preview</span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
                     <Badge variant="outline" className="rounded-md bg-background/60 font-mono text-[11px] font-normal">
-                      stage: public
+                      Published
                     </Badge>
                     <Badge variant="secondary" className="gap-1 rounded-md border border-primary/20 bg-primary/10 font-mono text-[11px] text-primary">
                       <Sparkles className="size-3 animate-pulse text-primary" />
@@ -182,7 +182,8 @@ export function LoginPage() {
                       <span className="eyebrow shrink-0">Locale:</span>
                     </div>
                     <div className="flex max-w-full items-center gap-1 overflow-x-auto pb-0.5 sm:pb-0">
-                      {DEMO_LOCALES.map((locale, index) => {
+                      {DEMO_LOCALES.slice(1).map((locale, offset) => {
+                        const index = offset + 1
                         const isSelected = selectedLocaleIndex === index
                         return (
                           <button
@@ -199,11 +200,6 @@ export function LoginPage() {
                           >
                             <span>{locale.flag}</span>
                             <span>{locale.label}</span>
-                            {locale.status === 'source' && (
-                              <span className="ml-0.5 rounded bg-primary-foreground/20 px-1 py-0.2 font-mono text-[9px] text-primary-foreground">
-                                src
-                              </span>
-                            )}
                           </button>
                         )
                       })}
@@ -242,12 +238,14 @@ export function LoginPage() {
                     {/* Source Galley */}
                     <div className="flex flex-col justify-between rounded-lg border border-border/80 bg-background/60 p-3.5 transition-colors duration-200 hover:border-border">
                       <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-mono font-medium uppercase text-muted-foreground">
-                            Source (en-US)
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
+                            <span>{DEMO_LOCALES[0].flag}</span>
+                            <span>English</span>
+                            <span className="font-mono text-[10px] uppercase">({DEMO_LOCALES[0].code})</span>
                           </span>
                           <span className="font-mono text-[10px] uppercase text-muted-foreground">
-                            Base
+                            Source
                           </span>
                         </div>
                         <p className="text-sm font-medium leading-relaxed text-foreground">

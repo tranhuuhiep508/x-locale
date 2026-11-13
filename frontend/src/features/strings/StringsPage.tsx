@@ -19,7 +19,7 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { ListPlus, Plus, Wand2 } from 'lucide-react'
+import { ChevronDown, ListPlus, Plus, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
@@ -73,6 +73,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { jobsApi } from '@/lib/api/jobs'
@@ -113,6 +114,70 @@ type SaveVariables = {
 const STRING_COLUMN_PINNING: ColumnPinningState = {
   left: ['select', 'key'],
   right: ['actions'],
+}
+
+function AddStringMenu({
+  size = 'sm',
+  align = 'end',
+  className,
+  onAddSingle,
+  onAddMany,
+}: {
+  size?: 'sm' | 'default'
+  align?: 'center' | 'end'
+  className?: string
+  onAddSingle: () => void
+  onAddMany: () => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size={size} className={className} aria-haspopup="menu" aria-expanded={open}>
+          <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
+          Add string
+          <ChevronDown data-icon="inline-end" className="size-3.5 opacity-80" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align={align} className="w-56 p-1">
+        <div role="menu" aria-label="Add string options" className="flex flex-col gap-0.5">
+          <button
+            type="button"
+            role="menuitem"
+            aria-label="Add single string"
+            onClick={() => {
+              setOpen(false)
+              onAddSingle()
+            }}
+            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+          >
+            <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium leading-tight">Add single string</span>
+              <span className="text-xs text-muted-foreground">Key, context &amp; translations</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            aria-label="Add many"
+            onClick={() => {
+              setOpen(false)
+              onAddMany()
+            }}
+            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+          >
+            <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium leading-tight">Add many</span>
+              <span className="text-xs text-muted-foreground">Paste JSON or CSV lines</span>
+            </span>
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 export function StringsPage() {
@@ -194,6 +259,10 @@ export function StringsPage() {
   }, [searchInput, search.q])
 
   const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  const pendingStringsResult = useQuery(
+    stringsQueryOptions(projectId, { has_unpublished_changes: true, page: 1, page_size: 1 }),
+  )
+  const pendingCount = pendingStringsResult.data?.total ?? 0
   useEffect(() => {
     const row = savedRow.current
     if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
@@ -727,11 +796,6 @@ export function StringsPage() {
       <div className="flex shrink-0 flex-col gap-2.5 border-b border-border/80 bg-background/60 px-4 py-2.5 sm:px-6 sm:py-3">
         <PageHeader
           title="Strings"
-          badge={
-            <span className="sr-only">
-              {`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
-            </span>
-          }
           actions={
             <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end w-full sm:w-auto">
               <DataTableViewOptions table={table} />
@@ -766,28 +830,100 @@ export function StringsPage() {
 
               <Separator orientation="vertical" className="hidden h-5 sm:block text-border/60" />
 
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/70 text-foreground hover:bg-muted/40 transition-colors"
-                  onClick={() => setAddManyOpen(true)}
-                >
-                  <ListPlus data-icon="inline-start" className="size-3.5 text-muted-foreground" />
-                  Add many
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
-                  onClick={() => openEditor(null)}
-                >
-                  <Plus data-icon="inline-start" className="size-3.5" />
-                  Add string
-                </Button>
-              </div>
+              <AddStringMenu
+                className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
+                onAddSingle={() => openEditor(null)}
+                onAddMany={() => setAddManyOpen(true)}
+              />
             </div>
           }
         />
+        <span className="sr-only">
+          {`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
+        </span>
+        <div
+          role="tablist"
+          aria-label="Quick views"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {[
+            {
+              id: 'all',
+              label: 'All strings',
+              active: !search.deleted && !search.missing_any && !search.has_unpublished_changes && !search.status && !search.pending_delete && !search.never_published,
+              onSelect: () =>
+                setFilter({
+                  status: undefined,
+                  has_unpublished_changes: undefined,
+                  pending_delete: undefined,
+                  never_published: undefined,
+                  deleted: undefined,
+                  missing_any: undefined,
+                  missing_locale: undefined,
+                  complete_locale: undefined,
+                }),
+            },
+            {
+              id: 'missing',
+              label: 'Missing translations',
+              active: Boolean(search.missing_any) && !search.deleted,
+              onSelect: () =>
+                setFilter({
+                  missing_any: true,
+                  missing_locale: undefined,
+                  complete_locale: undefined,
+                  deleted: undefined,
+                }),
+            },
+            {
+              id: 'pending',
+              label: 'Needs publish',
+              count: pendingCount,
+              active: Boolean(search.has_unpublished_changes) && !search.deleted,
+              onSelect: () =>
+                setFilter({
+                  has_unpublished_changes: true,
+                  status: undefined,
+                  pending_delete: undefined,
+                  never_published: undefined,
+                  deleted: undefined,
+                }),
+            },
+            {
+              id: 'deleted',
+              label: 'Deleted',
+              active: Boolean(search.deleted),
+              onSelect: () =>
+                setFilter({
+                  deleted: true,
+                  status: undefined,
+                  has_unpublished_changes: undefined,
+                  pending_delete: undefined,
+                  never_published: undefined,
+                }),
+            },
+          ].map((lens) => (
+            <button
+              key={lens.id}
+              type="button"
+              role="tab"
+              aria-selected={lens.active}
+              onClick={lens.onSelect}
+              className={
+                lens.active
+                  ? 'inline-flex h-7 items-center gap-1.5 rounded-full border border-primary/35 bg-primary/10 px-3 text-xs font-medium text-primary transition-colors'
+                  : 'inline-flex h-7 items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted/50 hover:text-foreground'
+              }
+            >
+              <span>{lens.label}</span>
+              {typeof lens.count === 'number' && lens.count > 0 ? (
+                <span className="rounded-full bg-primary/15 px-1.5 py-0 font-mono text-[10px] font-semibold tabular-nums text-primary">
+                  {lens.count}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
         <StringsFilters
           search={search}
           searchInput={searchInput}
@@ -828,16 +964,12 @@ export function StringsPage() {
             description={emptyCopy.description}
             action={
               !hasActiveFilters ? (
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <Button variant="outline" onClick={() => setAddManyOpen(true)}>
-                    <ListPlus data-icon="inline-start" />
-                    Add many
-                  </Button>
-                  <Button onClick={() => openEditor(null)}>
-                    <Plus data-icon="inline-start" />
-                    Add string
-                  </Button>
-                </div>
+                <AddStringMenu
+                  size="default"
+                  align="center"
+                  onAddSingle={() => openEditor(null)}
+                  onAddMany={() => setAddManyOpen(true)}
+                />
               ) : undefined
             }
           />

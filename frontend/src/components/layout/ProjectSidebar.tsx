@@ -5,11 +5,21 @@ import {
   ArrowLeft,
   ArrowUpDown,
   Boxes,
+  Check,
+  ChevronsUpDown,
   LayoutDashboard,
   Settings,
   Tags,
 } from 'lucide-react'
-import type { Project } from '@/lib/api/types'
+import type { Project, ProjectSummary } from '@/lib/api/types'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Sidebar,
   SidebarContent,
@@ -32,11 +42,47 @@ function isProjectPath(pathname: string, projectId: string, suffix: string, exac
 
 interface ProjectSidebarProps {
   project: Project
+  projects?: ProjectSummary[]
+  pendingCount?: number
 }
 
-export function ProjectSidebar({ project }: ProjectSidebarProps) {
+export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectSidebarProps) {
   const projectRef = project.slug
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const canSwitchProjects = (projects?.length ?? 0) > 1
+
+  const passportContent = (
+    <>
+      <div
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-1 bg-primary/85 transition-all duration-300 group-hover/passport:w-1.5"
+      />
+      <div className="pl-1.5">
+        <div className="flex items-center justify-between gap-1.5">
+          <h2
+            className="truncate font-heading text-xs font-semibold tracking-tight text-foreground"
+            title={project.name}
+          >
+            {project.name}
+          </h2>
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="rounded border border-border/70 bg-muted/60 px-1 py-0.2 font-mono text-[9px] font-medium uppercase text-muted-foreground">
+              {project.layout}
+            </span>
+            {canSwitchProjects ? (
+              <ChevronsUpDown className="size-3 text-muted-foreground transition-colors group-hover/passport:text-foreground" />
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-0.5 flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+          <span className="truncate">{project.slug}</span>
+          <span className="shrink-0 text-primary">
+            {project.base_language.toUpperCase()} → {project.target_languages.filter((l) => l !== project.base_language).length}
+          </span>
+        </div>
+      </div>
+    </>
+  )
 
   return (
     <Sidebar collapsible="icon">
@@ -51,31 +97,50 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="group/passport relative overflow-hidden rounded-lg border border-border/80 bg-card px-2.5 py-2 shadow-2xs transition-all duration-300 ease-drift hover:border-primary/40 hover:shadow-sm group-data-[collapsible=icon]:hidden">
-          <div
-            aria-hidden="true"
-            className="absolute inset-y-0 left-0 w-1 bg-primary/85 transition-all duration-300 group-hover/passport:w-1.5"
-          />
-          <div className="pl-1.5">
-            <div className="flex items-center justify-between gap-1.5">
-              <h2
-                className="truncate font-heading text-xs font-semibold tracking-tight text-foreground"
-                title={project.name}
+        {canSwitchProjects && projects ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Switch project"
+                className="group/passport relative w-full overflow-hidden rounded-lg border border-border/80 bg-card px-2.5 py-2 text-left shadow-2xs transition-all duration-300 ease-drift hover:border-primary/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[collapsible=icon]:hidden"
               >
-                {project.name}
-              </h2>
-              <span className="shrink-0 rounded border border-border/70 bg-muted/60 px-1 py-0.2 font-mono text-[9px] font-medium uppercase text-muted-foreground">
-                {project.layout}
-              </span>
-            </div>
-            <div className="mt-0.5 flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
-              <span className="truncate">{project.slug}</span>
-              <span className="shrink-0 text-primary">
-                {project.base_language.toUpperCase()} → {project.target_languages.filter((l) => l !== project.base_language).length}
-              </span>
-            </div>
+                {passportContent}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-60">
+              <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                Switch project
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {projects.map((item) => {
+                const active = item.slug === project.slug || item.id === project.id
+                return (
+                  <DropdownMenuItem key={item.id} asChild>
+                    <Link
+                      to="/projects/$projectRef/strings"
+                      params={{ projectRef: item.slug }}
+                      search={{}}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">{item.name}</p>
+                        <p className="truncate font-mono text-[10px] text-muted-foreground">
+                          {item.slug}
+                        </p>
+                      </div>
+                      {active ? <Check className="size-3.5 shrink-0 text-primary" /> : null}
+                    </Link>
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="group/passport relative overflow-hidden rounded-lg border border-border/80 bg-card px-2.5 py-2 shadow-2xs transition-all duration-300 ease-drift hover:border-primary/40 hover:shadow-sm group-data-[collapsible=icon]:hidden">
+            {passportContent}
           </div>
-        </div>
+        )}
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup className="px-3 group-data-[collapsible=icon]:px-2">
@@ -105,6 +170,14 @@ export function ProjectSidebar({ project }: ProjectSidebarProps) {
                     <span>Strings</span>
                   </Link>
                 </SidebarMenuButton>
+                {pendingCount > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-primary/15 px-1.5 py-0 font-mono text-[10px] font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
+                  >
+                    {pendingCount}
+                  </span>
+                ) : null}
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton

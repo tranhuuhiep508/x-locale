@@ -11,6 +11,12 @@ vi.mock('@tanstack/react-router', () => ({
     useParams: () => ({ projectRef: 'p1' }),
     useSearch: () => ({}),
   }),
+  Link: ({ children, to, params, ...props }: {
+    children: ReactNode
+    to: string
+    params?: { projectRef: string }
+    [key: string]: unknown
+  }) => <a href={to.replace('$projectRef', params?.projectRef ?? '')} {...props}>{children}</a>,
 }))
 
 vi.mock('@/lib/toast', () => ({
@@ -162,5 +168,40 @@ describe('ModulesPage', () => {
     await waitFor(() => expect(modulesApi.update).toHaveBeenCalled())
     await waitFor(() => expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false))
     expect(input.value).toBe('Keep my edits')
+  })
+
+  it('auto-fills slug from name while untouched and supports filtering by AI guidance', async () => {
+    vi.mocked(modulesApi.list).mockResolvedValue([
+      ...sampleModules,
+      {
+        id: 'mod-2',
+        slug: 'billing',
+        name: 'Billing',
+        description: null,
+        translation_context: null,
+        position: 1,
+        string_count: 0,
+      },
+    ])
+
+    renderWithClient(<ModulesPage />)
+
+    expect(await screen.findByText('Use concise labels')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add AI translation guidance' })).toBeTruthy()
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Empty/i }))
+    expect(screen.getAllByRole('row')).toHaveLength(1)
+    expect(within(screen.getByRole('grid')).getByText('Billing')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('radio', { name: /AI guidance/i }))
+    expect(screen.getAllByRole('row')).toHaveLength(1)
+    expect(within(screen.getByRole('grid')).getByText('Authentication')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New module' }))
+    const nameInput = await screen.findByLabelText(/Name/i)
+    const slugInput = screen.getByLabelText(/Slug/i) as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'User Profile' } })
+    expect(slugInput.value).toBe('user-profile')
   })
 })

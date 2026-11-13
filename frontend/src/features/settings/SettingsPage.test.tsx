@@ -135,6 +135,17 @@ describe('project translation context settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(projectsApi.update).toHaveBeenCalledTimes(2))
   })
+
+  it('discards unsaved changes when clicking Discard', async () => {
+    renderSettings()
+    const name = (await screen.findByLabelText('Project name')) as HTMLInputElement
+    expect(name.value).toBe('Demo')
+    fireEvent.change(name, { target: { value: 'Temporary Rename' } })
+    expect(screen.getByRole('status').textContent).toBe('Unsaved changes')
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(name.value).toBe('Demo')
+    expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 })
 
 describe('project settings and members by role', () => {
@@ -221,5 +232,15 @@ describe('project settings and members by role', () => {
     renderSettings()
     const revoke = await screen.findByRole('button', { name: 'Revoke ci' }) as HTMLButtonElement
     expect(revoke.disabled).toBe(false)
+  })
+
+  it('places Save changes in the top sticky header and renders a single Generate key button when empty', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue(project)
+    vi.mocked(projectsApi.listMembers).mockResolvedValue([editorMember])
+    vi.mocked(projectsApi.listApiKeys).mockResolvedValue([])
+    renderSettings()
+    const saveBtn = await screen.findByRole('button', { name: 'Save changes' })
+    expect(saveBtn.closest('header')).not.toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Generate key' })).toHaveLength(1)
   })
 })
