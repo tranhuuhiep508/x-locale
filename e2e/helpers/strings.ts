@@ -131,8 +131,11 @@ export async function fillStringForm(
   page: Page,
   values: { key: string; source: string; published?: boolean },
 ) {
-  await page.getByLabel('Key').fill(values.key)
-  await page.getByLabel('Source text').fill(values.source)
+  const dialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: /^(Add|Edit) string$/ }),
+  })
+  await dialog.getByLabel('Key', { exact: true }).fill(values.key)
+  await dialog.getByLabel('Source text').fill(values.source)
   publishOnSave.set(page, values.published === true)
 }
 

@@ -46,7 +46,7 @@ for (const filter of [
     expect(secondBody).toEqual({ ...firstBody, page: 2 })
     expect(secondQueue.total).toBe(55)
     expect(secondQueue.items.map((item: { key: string }) => item.key)).toEqual(keys.slice(50))
-    await expect(dialog.locator('li')).toHaveCount(5)
+    await expect(dialog.locator('li[id^="proposal-"]')).toHaveCount(5)
 
     await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
     const apply = dialog.getByRole('button', { name: 'Save as draft', exact: true })
@@ -60,7 +60,7 @@ for (const filter of [
     expect(refreshedQueue.total).toBe(50)
     expect(refreshedQueue.page).toBe(1)
     expect(refreshedQueue.items.map((item: { key: string }) => item.key)).toEqual(keys.slice(0, 50))
-    await expect(dialog.locator('li')).toHaveCount(50)
+    await expect(dialog.locator('li[id^="proposal-"]')).toHaveCount(50)
     await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
     await expect(dialog).not.toBeVisible()
 
