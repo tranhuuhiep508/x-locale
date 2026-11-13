@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { ColumnDef, Table } from '@tanstack/react-table'
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   CheckCircle,
+  Copy,
   EllipsisVertical,
   History,
   Pencil,
@@ -76,7 +78,7 @@ function CatalogSortableHeader({
     <button
       type="button"
       className={cn(
-        '-ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-left font-mono text-[11px] font-medium tracking-wider uppercase',
+        'eyebrow -ml-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-left',
         'hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         isActive && 'text-foreground',
       )}
@@ -100,6 +102,55 @@ function metaOf(table: Table<StringEntry>) {
   return table.options.meta as StringTableMeta
 }
 
+const languageDisplayNames =
+  typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function'
+    ? new Intl.DisplayNames(['en'], { type: 'language' })
+    : null
+
+function formatLocaleName(locale: string): string | null {
+  if (!languageDisplayNames) return null
+  try {
+    const resolved = languageDisplayNames.of(locale)
+    if (!resolved || resolved.toLowerCase() === locale.toLowerCase()) return null
+    return resolved
+  } catch {
+    return null
+  }
+}
+
+function CopyKeyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  const timerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current != null) window.clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  return (
+    <button
+      type="button"
+      aria-label={`Copy key ${value}`}
+      title="Copy key"
+      onClick={(event) => {
+        event.stopPropagation()
+        void navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true)
+          if (timerRef.current != null) window.clearTimeout(timerRef.current)
+          timerRef.current = window.setTimeout(() => setCopied(false), 1500)
+        }).catch(() => {})
+      }}
+      className={cn(
+        'inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        copied ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100',
+      )}
+    >
+      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+    </button>
+  )
+}
+
 export function PublishSwitch({
   entry,
   projectId,
@@ -116,6 +167,13 @@ export function PublishSwitch({
   const locked = entry.pending_delete || Boolean(entry.deleted_at)
   const isPublic = entry.status === 'public' && !entry.deleted_at
   const unpublishCopy = unpublishConfirmCopy(1)
+  const statusLabel = entry.deleted_at
+    ? 'Deleted'
+    : entry.pending_delete
+      ? 'Queued'
+      : isPublic
+        ? 'Live'
+        : 'Draft'
 
   const unpublishMut = useMutation({
     mutationFn: () =>
@@ -132,7 +190,10 @@ export function PublishSwitch({
   })
 
   return (
-    <div onClick={(event) => event.stopPropagation()}>
+    <div
+      onClick={(event) => event.stopPropagation()}
+      className="inline-flex items-center gap-2"
+    >
       <Switch
         size="sm"
         checked={isPublic}
@@ -144,6 +205,19 @@ export function PublishSwitch({
         }}
         aria-label={isPublic ? 'Public' : 'Draft'}
       />
+      <span
+        aria-hidden="true"
+        className={cn(
+          'font-mono text-3xs font-medium tracking-wide',
+          entry.pending_delete
+            ? 'text-destructive'
+            : isPublic && !entry.deleted_at
+              ? 'text-foreground'
+              : 'text-muted-foreground',
+        )}
+      >
+        {statusLabel}
+      </span>
       <ConfirmDialog
         open={confirmUnpublish}
         onClose={() => setConfirmUnpublish(false)}
@@ -331,32 +405,46 @@ function StringActionsCell({
 }
 
 export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry>[] {
-  const localeColumns: ColumnDef<StringEntry>[] = targetLocales.map((locale) => ({
-    id: `locale-${locale}`,
-    header: locale,
-    enableSorting: false,
-    meta: {
-      label: locale.toUpperCase(),
-      headerClassName: 'min-w-[160px] uppercase text-xs tracking-wide',
-      className: 'align-middle min-w-[160px] whitespace-normal',
-    },
-    cell: ({ row }) => {
-      const entry = row.original
-      const translation = entry.translations.find((item) => item.locale === locale)
-      return (
-        <div className="flex flex-col gap-1">
-          <WorkingCopyCell
-            working={translation?.value ?? ''}
-            published={liveTranslation(entry, locale)}
-            released={isReleased(entry)}
-          />
-          <ConfidenceBadge
-            score={translation?.value?.trim() ? translation.confidence : null}
-          />
-        </div>
-      )
-    },
-  }))
+  const localeColumns: ColumnDef<StringEntry>[] = targetLocales.map((locale) => {
+    const langName = formatLocaleName(locale)
+    return {
+      id: `locale-${locale}`,
+      header: () => (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="rounded border border-border/80 bg-card/90 px-1.5 py-0.5 font-mono text-3xs font-semibold tracking-wider text-foreground">
+            {locale.toUpperCase()}
+          </span>
+          {langName ? (
+            <span className="font-sans text-2xs font-normal normal-case tracking-normal text-muted-foreground">
+              {langName}
+            </span>
+          ) : null}
+        </span>
+      ),
+      enableSorting: false,
+      meta: {
+        label: locale.toUpperCase(),
+        headerClassName: 'min-w-[180px]',
+        className: 'align-middle min-w-[180px] whitespace-normal',
+      },
+      cell: ({ row }) => {
+        const entry = row.original
+        const translation = entry.translations.find((item) => item.locale === locale)
+        return (
+          <div className="flex flex-col gap-1">
+            <WorkingCopyCell
+              working={translation?.value ?? ''}
+              published={liveTranslation(entry, locale)}
+              released={isReleased(entry)}
+            />
+            <ConfidenceBadge
+              score={translation?.value?.trim() ? translation.confidence : null}
+            />
+          </div>
+        )
+      },
+    }
+  })
 
   return [
     {
@@ -411,26 +499,29 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
           released,
         )
         return (
-          <div className="flex flex-col gap-1" data-tour={row.index === 0 ? 'string-open' : undefined}>
-            <div className="flex items-start gap-1.5">
-              <span
-                className={cn(
-                  'min-w-0 font-mono text-xs text-foreground break-all leading-relaxed',
-                  state === 'removing' && 'line-through',
-                )}
-              >
-                {entry.key}
-              </span>
-              {keyChanged ? (
-                <ChangedValueHint published={entry.published_key} working={entry.key} mono />
-              ) : null}
-              <ReleaseBadge state={state} />
+          <div className="flex flex-col gap-1.5" data-tour={row.index === 0 ? 'string-open' : undefined}>
+            <div className="flex items-start justify-between gap-1.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span
+                  className={cn(
+                    'min-w-0 font-mono text-xs font-medium text-foreground break-all leading-snug',
+                    state === 'removing' && 'line-through text-muted-foreground',
+                  )}
+                >
+                  {entry.key}
+                </span>
+                {keyChanged ? (
+                  <ChangedValueHint published={entry.published_key} working={entry.key} mono />
+                ) : null}
+                <ReleaseBadge state={state} />
+              </div>
+              <CopyKeyButton value={entry.key} />
             </div>
             {entry.module_slug || moduleChanged ? (
-              <div className="flex items-center gap-1">
-                <p className="text-[11px] text-muted-foreground font-mono">
+              <div className="flex items-center gap-1.5 group-data-[density=compact]/table:hidden">
+                <span className="inline-flex items-center rounded border border-border/75 bg-muted/45 px-1.5 py-0.5 font-mono text-3xs leading-none text-muted-foreground">
                   {entry.module_slug ?? '—'}
-                </p>
+                </span>
                 {moduleChanged ? (
                   <ChangedValueHint
                     published={entry.published_module_slug}
@@ -451,13 +542,13 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
       ),
       enableSorting: true,
       meta: {
-        headerClassName: 'min-w-[200px]',
-        className: 'align-middle max-w-[260px] whitespace-normal',
+        headerClassName: 'min-w-[220px]',
+        className: 'align-middle min-w-[220px] max-w-[300px] whitespace-normal',
       },
       cell: ({ row }) => {
         const entry = row.original
         return (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <WorkingCopyCell
               working={entry.source_text}
               published={entry.published_source_text}
@@ -465,7 +556,9 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
               emptyLabel="Missing"
             />
             {entry.description ? (
-              <p className="text-xs text-muted-foreground line-clamp-1">{entry.description}</p>
+              <p className="border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground line-clamp-1 group-data-[density=compact]/table:hidden">
+                {entry.description}
+              </p>
             ) : null}
           </div>
         )
@@ -478,7 +571,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
         <CatalogSortableHeader columnId="status" label="Published" table={table} />
       ),
       enableSorting: true,
-      meta: { headerClassName: 'w-20', className: 'align-middle' },
+      meta: { headerClassName: 'w-28 min-w-28', className: 'align-middle whitespace-nowrap' },
       cell: ({ row, table }) => {
         const meta = metaOf(table)
         return (
@@ -622,9 +715,13 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
             {row.original.tags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-                style={{ backgroundColor: tag.color + '22', color: tag.color }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-muted/45 px-1.5 py-0.5 text-2xs font-medium text-foreground"
               >
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: tag.color }}
+                />
                 {tag.name}
               </span>
             ))}

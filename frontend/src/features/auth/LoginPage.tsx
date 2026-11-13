@@ -125,7 +125,7 @@ export function LoginPage() {
             <span className="font-heading text-base font-semibold tracking-tight text-foreground">
               x-locale
             </span>
-            <span className="hidden rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block">
+            <span className="hidden rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground sm:inline-block">
               EDITION // 0.2
             </span>
           </div>
@@ -164,10 +164,10 @@ export function LoginPage() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    <Badge variant="outline" className="rounded-md bg-background/60 font-mono text-[11px] font-normal">
+                    <Badge variant="outline" className="rounded-md bg-background/60 font-mono text-2xs font-normal">
                       Published
                     </Badge>
-                    <Badge variant="secondary" className="gap-1 rounded-md border border-primary/20 bg-primary/10 font-mono text-[11px] text-primary">
+                    <Badge variant="secondary" className="gap-1 rounded-md border border-primary/20 bg-primary/10 font-mono text-2xs text-primary">
                       <Sparkles className="size-3 animate-pulse text-primary" />
                       AI Live
                     </Badge>
@@ -216,7 +216,7 @@ export function LoginPage() {
                       <span className="truncate font-semibold text-foreground">
                         auth.welcome_message
                       </span>
-                      <span className="rounded border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="rounded border border-border/70 bg-muted/50 px-1.5 py-0.5 text-2xs text-muted-foreground">
                         module: {activeLocale.module}
                       </span>
                     </div>
@@ -238,13 +238,13 @@ export function LoginPage() {
                     {/* Source Galley */}
                     <div className="flex flex-col justify-between rounded-lg border border-border/80 bg-background/60 p-3.5 transition-colors duration-200 hover:border-border">
                       <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center justify-between gap-2 text-2xs">
                           <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
                             <span>{DEMO_LOCALES[0].flag}</span>
                             <span>English</span>
-                            <span className="font-mono text-[10px] uppercase">({DEMO_LOCALES[0].code})</span>
+                            <span className="font-mono text-3xs uppercase">({DEMO_LOCALES[0].code})</span>
                           </span>
-                          <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                          <span className="font-mono text-3xs uppercase text-muted-foreground">
                             Source
                           </span>
                         </div>
@@ -252,7 +252,7 @@ export function LoginPage() {
                           {DEMO_LOCALES[0].translation}
                         </p>
                       </div>
-                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                      <p className="mt-2 font-mono text-3xs text-muted-foreground">
                         Immutable baseline
                       </p>
                     </div>
@@ -267,12 +267,12 @@ export function LoginPage() {
                         className="absolute inset-y-0 left-0 w-1 bg-primary"
                       />
                       <div className="space-y-1.5 pl-1">
-                        <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center justify-between text-2xs">
                           <span className="flex items-center gap-1 font-mono font-semibold uppercase text-primary">
                             <span>{activeLocale.flag}</span>
                             <span>Target ({activeLocale.code})</span>
                           </span>
-                          <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-primary">
+                          <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-3xs font-medium uppercase text-primary">
                             {activeLocale.status}
                           </span>
                         </div>
@@ -281,7 +281,7 @@ export function LoginPage() {
                         </p>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2 pl-1">
-                        <p className="font-mono text-[11px] text-primary/85">
+                        <p className="font-mono text-2xs text-primary/85">
                           {activeLocale.context}
                         </p>
                         <div
@@ -298,15 +298,15 @@ export function LoginPage() {
                   </div>
 
                   {/* Terminal CLI Sync Ledger */}
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-haze-950 font-mono text-xs text-haze-100 shadow-inner dark:bg-black/75">
-                    <div className="flex items-center justify-between border-b border-haze-800/70 bg-haze-900/70 px-3 py-1.5 text-[11px] text-haze-400">
+                  <div className="overflow-hidden rounded-lg border border-border/70 bg-haze-950 font-mono text-xs text-haze-100 shadow-inner">
+                    <div className="flex items-center justify-between border-b border-haze-800/70 bg-haze-900/70 px-3 py-1.5 text-2xs text-haze-400">
                       <div className="flex items-center gap-1.5">
                         <Terminal className="size-3 text-azure-400" />
                         <span>loc-cli // release-pipeline</span>
                       </div>
                       <span className="text-haze-500">v0.2.0</span>
                     </div>
-                    <div className="space-y-1 p-3 text-[11px] text-haze-200">
+                    <div className="space-y-1 p-3 text-2xs text-haze-200">
                       <p className="text-haze-400">
                         <span className="text-azure-400">$</span> loc push --stage draft
                       </p>
@@ -335,7 +335,7 @@ export function LoginPage() {
                       <p className="truncate text-xs font-semibold text-foreground">
                         Context-Aware AI
                       </p>
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      <p className="truncate font-mono text-3xs text-muted-foreground">
                         Tone & confidence
                       </p>
                     </div>
@@ -347,7 +347,7 @@ export function LoginPage() {
                       <p className="truncate text-xs font-semibold text-foreground">
                         Draft & Public
                       </p>
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      <p className="truncate font-mono text-3xs text-muted-foreground">
                         Zero prod drift
                       </p>
                     </div>
@@ -359,7 +359,7 @@ export function LoginPage() {
                       <p className="truncate text-xs font-semibold text-foreground">
                         CLI & Git Sync
                       </p>
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      <p className="truncate font-mono text-3xs text-muted-foreground">
                         CI/CD automation
                       </p>
                     </div>
@@ -371,7 +371,7 @@ export function LoginPage() {
                       <p className="truncate text-xs font-semibold text-foreground">
                         Audit & Revert
                       </p>
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      <p className="truncate font-mono text-3xs text-muted-foreground">
                         1-click batch undo
                       </p>
                     </div>
@@ -388,7 +388,7 @@ export function LoginPage() {
           >
             <div className="mx-auto w-full max-w-md lg:mx-0">
               {/* Eyebrow index */}
-              <div className="mb-2.5 inline-flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-primary">
+              <div className="eyebrow mb-2.5 inline-flex items-center gap-2 text-xs text-primary">
                 <span aria-hidden="true" className="h-2.5 w-0.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
                 <span>Translation management</span>
               </div>
@@ -417,7 +417,7 @@ export function LoginPage() {
                   >
                     <a href="/api/auth/login">
                       <span className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-white p-1 shadow-2xs transition-transform duration-200 ease-drift group-hover:scale-105">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-sun p-1 shadow-2xs transition-transform duration-200 ease-drift group-hover:scale-105">
                           <MicrosoftLogo className="size-4" />
                         </span>
                         <span className="truncate">Continue with Microsoft</span>
@@ -426,21 +426,21 @@ export function LoginPage() {
                     </a>
                   </Button>
 
-                  <p className="text-center font-mono text-[11px] text-muted-foreground">
+                  <p className="text-center font-mono text-2xs text-muted-foreground">
                     Single sign-on via Microsoft Entra ID
                   </p>
 
                   {/* Workflow sequence */}
                   <div className="space-y-2.5 rounded-lg border border-border/70 bg-muted/30 p-3.5">
                     <div className="flex items-center justify-between">
-                      <span className="eyebrow text-[10px]">How it works</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">
+                      <span className="eyebrow text-3xs">How it works</span>
+                      <span className="font-mono text-3xs text-muted-foreground">
                         DRAFT → PUBLIC
                       </span>
                     </div>
                     <ol className="space-y-2 text-xs">
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-[10px] font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
                           1
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
@@ -448,7 +448,7 @@ export function LoginPage() {
                         </span>
                       </li>
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-[10px] font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
                           2
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
@@ -456,7 +456,7 @@ export function LoginPage() {
                         </span>
                       </li>
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-[10px] font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
                           3
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
@@ -467,7 +467,7 @@ export function LoginPage() {
                   </div>
 
                   {/* Privacy assurance */}
-                  <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-2xs text-muted-foreground">
                     <ShieldCheck className="size-3.5 shrink-0 text-primary" />
                     <span>Your workspace data stays private and protected</span>
                   </div>
@@ -479,7 +479,7 @@ export function LoginPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/50 py-2.5 text-center font-mono text-[11px] text-muted-foreground">
+      <footer className="border-t border-border/50 py-2.5 text-center font-mono text-2xs text-muted-foreground">
         <p>© {new Date().getFullYear()} x-locale</p>
       </footer>
     </div>

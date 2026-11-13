@@ -44,36 +44,28 @@ interface ActivityVisual {
 const VISUAL_PRESETS = {
   import: {
     icon: FileSpreadsheet,
-    badgeClass:
-      'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:text-sky-300',
-    nodeClass:
-      'border-sky-500/35 bg-sky-500/15 text-sky-700 dark:border-sky-400/35 dark:text-sky-300',
+    badgeClass: 'border-border bg-muted/65 text-foreground/85',
+    nodeClass: 'border-border bg-muted text-foreground/85',
   },
   cli: {
     icon: Terminal,
-    badgeClass:
-      'border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:border-indigo-400/30 dark:text-indigo-300',
-    nodeClass:
-      'border-indigo-500/35 bg-indigo-500/15 text-indigo-700 dark:border-indigo-400/35 dark:text-indigo-300',
+    badgeClass: 'border-border bg-muted/65 text-foreground/85',
+    nodeClass: 'border-border bg-muted text-foreground/85',
   },
   ai: {
     icon: Sparkles,
-    badgeClass: 'border-primary/30 bg-primary/10 text-primary',
-    nodeClass: 'border-primary/40 bg-primary/15 text-primary',
+    badgeClass: 'border-primary/25 bg-primary/10 text-primary',
+    nodeClass: 'border-primary/35 bg-primary/12 text-primary',
   },
   publish: {
     icon: Globe,
-    badgeClass:
-      'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/30 dark:text-emerald-300',
-    nodeClass:
-      'border-emerald-500/35 bg-emerald-500/15 text-emerald-700 dark:border-emerald-400/35 dark:text-emerald-300',
+    badgeClass: 'border-primary/25 bg-primary/10 text-primary',
+    nodeClass: 'border-primary/35 bg-primary/12 text-primary',
   },
   revert: {
     icon: RotateCcw,
-    badgeClass:
-      'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:border-amber-400/35 dark:text-amber-300',
-    nodeClass:
-      'border-amber-500/40 bg-amber-500/15 text-amber-800 dark:border-amber-400/40 dark:text-amber-300',
+    badgeClass: 'border-border bg-muted/65 text-foreground/85',
+    nodeClass: 'border-border bg-muted text-foreground/85',
   },
   danger: {
     icon: Trash2,
@@ -82,10 +74,8 @@ const VISUAL_PRESETS = {
   },
   create: {
     icon: Plus,
-    badgeClass:
-      'border-teal-500/30 bg-teal-500/10 text-teal-700 dark:border-teal-400/30 dark:text-teal-300',
-    nodeClass:
-      'border-teal-500/35 bg-teal-500/15 text-teal-700 dark:border-teal-400/35 dark:text-teal-300',
+    badgeClass: 'border-border bg-muted/65 text-foreground/85',
+    nodeClass: 'border-border bg-muted text-foreground/85',
   },
   translation: {
     icon: Languages,
@@ -139,15 +129,15 @@ function ChangeLine({ change }: { change: ActivityChange }) {
 
   return (
     <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-      <span className="inline-flex shrink-0 items-center rounded bg-background/80 px-1.5 py-0.5 text-[11px] font-medium text-foreground/80 ring-1 ring-border/70">
+      <span className="inline-flex shrink-0 items-center rounded bg-background/80 px-1.5 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border/70">
         {label}
       </span>
       {!change.before ? (
-        <span className="truncate font-mono text-[11px] text-foreground/85">“{after}”</span>
+        <span className="truncate font-mono text-2xs text-foreground/85">“{after}”</span>
       ) : !change.after ? (
-        <span className="truncate font-mono text-[11px] line-through opacity-75">“{before}”</span>
+        <span className="truncate font-mono text-2xs line-through opacity-75">“{before}”</span>
       ) : (
-        <span className="inline-flex min-w-0 flex-wrap items-baseline gap-1 font-mono text-[11px]">
+        <span className="inline-flex min-w-0 flex-wrap items-baseline gap-1 font-mono text-2xs">
           <span className="max-w-full truncate text-muted-foreground line-through decoration-muted-foreground/60">
             “{before}”
           </span>
@@ -175,7 +165,7 @@ function countChips(counts: Record<string, number>): CountChip[] {
   if (counts.created) {
     chips.push({
       label: `+${counts.created} created`,
-      className: 'border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300',
+      className: 'border-border/80 bg-muted/60 text-foreground/85',
     })
   }
   if (counts.updated) {
@@ -211,7 +201,7 @@ function ChildRow({
   return (
     <li className="min-w-0 py-1.5 text-xs wrap-anywhere text-muted-foreground first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] break-all text-foreground/90">
+        <span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-2xs break-all text-foreground/90">
           {child.string_key ?? 'string'}
         </span>
         <span className="text-foreground/75">{child.summary}</span>
@@ -299,7 +289,7 @@ function BatchChildrenList({
         <ChildRow key={item.id} child={listItemToFeedChild(item)} onOpenDetail={onOpenDetail} />
       ))}
       {overflow > 0 ? (
-        <li className="pt-2 font-mono text-[11px] text-muted-foreground">+{overflow} more strings</li>
+        <li className="pt-2 font-mono text-2xs text-muted-foreground">+{overflow} more strings</li>
       ) : null}
     </ul>
   )
@@ -393,7 +383,7 @@ export function ActivityCard({
               {kindLabel}
             </Badge>
             {card.locale ? (
-              <Badge variant="secondary" className="font-mono text-[10px] uppercase">
+              <Badge variant="secondary" className="font-mono text-3xs uppercase">
                 {card.locale}
               </Badge>
             ) : null}
@@ -402,7 +392,7 @@ export function ActivityCard({
                   <span
                     key={chip.label}
                     className={cn(
-                      'inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] tabular-nums',
+                      'inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-2xs tabular-nums',
                       chip.className
                     )}
                   >
@@ -420,7 +410,7 @@ export function ActivityCard({
             <time
               dateTime={card.created_at ?? undefined}
               title={formatDate(card.created_at)}
-              className="font-mono text-[11px] tabular-nums"
+              className="font-mono text-2xs tabular-nums"
             >
               {formatRelativeTime(card.created_at)}
             </time>
@@ -428,11 +418,11 @@ export function ActivityCard({
         </div>
 
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-[15px] leading-snug font-medium wrap-anywhere text-foreground">
+          <p className="text-sm leading-snug font-medium wrap-anywhere text-foreground">
             {card.summary}
           </p>
           {!isBatch && card.string_key ? (
-            <span className="max-w-full truncate rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-[11px] text-foreground/80">
+            <span className="max-w-full truncate rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs text-foreground/80">
               {card.string_key}
             </span>
           ) : null}

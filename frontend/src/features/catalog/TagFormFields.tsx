@@ -33,7 +33,7 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
       <Field>
         <div className="flex items-center justify-between gap-2">
           <FieldLabel htmlFor={`${idPrefix}_color`}>Color</FieldLabel>
-          <span className="rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] uppercase text-muted-foreground">
+          <span className="rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-2xs uppercase text-muted-foreground">
             {normalizedColor}
           </span>
         </div>
@@ -55,7 +55,7 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
                   variant="ghost"
                   size="icon-xs"
                   onClick={() => onChange({ ...form, color: c })}
-                  className="relative size-6 rounded-full p-0 text-white transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative size-6 rounded-full p-0 text-sun transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
                     backgroundColor: c,
                     boxShadow: selected ? `0 0 0 2px var(--background), 0 0 0 4px ${c}` : undefined,
@@ -70,16 +70,10 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5">
-          <span className="eyebrow text-[10px]">Preview</span>
-          <span
-            className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm font-medium text-foreground wrap-anywhere"
-            style={{
-              backgroundColor: `color-mix(in srgb, ${form.color} 14%, transparent)`,
-              borderColor: `color-mix(in srgb, ${form.color} 32%, transparent)`,
-            }}
-          >
+          <span className="eyebrow text-3xs">Preview</span>
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-muted/45 px-2 py-0.5 text-xs font-medium text-foreground wrap-anywhere">
             <span
-              className="size-2.5 shrink-0 rounded-full"
+              className="size-2 shrink-0 rounded-full"
               style={{ backgroundColor: form.color }}
               aria-hidden="true"
             />

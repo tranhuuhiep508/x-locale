@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronDown, GitCompareArrows, Search, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -179,8 +179,8 @@ function FilterSelect({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors shrink-0',
-          isActive && 'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+          'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
+          isActive && 'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
         )}
       >
         {isActive ? (
@@ -244,8 +244,8 @@ function FilterSearchSelect({
           aria-label={label}
           size="sm"
           className={cn(
-            'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors shrink-0',
-            isActive && 'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+            'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
+            isActive && 'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
           )}
         >
           {isActive ? (
@@ -316,7 +316,7 @@ function FilterSearchSelect({
           </div>
         </div>
         {truncated ? (
-          <p className="px-1.5 pb-1 text-[11px] text-muted-foreground">
+          <p className="px-1.5 pb-1 text-2xs text-muted-foreground">
             Showing {visible.length} of {matchCount}. Type to narrow.
           </p>
         ) : null}
@@ -328,6 +328,7 @@ function FilterSearchSelect({
 type StringsFiltersProps = {
   search: StringsSearch
   searchInput: string
+  searchInputRef?: RefObject<HTMLInputElement | null>
   modules: Module[]
   tags: Tag[]
   locales: string[]
@@ -340,6 +341,7 @@ type StringsFiltersProps = {
 export function StringsFilters({
   search,
   searchInput,
+  searchInputRef,
   modules,
   tags,
   locales,
@@ -487,11 +489,22 @@ export function StringsFilters({
     <section aria-label="String filters" className="flex min-w-0 flex-col gap-2">
       {/* Compact Single-Row Filter Bar */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-        <InputGroup data-tour="search" className="min-w-0 flex-1 sm:max-w-xs md:max-w-sm">
+        <InputGroup data-tour="search" className="min-w-0 flex-1 bg-background/90 shadow-2xs sm:max-w-xs md:max-w-sm">
           <InputGroupInput
+            ref={searchInputRef}
             placeholder="Search keys or text…"
             value={searchInput}
             onChange={(event) => onSearchInputChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return
+              if (searchInput) {
+                event.preventDefault()
+                onSearchInputChange('')
+                onFilter({ q: undefined })
+              } else {
+                event.currentTarget.blur()
+              }
+            }}
             aria-label="Search strings"
             className="h-8 text-xs"
           />
@@ -511,7 +524,13 @@ export function StringsFilters({
                 <X className="size-3" />
               </InputGroupButton>
             </InputGroupAddon>
-          ) : null}
+          ) : (
+            <InputGroupAddon align="inline-end" aria-hidden="true" className="hidden sm:flex">
+              <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/80 bg-muted/60 px-1 font-mono text-3xs font-medium text-muted-foreground">
+                /
+              </kbd>
+            </InputGroupAddon>
+          )}
         </InputGroup>
 
         <Separator orientation="vertical" className="hidden h-5 sm:block mx-0.5 text-border/60" />
@@ -585,9 +604,9 @@ export function StringsFilters({
             <TimeRangePicker
               placeholder="Time"
               className={cn(
-                'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors',
+                'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors',
                 isTimeActive &&
-                  'border-primary/40 bg-primary/5 text-primary font-medium hover:bg-primary/10'
+                  'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
               )}
               value={{
                 period: search.period,
@@ -641,7 +660,7 @@ export function StringsFilters({
       {/* Active Filter Badges (Only shown when criteria are active) */}
       {hasFilters ? (
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-          <span className="text-[11px] font-medium text-muted-foreground shrink-0">
+          <span className="text-2xs font-medium text-muted-foreground shrink-0">
             Active:
           </span>
           <ul
@@ -666,7 +685,7 @@ export function StringsFilters({
                       onFilter(chip.updates)
                     }}
                   >
-                    <span className="min-w-0 max-w-64 truncate text-[11px] font-normal">
+                    <span className="min-w-0 max-w-64 truncate text-2xs font-normal">
                       {chip.label}
                     </span>
                     <X data-icon="inline-end" className="size-3 text-muted-foreground hover:text-foreground" />

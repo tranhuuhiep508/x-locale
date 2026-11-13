@@ -39,6 +39,7 @@ import {
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { cn } from '@/lib/utils'
+import { BatchStepper } from '@/features/batches/BatchStepper'
 import { TranslatePublishReview } from '@/features/strings/TranslatePublishReview'
 
 export function proposalsFromJobResult(
@@ -56,60 +57,8 @@ export function jobStillRunning(job: Job | undefined): boolean {
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
 const PAGE_BLOCKED = "Save or undo this page's changes first"
 
-const reviewSteps = [
-  { label: 'Translate', description: 'Generate or match translations' },
-  { label: 'Review', description: 'Check and edit translations' },
-  { label: 'Publish', description: 'Review public changes and publish' },
-]
-
 export function TranslateStepper({ current }: { current: number }) {
-  return (
-    <div
-      role="group"
-      aria-label="Translation progress"
-      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
-    >
-      {reviewSteps.map((step, index) => {
-        const complete = index < current
-        const active = index === current
-        return (
-          <div
-            key={step.label}
-            aria-current={active ? 'step' : undefined}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs transition-all duration-300 ease-drift',
-              active
-                ? 'bg-background font-semibold text-foreground shadow-xs ring-1 ring-border/50 scale-[1.02]'
-                : complete
-                  ? 'font-medium text-primary hover:text-primary/90'
-                  : 'text-muted-foreground/60',
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                'flex size-3.5 items-center justify-center rounded-full font-mono text-[9px] transition-all duration-300 ease-drift',
-                active
-                  ? 'bg-primary font-bold text-primary-foreground shadow-xs'
-                  : complete
-                    ? 'bg-primary/15 text-primary scale-95'
-                    : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {complete ? <Check className="size-2.5 stroke-[2.5] animate-in zoom-in-50 duration-200" /> : index + 1}
-            </span>
-            <span className="font-medium transition-colors duration-200">
-              {step.label}
-              <span className="sr-only">
-                {complete ? ', complete' : active ? ', current step' : ', upcoming'}
-              </span>
-            </span>
-            <span className="sr-only">{step.description}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
+  return <BatchStepper current={current} label="Translation progress" />
 }
 
 function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
@@ -282,7 +231,7 @@ function ProposalTreeNode({
             {item.key}
           </code>
           {moduleLabel ? (
-            <Badge variant="outline" className="font-mono text-[11px] font-normal text-muted-foreground">
+            <Badge variant="outline" className="font-mono text-2xs font-normal text-muted-foreground">
               {moduleLabel}
             </Badge>
           ) : null}

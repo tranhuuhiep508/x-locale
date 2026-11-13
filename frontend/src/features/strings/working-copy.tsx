@@ -61,6 +61,17 @@ const STATE_VARIANT: Record<ReleaseState, 'outline' | 'default' | 'secondary' | 
   deleted: 'destructive',
 }
 
+const STATE_BADGE_STYLE: Record<ReleaseState, string> = {
+  draft: '',
+  live: '',
+  edited:
+    'eyebrow border-public-foreground/25 bg-public text-public-foreground text-3xs px-1.5 py-0',
+  removing:
+    'eyebrow border-destructive/30 bg-destructive/10 text-destructive text-3xs px-1.5 py-0',
+  deleted:
+    'eyebrow border-border bg-muted text-muted-foreground text-3xs px-1.5 py-0',
+}
+
 export function ReleaseBadge({
   state,
   className,
@@ -70,7 +81,10 @@ export function ReleaseBadge({
 }) {
   if (state === 'draft' || state === 'live') return null
   return (
-    <Badge variant={STATE_VARIANT[state]} className={className}>
+    <Badge
+      variant={STATE_VARIANT[state]}
+      className={cn('inline-flex items-center rounded-md', STATE_BADGE_STYLE[state], className)}
+    >
       {STATE_LABEL[state]}
     </Badge>
   )
@@ -78,13 +92,13 @@ export function ReleaseBadge({
 
 export function releaseRowClassName(state: ReleaseState): string | undefined {
   if (state === 'edited') {
-    return 'bg-public/80 hover:bg-public [&>td:first-child]:shadow-[inset_3px_0_0_0_var(--color-public-foreground)]'
+    return 'string-row-edited [&>td:first-child]:shadow-[inset_3px_0_0_0_var(--color-public-foreground)]'
   }
   if (state === 'removing') {
-    return 'bg-destructive/5 hover:bg-destructive/10 [&>td:first-child]:shadow-[inset_3px_0_0_0_var(--color-destructive)]'
+    return 'string-row-removing [&>td:first-child]:shadow-[inset_3px_0_0_0_var(--color-destructive)]'
   }
   if (state === 'deleted') {
-    return 'bg-muted/40 text-muted-foreground'
+    return 'string-row-deleted text-muted-foreground'
   }
   return undefined
 }
@@ -115,36 +129,39 @@ export function ChangedValueHint({
           variant="ghost"
           size="icon-xs"
           aria-expanded={open}
-          className="shrink-0 text-public-foreground hover:text-public-foreground"
+          className="h-5 w-5 shrink-0 rounded border border-public-foreground/25 bg-public/90 text-public-foreground hover:border-public-foreground/45 hover:bg-public hover:text-public-foreground"
           aria-label={showWorking ? 'Compare published and working values' : 'View published value'}
           onClick={(event) => {
             event.stopPropagation()
             setOpen((current) => !current)
           }}
         >
-          <GitCompareArrows />
+          <GitCompareArrows className="size-3" />
         </Button>
       </HoverCardTrigger>
       <HoverCardContent
         side="top"
         align="start"
-        className="flex w-72 flex-col gap-2"
+        className="flex w-80 flex-col gap-2.5 p-3"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex flex-col gap-0.5">
-          <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+        <p className="eyebrow text-3xs">
+          {showWorking ? 'Published vs. working copy' : 'Published snapshot'}
+        </p>
+        <div className="flex flex-col gap-1 rounded-md border border-border/75 bg-muted/45 px-2.5 py-2">
+          <p className="eyebrow text-3xs">
             Published
           </p>
-          <p className={cn('text-sm wrap-break-word', mono && 'font-mono text-xs break-all')}>
+          <p className={cn('text-xs leading-relaxed text-muted-foreground wrap-break-word', mono && 'font-mono text-2xs break-all')}>
             {displayText(published)}
           </p>
         </div>
         {showWorking ? (
-          <div className="flex flex-col gap-0.5">
-            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+          <div className="flex flex-col gap-1 rounded-md border border-public-foreground/25 bg-public/60 px-2.5 py-2">
+            <p className="eyebrow text-3xs text-public-foreground">
               Working
             </p>
-            <p className={cn('text-sm wrap-break-word', mono && 'font-mono text-xs break-all')}>
+            <p className={cn('text-xs leading-relaxed text-foreground wrap-break-word', mono && 'font-mono text-2xs break-all')}>
               {displayText(working)}
             </p>
           </div>
@@ -195,11 +212,11 @@ export function WorkingCopyCell({
   const changed = fieldChanged(working, published, released)
 
   return (
-    <div className="flex items-start gap-1">
+    <div className="flex items-start justify-between gap-1.5">
       {workingText ? (
         <p
           className={cn(
-            'min-w-0 text-sm leading-snug wrap-break-word',
+            'min-w-0 flex-1 text-sm leading-snug wrap-break-word group-data-[density=compact]/table:line-clamp-1 group-data-[density=compact]/table:text-xs',
             lineClamp,
             mono && 'font-mono text-xs break-all',
           )}
@@ -207,7 +224,7 @@ export function WorkingCopyCell({
           {working}
         </p>
       ) : (
-        <span className="text-missing-foreground italic text-sm">{emptyLabel}</span>
+        <span className="text-xs italic text-missing-foreground">{emptyLabel}</span>
       )}
       {changed ? <ChangedValueHint published={published} working={working} mono={mono} /> : null}
     </div>

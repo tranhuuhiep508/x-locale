@@ -233,10 +233,10 @@ export function QaIssueBadge({
                 />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   {showLocale && issue.locale ? (
-                    <span className="font-mono text-[10px] uppercase text-muted-foreground">{issue.locale}</span>
+                    <span className="font-mono text-3xs uppercase text-muted-foreground">{issue.locale}</span>
                   ) : null}
                   <span className="wrap-anywhere text-foreground">{issue.message}</span>
-                  <code className="w-fit rounded bg-muted/60 px-1 py-px font-mono text-[10px] text-muted-foreground" translate="no">
+                  <code className="w-fit rounded bg-muted/60 px-1 py-px font-mono text-3xs text-muted-foreground" translate="no">
                     {issue.code}
                   </code>
                 </span>

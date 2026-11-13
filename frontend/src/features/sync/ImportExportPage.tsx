@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { MarkWell, PageHeader } from '@/components/layout/PageHeader'
+import { MarkWell, PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import { useToast } from '@/lib/toast'
 import {
   DEMO_JSON_TEMPLATE,
@@ -133,16 +133,16 @@ function ExportManifestPanel({
           <FormatIcon className="size-3.5 text-primary" aria-hidden="true" />
           <span>{manifest.container}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
-          <Badge variant="outline" className="bg-background font-mono text-[10px]">
+        <div className="flex flex-wrap items-center gap-1.5 font-mono text-2xs">
+          <Badge variant="outline" className="bg-background font-mono text-3xs">
             {layout}
           </Badge>
-          <Badge variant="outline" className="bg-background font-mono text-[10px]">
+          <Badge variant="outline" className="bg-background font-mono text-3xs">
             {manifest.scope}
           </Badge>
           <Badge
             variant="outline"
-            className={`font-mono text-[10px] ${
+            className={`font-mono text-3xs ${
               stage === 'public'
                 ? 'border-primary/35 bg-primary/10 text-primary'
                 : 'bg-background text-muted-foreground'
@@ -154,11 +154,11 @@ function ExportManifestPanel({
       </div>
       <dl className="mt-2.5 grid gap-1.5 border-t border-border/60 pt-2.5 text-xs">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-          <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">Shape:</dt>
+          <dt className="shrink-0 font-mono text-2xs text-muted-foreground">Shape:</dt>
           <dd className="text-foreground/90">{manifest.structure}</dd>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-          <dt className="shrink-0 font-mono text-[11px] text-muted-foreground">Source:</dt>
+          <dt className="shrink-0 font-mono text-2xs text-muted-foreground">Source:</dt>
           <dd className="text-muted-foreground">{manifest.stageDetail}</dd>
         </div>
       </dl>
@@ -181,7 +181,7 @@ function ExcelWorksheetPreview({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/75 bg-background">
-      <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-3.5 py-2 text-[11px]">
+      <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-3.5 py-2 text-2xs">
         <span className="font-mono font-medium text-foreground">
           {isModularProject ? 'Worksheet: common (+ _meta)' : 'Worksheet: strings'}
         </span>
@@ -190,7 +190,7 @@ function ExcelWorksheetPreview({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left font-mono text-xs">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20 text-[11px] text-muted-foreground">
+            <tr className="border-b border-border/60 bg-muted/20 text-2xs text-muted-foreground">
               <th className="px-3.5 py-2 font-medium">key</th>
               <th className="px-3.5 py-2 font-medium">{baseLanguage}</th>
               <th className="px-3.5 py-2 font-medium">{targetSample}</th>
@@ -291,16 +291,16 @@ function SchemaContractSection({
       <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-3">
           {schemaTab === 'json' ? (
-            <div className="overflow-hidden rounded-xl border border-border/70 bg-haze-950 text-haze-200 dark:bg-black/60">
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-[11px] text-haze-400">
+            <div className="overflow-hidden rounded-xl border border-border/70 bg-haze-950 text-haze-200">
+              <div className="flex items-center justify-between border-b border-haze-800/80 px-4 py-2 text-2xs text-haze-400">
                 <span className="font-mono">{demoJsonFilename(baseLanguage)} · UTF-8</span>
                 <button
                   type="button"
                   onClick={copySampleJson}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-[11px] text-haze-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-sans text-2xs text-haze-300 transition-colors hover:bg-haze-800/70 hover:text-sun focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {copiedJson ? (
-                    <Check className="size-3 text-emerald-400" aria-hidden="true" />
+                    <Check className="size-3 text-primary" aria-hidden="true" />
                   ) : (
                     <Copy className="size-3" aria-hidden="true" />
                   )}
@@ -325,15 +325,15 @@ function SchemaContractSection({
               </summary>
               <p className="mt-2 leading-relaxed">
                 Excel exports and starter templates store full module slugs inside a hidden{' '}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-2xs text-foreground">
                   _meta
                 </code>{' '}
                 sheet. Before renaming or copying a worksheet, unhide{' '}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-2xs text-foreground">
                   _meta
                 </code>{' '}
                 and update or add its{' '}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-2xs text-foreground">
                   module_slug:&lt;sheet name&gt;
                 </code>{' '}
                 entry (unique per worksheet). Legacy workbooks without mappings use sheet names as
@@ -345,11 +345,11 @@ function SchemaContractSection({
 
         <div className="flex flex-col justify-between gap-4 rounded-xl border border-border/75 bg-muted/20 p-4">
           <div className="flex flex-col gap-2">
-            <span className="eyebrow text-[10px]">Starter templates</span>
+            <span className="eyebrow text-3xs">Starter templates</span>
             {isModularProject ? (
               <p className="text-xs leading-relaxed text-muted-foreground">
                 CLI modular layout uses folders instead:{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground">
                   auth/{baseLanguage}.json
                 </code>
                 . Keys inside that file stay as-is; the folder name is the module.
@@ -357,13 +357,13 @@ function SchemaContractSection({
             ) : (
               <p className="text-xs leading-relaxed text-muted-foreground">
                 One file per language (e.g.{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground">
                   {demoJsonFilename(baseLanguage)}
                 </code>
                 ). Choose the matching target locale when you import.
               </p>
             )}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               Demo keys: {Object.keys(DEMO_JSON_TEMPLATE).join(', ')}. Replace values with your
               copy before importing.
             </p>
@@ -599,28 +599,26 @@ export function ImportExportPage() {
       className="flex min-w-0 flex-1 flex-col"
       data-tour-ready={project ? 'import' : undefined}
     >
-      <header className="sticky top-0 z-20 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 sm:py-3.5">
-          <PageHeader
-            title="Import / Export"
-            badge={
-              project ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="font-mono text-xs">
-                    {project.slug}
-                  </Badge>
-                  <Badge variant="outline" className="font-mono text-xs uppercase">
-                    {project.base_language} → {targetCount} target{targetCount === 1 ? '' : 's'}
-                  </Badge>
-                  <Badge variant="secondary" className="capitalize">
-                    {project.layout} layout
-                  </Badge>
-                </div>
-              ) : undefined
-            }
-          />
-        </div>
-      </header>
+      <PageStickyHeader maxWidth="6xl">
+        <PageHeader
+          title="Import / Export"
+          badge={
+            project ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className="font-mono text-xs">
+                  {project.slug}
+                </Badge>
+                <Badge variant="outline" className="font-mono text-xs uppercase">
+                  {project.base_language} → {targetCount} target{targetCount === 1 ? '' : 's'}
+                </Badge>
+                <Badge variant="secondary" className="capitalize">
+                  {project.layout} layout
+                </Badge>
+              </div>
+            ) : undefined
+          }
+        />
+      </PageStickyHeader>
 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 pb-12 sm:px-6">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
@@ -643,10 +641,10 @@ export function ImportExportPage() {
               <CardAction>
                 <Badge
                   variant="outline"
-                  className={`font-mono text-[10px] ${
+                  className={`font-mono text-3xs ${
                     dryRun
-                      ? 'border-primary/35 bg-primary/10 text-primary'
-                      : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                      ? 'border-border/80 bg-muted/50 text-muted-foreground'
+                      : 'border-primary/35 bg-primary/10 text-primary'
                   }`}
                 >
                   {dryRun ? (
@@ -718,9 +716,9 @@ export function ImportExportPage() {
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
+                    <p className="mt-1 text-2xs text-muted-foreground">
                       Applied to JSON uploads. Excel workbooks use module mappings in{' '}
-                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-3xs">
                         _meta
                       </code>{' '}
                       (or sheet names for legacy files).
@@ -769,7 +767,7 @@ export function ImportExportPage() {
                   Max 10 MB · Dotted keys stay intact ·{' '}
                   {dryRun ? 'Preview opens before writing' : 'Writes immediately'}
                 </span>
-                <div className="mt-3.5 flex flex-wrap items-center justify-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-3.5 flex flex-wrap items-center justify-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5 text-foreground">
                     {targetLocale.toUpperCase()}
                   </span>
@@ -781,8 +779,8 @@ export function ImportExportPage() {
                   <span
                     className={`rounded-md border px-2 py-0.5 ${
                       dryRun
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        ? 'border-border/80 bg-background/90 text-muted-foreground'
+                        : 'border-primary/30 bg-primary/10 text-primary'
                     }`}
                   >
                     {dryRun ? 'preview diff' : 'immediate write'}
@@ -821,7 +819,7 @@ export function ImportExportPage() {
                     ? 'Uploading…'
                     : 'Choose file (JSON or XLSX)'}
               </Button>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 One import per project at a time · Reversible from Activity
               </span>
             </CardFooter>
@@ -845,7 +843,7 @@ export function ImportExportPage() {
               <CardAction>
                 <Badge
                   variant={exportStage === 'public' ? 'default' : 'outline'}
-                  className="font-mono text-[10px] uppercase"
+                  className="font-mono text-3xs uppercase"
                 >
                   {exportStage === 'public' ? 'Published' : 'Working copy'}
                 </Badge>

@@ -48,7 +48,7 @@ import { PendingLabel } from '@/components/ui/spinner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
-import { PageHeader } from '@/components/layout/PageHeader'
+import { PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import { ProjectMembersSection } from '@/features/settings/ProjectMembersSection'
 import { useToast } from '@/lib/toast'
 import { cliInitCommand } from '@/lib/cli-connect'
@@ -173,66 +173,64 @@ export function SettingsPage() {
       className="flex min-w-0 flex-1 flex-col"
       data-tour-ready={membersQuery.isSuccess ? 'settings' : undefined}
     >
-      <header
-        className={`sticky top-0 z-20 border-b bg-background/95 backdrop-blur-md transition-colors ${
-          isDirty ? 'border-amber-500/45' : 'border-border/75'
-        }`}
+      <PageStickyHeader
+        maxWidth="5xl"
+        className={`transition-colors ${isDirty ? 'border-primary/45' : 'border-border/75'}`}
+        innerClassName="sm:py-3"
       >
-        <div className="mx-auto w-full max-w-5xl px-4 py-3 sm:px-6">
-          <PageHeader
-            title="Settings"
-            badge={
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" className="font-mono text-xs">
-                  {project.slug}
-                </Badge>
-                <Badge variant="secondary" className="capitalize">
-                  {form.layout} layout
-                </Badge>
+        <PageHeader
+          title="Settings"
+          badge={
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className="font-mono text-xs">
+                {project.slug}
+              </Badge>
+              <Badge variant="secondary" className="capitalize">
+                {form.layout} layout
+              </Badge>
+            </div>
+          }
+          actions={
+            isAdmin ? (
+              <div className="flex min-h-8 items-center gap-2">
+                {isDirty ? (
+                  <>
+                    <Badge
+                      role="status"
+                      variant="outline"
+                      className="border-primary/35 bg-primary/10 text-primary"
+                    >
+                      Unsaved changes
+                    </Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={updateMut.isPending}
+                      onClick={() => {
+                        setSaveForm(null)
+                        setErrors({})
+                      }}
+                    >
+                      Discard
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  onClick={saveSettings}
+                  disabled={!isDirty || updateMut.isPending}
+                  size="sm"
+                >
+                  <PendingLabel pending={updateMut.isPending}>
+                    <Save className="size-3.5" aria-hidden="true" />
+                    Save changes
+                  </PendingLabel>
+                </Button>
               </div>
-            }
-            actions={
-              isAdmin ? (
-                <div className="flex min-h-8 items-center gap-2">
-                  {isDirty ? (
-                    <>
-                      <Badge
-                        role="status"
-                        variant="outline"
-                        className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                      >
-                        Unsaved changes
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={updateMut.isPending}
-                        onClick={() => {
-                          setSaveForm(null)
-                          setErrors({})
-                        }}
-                      >
-                        Discard
-                      </Button>
-                    </>
-                  ) : null}
-                  <Button
-                    onClick={saveSettings}
-                    disabled={!isDirty || updateMut.isPending}
-                    size="sm"
-                  >
-                    <PendingLabel pending={updateMut.isPending}>
-                      <Save className="size-3.5" aria-hidden="true" />
-                      Save changes
-                    </PendingLabel>
-                  </Button>
-                </div>
-              ) : undefined
-            }
-          />
-        </div>
-      </header>
+            ) : undefined
+          }
+        />
+      </PageStickyHeader>
 
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 pb-12 sm:px-6">
         {!isAdmin ? (
@@ -303,7 +301,7 @@ export function SettingsPage() {
                   <Field>
                     <div className="flex items-center justify-between">
                       <FieldLabel htmlFor="layout">Layout</FieldLabel>
-                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1 text-2xs text-muted-foreground">
                         <FolderTree className="size-3" />
                         {form.layout === 'modular' ? 'Folder per module' : 'Single file per locale'}
                       </span>
@@ -366,7 +364,7 @@ export function SettingsPage() {
           title="Target languages"
           description="Select the languages you translate into. The source language is excluded."
           meta={
-            <Badge variant="outline" className="font-mono text-[11px] tabular-nums">
+            <Badge variant="outline" className="font-mono text-2xs tabular-nums">
               {form.target_languages.length}
             </Badge>
           }
@@ -417,7 +415,7 @@ export function SettingsPage() {
           description="Admins add people who have already signed in. Editors work in the catalog without changing settings or membership."
           meta={
             membersQuery.data ? (
-              <Badge variant="outline" className="font-mono text-[11px] tabular-nums">
+              <Badge variant="outline" className="font-mono text-2xs tabular-nums">
                 {membersQuery.data.length}
               </Badge>
             ) : null
@@ -433,7 +431,7 @@ export function SettingsPage() {
           title="API keys & CLI"
           description="Personal keys for CLI sync. Generating a new key revokes your previous personal key for this project; editors can revoke only keys they created."
           meta={
-            <Badge variant="outline" className="font-mono text-[11px] tabular-nums">
+            <Badge variant="outline" className="font-mono text-2xs tabular-nums">
               {apiKeys.length}
             </Badge>
           }
@@ -486,7 +484,7 @@ export function SettingsPage() {
               ) : (
                 <EmptyState
                   className="border-0 bg-transparent py-6 shadow-none"
-                  icon={<KeyRound className="size-6 text-muted-foreground" />}
+                  icon={<KeyRound />}
                   title="No API keys yet"
                   description="Generate a personal key above for the CLI. The secret is created automatically and shown once."
                 />
@@ -554,15 +552,15 @@ export function SettingsPage() {
         <DialogContent className="sm:max-w-lg" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-foreground">
-              <ShieldAlert className="size-5 text-amber-500" />
+              <ShieldAlert className="size-5 text-destructive" />
               API key generated
             </DialogTitle>
             <DialogDescription>
               Copy this key now. You will not be able to see it again.
             </DialogDescription>
           </DialogHeader>
-          <Alert className="border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200">
-            <TriangleAlert className="text-amber-600 dark:text-amber-400" />
+          <Alert variant="destructive">
+            <TriangleAlert />
             <AlertTitle>Store this key securely</AlertTitle>
             <AlertDescription>
               Use it with <code>loc init -k</code>. Anyone with this key can push to this project

@@ -287,7 +287,7 @@ export function NewProjectPage() {
                   <Sparkles className="size-3.5 animate-pulse" />
                   Live Preview
                 </span>
-                <Badge variant="outline" className="rounded-md font-mono text-[10px] uppercase">
+                <Badge variant="outline" className="rounded-md font-mono text-3xs uppercase">
                   {form.layout}
                 </Badge>
               </div>
@@ -308,22 +308,22 @@ export function NewProjectPage() {
                 </div>
 
                 <div className="space-y-1.5 border-t border-border/50 pt-3">
-                  <span className="eyebrow text-[10px]">Language Matrix</span>
+                  <span className="eyebrow text-3xs">Language Matrix</span>
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <Badge
                       variant="secondary"
-                      className="gap-1 rounded-md border border-primary/25 bg-primary/10 font-mono text-[11px] font-semibold text-primary"
+                      className="gap-1 rounded-md border border-primary/25 bg-primary/10 font-mono text-2xs font-semibold text-primary"
                     >
                       <Globe className="size-3 text-primary" />
                       {form.base_language.toUpperCase()}
-                      <span className="font-normal text-[9px] text-primary/80">(base)</span>
+                      <span className="font-normal text-3xs text-primary/80">(base)</span>
                     </Badge>
                     {form.target_languages.length > 0 ? (
                       form.target_languages.map((lang) => (
                         <Badge
                           key={lang}
                           variant="outline"
-                          className="animate-galley-swap rounded-md font-mono text-[11px]"
+                          className="animate-galley-swap rounded-md font-mono text-2xs"
                         >
                           {lang.toUpperCase()}
                         </Badge>
@@ -338,7 +338,7 @@ export function NewProjectPage() {
 
                 {form.translation_context && (
                   <div className="animate-galley-swap space-y-1 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs">
-                    <span className="eyebrow flex items-center gap-1 text-[10px] text-primary">
+                    <span className="eyebrow flex items-center gap-1 text-3xs text-primary">
                       <Sparkles className="size-3" />
                       AI Context Attached
                     </span>
@@ -349,7 +349,7 @@ export function NewProjectPage() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2.5 pl-6 font-mono text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2.5 pl-6 font-mono text-2xs text-muted-foreground">
                 <span>0 strings (initial)</span>
                 <span>stage: draft</span>
               </div>
@@ -361,9 +361,9 @@ export function NewProjectPage() {
                 <Terminal className="size-3.5 text-primary" />
                 <span>Next step: CLI synchronization</span>
               </div>
-              <p className="text-muted-foreground leading-relaxed text-[11px]">
+              <p className="text-muted-foreground leading-relaxed text-2xs">
                 After creating this project, you can generate an API key in Settings and run{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground wrap-anywhere">
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-2xs text-foreground wrap-anywhere">
                   {cliInitCommand()}
                 </code>{' '}
                 in your repository to connect it. Then use <code>loc pull</code> and{' '}

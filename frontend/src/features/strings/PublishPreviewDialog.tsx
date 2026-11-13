@@ -34,11 +34,11 @@ function FieldDiff({ change }: { change: PublishFieldChange }) {
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-medium text-foreground/80">{change.label}</p>
-        {change.firstPublish ? <Badge variant="outline" className="text-[10px]">First publish</Badge> : null}
+        {change.firstPublish ? <Badge variant="outline" className="text-3xs">First publish</Badge> : null}
       </div>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <span className="eyebrow text-3xs">
             Published
           </span>
           <div className="rounded-lg border border-border/70 bg-muted/40 p-2.5">
@@ -56,7 +56,7 @@ function FieldDiff({ change }: { change: PublishFieldChange }) {
           </div>
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">
+          <span className="eyebrow text-3xs text-primary">
             Working
           </span>
           <div className="rounded-lg border border-primary/25 bg-primary/5 p-2.5">
@@ -83,7 +83,7 @@ function WorkingOnlyFields({ fields }: { fields: PublishFieldChange[] }) {
     <div className="flex flex-col gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
       {fields.map((change) => (
         <div key={change.field} className="grid gap-1 sm:grid-cols-[5.5rem_minmax(0,1fr)]">
-          <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <p className="eyebrow text-3xs">
             {change.label}
           </p>
           <p
@@ -110,7 +110,7 @@ function PreviewRow({ row }: { row: PublishPreviewRow }) {
           {row.key}
         </code>
         {row.moduleSlug ? (
-          <span className="font-mono text-[11px] break-all rounded border border-border/70 px-1.5 py-0.5 text-muted-foreground">
+          <span className="font-mono text-2xs break-all rounded border border-border/70 px-1.5 py-0.5 text-muted-foreground">
             {row.moduleSlug}
           </span>
         ) : null}
@@ -135,10 +135,10 @@ function Section({ kind, rows }: { kind: PublishKind; rows: PublishPreviewRow[] 
   return (
     <section className="flex flex-col gap-2.5" aria-label={PUBLISH_SECTION_LABEL[kind]}>
       <div className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        <h3 className="eyebrow">
           {PUBLISH_SECTION_LABEL[kind]}
         </h3>
-        <Badge variant="secondary" className="font-mono text-[11px] tabular-nums">
+        <Badge variant="secondary" className="font-mono text-2xs tabular-nums">
           {rows.length}
         </Badge>
       </div>

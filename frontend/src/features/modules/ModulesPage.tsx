@@ -11,7 +11,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import { PageHeader } from '@/components/layout/PageHeader'
+import { PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import {
   CatalogFilterBar,
   CatalogFilteredEmpty,
@@ -93,7 +93,7 @@ function ModuleCard({
         <div className="flex flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-muted/50 text-muted-foreground transition-colors group-hover:border-primary/35 group-hover:bg-primary/10 group-hover:text-primary">
                 <Boxes className="size-4" />
               </span>
               <div className="min-w-0">
@@ -145,10 +145,10 @@ function ModuleCard({
           ) : null}
 
           {module.translation_context ? (
-            <div className="rounded-r-lg border-l-2 border-primary/50 bg-primary/[0.04] px-3 py-2">
+            <div className="rounded-r-lg border-l-2 border-border bg-muted/35 px-3 py-2">
               <div className="flex items-center gap-1.5">
                 <Sparkles className="size-3 shrink-0 text-primary" aria-hidden="true" />
-                <span className="eyebrow text-[10px] text-primary">AI guidance</span>
+                <span className="eyebrow text-3xs">AI guidance</span>
               </div>
               <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-foreground/90">
                 {module.translation_context}
@@ -158,9 +158,9 @@ function ModuleCard({
             <button
               type="button"
               onClick={() => onEdit(module)}
-              className="flex w-fit items-center gap-1.5 rounded-md border border-dashed border-border/80 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/[0.03] hover:text-foreground"
+              className="flex w-fit items-center gap-1.5 rounded-md border border-dashed border-border/80 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
             >
-              <Sparkles className="size-3.5 text-primary/75" aria-hidden="true" />
+              <Sparkles className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>Add AI translation guidance</span>
             </button>
           )}
@@ -169,7 +169,7 @@ function ModuleCard({
         <div className="flex flex-col gap-2.5 border-t border-border/60 pt-3">
           <div className="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
             <div
-              className="h-full rounded-full bg-primary/75 transition-all duration-300"
+              className="h-full rounded-full bg-foreground/30 transition-all duration-300"
               style={{ width: `${sharePercent}%` }}
             />
           </div>
@@ -381,24 +381,22 @@ export function ModulesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="mx-auto w-full max-w-5xl px-4 py-3 sm:px-6 sm:py-3.5">
-          <PageHeader
-            title="Modules"
-            badge={
-              <Badge variant="secondary" className="font-mono text-xs tabular-nums">
-                {modules.length} module{modules.length !== 1 ? 's' : ''}
-              </Badge>
-            }
-            actions={
-              <Button size="sm" onClick={openCreate}>
-                <Plus data-icon="inline-start" />
-                New module
-              </Button>
-            }
-          />
-        </div>
-      </header>
+      <PageStickyHeader maxWidth="5xl">
+        <PageHeader
+          title="Modules"
+          badge={
+            <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+              {modules.length} module{modules.length !== 1 ? 's' : ''}
+            </Badge>
+          }
+          actions={
+            <Button size="sm" onClick={openCreate}>
+              <Plus data-icon="inline-start" />
+              New module
+            </Button>
+          }
+        />
+      </PageStickyHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">

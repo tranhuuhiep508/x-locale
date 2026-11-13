@@ -10,7 +10,7 @@ export function MarkWell({
   return (
     <span
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary transition-all duration-300 ease-drift group-hover:scale-105 group-hover:border-primary/40 group-hover:bg-primary/15 group-hover:shadow-2xs',
+        'flex size-8 shrink-0 items-center justify-center rounded-md border border-border/80 bg-muted/50 text-muted-foreground transition-all duration-300 ease-drift group-hover:border-primary/40 group-hover:bg-primary/10 group-hover:text-primary group-hover:shadow-2xs',
         className
       )}
     >
@@ -43,10 +43,6 @@ export function PageHeader({
     >
       <div className="flex min-w-0 items-center gap-2">
         {leading}
-        <span
-          aria-hidden="true"
-          className="h-4 w-0.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]"
-        />
         <TitleTag
           className={cn(
             'font-heading font-semibold tracking-tight text-foreground',
@@ -87,22 +83,34 @@ export function PageBody({
   )
 }
 
-export function PageSection({
-  title,
-  description,
+export function PageStickyHeader({
   children,
+  maxWidth = '6xl',
+  className,
+  innerClassName,
 }: {
-  title: string
-  description: React.ReactNode
   children: React.ReactNode
+  maxWidth?: '5xl' | '6xl' | 'full'
+  className?: string
+  innerClassName?: string
 }) {
   return (
-    <section className="grid min-w-0 gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-8">
-      <div className="flex flex-col gap-2">
-        <h2 className="font-heading text-sm font-semibold">{title}</h2>
-        <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+    <header
+      className={cn(
+        'sticky top-0 z-20 shrink-0 border-b border-border/80 bg-background/95 backdrop-blur-md',
+        className
+      )}
+    >
+      <div
+        className={cn(
+          'mx-auto w-full px-4 py-3 sm:px-6 sm:py-3.5',
+          maxWidth === '6xl' && 'max-w-6xl',
+          maxWidth === '5xl' && 'max-w-5xl',
+          innerClassName
+        )}
+      >
+        {children}
       </div>
-      <div className="min-w-0">{children}</div>
-    </section>
+    </header>
   )
 }

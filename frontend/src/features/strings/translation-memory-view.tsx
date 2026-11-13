@@ -51,12 +51,12 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center text-[11px] font-semibold tabular-nums',
+        'inline-flex h-5 items-center text-2xs font-semibold tabular-nums',
         match.exact
-          ? 'text-azure-800 dark:text-azure-200'
+          ? 'text-public-foreground'
           : pct >= 90
-            ? 'text-azure-700 dark:text-azure-300'
-            : 'text-haze-600 dark:text-haze-400'
+            ? 'text-primary'
+            : 'text-muted-foreground'
       )}
     >
       {match.exact ? 'Exact match' : `${pct}% similar`}

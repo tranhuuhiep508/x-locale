@@ -23,6 +23,9 @@ interface DataTableProps<TData> {
   getRowClassName?: (row: Row<TData>) => string | undefined
   focusRowId?: string
   focusRowRef?: Ref<HTMLTableRowElement>
+  regionLabel?: string
+  density?: 'comfortable' | 'compact'
+  bottomSpacer?: boolean
   className?: string
 }
 
@@ -52,6 +55,9 @@ export function DataTable<TData>({
   getRowClassName,
   focusRowId,
   focusRowRef,
+  regionLabel,
+  density = 'comfortable',
+  bottomSpacer = false,
   className,
 }: DataTableProps<TData>) {
   const rows = table.getRowModel().rows
@@ -61,7 +67,16 @@ export function DataTable<TData>({
     (pinning.left?.length ?? 0) > 0 || (pinning.right?.length ?? 0) > 0
 
   return (
-    <Table className={className} containerClassName="h-full min-h-0 overflow-auto bg-card">
+    <Table
+      className={cn(bottomSpacer && 'mb-20', className)}
+      containerClassName="group/table h-full min-h-0 overflow-auto bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      containerProps={{
+        tabIndex: 0,
+        role: 'region',
+        'aria-label': regionLabel ?? 'Data table',
+        'data-density': density,
+      }}
+    >
       <TableHeader>
         {table.getHeaderGroups().map((headerGroup) => (
           <TableRow key={headerGroup.id} className="hover:bg-transparent">
@@ -93,9 +108,8 @@ export function DataTable<TData>({
               data-state={row.getIsSelected() ? 'selected' : undefined}
               className={cn(
                 onRowClick && 'cursor-pointer group',
-                hasPinnedColumns && 'bg-card',
+                hasPinnedColumns && 'string-row-base bg-card',
                 getRowClassName?.(row),
-                row.getIsSelected() && 'bg-accent hover:bg-accent',
                 row.id === focusRowId && 'focus:outline-2 focus:-outline-offset-2 focus:outline-ring',
               )}
               onClick={

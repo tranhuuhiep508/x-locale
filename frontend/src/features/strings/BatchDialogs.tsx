@@ -64,7 +64,7 @@ export function BatchMoveDialog({
               </span>
               <Badge
                 variant="secondary"
-                className="max-w-[45%] shrink-0 font-mono text-[11px] font-normal"
+                className="max-w-[45%] shrink-0 font-mono text-2xs font-normal"
                 title={m.slug}
               >
                 <span className="truncate">{m.slug}</span>
@@ -135,7 +135,7 @@ export function BatchTagDialog({
               />
               <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 cursor-pointer wrap-anywhere">
                 <span
-                  className="size-3 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/15"
+                  className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
                   style={{ backgroundColor: t.color }}
                 />
                 {t.name}

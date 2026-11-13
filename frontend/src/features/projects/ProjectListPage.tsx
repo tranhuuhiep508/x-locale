@@ -32,6 +32,7 @@ import {
   CardHeader,
 } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { CatalogFilteredEmpty } from '@/features/catalog/CatalogFilterBar'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -97,9 +98,9 @@ export function ProjectListPage() {
                         size="sm"
                         variant="ghost"
                         data-tour="cli-sync-hint"
-                        className="group/cli h-8 gap-1.5 rounded-lg border border-border/70 bg-muted/35 px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
+                        className="group/cli h-8 gap-1.5 rounded-lg border border-border/70 bg-muted/35 px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-200 hover:border-border hover:bg-muted/60 hover:text-foreground"
                       >
-                        <Terminal className="size-3.5 shrink-0 text-primary transition-transform duration-200 ease-drift group-hover/cli:translate-x-0.5" />
+                        <Terminal className="size-3.5 shrink-0 text-muted-foreground transition-all duration-200 ease-drift group-hover/cli:translate-x-0.5 group-hover/cli:text-primary" />
                         <span>CLI sync</span>
                       </Button>
                     </PopoverTrigger>
@@ -109,7 +110,7 @@ export function ProjectListPage() {
                         <p className="text-xs leading-relaxed text-muted-foreground">
                           Developers can pull or push translations with the CLI. Create an API key inside any project&apos;s Settings.
                         </p>
-                        <code className="rounded-md border border-border/70 bg-muted/50 px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                        <code className="rounded-md border border-border/70 bg-muted/50 px-2.5 py-1.5 font-mono text-2xs text-foreground">
                           loc push / loc pull
                         </code>
                       </div>
@@ -182,7 +183,7 @@ export function ProjectListPage() {
         {/* Empty State */}
         {projects.length === 0 ? (
           <EmptyState
-            icon={<Layers className="size-8 text-primary" />}
+            icon={<Layers />}
             title="No projects yet"
             description="Create your first translation project or initialize one using the x-locale CLI."
             action={
@@ -195,26 +196,15 @@ export function ProjectListPage() {
             }
           />
         ) : filteredProjects.length === 0 ? (
-          <div className="animate-stage-in flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 py-12 text-center">
-            <Search className="mb-2 size-7 text-muted-foreground/60" />
-            <h3 className="font-heading text-base font-semibold text-foreground">
-              No projects match your filter
-            </h3>
-            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-              Try searching for a different catalog name, slug, or language code.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => {
-                setSearchQuery('')
-                setLayoutFilter('all')
-              }}
-            >
-              Clear filter
-            </Button>
-          </div>
+          <CatalogFilteredEmpty
+            title="No projects match your filter"
+            description="Try searching for a different catalog name, slug, or language code."
+            clearLabel="Clear filter"
+            onClear={() => {
+              setSearchQuery('')
+              setLayoutFilter('all')
+            }}
+          />
         ) : (
           <div data-tour="project-list" className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filteredProjects.map((p, index) => {
@@ -223,7 +213,7 @@ export function ProjectListPage() {
                 <Card
                   key={p.id}
                   style={{ '--stagger': Math.min(index + 2, 10) } as React.CSSProperties}
-                  className="animate-stage-in group relative flex flex-col justify-between overflow-hidden rounded-xl border border-border/85 transition-all duration-300 ease-drift hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg focus-within:ring-2 focus-within:ring-primary/40"
+                  className="animate-stage-in group relative flex flex-col justify-between overflow-hidden rounded-xl border border-border/85 transition-all duration-300 ease-drift hover:-translate-y-1 hover:border-border hover:shadow-lg focus-within:ring-2 focus-within:ring-ring/40"
                 >
                   {/* Animated left meridian spine indicator */}
                   <div
@@ -249,7 +239,7 @@ export function ProjectListPage() {
                         <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
                           <span className="truncate font-mono text-xs">{p.slug}</span>
                           <span className="text-border">·</span>
-                          <span className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.2 font-mono text-[10px] uppercase text-muted-foreground">
+                          <span className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-3xs uppercase text-muted-foreground">
                             {p.layout}
                           </span>
                         </p>
@@ -283,17 +273,17 @@ export function ProjectListPage() {
 
                   <CardContent className="pb-3">
                     {/* Meridian Language Pipeline: Base -> Targets */}
-                    <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2 transition-colors duration-200 group-hover:border-primary/25 group-hover:bg-primary/[0.03]">
+                    <div className="rounded-lg border border-border/60 bg-muted/25 px-3 py-2 transition-colors duration-200 group-hover:border-border">
                       <div className="mb-1.5 flex items-center justify-between">
-                        <span className="eyebrow text-[10px]">Language route</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
+                        <span className="eyebrow text-3xs">Language route</span>
+                        <span className="font-mono text-3xs text-muted-foreground">
                           {targets.length} target{targets.length === 1 ? '' : 's'}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <Badge
                           variant="secondary"
-                          className="rounded-md border border-primary/25 bg-primary/10 font-mono text-[11px] font-semibold text-primary"
+                          className="rounded-md border border-border/80 bg-background font-mono text-2xs font-semibold text-foreground"
                         >
                           {p.base_language.toUpperCase()}
                         </Badge>
@@ -307,7 +297,7 @@ export function ProjectListPage() {
                               <Badge
                                 key={lang}
                                 variant="outline"
-                                className="rounded-md bg-background/80 font-mono text-[11px] transition-colors duration-200 group-hover:border-primary/30"
+                                className="rounded-md bg-background/80 font-mono text-2xs text-muted-foreground"
                               >
                                 {lang.toUpperCase()}
                               </Badge>
@@ -315,14 +305,14 @@ export function ProjectListPage() {
                             {targets.length > 4 && (
                               <Badge
                                 variant="outline"
-                                className="rounded-md font-mono text-[11px] text-muted-foreground"
+                                className="rounded-md font-mono text-2xs text-muted-foreground"
                               >
                                 +{targets.length - 4}
                               </Badge>
                             )}
                           </>
                         ) : (
-                          <span className="font-mono text-[11px] text-muted-foreground">
+                          <span className="font-mono text-2xs text-muted-foreground">
                             no targets
                           </span>
                         )}
@@ -342,12 +332,12 @@ export function ProjectListPage() {
                       <Link
                         to="/projects/$projectRef"
                         params={{ projectRef: p.slug }}
-                        className="relative z-10 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+                        className="relative z-10 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
                       >
                         <LayoutDashboard className="size-3" />
                         <span>Overview</span>
                       </Link>
-                      <span className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground/80">
+                      <span className="flex items-center gap-1 font-mono text-2xs text-muted-foreground/80">
                         <Calendar aria-hidden="true" className="size-3 text-muted-foreground" />
                         <span>{formatDateShort(p.updated_at)}</span>
                       </span>

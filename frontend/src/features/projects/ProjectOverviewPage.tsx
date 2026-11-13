@@ -42,7 +42,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { PageBody, PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import type { LocaleCoverage, Module, Project, Tag } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
 
@@ -153,8 +153,8 @@ function deriveDispatchState({
 const TONE_DOT_CLASS: Record<DispatchState['tone'], string> = {
   neutral: 'bg-muted-foreground/70',
   active: 'bg-primary',
-  amber: 'bg-amber-500',
-  complete: 'bg-emerald-500',
+  amber: 'bg-primary',
+  complete: 'bg-primary',
 }
 
 function TelemetryCell({
@@ -181,13 +181,11 @@ function TelemetryCell({
       to={to}
       params={{ projectRef }}
       search={search}
-      className={`group relative flex min-w-0 flex-col justify-between gap-2 px-5 py-4 outline-none transition-colors duration-200 hover:bg-primary/[0.04] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${
-        accent ? 'bg-amber-500/[0.045] hover:bg-amber-500/[0.08]' : ''
-      }`}
+      className="group relative flex min-w-0 flex-col justify-between gap-2 px-5 py-4 outline-none transition-colors duration-200 hover:bg-muted/45 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          <Icon className={`size-3.5 ${accent ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`} />
+        <span className="eyebrow inline-flex items-center gap-1.5">
+          <Icon className={`size-3.5 transition-colors ${accent ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'}`} />
           <span>{label}</span>
         </span>
         <ArrowUpRight
@@ -247,16 +245,16 @@ function LocaleHorizonStrip({
               className="group flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/75 bg-background/75 px-2.5 py-2 transition-colors hover:border-primary/45 hover:bg-background"
             >
               <div className="flex items-center justify-between gap-1.5">
-                <span className="font-mono text-[11px] font-semibold uppercase text-foreground">
+                <span className="font-mono text-2xs font-semibold uppercase text-foreground">
                   {locale}
                 </span>
                 <span
-                  className={`font-mono text-[11px] font-medium tabular-nums ${
+                  className={`font-mono text-2xs font-medium tabular-nums ${
                     isComplete
-                      ? 'text-emerald-600 dark:text-emerald-400'
+                      ? 'text-primary'
                       : percent === 0
                         ? 'text-muted-foreground'
-                        : 'text-primary'
+                        : 'text-foreground'
                   }`}
                 >
                   {percent}%
@@ -265,7 +263,7 @@ function LocaleHorizonStrip({
               <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
-                    isComplete ? 'bg-emerald-500' : 'bg-primary'
+                    isComplete ? 'bg-primary' : 'bg-primary/70'
                   }`}
                   style={{ width: `${percent}%` }}
                 />
@@ -295,22 +293,22 @@ function LocaleHorizonStrip({
     <div className="flex flex-col gap-2">
       <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
         {completePct > 0 ? (
-          <div className="h-full bg-emerald-500" style={{ width: `${completePct}%` }} />
+          <div className="h-full bg-primary" style={{ width: `${completePct}%` }} />
         ) : null}
         {inProgressPct > 0 ? (
-          <div className="h-full bg-primary" style={{ width: `${inProgressPct}%` }} />
+          <div className="h-full bg-primary/45" style={{ width: `${inProgressPct}%` }} />
         ) : null}
         {untouchedPct > 0 ? (
           <div className="h-full bg-muted-foreground/20" style={{ width: `${untouchedPct}%` }} />
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-muted-foreground tabular-nums">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-2xs text-muted-foreground tabular-nums">
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
           {complete} complete
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
+          <span className="size-2 rounded-full bg-primary/45" aria-hidden="true" />
           {inProgress} in progress
         </span>
         <span className="inline-flex items-center gap-1.5">
@@ -355,7 +353,7 @@ function LanguageCoverage({
           {isComplete ? (
             <CheckCircle2
               aria-hidden="true"
-              className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+              className="size-3.5 shrink-0 text-primary"
             />
           ) : null}
         </div>
@@ -368,7 +366,7 @@ function LanguageCoverage({
         ) : (
           <span
             className={`font-heading text-sm font-semibold tabular-nums ${
-              isComplete ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'
+              isComplete ? 'text-primary' : 'text-foreground'
             }`}
           >
             {percent}%
@@ -383,11 +381,7 @@ function LanguageCoverage({
       ) : (
         <Progress
           value={percent}
-          className={`h-1.5 ${
-            isComplete
-              ? '[&>[data-slot=progress-indicator]]:bg-emerald-500 [&>[data-slot=progress-indicator]]:bg-none'
-              : ''
-          }`}
+          className="h-1.5"
           aria-label={`${name} translation coverage`}
           aria-valuetext={`${translated} of ${total} strings translated`}
         />
@@ -466,11 +460,11 @@ function CatalogBlueprintCard({
         <Link
           to="/projects/$projectRef/modules"
           params={{ projectRef }}
-          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-primary/45 hover:bg-primary/[0.035]"
+          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-background text-primary">
+              <span className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground transition-colors group-hover:text-primary">
                 <Boxes className="size-3.5" aria-hidden="true" />
               </span>
               <span className="font-heading text-sm font-semibold text-foreground">
@@ -488,13 +482,13 @@ function CatalogBlueprintCard({
               {visibleModules.map((mod) => (
                 <span
                   key={mod.id}
-                  className="rounded-md border border-border/70 bg-background/85 px-2 py-0.5 font-mono text-[11px] text-foreground/85"
+                  className="rounded-md border border-border/70 bg-background/85 px-2 py-0.5 font-mono text-2xs text-foreground/85"
                 >
                   {mod.slug}
                 </span>
               ))}
               {extraModules > 0 ? (
-                <span className="font-mono text-[11px] text-muted-foreground">
+                <span className="font-mono text-2xs text-muted-foreground">
                   +{extraModules} more
                 </span>
               ) : null}
@@ -509,11 +503,11 @@ function CatalogBlueprintCard({
         <Link
           to="/projects/$projectRef/tags"
           params={{ projectRef }}
-          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-primary/45 hover:bg-primary/[0.035]"
+          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-background text-primary">
+              <span className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground transition-colors group-hover:text-primary">
                 <Tags className="size-3.5" aria-hidden="true" />
               </span>
               <span className="font-heading text-sm font-semibold text-foreground">
@@ -531,7 +525,7 @@ function CatalogBlueprintCard({
               {visibleTags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background/85 px-2 py-0.5 text-[11px] font-medium text-foreground/90"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background/85 px-2 py-0.5 text-2xs font-medium text-foreground/90"
                 >
                   <span
                     className="size-2 shrink-0 rounded-full"
@@ -542,7 +536,7 @@ function CatalogBlueprintCard({
                 </span>
               ))}
               {extraTags > 0 ? (
-                <span className="font-mono text-[11px] text-muted-foreground">
+                <span className="font-mono text-2xs text-muted-foreground">
                   +{extraTags} more
                 </span>
               ) : null}
@@ -557,7 +551,7 @@ function CatalogBlueprintCard({
 
       <CardFooter className="grid grid-cols-2 gap-3 border-t border-border/60 bg-muted/20 py-3">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1.5 eyebrow text-[10px]">
+          <span className="inline-flex items-center gap-1.5 eyebrow text-3xs">
             <Layers className="size-3" aria-hidden="true" />
             Export layout
           </span>
@@ -566,7 +560,7 @@ function CatalogBlueprintCard({
           </span>
         </div>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1.5 eyebrow text-[10px]">
+          <span className="inline-flex items-center gap-1.5 eyebrow text-3xs">
             <KeyRound className="size-3" aria-hidden="true" />
             Key policy
           </span>
@@ -696,39 +690,37 @@ export function ProjectOverviewPage() {
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 sm:py-3.5">
-          <PageHeader
-            title="Overview"
-            badge={
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" className="font-mono text-xs">
-                  {project.slug}
-                </Badge>
-                <Badge variant="secondary" className="capitalize">
-                  {project.layout} layout
-                </Badge>
-              </div>
-            }
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" asChild>
-                  <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
-                    <Settings2 data-icon="inline-start" />
-                    Settings
-                  </Link>
-                </Button>
-                <Button size="sm" asChild className="shadow-xs">
-                  <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
-                    Open catalog
-                    <ArrowRight data-icon="inline-end" />
-                  </Link>
-                </Button>
-              </div>
-            }
-          />
-        </div>
-      </header>
+      <PageStickyHeader maxWidth="6xl">
+        <PageHeader
+          title="Overview"
+          badge={
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className="font-mono text-xs">
+                {project.slug}
+              </Badge>
+              <Badge variant="secondary" className="capitalize">
+                {project.layout} layout
+              </Badge>
+            </div>
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" asChild>
+                <Link to="/projects/$projectRef/settings" params={{ projectRef }}>
+                  <Settings2 data-icon="inline-start" />
+                  Settings
+                </Link>
+              </Button>
+              <Button size="sm" asChild className="shadow-xs">
+                <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
+                  Open catalog
+                  <ArrowRight data-icon="inline-end" />
+                </Link>
+              </Button>
+            </div>
+          }
+        />
+      </PageStickyHeader>
 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-5 pb-12 sm:px-6 sm:py-6">
         <section
@@ -736,11 +728,6 @@ export function ProjectOverviewPage() {
           style={{ '--stagger': 1 } as React.CSSProperties}
           className="galley-grid animate-stage-in relative overflow-hidden rounded-2xl border border-border/85 bg-card shadow-xs"
         >
-          <div
-            className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
-            aria-hidden="true"
-          />
-
           <div className="flex flex-col gap-5 p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex min-w-0 flex-col gap-2">
@@ -752,7 +739,7 @@ export function ProjectOverviewPage() {
                   {dispatch.badge}
                 </span>
 
-                <h2 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-[1.65rem] wrap-anywhere">
+                <h2 className="font-heading text-xl font-bold tracking-tight text-foreground sm:text-2xl wrap-anywhere">
                   {project.name}
                 </h2>
 
@@ -876,7 +863,7 @@ export function ProjectOverviewPage() {
               <div className="relative flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl border border-border/75 bg-muted/30 px-3.5 py-2.5">
                 <div aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-primary" />
                 <div className="flex min-w-0 flex-col gap-0.5 pl-1">
-                  <p className="eyebrow text-[10px]">Base language</p>
+                  <p className="eyebrow text-3xs">Base language</p>
                   <p className="font-semibold text-foreground wrap-anywhere">
                     {languageName(project.base_language)}
                   </p>

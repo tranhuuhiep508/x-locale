@@ -7,11 +7,18 @@ const steps = [
   { label: 'Publish', description: 'Save the entire batch' },
 ]
 
-export function BatchStepper({ current }: { current: number }) {
+export function BatchStepper({
+  current,
+  label = 'Batch progress',
+}: {
+  current: number
+  label?: string
+}) {
   return (
     <ol
-      aria-label="Batch progress"
-      className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
+      role="group"
+      aria-label={label}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
     >
       {steps.map((step, index) => {
         const complete = index < current
@@ -32,9 +39,9 @@ export function BatchStepper({ current }: { current: number }) {
             <span
               aria-hidden="true"
               className={cn(
-                'flex size-3.5 items-center justify-center rounded-full text-[9px] font-mono transition-all duration-300 ease-drift',
+                'flex size-3.5 items-center justify-center rounded-full font-mono text-3xs transition-all duration-300 ease-drift',
                 active
-                  ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                  ? 'bg-primary font-semibold text-primary-foreground shadow-xs'
                   : complete
                     ? 'bg-primary/15 text-primary scale-95'
                     : 'bg-muted text-muted-foreground'

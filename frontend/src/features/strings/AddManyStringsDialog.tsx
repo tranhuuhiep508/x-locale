@@ -424,7 +424,7 @@ export function AddManyStringsDialog({
 
         <ReviewDialogBody>
           {parseWarning && stage !== 'done' ? (
-            <p role="status" className="mb-3 text-sm font-medium text-amber-600 dark:text-amber-400">
+            <p role="status" className="mb-3 text-sm font-medium text-destructive">
               {parseWarning}
             </p>
           ) : null}
@@ -616,11 +616,11 @@ export function AddManyStringsDialog({
                         <code className="min-w-0 truncate font-mono text-xs font-medium" translate="no">
                           {row.key}
                         </code>
-                        <Badge variant={row.mode === 'create' ? 'secondary' : 'outline'} className="text-[11px]">
+                        <Badge variant={row.mode === 'create' ? 'secondary' : 'outline'} className="text-2xs">
                           {row.mode === 'create' ? 'New' : 'Update'}
                         </Badge>
                         {row.entry.status === 'public' ? (
-                          <Badge variant="outline" className="text-[11px]">
+                          <Badge variant="outline" className="text-2xs">
                             Public
                           </Badge>
                         ) : null}
@@ -648,7 +648,7 @@ export function AddManyStringsDialog({
                           const issuesId = `qa-paste-${row.key}-${cell}`
                           return (
                             <div key={cell} className="flex items-start gap-2" data-qa-status={view.status}>
-                              <span className="mt-2 w-8 shrink-0 font-mono text-[11px] font-bold uppercase text-muted-foreground">
+                              <span className="mt-2 w-8 shrink-0 font-mono text-2xs font-semibold uppercase text-muted-foreground">
                                 {cell}
                               </span>
                               <Textarea
@@ -702,7 +702,7 @@ export function AddManyStringsDialog({
           ) : saved ? (
             <div role="status" className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-4">
               <div className="flex items-start gap-2.5">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div className="min-w-0 text-sm">
                   <p className="font-medium">
                     {saved.action === 'publish'

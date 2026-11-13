@@ -309,7 +309,7 @@ export function ActivityPage() {
                 {filtered ? (
                   <Badge
                     variant="outline"
-                    className="border-primary/30 bg-primary/8 font-mono text-[11px] text-primary"
+                    className="border-primary/30 bg-primary/8 font-mono text-2xs text-primary"
                   >
                     Filtered
                   </Badge>
@@ -331,7 +331,7 @@ export function ActivityPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 p-3">
-                  <p className="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  <p className="eyebrow mb-2">
                     Undo &amp; history rules
                   </p>
                   <ul className="flex flex-col gap-2">
@@ -370,36 +370,36 @@ export function ActivityPage() {
           {isLoading ? (
             <ActivitySkeleton />
           ) : isError ? (
-            <div className="rounded-xl border border-dashed border-border/80 bg-card/50 py-6">
-              <EmptyState
-                title="Couldn’t load activity"
-                description="Try loading the catalog changes again."
-                action={
-                  <Button variant="outline" onClick={() => void refetch()}>
-                    Retry
-                  </Button>
-                }
-              />
-            </div>
+            <EmptyState
+              variant="dashed"
+              className="py-12"
+              title="Couldn’t load activity"
+              description="Try loading the catalog changes again."
+              action={
+                <Button variant="outline" onClick={() => void refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/80 bg-card/50 py-6">
-              <EmptyState
-                icon={<Clock />}
-                title={filtered ? 'No matching activity' : 'No activity yet'}
-                description={
-                  filtered
-                    ? 'Try another person, event type, language, or date range.'
-                    : 'Import Excel, edit a string, or publish a batch to see it here.'
-                }
-                action={
-                  filtered ? (
-                    <Button variant="outline" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  ) : undefined
-                }
-              />
-            </div>
+            <EmptyState
+              variant="dashed"
+              className="py-12"
+              icon={<Clock />}
+              title={filtered ? 'No matching activity' : 'No activity yet'}
+              description={
+                filtered
+                  ? 'Try another person, event type, language, or date range.'
+                  : 'Import Excel, edit a string, or publish a batch to see it here.'
+              }
+              action={
+                filtered ? (
+                  <Button variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <div data-tour="activity-list" className="flex flex-col gap-7">
               {grouped.map((group, groupIndex) => (
@@ -409,12 +409,12 @@ export function ActivityPage() {
                   className="animate-stage-in flex min-w-0 flex-col gap-3"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 py-1 font-mono text-[11px] font-medium tracking-wider text-foreground uppercase shadow-2xs">
+                    <span className="eyebrow inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 py-1 text-foreground shadow-2xs">
                       <CalendarDays aria-hidden="true" className="size-3 text-primary" />
                       {group.heading || 'Unknown date'}
                     </span>
                     <div className="h-px flex-1 bg-border/70" />
-                    <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                    <span className="font-mono text-2xs text-muted-foreground tabular-nums">
                       {group.cards.length} {group.cards.length === 1 ? 'entry' : 'entries'}
                     </span>
                   </div>

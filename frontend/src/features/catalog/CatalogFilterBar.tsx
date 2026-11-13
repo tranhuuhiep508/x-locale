@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowUpDown, Search, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   InputGroup,
   InputGroupAddon,
@@ -117,7 +118,7 @@ export function CatalogFilterBar<F extends string, S extends string>({
           {filterOptions.map((option) => (
             <ToggleGroupItem key={option.value} value={option.value} className="gap-1.5 bg-card">
               <span>{option.label}</span>
-              <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+              <span className="font-mono text-2xs text-muted-foreground tabular-nums">
                 {option.count}
               </span>
             </ToggleGroupItem>
@@ -153,19 +154,25 @@ export function CatalogFilteredEmpty({
   title,
   description,
   onClear,
+  clearLabel = 'Clear filters',
 }: {
   title: string
   description: string
   onClear: () => void
+  clearLabel?: string
 }) {
   return (
-    <div className="animate-stage-in flex flex-col items-center justify-center rounded-xl border border-dashed border-border/85 bg-card/50 px-6 py-12 text-center">
-      <Search className="mb-2.5 size-7 text-muted-foreground/60" />
-      <h2 className="font-heading text-base font-semibold text-foreground">{title}</h2>
-      <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">{description}</p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={onClear}>
-        Clear filters
-      </Button>
-    </div>
+    <EmptyState
+      variant="dashed"
+      icon={<Search />}
+      title={title}
+      description={description}
+      className="animate-stage-in border-border/85 py-12"
+      action={
+        <Button variant="outline" size="sm" onClick={onClear}>
+          {clearLabel}
+        </Button>
+      }
+    />
   )
 }

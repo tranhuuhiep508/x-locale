@@ -11,7 +11,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { PageBody, PageHeader } from '@/components/layout/PageHeader'
+import { PageBody, PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import { useQaWatch } from '@/features/strings/use-qa-watch'
 import { QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import { ConfidenceBadge } from '@/features/strings/confidence'
@@ -77,8 +77,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
   )
 
   return (
-    <PageBody className="gap-3.5 py-3.5 sm:py-4">
-      <header className="sticky top-0 z-20 -mx-4 -mt-3.5 border-b border-border/80 bg-background/95 px-4 py-2.5 backdrop-blur-md sm:-mx-6 sm:-mt-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <PageStickyHeader maxWidth="full" innerClassName="py-2.5 sm:py-2.5">
         <PageHeader
           leading={
             <Button variant="ghost" size="icon-sm" asChild>
@@ -103,7 +103,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       ? 'outline'
                       : 'secondary'
                 }
-                className="text-[11px]"
+                className="text-2xs"
               >
                 {workspace.published
                   ? 'Published'
@@ -115,7 +115,10 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
           }
           actions={batch ? <BatchStepper current={currentStep} /> : null}
         />
-      </header>
+      </PageStickyHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageBody className="gap-3.5 py-3.5 sm:py-4">
 
       {query.isPending ? (
         <Skeleton className="h-64 w-full" />
@@ -147,7 +150,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {batch.created_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="border-emerald-500/30 bg-emerald-500/5 font-mono text-xs font-normal text-emerald-600 dark:text-emerald-400"
+                          className="border-primary/30 bg-primary/5 font-mono text-xs font-normal text-primary"
                         >
                           +{batch.created_count} new
                         </Badge>
@@ -155,7 +158,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {batch.updated_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="border-amber-500/30 bg-amber-500/5 font-mono text-xs font-normal text-amber-600 dark:text-amber-400"
+                          className="border-border bg-muted/50 font-mono text-xs font-normal text-foreground/85"
                         >
                           ~{batch.updated_count} updated
                         </Badge>
@@ -301,7 +304,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3.5 py-2">
                       <div className="flex min-w-0 items-center gap-2 font-mono text-xs">
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground">
                           {entry.module_slug ?? 'Unassigned'}
                         </span>
                         <span aria-hidden="true" className="text-muted-foreground/60">
@@ -317,7 +320,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               ? 'default'
                               : 'secondary'
                         }
-                        className="text-[11px]"
+                        className="text-2xs"
                       >
                         {entry.published_key == null
                           ? 'New to public'
@@ -330,10 +333,10 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                     <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
                       <div className="flex min-w-0 flex-col gap-2.5 border-b bg-muted/10 p-3.5 lg:border-r lg:border-b-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="eyebrow text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+                          <p className="eyebrow">
                             Source
                           </p>
-                          <Badge variant="outline" className="text-[10px] font-mono">
+                          <Badge variant="outline" className="text-3xs font-mono">
                             {project?.base_language.toUpperCase()}
                           </Badge>
                         </div>
@@ -345,7 +348,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                           >
                             <div className="flex items-center gap-1.5 font-medium text-muted-foreground mb-1">
                               <Globe2 aria-hidden="true" className="size-3 shrink-0" />
-                              <span className="text-[10px] uppercase tracking-wider font-semibold">
+                              <span className="eyebrow text-3xs">
                                 Published:
                               </span>
                             </div>
@@ -426,7 +429,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                   {isReadOnly && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] py-0 px-1 text-muted-foreground font-mono"
+                                      className="text-3xs py-0 px-1 text-muted-foreground font-mono"
                                     >
                                       Read-only
                                     </Badge>
@@ -442,7 +445,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                     />
                                   )}
                                   {changed && (
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                                    <span className="inline-flex items-center gap-1 text-2xs font-medium text-primary">
                                       <span
                                         className="size-1.5 rounded-full bg-primary"
                                         aria-hidden="true"
@@ -463,7 +466,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                     className="size-3 mt-0.5 shrink-0 text-muted-foreground/70"
                                   />
                                   <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-1">
-                                    <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                                    <span className="eyebrow text-3xs text-muted-foreground/80">
                                       Published:
                                     </span>
                                     <p lang={locale} className="break-all whitespace-pre-wrap">
@@ -630,6 +633,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
         confirmLabel="Discard and leave"
         cancelLabel="Keep reviewing"
       />
-    </PageBody>
+        </PageBody>
+      </div>
+    </div>
   )
 }

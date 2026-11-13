@@ -55,7 +55,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
     <>
       <div
         aria-hidden="true"
-        className="absolute inset-y-0 left-0 w-1 bg-primary/85 transition-all duration-300 group-hover/passport:w-1.5"
+        className="absolute inset-y-0 left-0 w-0.5 bg-border transition-colors duration-200 group-hover/passport:bg-primary"
       />
       <div className="pl-1.5">
         <div className="flex items-center justify-between gap-1.5">
@@ -66,7 +66,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
             {project.name}
           </h2>
           <div className="flex shrink-0 items-center gap-1">
-            <span className="rounded border border-border/70 bg-muted/60 px-1 py-0.2 font-mono text-[9px] font-medium uppercase text-muted-foreground">
+            <span className="rounded border border-border/70 bg-muted/60 px-1 py-0.5 font-mono text-3xs font-medium uppercase text-muted-foreground">
               {project.layout}
             </span>
             {canSwitchProjects ? (
@@ -74,9 +74,9 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
             ) : null}
           </div>
         </div>
-        <div className="mt-0.5 flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+        <div className="mt-0.5 flex items-center justify-between gap-2 font-mono text-3xs text-muted-foreground">
           <span className="truncate">{project.slug}</span>
-          <span className="shrink-0 text-primary">
+          <span className="shrink-0">
             {project.base_language.toUpperCase()} → {project.target_languages.filter((l) => l !== project.base_language).length}
           </span>
         </div>
@@ -125,7 +125,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium">{item.name}</p>
-                        <p className="truncate font-mono text-[10px] text-muted-foreground">
+                        <p className="truncate font-mono text-3xs text-muted-foreground">
                           {item.slug}
                         </p>
                       </div>
@@ -173,7 +173,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
                 {pendingCount > 0 ? (
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-primary/15 px-1.5 py-0 font-mono text-[10px] font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-primary/15 px-1.5 py-0 font-mono text-3xs font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
                   >
                     {pendingCount}
                   </span>

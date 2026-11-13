@@ -10,7 +10,7 @@ import {
   Tags as TagsIcon,
   Trash2,
 } from 'lucide-react'
-import { PageHeader } from '@/components/layout/PageHeader'
+import { PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import {
   CatalogFilterBar,
   CatalogFilteredEmpty,
@@ -80,20 +80,9 @@ function TagCard({
     <div
       role="row"
       style={{ '--stagger': Math.min(index, 12) } as React.CSSProperties}
-      className="animate-stage-in group relative overflow-hidden rounded-xl border border-border/85 bg-card shadow-2xs transition-all duration-300 ease-drift hover:-translate-y-0.5 hover:border-border hover:shadow-md focus-within:ring-2 focus-within:ring-primary/35"
+      className="animate-stage-in group relative overflow-hidden rounded-xl border border-border/85 bg-card shadow-2xs transition-all duration-300 ease-drift hover:-translate-y-0.5 hover:border-border hover:shadow-md focus-within:ring-2 focus-within:ring-ring/40"
     >
-      <div
-        aria-hidden="true"
-        className="absolute inset-y-0 left-0 w-1.5 transition-all duration-300 ease-drift group-hover:w-2"
-        style={{ backgroundColor: tag.color }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-10 -right-10 size-24 rounded-full opacity-[0.08] blur-xl transition-opacity duration-300 group-hover:opacity-[0.16]"
-        style={{ backgroundColor: tag.color }}
-      />
-
-      <div role="gridcell" className="relative flex h-full flex-col justify-between gap-4 p-4 pl-5">
+      <div role="gridcell" className="relative flex h-full flex-col justify-between gap-4 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
@@ -113,7 +102,7 @@ function TagCard({
                 onClick={() => onCopyColor(tag)}
                 aria-label={`Copy ${tag.color}`}
                 title="Copy hex color"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-[11px] uppercase text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs uppercase text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
               >
                 <span>{tag.color.toUpperCase()}</span>
                 {copied ? (
@@ -123,7 +112,7 @@ function TagCard({
                 )}
               </button>
               {tag.string_count === 0 ? (
-                <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[11px] text-muted-foreground">
+                <Badge variant="outline" className="rounded-md px-1.5 py-0 text-2xs text-muted-foreground">
                   Unused
                 </Badge>
               ) : null}
@@ -152,10 +141,10 @@ function TagCard({
         </div>
 
         <div className="flex flex-col gap-2.5 border-t border-border/60 pt-3">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
             <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{ width: `${usageWidth}%`, backgroundColor: tag.color }}
+              className="h-full rounded-full bg-foreground/30 transition-all duration-300"
+              style={{ width: `${usageWidth}%` }}
             />
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -353,24 +342,22 @@ export function TagsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="mx-auto w-full max-w-5xl px-4 py-3 sm:px-6 sm:py-3.5">
-          <PageHeader
-            title="Tags"
-            badge={
-              <Badge variant="secondary" className="font-mono text-xs tabular-nums">
-                {tags.length} tag{tags.length !== 1 ? 's' : ''}
-              </Badge>
-            }
-            actions={
-              <Button size="sm" onClick={openCreate}>
-                <Plus data-icon="inline-start" />
-                New tag
-              </Button>
-            }
-          />
-        </div>
-      </header>
+      <PageStickyHeader maxWidth="5xl">
+        <PageHeader
+          title="Tags"
+          badge={
+            <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+              {tags.length} tag{tags.length !== 1 ? 's' : ''}
+            </Badge>
+          }
+          actions={
+            <Button size="sm" onClick={openCreate}>
+              <Plus data-icon="inline-start" />
+              New tag
+            </Button>
+          }
+        />
+      </PageStickyHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">

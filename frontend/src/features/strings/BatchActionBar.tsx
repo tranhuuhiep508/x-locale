@@ -72,7 +72,7 @@ function SelectionActionButton({
         <Badge
           variant={variant === 'default' ? 'outline' : 'secondary'}
           className={cn(
-            'font-mono text-[11px] tabular-nums',
+            'font-mono text-2xs tabular-nums',
             variant === 'default' && 'border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground',
           )}
           aria-hidden="true"
@@ -203,7 +203,7 @@ export function BatchActionBar({
         </Button>
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-border/60 px-1.5 pt-1">
-        <p role="status" className="text-[11px] text-muted-foreground">
+        <p role="status" className="text-2xs text-muted-foreground">
           {selectionError
             ? 'Could not check selected strings. Retry to enable actions.'
             : checking

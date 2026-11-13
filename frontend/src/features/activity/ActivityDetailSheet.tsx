@@ -32,14 +32,14 @@ function ChangeRow({ change }: { change: ActivityChange }) {
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-foreground/90">{label}</span>
         {isChanged ? (
-          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary">
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-3xs font-medium text-primary">
             Modified
           </span>
         ) : null}
       </div>
       <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <span className="eyebrow text-3xs">
             Before
           </span>
           <p className="rounded-md border border-border/70 bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-muted-foreground">
@@ -47,7 +47,7 @@ function ChangeRow({ change }: { change: ActivityChange }) {
           </p>
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-[10px] font-semibold tracking-wider text-primary uppercase">
+          <span className="eyebrow text-3xs text-primary">
             After
           </span>
           <p
@@ -78,7 +78,7 @@ function ChangeGroupSection({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 px-0.5">
-        <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+        <h3 className="eyebrow">
           {changeScopeLabel(scope)}
         </h3>
         <div className="h-px flex-1 bg-border/60" />
@@ -88,7 +88,7 @@ function ChangeGroupSection({
           <ChangeRow key={change.field} change={change} />
         ))}
         {translations.length > 0 && other.length > 0 ? (
-          <div className="bg-muted/35 px-3.5 py-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <div className="eyebrow bg-muted/35 px-3.5 py-1.5 text-3xs">
             Translations
           </div>
         ) : null}

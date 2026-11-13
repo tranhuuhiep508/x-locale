@@ -658,16 +658,16 @@ export default function StringFormDialog({
                 <Badge
                   variant={status === 'public' ? 'default' : 'secondary'}
                   className={cn(
-                    'min-w-14 shrink-0 justify-center font-mono text-[10px] tracking-wider uppercase',
+                    'eyebrow min-w-14 shrink-0 justify-center text-3xs',
                     status === 'public' &&
-                      'border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+                      'border-primary/30 bg-primary/12 text-primary',
                   )}
                 >
                   {status}
                 </Badge>
               ) : null}
               {reviewOpen ? (
-                <Badge variant="outline" className="shrink-0 border-primary/40 bg-primary/10 font-mono text-[10px] text-primary uppercase">
+                <Badge variant="outline" className="eyebrow shrink-0 border-primary/40 bg-primary/10 text-3xs text-primary">
                   Publication Review
                 </Badge>
               ) : null}
@@ -813,8 +813,8 @@ export default function StringFormDialog({
                 <AlertDescription>Restore it from the grid to edit again.</AlertDescription>
               </Alert>
             ) : isEdit && baseline?.pending_delete ? (
-              <Alert role="status" className="mx-6 mt-5 w-auto border-amber-500/35 bg-amber-500/10 text-amber-900 dark:text-amber-200">
-                <AlertDescription className="text-xs text-amber-800 dark:text-amber-200">
+              <Alert role="status" variant="destructive" className="mx-6 mt-5 w-auto">
+                <AlertDescription className="text-xs">
                   Deletion is pending. Production still has the last published snapshot until you publish the removal.
                 </AlertDescription>
               </Alert>
@@ -822,7 +822,7 @@ export default function StringFormDialog({
               <Alert role="status" className="mx-6 mt-5 flex w-auto flex-wrap items-center justify-between gap-3 border-border/80 bg-muted/35">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <AlertTitle className="flex items-center gap-2 text-xs font-semibold">
-                    <span className="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                    <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                     Public snapshot is live.
                   </AlertTitle>
                   <AlertDescription className="text-xs">
@@ -848,7 +848,7 @@ export default function StringFormDialog({
             <div className="grid gap-8 p-6 sm:grid-cols-2">
               <div className="flex flex-col gap-4 sm:border-r sm:border-border/60 sm:pr-8">
                 <div className="flex items-center justify-between border-b border-border/60 pb-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <h3 className="eyebrow">
                     String details
                   </h3>
                 </div>
@@ -990,7 +990,7 @@ export default function StringFormDialog({
 
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <h3 className="eyebrow">
                     Translations {targetLocales.length > 0 ? `(${targetLocales.length})` : ''}
                   </h3>
                   <Button
@@ -1049,8 +1049,8 @@ export default function StringFormDialog({
                       return (
                       <Field key={locale} className="rounded-xl border border-border/80 bg-card p-3.5 shadow-2xs transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20" data-qa-status={view.status}>
                         <div className="flex min-h-6 items-center gap-2">
-                          <span className="font-mono text-xs font-bold uppercase rounded bg-muted/80 px-2 py-0.5 text-foreground shrink-0">
-                            <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-bold cursor-pointer">
+                          <span className="font-mono text-xs font-semibold uppercase rounded bg-muted/80 px-2 py-0.5 text-foreground shrink-0">
+                            <FieldLabel htmlFor={`translation-${locale}`} className="uppercase font-mono text-xs font-semibold cursor-pointer">
                               {locale}
                             </FieldLabel>
                           </span>
