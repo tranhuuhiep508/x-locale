@@ -309,7 +309,7 @@ export function ActivityPage() {
                 {filtered ? (
                   <Badge
                     variant="outline"
-                    className="border-primary/30 bg-primary/8 font-mono text-2xs text-primary"
+                    className="bg-accent font-mono text-2xs text-accent-foreground"
                   >
                     Filtered
                   </Badge>

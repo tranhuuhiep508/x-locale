@@ -106,7 +106,7 @@ describe('TagsPage', () => {
     await waitFor(() => {
       expect(tagsApi.create).toHaveBeenCalledWith('p1', {
         name: 'android',
-        color: '#64748b',
+        color: '#65707b',
       })
     })
   })

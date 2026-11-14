@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { moduleSlugFromName, nextTagColor, uniqueModuleSlug } from './catalog-create'
+import { TAG_PRESET_COLORS, moduleSlugFromName, nextTagColor, tagSwatchColor, uniqueModuleSlug } from './catalog-create'
 
 describe('moduleSlugFromName', () => {
   it('slugifies a display name', () => {
@@ -27,21 +27,23 @@ describe('uniqueModuleSlug', () => {
 
 describe('nextTagColor', () => {
   it('picks the first unused preset', () => {
-    expect(nextTagColor(['#64748b', '#0d9488'])).toBe('#2563eb')
+    expect(nextTagColor([TAG_PRESET_COLORS[0], TAG_PRESET_COLORS[1]])).toBe(TAG_PRESET_COLORS[2])
   })
 
   it('falls back to the first preset when all are used', () => {
-    expect(
-      nextTagColor([
-        '#64748b',
-        '#0d9488',
-        '#2563eb',
-        '#9333ea',
-        '#e11d48',
-        '#f59e0b',
-        '#10b981',
-        '#f97316',
-      ]),
-    ).toBe('#64748b')
+    expect(nextTagColor([...TAG_PRESET_COLORS])).toBe(TAG_PRESET_COLORS[0])
+  })
+})
+
+describe('tagSwatchColor', () => {
+  it('maps daylight and legacy hexes onto theme variables', () => {
+    expect(tagSwatchColor(TAG_PRESET_COLORS[0])).toBe('var(--tag-haze)')
+    expect(tagSwatchColor('#64748B')).toBe('var(--tag-haze)')
+    expect(tagSwatchColor('#2563eb')).toBe('var(--tag-azure)')
+    expect(tagSwatchColor('#f97316')).toBe('var(--tag-gold)')
+  })
+
+  it('leaves a custom picker color untouched', () => {
+    expect(tagSwatchColor('#123456')).toBe('#123456')
   })
 })

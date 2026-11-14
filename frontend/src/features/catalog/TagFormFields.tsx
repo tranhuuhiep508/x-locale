@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import type { TagCreateForm } from '@/lib/schemas'
-import { TAG_PRESET_COLORS } from '@/features/strings/catalog-create'
+import { TAG_PRESET_COLORS, tagSwatchColor } from '@/features/strings/catalog-create'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -57,8 +57,10 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
                   onClick={() => onChange({ ...form, color: c })}
                   className="relative size-6 rounded-full p-0 text-sun transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
-                    backgroundColor: c,
-                    boxShadow: selected ? `0 0 0 2px var(--background), 0 0 0 4px ${c}` : undefined,
+                    backgroundColor: tagSwatchColor(c),
+                    boxShadow: selected
+                      ? `0 0 0 2px var(--background), 0 0 0 4px ${tagSwatchColor(c)}`
+                      : undefined,
                   }}
                   aria-label={`Select color ${c}`}
                   aria-pressed={selected}
@@ -74,7 +76,7 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
           <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-muted/45 px-2 py-0.5 text-xs font-medium text-foreground wrap-anywhere">
             <span
               className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: form.color }}
+              style={{ backgroundColor: tagSwatchColor(form.color) }}
               aria-hidden="true"
             />
             {form.name.trim() || 'Preview'}

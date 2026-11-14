@@ -926,7 +926,7 @@ export function StringsPage() {
                         className={cn(
                           'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
                           density === 'comfortable'
-                            ? 'bg-primary/12 text-primary'
+                            ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:text-foreground',
                         )}
                       >
@@ -945,7 +945,7 @@ export function StringsPage() {
                         className={cn(
                           'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
                           density === 'compact'
-                            ? 'bg-primary/12 text-primary'
+                            ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:text-foreground',
                         )}
                       >
@@ -1080,7 +1080,7 @@ export function StringsPage() {
                     className={cn(
                       'rounded-full px-1.5 py-0 font-mono text-3xs font-semibold tabular-nums',
                       lens.active
-                        ? 'bg-primary/12 text-primary'
+                        ? 'bg-accent text-accent-foreground'
                         : 'bg-muted text-muted-foreground',
                     )}
                   >

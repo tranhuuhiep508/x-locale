@@ -7,9 +7,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { issueCounts, presentQaIssues, type QaView } from '@/features/strings/qa-issues'
 import { cn } from '@/lib/utils'
 
-const warningBadgeClass =
-  'border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200'
-const warningIconClass = 'text-amber-600 dark:text-amber-400'
+const warningBadgeClass = 'bg-warning text-warning-foreground'
+const warningIconClass = 'text-warning-foreground'
 
 /** Long enough for the pointer to cross from the badge into the popover. */
 const CLOSE_DELAY_MS = 150

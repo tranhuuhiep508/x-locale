@@ -180,12 +180,12 @@ function FilterSelect({
         aria-label={label}
         className={cn(
           'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
-          isActive && 'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
+          isActive && 'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
         )}
       >
         {isActive ? (
           <>
-            <span className="text-muted-foreground/80 font-normal">{label}:</span>
+            <span className="text-muted-foreground font-normal">{label}:</span>
             <SelectValue />
           </>
         ) : (
@@ -245,12 +245,12 @@ function FilterSearchSelect({
           size="sm"
           className={cn(
             'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
-            isActive && 'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
+            isActive && 'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
           )}
         >
           {isActive ? (
             <>
-              <span className="text-muted-foreground/80 font-normal">{label}:</span>
+              <span className="text-muted-foreground font-normal">{label}:</span>
               <span className="max-w-32 truncate font-medium text-foreground">{selected.label}</span>
             </>
           ) : (
@@ -606,7 +606,7 @@ export function StringsFilters({
               className={cn(
                 'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors',
                 isTimeActive &&
-                  'border-primary/45 bg-primary/10 text-primary font-medium hover:bg-primary/15'
+                  'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
               )}
               value={{
                 period: search.period,

@@ -35,7 +35,7 @@ export function startTour(
     smoothScroll: !reduced,
     allowClose: true,
     overlayClickBehavior: 'none',
-    overlayColor: '#0b111e',
+    overlayColor: 'var(--color-haze-950)',
     overlayOpacity: 0.5,
     stagePadding: 6,
     stageRadius: 8,

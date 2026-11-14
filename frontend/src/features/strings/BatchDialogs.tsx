@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FolderGit2, FolderX } from 'lucide-react'
 import type { Module, Tag } from '@/lib/api/types'
+import { tagSwatchColor } from '@/features/strings/catalog-create'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -136,7 +137,7 @@ export function BatchTagDialog({
               <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 cursor-pointer wrap-anywhere">
                 <span
                   className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
-                  style={{ backgroundColor: t.color }}
+                  style={{ backgroundColor: tagSwatchColor(t.color) }}
                 />
                 {t.name}
               </FieldLabel>

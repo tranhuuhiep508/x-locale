@@ -97,7 +97,7 @@ export function PageStickyHeader({
   return (
     <header
       className={cn(
-        'sticky top-0 z-20 shrink-0 border-b border-border/80 bg-background/95 backdrop-blur-md',
+        'sky-chrome sticky top-0 z-20 shrink-0',
         className
       )}
     >

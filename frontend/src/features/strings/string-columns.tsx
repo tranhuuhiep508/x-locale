@@ -34,6 +34,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { batchSuccessMessage, unpublishConfirmCopy } from '@/features/strings/batch-feedback'
+import { tagSwatchColor } from '@/features/strings/catalog-create'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
   ChangedValueHint,
@@ -720,7 +721,7 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
                 <span
                   aria-hidden="true"
                   className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: tag.color }}
+                  style={{ backgroundColor: tagSwatchColor(tag.color) }}
                 />
                 {tag.name}
               </span>

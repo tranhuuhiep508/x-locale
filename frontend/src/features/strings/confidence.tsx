@@ -28,7 +28,7 @@ export function confidenceLabel(score: number): string {
 const TONE_STYLE: Record<ConfidenceTone, string> = {
   high: 'border-border/80 bg-muted/50 text-muted-foreground',
   medium: 'border-public-foreground/25 bg-public text-public-foreground',
-  low: 'border-destructive/30 bg-destructive/10 text-destructive',
+  low: 'border-transparent bg-destructive text-destructive-foreground',
 }
 
 export function ConfidenceBadge({

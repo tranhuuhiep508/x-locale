@@ -18,6 +18,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { ActivityCard } from '@/features/activity/ActivityCard'
+import { tagSwatchColor } from '@/features/strings/catalog-create'
 import {
   activityFeedQuery,
   languagesQuery,
@@ -529,7 +530,7 @@ function CatalogBlueprintCard({
                 >
                   <span
                     className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: tag.color }}
+                    style={{ backgroundColor: tagSwatchColor(tag.color) }}
                     aria-hidden="true"
                   />
                   <span>{tag.name}</span>

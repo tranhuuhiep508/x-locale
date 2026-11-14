@@ -19,6 +19,7 @@ import {
   type CatalogSortOption,
 } from '@/features/catalog/CatalogFilterBar'
 import { TagFormFields } from '@/features/catalog/TagFormFields'
+import { TAG_PRESET_COLORS, tagSwatchColor } from '@/features/strings/catalog-create'
 import { tagsApi } from '@/lib/api/catalog'
 import type { Tag } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query-keys'
@@ -89,7 +90,7 @@ function TagCard({
               <span
                 aria-hidden="true"
                 className="size-3.5 shrink-0 rounded-full ring-2 ring-background shadow-xs"
-                style={{ backgroundColor: tag.color }}
+                style={{ backgroundColor: tagSwatchColor(tag.color) }}
               />
               <h2 className="truncate font-heading text-base font-semibold tracking-tight text-foreground">
                 {tag.name}
@@ -211,11 +212,11 @@ export function TagsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<Tag | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Tag | null>(null)
-  const [form, setForm] = useState<TagCreateForm>({ name: '', color: '#64748b' })
+  const [form, setForm] = useState<TagCreateForm>({ name: '', color: TAG_PRESET_COLORS[0] })
   const [errors, setErrors] = useState<FormErrors>({})
 
   function resetForm() {
-    setForm({ name: '', color: '#64748b' })
+    setForm({ name: '', color: TAG_PRESET_COLORS[0] })
     setErrors({})
   }
 
@@ -397,7 +398,7 @@ export function TagsPage() {
                       <span
                         key={item.id}
                         className="size-3 rounded-full ring-2 ring-background"
-                        style={{ backgroundColor: item.color }}
+                        style={{ backgroundColor: tagSwatchColor(item.color) }}
                       />
                     ))}
                   </div>

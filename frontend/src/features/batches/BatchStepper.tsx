@@ -33,7 +33,7 @@ export function BatchStepper({
                 ? 'bg-background text-foreground font-semibold shadow-xs ring-1 ring-border/50 scale-[1.02]'
                 : complete
                   ? 'text-primary font-medium hover:text-primary/90'
-                  : 'text-muted-foreground/60'
+                  : 'text-muted-foreground'
             )}
           >
             <span

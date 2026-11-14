@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select'
 import { PendingLabel } from '@/components/ui/spinner'
 import { useToast } from '@/lib/toast'
-import { nextTagColor } from './catalog-create'
+import { nextTagColor, tagSwatchColor } from './catalog-create'
 
 type ModuleErrors = Partial<Record<keyof ModuleCreateForm, string>>
 type TagErrors = Partial<Record<keyof TagCreateForm, string>>
@@ -335,7 +335,7 @@ export function SingleTagField({
                 <span
                   aria-hidden="true"
                   className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: selectedTag.color }}
+                  style={{ backgroundColor: tagSwatchColor(selectedTag.color) }}
                 />
                 <span className="truncate">{selectedTag.name}</span>
               </span>
@@ -353,7 +353,7 @@ export function SingleTagField({
                   <span
                     aria-hidden="true"
                     className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: tag.color }}
+                    style={{ backgroundColor: tagSwatchColor(tag.color) }}
                   />
                   <span>{tag.name}</span>
                 </span>

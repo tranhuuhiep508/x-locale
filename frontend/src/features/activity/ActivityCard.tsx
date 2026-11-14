@@ -54,13 +54,13 @@ const VISUAL_PRESETS = {
   },
   ai: {
     icon: Sparkles,
-    badgeClass: 'border-primary/25 bg-primary/10 text-primary',
-    nodeClass: 'border-primary/35 bg-primary/12 text-primary',
+    badgeClass: 'bg-accent text-accent-foreground',
+    nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   publish: {
     icon: Globe,
-    badgeClass: 'border-primary/25 bg-primary/10 text-primary',
-    nodeClass: 'border-primary/35 bg-primary/12 text-primary',
+    badgeClass: 'bg-accent text-accent-foreground',
+    nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   revert: {
     icon: RotateCcw,
@@ -69,8 +69,8 @@ const VISUAL_PRESETS = {
   },
   danger: {
     icon: Trash2,
-    badgeClass: 'border-destructive/30 bg-destructive/10 text-destructive',
-    nodeClass: 'border-destructive/35 bg-destructive/15 text-destructive',
+    badgeClass: 'border-transparent bg-destructive text-destructive-foreground',
+    nodeClass: 'border-transparent bg-destructive text-destructive-foreground',
   },
   create: {
     icon: Plus,
@@ -79,8 +79,8 @@ const VISUAL_PRESETS = {
   },
   translation: {
     icon: Languages,
-    badgeClass: 'border-primary/25 bg-primary/8 text-primary',
-    nodeClass: 'border-primary/35 bg-primary/12 text-primary',
+    badgeClass: 'bg-accent text-accent-foreground',
+    nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   batch: {
     icon: Layers,
@@ -177,13 +177,13 @@ function countChips(counts: Record<string, number>): CountChip[] {
   if (counts.published) {
     chips.push({
       label: `${counts.published} published`,
-      className: 'border-primary/25 bg-primary/8 text-primary',
+      className: 'bg-accent text-accent-foreground',
     })
   }
   if (counts.deleted) {
     chips.push({
       label: `${counts.deleted} deleted`,
-      className: 'border-destructive/25 bg-destructive/8 text-destructive',
+      className: 'border-transparent bg-destructive text-destructive-foreground',
     })
   }
   return chips

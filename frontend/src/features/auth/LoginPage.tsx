@@ -119,7 +119,7 @@ export function LoginPage() {
       <header className="sky-chrome sticky top-0 z-40 border-b border-border/60">
         <div className="mx-auto flex h-13 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="group flex items-center gap-2.5">
-            <span className="flex size-7 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary shadow-2xs transition-colors group-hover:border-primary/45 group-hover:bg-primary/15">
+            <span className="flex size-7 items-center justify-center rounded-md border border-border bg-accent text-accent-foreground shadow-2xs transition-colors group-hover:border-accent-foreground/30">
               <MeridianMark className="size-4" />
             </span>
             <span className="font-heading text-base font-semibold tracking-tight text-foreground">
@@ -167,8 +167,8 @@ export function LoginPage() {
                     <Badge variant="outline" className="rounded-md bg-background/60 font-mono text-2xs font-normal">
                       Published
                     </Badge>
-                    <Badge variant="secondary" className="gap-1 rounded-md border border-primary/20 bg-primary/10 font-mono text-2xs text-primary">
-                      <Sparkles className="size-3 animate-pulse text-primary" />
+                    <Badge variant="secondary" className="gap-1 rounded-md border border-border bg-accent font-mono text-2xs text-accent-foreground">
+                      <Sparkles className="size-3 animate-pulse text-accent-foreground" />
                       AI Live
                     </Badge>
                   </div>
@@ -226,7 +226,7 @@ export function LoginPage() {
                       <Badge
                         key={`conf-${activeLocale.code}`}
                         variant="secondary"
-                        className="animate-galley-swap rounded-md border border-primary/25 bg-primary/10 font-mono text-xs font-semibold text-primary"
+                        className="animate-galley-swap rounded-md border border-border bg-accent font-mono text-xs font-semibold text-accent-foreground"
                       >
                         {activeLocale.confidence}%
                       </Badge>
@@ -304,7 +304,7 @@ export function LoginPage() {
                         <Terminal className="size-3 text-azure-400" />
                         <span>loc-cli // release-pipeline</span>
                       </div>
-                      <span className="text-haze-500">v0.2.0</span>
+                      <span className="text-haze-400">v0.2.0</span>
                     </div>
                     <div className="space-y-1 p-3 text-2xs text-haze-200">
                       <p className="text-haze-400">
@@ -440,7 +440,7 @@ export function LoginPage() {
                     </div>
                     <ol className="space-y-2 text-xs">
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           1
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
@@ -448,7 +448,7 @@ export function LoginPage() {
                         </span>
                       </li>
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           2
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
@@ -456,7 +456,7 @@ export function LoginPage() {
                         </span>
                       </li>
                       <li className="group/step flex items-center gap-2.5">
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 font-mono text-3xs font-semibold text-primary transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-primary/50">
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           3
                         </span>
                         <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
