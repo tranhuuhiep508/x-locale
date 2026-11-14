@@ -637,7 +637,7 @@ export function StringsFilters({
               variant="outline"
               size="sm"
               onClick={onReviewPublish}
-              className="h-8 text-xs gap-1.5 shrink-0 border-primary/30 text-primary hover:bg-primary/10"
+              className="h-8 text-xs gap-1.5 shrink-0 border-primary/30 text-primary hover:bg-accent hover:text-accent-foreground"
             >
               <GitCompareArrows data-icon="inline-start" className="size-3.5" />
               Review publish changes

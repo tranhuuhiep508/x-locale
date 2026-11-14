@@ -187,7 +187,7 @@ function ModuleCard({
               params={{ projectRef: projectId }}
               search={{ module: module.id }}
               aria-label={`View strings in ${module.name}`}
-              className="group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              className="group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <span>Open strings</span>
               <ArrowUpRight className="size-3.5 transition-transform duration-200 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5" />
