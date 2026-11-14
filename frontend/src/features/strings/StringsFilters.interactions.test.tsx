@@ -81,4 +81,21 @@ describe('active string filter chips', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove confidence filter' }))
     expect(onFilter).toHaveBeenCalledWith({ max_confidence: undefined })
   })
+
+  it('renders all filters in a single compact row directly accessible without extra clicks', () => {
+    renderFilters({})
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: 'Translation' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: 'AI' })).toBeDefined()
+    expect(screen.getByRole('textbox', { name: 'Search strings' })).toBeDefined()
+  })
+
+  it('displays active filter criteria directly in the compact triggers and active list', () => {
+    renderFilters({ status: 'draft', max_confidence: 60 })
+    expect(screen.getByRole('combobox', { name: 'Status' }).textContent).toContain('Draft')
+    expect(screen.getByRole('combobox', { name: 'AI' }).textContent).toContain('≤ 60')
+    const chips = within(screen.getByRole('list', { name: 'Active filters' }))
+    expect(chips.getByRole('button', { name: 'Remove status filter' })).toBeDefined()
+    expect(chips.getByRole('button', { name: 'Remove confidence filter' })).toBeDefined()
+  })
 })

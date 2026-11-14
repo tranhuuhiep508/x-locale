@@ -69,7 +69,14 @@ function SelectionActionButton({
       >
         <Icon data-icon="inline-start" />
         {label}
-        <Badge variant="secondary" aria-hidden="true">
+        <Badge
+          variant={variant === 'default' ? 'outline' : 'secondary'}
+          className={cn(
+            'font-mono text-2xs tabular-nums',
+            variant === 'default' && 'border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground',
+          )}
+          aria-hidden="true"
+        >
           {checking ? '…' : approximate ? `≤ ${count}` : count}
         </Badge>
       </Button>
@@ -135,16 +142,20 @@ export function BatchActionBar({
       aria-busy={busy}
       inert={!open}
       className={cn(
-        'flex max-w-full flex-col gap-1 rounded-xl border border-border bg-popover/95 p-1.5 text-popover-foreground shadow-lg ring-1 ring-border/50 backdrop-blur-md transition-opacity duration-200 ease-drift',
-        open ? 'opacity-100' : 'pointer-events-none opacity-0',
+        'sky-panel relative flex max-w-full flex-col gap-1.5 overflow-hidden rounded-2xl border border-border/80 bg-popover/95 p-2 text-popover-foreground shadow-xl ring-1 ring-primary/15 backdrop-blur-md transition-all duration-250 ease-drift',
+        open ? 'translate-y-0 scale-100 opacity-100' : 'pointer-events-none translate-y-1 scale-98 opacity-0',
       )}
     >
-      <div className="flex min-w-0 items-center gap-1">
-        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-          <div className="flex shrink-0 items-center gap-2 px-1">
-            <Badge>{selectedCount}</Badge>
-            <span className="text-sm">selected</span>
-            {busy ? <Spinner aria-hidden="true" className="size-3.5 text-muted-foreground" /> : null}
+      <div
+        className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+        aria-hidden="true"
+      />
+      <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+          <div className="flex shrink-0 items-center gap-2 rounded-lg bg-accent px-2.5 py-1 text-accent-foreground">
+            <Badge className="font-mono text-xs tabular-nums">{selectedCount}</Badge>
+            <span className="text-xs font-medium">selected</span>
+            {busy ? <Spinner aria-hidden="true" className="size-3.5" /> : null}
           </div>
           <Separator orientation="vertical" className="mx-0.5 h-5" />
           <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}
@@ -191,8 +202,8 @@ export function BatchActionBar({
           <X />
         </Button>
       </div>
-      <div className="flex items-center gap-2 px-1">
-        <p role="status" className="text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-t border-border/60 px-1.5 pt-1">
+        <p role="status" className="text-2xs text-muted-foreground">
           {selectionError
             ? 'Could not check selected strings. Retry to enable actions.'
             : checking

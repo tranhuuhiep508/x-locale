@@ -11,14 +11,14 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { PageBody } from '@/components/layout/PageHeader'
+import { PageBody, PageHeader, PageStickyHeader } from '@/components/layout/PageHeader'
 import { useQaWatch } from '@/features/strings/use-qa-watch'
 import { QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { contentFieldChanges } from '@/features/strings/publish-preview'
 import { useBatchWorkspace } from '@/features/batches/use-batch-workspace'
 import { BatchStepper } from '@/features/batches/BatchStepper'
-import { cn, formatRelativeTime } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; batchId: string }) {
   const workspace = useBatchWorkspace(projectRef, batchId)
@@ -77,11 +77,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
   )
 
   return (
-    <PageBody className="gap-4 py-4 sm:py-5">
-      <header className="sticky top-0 z-20 -mx-4 -mt-4 border-b bg-background/95 backdrop-blur-md px-4 py-2.5 sm:-mx-6 sm:-mt-5 sm:px-6">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <Button variant="ghost" size="icon" className="size-8" asChild>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <PageStickyHeader maxWidth="full" innerClassName="py-2.5 sm:py-2.5">
+        <PageHeader
+          leading={
+            <Button variant="ghost" size="icon-sm" asChild>
               <Link
                 to="/projects/$projectRef/activity"
                 params={{ projectRef }}
@@ -91,41 +91,34 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 <ArrowLeft className="size-4" />
               </Link>
             </Button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="font-heading text-base font-semibold tracking-tight sm:text-lg">
-                  CLI push batch
-                </h1>
-                {batch && (
-                  <Badge
-                    variant={
-                      workspace.published
-                        ? 'secondary'
-                        : publishable
-                          ? 'outline'
-                          : 'secondary'
-                    }
-                    className="text-[11px]"
-                  >
-                    {workspace.published
-                      ? 'Published'
-                      : publishable
-                        ? 'Unpublished changes'
-                        : 'In sync with public'}
-                  </Badge>
-                )}
-              </div>
-              {batch && (
-                <p className="text-xs text-muted-foreground truncate">
-                  {batch.actor_label} ·{' '}
-                  {batch.created_at ? formatRelativeTime(batch.created_at) : 'CLI push'}
-                </p>
-              )}
-            </div>
-          </div>
-          {batch && <BatchStepper current={currentStep} />}
-        </div>
-      </header>
+          }
+          title="CLI push batch"
+          badge={
+            batch ? (
+              <Badge
+                variant={
+                  workspace.published
+                    ? 'secondary'
+                    : publishable
+                      ? 'outline'
+                      : 'secondary'
+                }
+                className="text-2xs"
+              >
+                {workspace.published
+                  ? 'Published'
+                  : publishable
+                    ? 'Unpublished changes'
+                    : 'In sync with public'}
+              </Badge>
+            ) : null
+          }
+          actions={batch ? <BatchStepper current={currentStep} /> : null}
+        />
+      </PageStickyHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageBody className="gap-3.5 py-3.5 sm:py-4">
 
       {query.isPending ? (
         <Skeleton className="h-64 w-full" />
@@ -141,19 +134,23 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
         />
       ) : batch ? (
         <>
-          <div className="overflow-hidden rounded-xl border bg-card shadow-2xs">
-            <div className="flex flex-col gap-3 p-4 sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex min-w-0 flex-col gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h2 className="font-heading text-base sm:text-lg font-semibold tracking-tight text-foreground">
+          <div className="sky-panel relative overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
+            <div
+              className="animate-meridian-stream absolute inset-x-0 top-0 h-px"
+              aria-hidden="true"
+            />
+            <div className="flex flex-col gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-heading text-sm font-semibold tracking-tight text-foreground sm:text-base">
                       {batch.items.length} strings in this batch
                     </h2>
                     <div className="flex items-center gap-1.5">
                       {batch.created_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="text-xs font-mono font-normal border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
+                          className="border-accent-foreground/25 bg-accent font-mono text-xs font-normal text-accent-foreground"
                         >
                           +{batch.created_count} new
                         </Badge>
@@ -161,7 +158,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {batch.updated_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="text-xs font-mono font-normal border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/5"
+                          className="border-border bg-muted/50 font-mono text-xs font-normal text-foreground/85"
                         >
                           ~{batch.updated_count} updated
                         </Badge>
@@ -172,7 +169,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                     {batch.created_count} new · {batch.updated_count} updated · Source:{' '}
                     {project?.base_language.toUpperCase()}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">Source:</span>
                     <Badge variant="secondary" className="font-mono text-xs font-medium">
                       {project?.base_language.toUpperCase()}
@@ -192,6 +189,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
+                    size="sm"
                     onClick={() => void workspace.translate()}
                     disabled={
                       busy ||
@@ -306,7 +304,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3.5 py-2">
                       <div className="flex min-w-0 items-center gap-2 font-mono text-xs">
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground">
                           {entry.module_slug ?? 'Unassigned'}
                         </span>
                         <span aria-hidden="true" className="text-muted-foreground/60">
@@ -322,7 +320,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               ? 'default'
                               : 'secondary'
                         }
-                        className="text-[11px]"
+                        className="text-2xs"
                       >
                         {entry.published_key == null
                           ? 'New to public'
@@ -335,10 +333,10 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                     <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.8fr)]">
                       <div className="flex min-w-0 flex-col gap-2.5 border-b bg-muted/10 p-3.5 lg:border-r lg:border-b-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="eyebrow text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">
+                          <p className="eyebrow">
                             Source
                           </p>
-                          <Badge variant="outline" className="text-[10px] font-mono">
+                          <Badge variant="outline" className="text-3xs font-mono">
                             {project?.base_language.toUpperCase()}
                           </Badge>
                         </div>
@@ -350,7 +348,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                           >
                             <div className="flex items-center gap-1.5 font-medium text-muted-foreground mb-1">
                               <Globe2 aria-hidden="true" className="size-3 shrink-0" />
-                              <span className="text-[10px] uppercase tracking-wider font-semibold">
+                              <span className="eyebrow text-3xs">
                                 Published:
                               </span>
                             </div>
@@ -398,7 +396,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               className="flex flex-wrap items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs text-muted-foreground"
                             >
                               <span className="font-medium text-foreground">{change.label}:</span>
-                              <span className="line-through text-muted-foreground/70">
+                              <span className="line-through text-muted-foreground">
                                 {change.published || '—'}
                               </span>
                               <span>→</span>
@@ -431,7 +429,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                   {isReadOnly && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] py-0 px-1 text-muted-foreground font-mono"
+                                      className="text-3xs py-0 px-1 text-muted-foreground font-mono"
                                     >
                                       Read-only
                                     </Badge>
@@ -447,7 +445,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                     />
                                   )}
                                   {changed && (
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                                    <span className="inline-flex items-center gap-1 text-2xs font-medium text-primary">
                                       <span
                                         className="size-1.5 rounded-full bg-primary"
                                         aria-hidden="true"
@@ -468,7 +466,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                     className="size-3 mt-0.5 shrink-0 text-muted-foreground/70"
                                   />
                                   <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-1">
-                                    <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                                    <span className="eyebrow text-3xs text-muted-foreground">
                                       Published:
                                     </span>
                                     <p lang={locale} className="break-all whitespace-pre-wrap">
@@ -635,6 +633,8 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
         confirmLabel="Discard and leave"
         cancelLabel="Keep reviewing"
       />
-    </PageBody>
+        </PageBody>
+      </div>
+    </div>
   )
 }

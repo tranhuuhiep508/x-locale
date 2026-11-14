@@ -7,9 +7,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { issueCounts, presentQaIssues, type QaView } from '@/features/strings/qa-issues'
 import { cn } from '@/lib/utils'
 
-const warningBadgeClass =
-  'border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200'
-const warningIconClass = 'text-amber-600 dark:text-amber-400'
+const warningBadgeClass = 'bg-warning text-warning-foreground'
+const warningIconClass = 'text-warning-foreground'
 
 /** Long enough for the pointer to cross from the badge into the popover. */
 const CLOSE_DELAY_MS = 150
@@ -35,7 +34,7 @@ function breakdown(errors: number, warnings: number) {
 
 export function QaChecking() {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+    <span className="inline-flex h-5 items-center gap-1 whitespace-nowrap text-xs leading-none text-muted-foreground">
       <Spinner className="size-3" role="presentation" aria-hidden="true" />
       Checking…
     </span>
@@ -233,10 +232,10 @@ export function QaIssueBadge({
                 />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   {showLocale && issue.locale ? (
-                    <span className="font-mono text-[10px] uppercase text-muted-foreground">{issue.locale}</span>
+                    <span className="font-mono text-3xs uppercase text-muted-foreground">{issue.locale}</span>
                   ) : null}
                   <span className="wrap-anywhere text-foreground">{issue.message}</span>
-                  <code className="w-fit rounded bg-muted/60 px-1 py-px font-mono text-[10px] text-muted-foreground" translate="no">
+                  <code className="w-fit rounded bg-muted/60 px-1 py-px font-mono text-3xs text-muted-foreground" translate="no">
                     {issue.code}
                   </code>
                 </span>

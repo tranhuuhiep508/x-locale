@@ -174,7 +174,7 @@ test("real CLI push → batch translation → temporary review → atomic public
     Math.abs((await workspaceHeader.boundingBox())!.y - initialHeaderTop),
   ).toBeLessThan(2);
   await expect(
-    workspaceHeader.getByRole("list", { name: "Batch progress" }),
+    workspaceHeader.getByRole("group", { name: "Batch progress" }),
   ).toBeVisible();
   await english.fill("Log in with email");
   await page.keyboard.press("Tab");

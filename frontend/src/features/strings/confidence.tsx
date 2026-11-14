@@ -26,12 +26,9 @@ export function confidenceLabel(score: number): string {
 }
 
 const TONE_STYLE: Record<ConfidenceTone, string> = {
-  high:
-    'border-emerald-600/25 bg-emerald-600/12 text-emerald-900 dark:border-emerald-400/35 dark:bg-emerald-500/20 dark:text-emerald-200',
-  medium:
-    'border-amber-600/35 bg-amber-500/15 text-amber-950 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-200',
-  low:
-    'border-red-600/35 bg-red-600/12 text-red-900 dark:border-red-400/40 dark:bg-red-500/20 dark:text-red-200',
+  high: 'border-border/80 bg-muted/50 text-muted-foreground',
+  medium: 'border-public-foreground/25 bg-public text-public-foreground',
+  low: 'border-transparent bg-destructive text-destructive-foreground',
 }
 
 export function ConfidenceBadge({
@@ -49,7 +46,7 @@ export function ConfidenceBadge({
         <span
           className={cn(
             'inline-flex h-5 w-fit min-w-5 shrink-0 self-start items-center justify-center gap-1 rounded-md border px-1.5',
-            'tabular-nums text-[11px] font-semibold leading-none tracking-tight',
+            'tabular-nums text-2xs font-semibold leading-none tracking-tight',
             TONE_STYLE[tone],
             className,
           )}

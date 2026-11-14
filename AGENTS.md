@@ -47,6 +47,15 @@ created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing
 - `strings.key`, `strings.published_key`, `modules.slug`, `tags.name`, and `projects.slug` are `COLLATE "C"` (model and migrations `u0a38e9f1234`, `v1b49f0a2345`), so they sort like Python `sorted()` on any database collation. New identifier columns that are sorted or exported in order should use `String(..., collation="C")` too. Free text keeps the database collation. Email lookup uses `lower(email COLLATE "C")` so ASCII casefold does not follow the database locale.
 - Flat export uses the stored key as-is (public export uses `published_key`). Modular export groups by module slug; keys inside each file are never prefixed.
 
+### Frontend design system ("Atmosphere / Sky Galley")
+
+Canonical tokens and utilities live in `frontend/src/styles.css`. Keep all UI work aligned with these core principles:
+
+- **90 / 8 / 2 color budget**: 90% `haze` (sky-tinted cool neutrals for canvases, surfaces, borders, and `draft` state), 8% `azure` (reserved strictly for primary CTAs, focus rings, active selection, and `public` state — decorative wells stay neutral at rest), and 2% `ember` (`destructive` / `pending_delete`). Use `text-sun` / `bg-sun` on saturated fills and `bg-haze-950/40` on backdrops; never use raw Tailwind palette utilities (`slate`, `zinc`, `emerald`, `white`, `black`, etc.) and always interpolate colors `in oklab`.
+- **Dual themes & WCAG AA**: Support both Daylight (`:root`) and Nightfall (`.dark`) via semantic CSS variables (`--background`, `--card`, `--popover`, `--muted`, `--border`, `--input`). Text tokens must maintain `>= 4.5:1` contrast against surfaces and control borders must maintain `>= 3.0:1`.
+- **Three-voice typography & strict scale**: `--font-heading` (`Bricolage Grotesque`) for titles and KPI gauges, `--font-sans` (`Geist Variable`) for UI copy and multilingual translations, and `--font-mono` (`IBM Plex Mono`, `tabular-nums`, up to `font-semibold`) for keys, locale codes, slugs, and counters. Always use semantic scale tokens (`text-3xs`..`text-3xl`) and the `eyebrow` utility — never arbitrary `text-[...]` sizes.
+- **Surfaces, sticky chrome & motion**: Use `sky-chrome` for sticky headers (`--app-header-height`), `sky-panel` for cards, opaque `.string-row-*` classes with `3px` left status bars for sticky ledger tables, shared UI primitives for empty states/pagination/steppers, and `--ease-drift` motion respecting `prefers-reduced-motion`.
+
 ### Lint / test / build
 
 - Backend: `cd backend && uv run pytest` (add `-n auto` to run on every core with pytest-xdist, as CI does; each worker gets its own throwaway database). Ruff available via `uv run ruff check`. Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.

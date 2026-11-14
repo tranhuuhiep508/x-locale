@@ -66,10 +66,9 @@ async function chooseSelect(page: Page, label: string, option: string) {
 
 async function chooseOrganization(page: Page, label: string, option: string) {
   await page.getByRole('button', { name: label, exact: true }).click()
-  await page
-    .getByRole('listbox', { name: label, exact: true })
-    .getByRole('option', { name: option, exact: true })
-    .click()
+  const list = page.getByRole('listbox', { name: label, exact: true })
+  await list.getByRole('option', { name: option, exact: true }).click()
+  await expect(list).toBeHidden()
 }
 
 async function expectParam(page: Page, name: string, value: string | null) {
@@ -82,7 +81,7 @@ test('combined advanced filters survive reload and Clear retains page size', asy
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Time', exact: true }).click()
   await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
 
   for (const [name, value] of Object.entries({
@@ -166,7 +165,7 @@ test('switching exclusive filter choices removes their previous URL fields', asy
   await expectParam(page, 'status', 'public')
   await expectParam(page, 'pending_delete', null)
 
-  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Time', exact: true }).click()
   await page.getByRole('button', { name: 'Last 30 days', exact: true }).click()
   await expectParam(page, 'period', '30d')
   await expect(stringRow(page, 'assigned')).toBeVisible()
@@ -196,7 +195,7 @@ test('filtered publish preview contains the same strings as the grid', async ({ 
   await chooseOrganization(page, 'Module', 'Common')
   await chooseOrganization(page, 'Tag', 'Featured')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Time', exact: true }).click()
   await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
   await expect(stringRow(page, 'assigned')).toBeVisible()
   await expect(stringRow(page, 'unassigned')).toHaveCount(0)
@@ -225,7 +224,7 @@ test('Translate missing honors combined grid filters through generation and Appl
   await chooseOrganization(page, 'Module', 'Unassigned')
   await chooseOrganization(page, 'Tag', 'Untagged')
   await chooseSelect(page, 'Translation', 'Complete en')
-  await page.getByRole('button', { name: 'All time', exact: true }).click()
+  await page.getByRole('button', { name: 'Time', exact: true }).click()
   await page.getByRole('button', { name: 'Last 7 days', exact: true }).click()
   await expect(stringRow(page, 'unassigned')).toBeVisible()
   await expect(stringRow(page, 'empty')).toHaveCount(0)
@@ -252,7 +251,7 @@ test('Translate missing honors combined grid filters through generation and Appl
 
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
-  await expect(dialog.locator('li')).toHaveCount(1)
+  await expect(dialog.locator('li[id^="proposal-"]')).toHaveCount(1)
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   const apply = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(apply).toBeEnabled()

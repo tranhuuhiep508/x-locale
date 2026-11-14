@@ -1,15 +1,46 @@
 import { slugify } from '@/lib/utils'
 
-export const TAG_PRESET_COLORS = [
-  '#64748b',
-  '#0d9488',
-  '#2563eb',
-  '#9333ea',
-  '#e11d48',
-  '#f59e0b',
-  '#10b981',
-  '#f97316',
-] as const
+/** Atmosphere swatches. Stored strings are the Daylight sRGB; `--tag-*` remaps Nightfall. */
+export const TAG_TONES = ['haze', 'azure', 'navy', 'ember', 'gold', 'kelp', 'dusk', 'tide'] as const
+
+export type TagTone = (typeof TAG_TONES)[number]
+
+export const TAG_DAYLIGHT: Record<TagTone, string> = {
+  haze: '#65707b',
+  azure: '#0076c2',
+  navy: '#1d4682',
+  ember: '#ca322e',
+  gold: '#bb7e00',
+  kelp: '#2f6b4e',
+  dusk: '#814ea4',
+  tide: '#008388',
+}
+
+export const TAG_PRESET_COLORS = TAG_TONES.map((tone) => TAG_DAYLIGHT[tone])
+
+/** Tailwind presets saved before the atmosphere set. Orange shares gold: both are the warm swatch. `#ca8a10` is the previous daylight gold. */
+const LEGACY_TAG_TONE: Record<string, TagTone> = {
+  '#64748b': 'haze',
+  '#2563eb': 'azure',
+  '#e11d48': 'ember',
+  '#f59e0b': 'gold',
+  '#f97316': 'gold',
+  '#ca8a10': 'gold',
+  '#10b981': 'kelp',
+  '#9333ea': 'dusk',
+  '#0d9488': 'tide',
+}
+
+const TONE_BY_STORED = new Map<string, TagTone>([
+  ...TAG_TONES.map((tone) => [TAG_DAYLIGHT[tone], tone] as const),
+  ...Object.entries(LEGACY_TAG_TONE),
+])
+
+/** CSS color for a stored tag. Unknown picker colors stay as saved. */
+export function tagSwatchColor(color: string): string {
+  const tone = TONE_BY_STORED.get(color.trim().toLowerCase())
+  return tone ? `var(--tag-${tone})` : color
+}
 
 export function moduleSlugFromName(name: string): string {
   let slug = slugify(name)

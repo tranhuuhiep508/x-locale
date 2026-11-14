@@ -19,7 +19,7 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { ListPlus, Plus, Wand2 } from 'lucide-react'
+import { AlignLeft, ChevronDown, ListPlus, Plus, Rows3, Rows4, SearchX, Wand2 } from 'lucide-react'
 import { DataTable } from '@/components/data-table/data-table'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
@@ -73,7 +73,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import { jobsApi } from '@/lib/api/jobs'
 import { ApiError } from '@/lib/api/client'
 import { stringsApi } from '@/lib/api/strings'
@@ -112,6 +117,123 @@ type SaveVariables = {
 const STRING_COLUMN_PINNING: ColumnPinningState = {
   left: ['select', 'key'],
   right: ['actions'],
+}
+
+const DENSITY_STORAGE_KEY = 'x-locale:strings-density'
+type TableDensity = 'comfortable' | 'compact'
+
+function readStoredDensity(): TableDensity {
+  try {
+    return window.localStorage.getItem(DENSITY_STORAGE_KEY) === 'compact'
+      ? 'compact'
+      : 'comfortable'
+  } catch {
+    return 'comfortable'
+  }
+}
+
+function StringsTableSkeleton({ localeCount }: { localeCount: number }) {
+  const cols = Math.max(1, Math.min(localeCount, 3))
+  return (
+    <div
+      role="status"
+      aria-label="Loading strings"
+      className="flex h-full flex-col overflow-hidden bg-card"
+    >
+      <div className="flex items-center gap-4 border-b border-border/80 bg-muted px-4 py-2.5">
+        <Skeleton className="size-4 rounded" />
+        <Skeleton className="h-3.5 w-28" />
+        <Skeleton className="h-3.5 w-40" />
+        {Array.from({ length: cols }).map((_, idx) => (
+          <Skeleton key={idx} className="hidden h-3.5 w-24 sm:block" />
+        ))}
+        <Skeleton className="ml-auto h-3.5 w-16" />
+      </div>
+      <div className="divide-y divide-border/65">
+        {Array.from({ length: 8 }).map((_, rowIdx) => (
+          <div key={rowIdx} className="flex items-center gap-4 px-4 py-3.5">
+            <Skeleton className="size-4 shrink-0 rounded" />
+            <div className="flex w-44 shrink-0 flex-col gap-1.5">
+              <Skeleton className="h-3.5 w-36" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+            {Array.from({ length: cols }).map((_, colIdx) => (
+              <Skeleton key={colIdx} className="hidden h-3.5 w-28 sm:block" />
+            ))}
+            <Skeleton className="ml-auto h-5 w-12 rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AddStringMenu({
+  size = 'sm',
+  align = 'end',
+  className,
+  onAddSingle,
+  onAddMany,
+}: {
+  size?: 'sm' | 'default'
+  align?: 'center' | 'end'
+  className?: string
+  onAddSingle: () => void
+  onAddMany: () => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size={size} className={className} aria-haspopup="menu" aria-expanded={open}>
+          <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
+          Add string
+          <ChevronDown data-icon="inline-end" className="size-3.5 opacity-80" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align={align} className="w-56 p-1">
+        <div role="menu" aria-label="Add string options" className="flex flex-col gap-0.5">
+          <button
+            type="button"
+            role="menuitem"
+            aria-label="Add single string"
+            onClick={() => {
+              setOpen(false)
+              onAddSingle()
+            }}
+            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+          >
+            <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium leading-tight">Add single string</span>
+              <span className="text-xs text-muted-foreground">Key, context &amp; translations</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            aria-label="Add many"
+            onClick={() => {
+              setOpen(false)
+              onAddMany()
+            }}
+            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+          >
+            <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium leading-tight">Add many</span>
+              <span className="text-xs text-muted-foreground">Paste JSON or CSV lines</span>
+            </span>
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 export function StringsPage() {
@@ -163,6 +285,17 @@ export function StringsPage() {
   const [publishFingerprint, setPublishFingerprint] = useState<string | null>(null)
   const publishRequestRef = useRef<PublishPreviewRequest | null>(null)
   const [searchInput, setSearchInput] = useState(search.q ?? '')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [density, setDensity] = useState<TableDensity>(readStoredDensity)
+
+  function updateDensity(next: TableDensity) {
+    setDensity(next)
+    try {
+      window.localStorage.setItem(DENSITY_STORAGE_KEY, next)
+    } catch {
+      // Ignore storage errors in restricted environments
+    }
+  }
 
   useEffect(() => {
     setSearchInput(search.q ?? '')
@@ -193,6 +326,10 @@ export function StringsPage() {
   }, [searchInput, search.q])
 
   const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  const pendingStringsResult = useQuery(
+    stringsQueryOptions(projectId, { has_unpublished_changes: true, page: 1, page_size: 1 }),
+  )
+  const pendingCount = pendingStringsResult.data?.total ?? 0
   useEffect(() => {
     const row = savedRow.current
     if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
@@ -676,6 +813,28 @@ export function StringsPage() {
 
   useClearStringSelection(search, setRowSelection)
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (document.querySelector('[data-slot="alert-dialog-content"], [data-slot="dialog-content"]')) return
+      event.preventDefault()
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const unpublishCopy = unpublishConfirmCopy(actionIds.unpublish.length, selectedCount)
   const selectedReleased = selectedEntries.some(
     (entry) => actionIds.delete.includes(entry.id) && (entry.status === 'public' || entry.published_at),
@@ -718,110 +877,282 @@ export function StringsPage() {
     })
   }
 
+  function clearAllFilters() {
+    setSearchInput('')
+    navigate({
+      search: {
+        page: 1,
+        page_size: search.page_size,
+        sort: rawSearch.sort,
+        order: rawSearch.order,
+      },
+    })
+  }
+
+  const catalogTelemetry = `${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       data-tour-ready={tourReady ? 'strings' : undefined}
     >
-      <div className="flex shrink-0 flex-col gap-5 border-b px-4 py-5 sm:px-6">
-        <PageHeader
-          eyebrow="Catalog"
-          title="Strings"
-          description={`${total} string${total === 1 ? '' : 's'} · ${locales.length} target language${locales.length === 1 ? '' : 's'}`}
-          actions={
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              <DataTableViewOptions table={table} />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  reviewRequestRef.current = search.saved_string
-                    ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
-                    : createMissingReviewRequest(search, locales)
-                  setProposalItems([])
-                  setProposalJobId(null)
-                  setProposalsReady(false)
-                  setReviewPage(1)
-                  setReviewTotal(0)
-                  setReviewOpen(true)
-                  missingMut.mutate(missingRequest(1))
-                }}
-                disabled={missingMut.isPending || reviewOpen}
-              >
-                {missingMut.isPending ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Wand2 data-icon="inline-start" />
-                )}
-                Translate missing
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setAddManyOpen(true)}>
-                <ListPlus data-icon="inline-start" />
-                Add many
-              </Button>
-              <Button size="sm" onClick={() => openEditor(null)}>
-                <Plus data-icon="inline-start" />
-                Add string
-              </Button>
-            </div>
-          }
+      <div className="relative shrink-0 overflow-hidden bg-card/75 horizon-b">
+        <div
+          aria-hidden="true"
+          className="galley-grid pointer-events-none absolute inset-0 opacity-35"
         />
-        <StringsFilters
-          search={search}
-          searchInput={searchInput}
-          modules={modules}
-          tags={tags}
-          locales={locales}
-          onSearchInputChange={setSearchInput}
-          onFilter={setFilter}
-          onReviewPublish={
-            search.has_unpublished_changes ? openReviewPublishPreview : undefined
-          }
-          onClear={() => {
-            setSearchInput('')
-            navigate({
-              search: {
-                page: 1,
-                page_size: search.page_size,
-                sort: rawSearch.sort,
-                order: rawSearch.order,
-              },
-            })
-          }}
-        />
-      </div>
-
-      <div className="min-h-0 flex-1 bg-card" data-tour={data.length > 0 ? 'grid' : undefined}>
-        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
-          <div className="flex h-48 items-center justify-center">
-            <Spinner />
-          </div>
-        ) : stringsResult.isError ? (
-          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-            Failed to load strings.
-          </div>
-        ) : data.length === 0 ? (
-          <EmptyState
-            title={emptyCopy.title}
-            description={emptyCopy.description}
-            action={
-              !hasActiveFilters ? (
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <Button variant="outline" onClick={() => setAddManyOpen(true)}>
-                    <ListPlus data-icon="inline-start" />
-                    Add many
-                  </Button>
-                  <Button onClick={() => openEditor(null)}>
-                    <Plus data-icon="inline-start" />
-                    Add string
-                  </Button>
+        <div className="relative flex flex-col gap-3 px-4 py-3 sm:px-6">
+          <PageHeader
+            title="Strings"
+            badge={
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/85 px-2.5 py-0.5 font-mono text-2xs font-normal tabular-nums text-muted-foreground shadow-2xs">
+                {catalogTelemetry}
+              </span>
+            }
+            actions={
+              <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end w-full sm:w-auto">
+                <div
+                  role="group"
+                  aria-label="Row density"
+                  className="hidden sm:inline-flex h-8 items-center rounded-lg border border-border/80 bg-background/85 p-0.5 shadow-2xs"
+                >
+                  <Tooltip delayDuration={250}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Comfortable density"
+                        aria-pressed={density === 'comfortable'}
+                        onClick={() => updateDensity('comfortable')}
+                        className={cn(
+                          'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
+                          density === 'comfortable'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <Rows3 className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Comfortable rows</TooltipContent>
+                  </Tooltip>
+                  <Tooltip delayDuration={250}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Compact density"
+                        aria-pressed={density === 'compact'}
+                        onClick={() => updateDensity('compact')}
+                        className={cn(
+                          'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
+                          density === 'compact'
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <Rows4 className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Compact rows</TooltipContent>
+                  </Tooltip>
                 </div>
-              ) : undefined
+
+                <DataTableViewOptions
+                  table={table}
+                  className="bg-background/85 shadow-2xs"
+                />
+
+                <Separator orientation="vertical" className="hidden h-5 sm:block text-border/60" />
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/80 bg-background/85 text-foreground hover:bg-muted/60 transition-colors shadow-2xs"
+                  onClick={() => {
+                    reviewRequestRef.current = search.saved_string
+                      ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
+                      : createMissingReviewRequest(search, locales)
+                    setProposalItems([])
+                    setProposalJobId(null)
+                    setProposalsReady(false)
+                    setReviewPage(1)
+                    setReviewTotal(0)
+                    setReviewOpen(true)
+                    missingMut.mutate(missingRequest(1))
+                  }}
+                  disabled={missingMut.isPending || reviewOpen}
+                >
+                  {missingMut.isPending ? (
+                    <Spinner data-icon="inline-start" className="size-3.5" />
+                  ) : (
+                    <Wand2 data-icon="inline-start" className="size-3.5 text-muted-foreground" />
+                  )}
+                  Translate missing
+                </Button>
+
+                <Separator orientation="vertical" className="hidden h-5 sm:block text-border/60" />
+
+                <AddStringMenu
+                  className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
+                  onAddSingle={() => openEditor(null)}
+                  onAddMany={() => setAddManyOpen(true)}
+                />
+              </div>
             }
           />
+          <div
+            role="tablist"
+            aria-label="Quick views"
+            className="inline-flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-border/80 bg-muted/55 p-1 shadow-2xs"
+          >
+            {[
+              {
+                id: 'all',
+                label: 'All strings',
+                active: !search.deleted && !search.missing_any && !search.has_unpublished_changes && !search.status && !search.pending_delete && !search.never_published,
+                onSelect: () =>
+                  setFilter({
+                    status: undefined,
+                    has_unpublished_changes: undefined,
+                    pending_delete: undefined,
+                    never_published: undefined,
+                    deleted: undefined,
+                    missing_any: undefined,
+                    missing_locale: undefined,
+                    complete_locale: undefined,
+                  }),
+              },
+              {
+                id: 'missing',
+                label: 'Missing translations',
+                active: Boolean(search.missing_any) && !search.deleted,
+                onSelect: () =>
+                  setFilter({
+                    missing_any: true,
+                    missing_locale: undefined,
+                    complete_locale: undefined,
+                    deleted: undefined,
+                  }),
+              },
+              {
+                id: 'pending',
+                label: 'Needs publish',
+                count: pendingCount,
+                active: Boolean(search.has_unpublished_changes) && !search.deleted,
+                onSelect: () =>
+                  setFilter({
+                    has_unpublished_changes: true,
+                    status: undefined,
+                    pending_delete: undefined,
+                    never_published: undefined,
+                    deleted: undefined,
+                  }),
+              },
+              {
+                id: 'deleted',
+                label: 'Deleted',
+                active: Boolean(search.deleted),
+                onSelect: () =>
+                  setFilter({
+                    deleted: true,
+                    status: undefined,
+                    has_unpublished_changes: undefined,
+                    pending_delete: undefined,
+                    never_published: undefined,
+                  }),
+              },
+            ].map((lens) => (
+              <button
+                key={lens.id}
+                type="button"
+                role="tab"
+                aria-selected={lens.active}
+                onClick={lens.onSelect}
+                className={cn(
+                  'inline-flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all duration-200 ease-drift',
+                  lens.active
+                    ? 'bg-card text-foreground shadow-xs ring-1 ring-border/80'
+                    : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                )}
+              >
+                <span>{lens.label}</span>
+                {typeof lens.count === 'number' && lens.count > 0 ? (
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0 font-mono text-3xs font-semibold tabular-nums',
+                      lens.active
+                        ? 'bg-accent text-accent-foreground'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {lens.count}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <StringsFilters
+            search={search}
+            searchInput={searchInput}
+            searchInputRef={searchInputRef}
+            modules={modules}
+            tags={tags}
+            locales={locales}
+            onSearchInputChange={setSearchInput}
+            onFilter={setFilter}
+            onReviewPublish={
+              search.has_unpublished_changes ? openReviewPublishPreview : undefined
+            }
+            onClear={clearAllFilters}
+          />
+        </div>
+      </div>
+
+      <div
+        className="relative min-h-0 flex-1 bg-card"
+        data-tour={data.length > 0 ? 'grid' : undefined}
+      >
+        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
+          <StringsTableSkeleton localeCount={locales.length} />
+        ) : stringsResult.isError ? (
+          <div className="flex h-full min-h-48 items-center justify-center galley-grid p-6">
+            <EmptyState
+              title="Could not load strings"
+              description="Failed to load strings. Check your connection and try refreshing the page."
+              action={
+                <Button variant="outline" size="sm" onClick={() => { void stringsResult.refetch() }}>
+                  Retry
+                </Button>
+              }
+            />
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex h-full min-h-72 items-center justify-center galley-grid p-6">
+            <EmptyState
+              icon={hasActiveFilters ? <SearchX /> : <AlignLeft />}
+              title={emptyCopy.title}
+              description={emptyCopy.description}
+              action={
+                !hasActiveFilters ? (
+                  <AddStringMenu
+                    size="default"
+                    align="center"
+                    onAddSingle={() => openEditor(null)}
+                    onAddMany={() => setAddManyOpen(true)}
+                  />
+                ) : (
+                  <Button variant="outline" size="sm" onClick={clearAllFilters}>
+                    Clear filters
+                  </Button>
+                )
+              }
+            />
+          </div>
         ) : (
           <DataTable
             table={table}
+            regionLabel="Strings catalog"
+            density={density}
+            bottomSpacer={selectedCount > 0}
             focusRowId={stringsResult.isPlaceholderData ? undefined : search.saved_string}
             focusRowRef={savedRow}
             getRowClassName={(row) => releaseRowClassName(releaseState(row.original))}
@@ -832,38 +1163,39 @@ export function StringsPage() {
             }}
           />
         )}
+
+        {selectedCount > 0 && data.length > 0 ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3 sm:px-6">
+            <div className="pointer-events-auto max-w-full">
+              <BatchActionBar
+                selectedCount={selectedCount}
+                visible={selectedCount > 0}
+                pending={batchMut.isPending}
+                actions={actionIds}
+                checking={selection.checking}
+                selectionError={selection.error}
+                onRetry={() => { void selection.retry() }}
+                modules={modules}
+                tags={tags}
+                onPublish={() => openSelectedPublishPreview()}
+                onUnpublish={() => setUnpublishConfirm(true)}
+                onMove={() => setShowMoveModule(true)}
+                onAddTags={() => setShowAddTags(true)}
+                onDelete={() => setDeleteConfirm(true)}
+                onDiscardChanges={() => runSelectedAction('discard_changes')}
+                onDiscardDelete={() => runSelectedAction('discard_delete')}
+                onRestore={() => runSelectedAction('restore')}
+                onRestoreLastEdit={() => setRestoreLastConfirm(true)}
+                onClear={() => setRowSelection({})}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {total > 0 ? (
-        <div className="shrink-0 border-t px-4">
-          <DataTablePagination
-            table={table}
-            center={
-              selectedCount > 0 ? (
-                <BatchActionBar
-                  selectedCount={selectedCount}
-                  visible={selectedCount > 0}
-                  pending={batchMut.isPending}
-                  actions={actionIds}
-                  checking={selection.checking}
-                  selectionError={selection.error}
-                  onRetry={() => { void selection.retry() }}
-                  modules={modules}
-                  tags={tags}
-                  onPublish={() => openSelectedPublishPreview()}
-                  onUnpublish={() => setUnpublishConfirm(true)}
-                  onMove={() => setShowMoveModule(true)}
-                  onAddTags={() => setShowAddTags(true)}
-                  onDelete={() => setDeleteConfirm(true)}
-                  onDiscardChanges={() => runSelectedAction('discard_changes')}
-                  onDiscardDelete={() => runSelectedAction('discard_delete')}
-                  onRestore={() => runSelectedAction('restore')}
-                  onRestoreLastEdit={() => setRestoreLastConfirm(true)}
-                  onClear={() => setRowSelection({})}
-                />
-              ) : undefined
-            }
-          />
+        <div className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
+          <DataTablePagination table={table} />
         </div>
       ) : null}
 

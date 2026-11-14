@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures'
 import { resetDemoDatabase } from '../helpers/database'
 import { importStringsViaApi, projectIdFromUrl } from '../helpers/api'
-import { openDemoStrings, searchStrings } from '../helpers/strings'
+import { openAddStringDialog, openDemoStrings, searchStrings } from '../helpers/strings'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -17,7 +17,7 @@ test('string preview sends the selected module and null after unassigning', asyn
   const response = await page.request.get(`/api/projects/${projectId}/modules`)
   const modules = await response.json() as { id: string; name: string }[]
   const module = modules[0]
-  await page.getByRole('button', { name: 'Add string', exact: true }).click()
+  await openAddStringDialog(page)
   const dialog = page.getByRole('dialog').filter({ hasText: 'Add string' })
   await dialog.getByLabel('Key', { exact: true }).fill('preview_context')
   await dialog.getByLabel('Source text').fill('Xin chào')

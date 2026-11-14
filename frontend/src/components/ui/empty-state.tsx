@@ -14,12 +14,25 @@ interface EmptyStateProps {
   title: string
   description?: string
   action?: ReactNode
+  variant?: 'plain' | 'dashed'
   className?: string
 }
 
-export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  variant = 'plain',
+  className,
+}: EmptyStateProps) {
   return (
-    <Empty className={cn('border-none py-12', className)}>
+    <Empty
+      className={cn(
+        variant === 'dashed' ? 'border border-dashed border-border/80 bg-card/50 py-10' : 'border-none py-12',
+        className
+      )}
+    >
       <EmptyHeader>
         {icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
         <EmptyTitle>{title}</EmptyTitle>

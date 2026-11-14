@@ -1,5 +1,6 @@
 import type { ModuleCreateForm } from '@/lib/schemas'
-import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { moduleSlugFromName } from '@/features/strings/catalog-create'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { TranslationContextField } from '@/features/catalog/TranslationContextField'
@@ -21,8 +22,29 @@ export function ModuleFormFields({
   idPrefix = 'module',
   slugDisabled = false,
 }: Props) {
+  function handleNameChange(nextName: string) {
+    const canAutoFillSlug =
+      !slugDisabled && (form.slug === '' || form.slug === moduleSlugFromName(form.name))
+    onChange({
+      ...form,
+      name: nextName,
+      slug: canAutoFillSlug ? moduleSlugFromName(nextName) : form.slug,
+    })
+  }
+
   return (
     <FieldGroup>
+      <Field data-invalid={errors.name ? 'true' : undefined}>
+        <FieldLabel htmlFor={`${idPrefix}_name`}>Name</FieldLabel>
+        <Input
+          id={`${idPrefix}_name`}
+          placeholder="Common strings"
+          value={form.name}
+          onChange={(e) => handleNameChange(e.target.value)}
+          aria-invalid={errors.name ? true : undefined}
+        />
+        <FieldError>{errors.name}</FieldError>
+      </Field>
       <Field data-invalid={errors.slug ? 'true' : undefined}>
         <FieldLabel htmlFor={`${idPrefix}_slug`}>Slug</FieldLabel>
         <Input
@@ -34,18 +56,20 @@ export function ModuleFormFields({
           aria-invalid={errors.slug ? true : undefined}
           disabled={slugDisabled}
         />
+        <FieldDescription>
+          {slugDisabled ? (
+            'Slug is locked after creation so export paths stay stable.'
+          ) : (
+            <>
+              Namespace identifier for modular exports (
+              <code className="font-mono text-xs text-foreground">
+                {form.slug.trim() || 'common'}.json
+              </code>
+              ).
+            </>
+          )}
+        </FieldDescription>
         <FieldError>{errors.slug}</FieldError>
-      </Field>
-      <Field data-invalid={errors.name ? 'true' : undefined}>
-        <FieldLabel htmlFor={`${idPrefix}_name`}>Name</FieldLabel>
-        <Input
-          id={`${idPrefix}_name`}
-          placeholder="Common strings"
-          value={form.name}
-          onChange={(e) => onChange({ ...form, name: e.target.value })}
-          aria-invalid={errors.name ? true : undefined}
-        />
-        <FieldError>{errors.name}</FieldError>
       </Field>
       <Field>
         <FieldLabel htmlFor={`${idPrefix}_description`}>Description (optional)</FieldLabel>

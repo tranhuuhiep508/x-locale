@@ -51,12 +51,12 @@ export function MatchBar({ match }: { match: TranslationMemoryMatch }) {
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center text-[11px] font-semibold tabular-nums',
+        'inline-flex h-5 items-center text-2xs font-semibold tabular-nums',
         match.exact
-          ? 'text-azure-800 dark:text-azure-200'
+          ? 'text-public-foreground'
           : pct >= 90
-            ? 'text-azure-700 dark:text-azure-300'
-            : 'text-haze-600 dark:text-haze-400'
+            ? 'text-primary'
+            : 'text-muted-foreground'
       )}
     >
       {match.exact ? 'Exact match' : `${pct}% similar`}
@@ -224,29 +224,26 @@ export function TranslationMemoryPanel({
     (locale) => matches[locale]?.some((match) => match.exact) && !(locale in selected)
   ).length
   const empty = !loading && !error && count === 0
+  const compact = loading || empty || Boolean(error)
   return (
     <section
       aria-label="Previously published"
       className={cn(
         'rounded-xl px-3',
-        empty ? 'border border-dashed py-2' : error ? 'py-2' : 'border bg-muted/20',
+        compact ? 'border border-border/60 bg-muted/15 py-2' : 'border bg-muted/20',
       )}
     >
       <TooltipProvider delayDuration={200}>
-      {loading || (!empty && !error) ? (
-        <div className="flex items-center justify-between gap-2 py-2">
+      {!compact ? (
+        <div className="flex min-h-10 items-center justify-between gap-2 py-2">
           <MemoryCount
             icon={History}
-            label={
-              loading
-                ? 'Finding published translations…'
-                : `Previously published: ${count} of ${locales.length} locales have a match`
-            }
+            label={`Previously published: ${count} of ${locales.length} locales have a match`}
           >
-            {loading ? <Spinner aria-hidden="true" /> : `${count}/${locales.length}`}
+            {`${count}/${locales.length}`}
           </MemoryCount>
           <div className="flex gap-1">
-            {exact > 0 && !loading && !error ? (
+            {exact > 0 ? (
               <UpdatingMatches stale={stale}>
                 <Button
                   type="button"
@@ -272,14 +269,15 @@ export function TranslationMemoryPanel({
         <div
           role="status"
           aria-label="Finding published translations…"
-          className="flex flex-col gap-3 pb-3"
+          className="flex min-h-6 items-center justify-between gap-2 text-xs text-muted-foreground"
         >
-          {locales.map((locale) => (
-            <Skeleton key={locale} className="h-10 w-full" />
-          ))}
+          <MemoryCount icon={History} label="Finding published translations…">
+            <Spinner aria-hidden="true" className="size-3.5" />
+          </MemoryCount>
+          <Skeleton className="h-4 w-16 rounded" />
         </div>
       ) : error ? (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-h-6 items-center justify-between gap-2">
           <p role="status" className="text-xs text-muted-foreground">
             Could not load published translations.
           </p>
@@ -288,7 +286,7 @@ export function TranslationMemoryPanel({
           </Button>
         </div>
       ) : empty ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="flex min-h-6 items-center text-xs text-muted-foreground">
           No previously published match for this source text. Generate with AI fills the empty locales.
         </p>
       ) : (

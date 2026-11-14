@@ -31,10 +31,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { CreateModulePopover, CreateTagPopover } from '@/features/strings/CatalogCreatePopovers'
+import { CreateModulePopover, SingleTagField } from '@/features/strings/CatalogCreatePopovers'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import {
   aiTargetCells,
@@ -63,6 +62,7 @@ import { TranslatePublishReview } from '@/features/strings/TranslatePublishRevie
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { TranslateStepper } from '@/features/strings/TranslateReviewDialog'
 import { useToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 const NONE_MODULE = '__none__'
 
@@ -345,6 +345,14 @@ export function AddManyStringsDialog({
     targetLocales.some((cell) => (row.translations[cell] ?? '').trim())
   )
   const currentStep = stage === 'review' ? 2 : anyTranslation ? 1 : 0
+  const stageOrder: Record<string, number> = { paste: 0, edit: 1, review: 2, done: 3 }
+  const [prevStage, setPrevStage] = useState(stage)
+  const [stageDirection, setStageDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
+
+  if (stage !== prevStage) {
+    setStageDirection((stageOrder[stage] ?? 0) >= (stageOrder[prevStage] ?? 0) ? 'forward' : 'backward')
+    setPrevStage(stage)
+  }
   const qaRows: QaWatchRow[] = rows.flatMap((row) =>
     targetLocales.map((cell) => ({
       id: qaId(row.key, cell),
@@ -416,11 +424,22 @@ export function AddManyStringsDialog({
 
         <ReviewDialogBody>
           {parseWarning && stage !== 'done' ? (
-            <p role="status" className="mb-3 text-sm font-medium text-amber-600 dark:text-amber-400">
+            <p role="status" className="mb-3 text-sm font-medium text-destructive">
               {parseWarning}
             </p>
           ) : null}
-          {stage === 'paste' ? (
+          <div
+            key={`stage-${stage}`}
+            className={cn(
+              'min-w-0 flex-1',
+              stageDirection === 'initial'
+                ? undefined
+                : stageDirection === 'forward'
+                  ? 'animate-step-in-right'
+                  : 'animate-step-in-left'
+            )}
+          >
+            {stage === 'paste' ? (
             <FieldGroup className="grid gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
               <Field data-invalid={parseError ? true : undefined}>
                 <FieldLabel htmlFor="add-many-json">JSON</FieldLabel>
@@ -540,55 +559,26 @@ export function AddManyStringsDialog({
                   </Field>
                 ) : null}
 
-                <Field>
-                  <div className="flex items-center gap-1">
-                    <FieldLabel>Tags</FieldLabel>
-                    <CreateTagPopover
-                      projectId={projectId}
-                      tags={tagOptions}
-                      disabled={busy}
-                      onCreated={(created) => {
-                        setCreatedTags((prev) =>
-                          prev.some((item) => item.id === created.id) ? prev : [...prev, created]
-                        )
-                        setTagIds((prev) =>
-                          prev.includes(created.id) ? prev : [...prev, created.id]
-                        )
-                      }}
-                    />
-                  </div>
-                  {tagOptions.length > 0 ? (
-                    <ToggleGroup
-                      type="multiple"
-                      variant="outline"
-                      className="flex flex-wrap justify-start"
-                      value={tagIds}
-                      onValueChange={setTagIds}
-                    >
-                      {tagOptions.map((t) => (
-                        <ToggleGroupItem key={t.id} value={t.id} size="sm">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: t.color }}
-                          />
-                          {t.name}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  ) : (
-                    <FieldDescription>
-                      None yet. Create one without leaving this form.
-                    </FieldDescription>
-                  )}
-                  {tagOptions.length > 0 ? (
-                    <FieldDescription>Added to every pasted string.</FieldDescription>
-                  ) : null}
-                </Field>
+                <SingleTagField
+                  id="add-many-tag"
+                  projectId={projectId}
+                  tags={tagOptions}
+                  tagId={tagIds[0] ?? ''}
+                  disabled={busy}
+                  description="Added to every pasted string."
+                  onSelect={(nextTagId) => setTagIds(nextTagId ? [nextTagId] : [])}
+                  onCreated={(created) => {
+                    setCreatedTags((prev) =>
+                      prev.some((item) => item.id === created.id) ? prev : [...prev, created]
+                    )
+                    setTagIds([created.id])
+                  }}
+                />
               </FieldGroup>
             </FieldGroup>
           ) : stage === 'edit' ? (
             <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-2.5">
                 <p className="text-xs text-muted-foreground" aria-live="polite">
                   {aiProgress
                     ? `Generating translations… ${aiProgress.done}/${aiProgress.total} strings`
@@ -604,10 +594,10 @@ export function AddManyStringsDialog({
                   size="sm"
                   disabled={busy || aiTargets === 0}
                   onClick={() => void generateTranslations()}
-                  className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
+                  className="border-accent-foreground/25 bg-accent text-accent-foreground hover:border-accent-foreground/40 hover:bg-accent"
                 >
                   {aiBusy ? (
-                    <Spinner data-icon="inline-start" />
+                    <Spinner data-icon="inline-start" className="size-3.5" />
                   ) : (
                     <Wand2 data-icon="inline-start" className="size-3.5" />
                   )}
@@ -626,11 +616,11 @@ export function AddManyStringsDialog({
                         <code className="min-w-0 truncate font-mono text-xs font-medium" translate="no">
                           {row.key}
                         </code>
-                        <Badge variant={row.mode === 'create' ? 'secondary' : 'outline'} className="text-[11px]">
+                        <Badge variant={row.mode === 'create' ? 'secondary' : 'outline'} className="text-2xs">
                           {row.mode === 'create' ? 'New' : 'Update'}
                         </Badge>
                         {row.entry.status === 'public' ? (
-                          <Badge variant="outline" className="text-[11px]">
+                          <Badge variant="outline" className="text-2xs">
                             Public
                           </Badge>
                         ) : null}
@@ -658,7 +648,7 @@ export function AddManyStringsDialog({
                           const issuesId = `qa-paste-${row.key}-${cell}`
                           return (
                             <div key={cell} className="flex items-start gap-2" data-qa-status={view.status}>
-                              <span className="mt-2 w-8 shrink-0 font-mono text-[11px] font-bold uppercase text-muted-foreground">
+                              <span className="mt-2 w-8 shrink-0 font-mono text-2xs font-semibold uppercase text-muted-foreground">
                                 {cell}
                               </span>
                               <Textarea
@@ -712,7 +702,7 @@ export function AddManyStringsDialog({
           ) : saved ? (
             <div role="status" className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-4">
               <div className="flex items-start gap-2.5">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div className="min-w-0 text-sm">
                   <p className="font-medium">
                     {saved.action === 'publish'
@@ -744,21 +734,27 @@ export function AddManyStringsDialog({
               </div>
             </div>
           ) : null}
+          </div>
         </ReviewDialogBody>
 
         <ReviewDialogFooter>
           {stage === 'paste' ? (
-            <>
+            <div
+              key="paste-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" onClick={requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button onClick={handlePreview} disabled={busy}>
-                {previewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Preview
+                <PendingLabel pending={previewMut.isPending}>Preview</PendingLabel>
               </Button>
-            </>
+            </div>
           ) : stage === 'edit' ? (
-            <>
+            <div
+              key="edit-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 className="mr-auto"
@@ -774,8 +770,7 @@ export function AddManyStringsDialog({
                 Back
               </Button>
               <Button variant="secondary" disabled={busy || !fingerprint} onClick={saveDraft}>
-                {saveMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Save as draft
+                <PendingLabel pending={saveMut.isPending}>Save as draft</PendingLabel>
               </Button>
               <Button
                 disabled={busy || !fingerprint}
@@ -783,12 +778,14 @@ export function AddManyStringsDialog({
                   reviewMut.mutate({ ...scope(), rows: draftRowsToRequest(rows, targetLocales) })
                 }
               >
-                {reviewMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Review &amp; publish
+                <PendingLabel pending={reviewMut.isPending}>Review &amp; publish</PendingLabel>
               </Button>
-            </>
+            </div>
           ) : stage === 'review' ? (
-            <>
+            <div
+              key="review-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 className="mr-auto"
@@ -812,17 +809,19 @@ export function AddManyStringsDialog({
                   })
                 }
               >
-                {saveMut.isPending ? <Spinner data-icon="inline-start" /> : null}
-                Publish
+                <PendingLabel pending={saveMut.isPending}>Publish</PendingLabel>
               </Button>
-            </>
+            </div>
           ) : (
-            <>
+            <div
+              key="done-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" onClick={resetAll}>
                 Add more
               </Button>
               <Button onClick={requestClose}>Done</Button>
-            </>
+            </div>
           )}
         </ReviewDialogFooter>
         <ConfirmDialog

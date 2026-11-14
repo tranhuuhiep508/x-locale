@@ -120,3 +120,34 @@ it('invalidates lookups for locale changes and does not fetch empty sources', as
   expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
   expect(result.current.loading).toBe(false)
 })
+
+it('clears previous matches and fetches immediately when switching stringId', async () => {
+  const match = { string_id: 'origin', key: 'greeting', module_id: null, module_slug: null, matched_source_text: 'Hello', translation: 'Bonjour', exact: true, similarity: 1, issues: [] }
+  vi.mocked(stringsApi.translateMemory).mockResolvedValueOnce({
+    source_text: 'Hello',
+    matches: { en: [match] },
+  })
+  let resolveSecond!: (result: TranslationMemoryResult) => void
+  vi.mocked(stringsApi.translateMemory).mockImplementationOnce(
+    () => new Promise((resolve) => { resolveSecond = resolve }),
+  )
+
+  const { result, rerender } = renderHook(
+    ({ stringId, source }) => useTranslationMemory('p', source, ['en'], stringId, source),
+    { initialProps: { stringId: 'str-1', source: 'Hello' } },
+  )
+  await act(async () => {})
+  expect(result.current.matches.en).toHaveLength(1)
+
+  rerender({ stringId: 'str-2', source: 'Bye' })
+  expect(stringsApi.translateMemory).toHaveBeenCalledTimes(2)
+  expect(result.current.loading).toBe(true)
+  expect(result.current.stale).toBe(false)
+  expect(result.current.matches).toEqual({})
+
+  await act(async () => {
+    resolveSecond({ source_text: 'Bye', matches: { en: [] } })
+  })
+  expect(result.current.loading).toBe(false)
+  expect(result.current.matches).toEqual({ en: [] })
+})

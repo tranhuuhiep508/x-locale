@@ -15,13 +15,15 @@ import type {
   TranslationSourceConflict,
 } from '@/lib/api/types'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { ConfidenceBadge } from '@/features/strings/confidence'
 import { MatchBar } from '@/features/strings/translation-memory-view'
 import { describedByFor, QA_APPLY_FOOTER, QaLocaleBadge } from '@/features/strings/qa-issue-view'
 import type { QaBaseline, QaView } from '@/features/strings/qa-issues'
@@ -37,6 +39,7 @@ import {
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
 import { cn } from '@/lib/utils'
+import { BatchStepper } from '@/features/batches/BatchStepper'
 import { TranslatePublishReview } from '@/features/strings/TranslatePublishReview'
 
 export function proposalsFromJobResult(
@@ -54,60 +57,8 @@ export function jobStillRunning(job: Job | undefined): boolean {
 const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
 const PAGE_BLOCKED = "Save or undo this page's changes first"
 
-const reviewSteps = [
-  { label: 'Translate', description: 'Generate or match translations' },
-  { label: 'Review', description: 'Check and edit translations' },
-  { label: 'Publish', description: 'Review public changes and publish' },
-]
-
 export function TranslateStepper({ current }: { current: number }) {
-  return (
-    <div
-      role="group"
-      aria-label="Translation progress"
-      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 p-1 text-xs"
-    >
-      {reviewSteps.map((step, index) => {
-        const complete = index < current
-        const active = index === current
-        return (
-          <div
-            key={step.label}
-            aria-current={active ? 'step' : undefined}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs transition-all',
-              active
-                ? 'bg-background font-semibold text-foreground shadow-xs ring-1 ring-border/50'
-                : complete
-                  ? 'font-medium text-primary'
-                  : 'text-muted-foreground/60',
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                'flex size-3.5 items-center justify-center rounded-full font-mono text-[9px]',
-                active
-                  ? 'bg-primary font-bold text-primary-foreground'
-                  : complete
-                    ? 'bg-primary/15 text-primary'
-                    : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {complete ? <Check className="size-2.5 stroke-[2.5]" /> : index + 1}
-            </span>
-            <span className="font-medium">
-              {step.label}
-              <span className="sr-only">
-                {complete ? ', complete' : active ? ', current step' : ', upcoming'}
-              </span>
-            </span>
-            <span className="sr-only">{step.description}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
+  return <BatchStepper current={current} label="Translation progress" />
 }
 
 function sameSelection(draft: TranslateProposalItem, original: TranslateProposalItem): boolean {
@@ -162,6 +113,7 @@ function ProposalLocaleRow({
   stringId,
   locale,
   value,
+  score,
   view,
   disabled,
   onChange,
@@ -173,6 +125,7 @@ function ProposalLocaleRow({
   stringId: string
   locale: string
   value: string
+  score?: number | null
   view: QaView
   disabled: boolean
   onChange: (value: string) => void
@@ -231,13 +184,16 @@ function ProposalLocaleRow({
           ) : null}
         </div>
         {!selected ? (
-          <QaLocaleBadge
-            view={view}
-            locale={locale}
-            footer={QA_APPLY_FOOTER}
-            id={issuesId}
-            showClean={false}
-          />
+          <div className="flex items-center gap-1.5 shrink-0 pt-1.5">
+            <ConfidenceBadge score={score} />
+            <QaLocaleBadge
+              view={view}
+              locale={locale}
+              footer={QA_APPLY_FOOTER}
+              id={issuesId}
+              showClean={false}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -269,15 +225,15 @@ function ProposalTreeNode({
       id={`proposal-${item.string_id}`}
       className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs"
     >
-      <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/20 px-4 py-3">
+      <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/25 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <code className="font-mono text-xs break-all text-muted-foreground" translate="no">
+          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium break-all text-foreground/90" translate="no">
             {item.key}
           </code>
           {moduleLabel ? (
-            <span className="rounded border border-border/70 bg-background/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <Badge variant="outline" className="font-mono text-2xs font-normal text-muted-foreground">
               {moduleLabel}
-            </span>
+            </Badge>
           ) : null}
         </div>
         <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap wrap-anywhere text-foreground">
@@ -317,6 +273,7 @@ function ProposalTreeNode({
             stringId={item.string_id}
             locale={locale}
             value={value}
+            score={item.scores?.[locale]}
             bestMatch={sourceConflict ? undefined : item.memory?.[locale]?.[0]}
             selected={item.memory_selected?.includes(locale) ?? false}
             sourceKey={item.key}
@@ -566,6 +523,14 @@ export function TranslateReviewDialog({
   })
   const publishCount = publishReview?.length ?? 0
   const currentStep = reviewing ? 2 : generated || applyCount > 0 ? 1 : 0
+  const [prevReviewing, setPrevReviewing] = useState(reviewing)
+  const [stepDirection, setStepDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
+
+  if (reviewing !== prevReviewing) {
+    setPrevReviewing(reviewing)
+    setStepDirection(reviewing ? 'forward' : 'backward')
+  }
+
   const description = reviewing
     ? reviewLoading && !publishReview
       ? 'Comparing changes…'
@@ -592,7 +557,7 @@ export function TranslateReviewDialog({
         }}
       >
         <ReviewDialogHeader>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <DialogTitle className="truncate">
               {reviewing
                 ? 'Review Publication'
@@ -641,8 +606,7 @@ export function TranslateReviewDialog({
               <AlertDescription>
                 <p>{refreshError}</p>
                 <Button type="button" variant="outline" size="sm" disabled={loadingQueue} onClick={onRetryRefresh}>
-                  {loadingQueue ? <Spinner data-icon="inline-start" /> : null}
-                  Retry loading
+                  <PendingLabel pending={loadingQueue}>Retry loading</PendingLabel>
                 </Button>
               </AlertDescription>
             </Alert>
@@ -659,10 +623,18 @@ export function TranslateReviewDialog({
 
         <ReviewDialogBody>
           {reviewing ? (
-            <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+            <div
+              key="publish-step"
+              className={cn(
+                'min-w-0 flex-1',
+                stepDirection === 'forward' ? 'animate-step-in-right' : 'animate-step-in-left'
+              )}
+            >
+              <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+            </div>
           ) : showInitialSpinner ? (
             <div
-              className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
+              className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground animate-step-fade"
               aria-live="polite"
             >
               <Spinner />
@@ -681,9 +653,22 @@ export function TranslateReviewDialog({
               description="Every target locale already has text."
             />
           ) : (
-            <div className="relative flex flex-col gap-3" aria-busy={pagingInPlace || generating}>
+            <div
+              key="review-step"
+              className={cn(
+                'relative flex min-w-0 flex-1 flex-col gap-3',
+                stepDirection === 'initial'
+                  ? generated
+                    ? 'animate-step-fade'
+                    : undefined
+                  : stepDirection === 'backward'
+                    ? 'animate-step-in-left'
+                    : 'animate-step-in-right'
+              )}
+              aria-busy={pagingInPlace || generating}
+            >
               {pagingInPlace ? (
-                <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16">
+                <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/60 pt-16 animate-step-fade">
                   <Spinner />
                 </div>
               ) : null}
@@ -737,7 +722,10 @@ export function TranslateReviewDialog({
 
         <ReviewDialogFooter>
           {reviewing ? (
-            <>
+            <div
+              key="publish-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button variant="outline" type="button" onClick={onBackToEdit} disabled={applying}>
                 <ArrowLeft data-icon="inline-start" />
                 Back to edit
@@ -754,9 +742,12 @@ export function TranslateReviewDialog({
                 )}
                 {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
               </Button>
-            </>
+            </div>
           ) : (
-            <>
+            <div
+              key="review-footer"
+              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            >
               <Button
                 variant="outline"
                 type="button"
@@ -817,7 +808,7 @@ export function TranslateReviewDialog({
                   </Button>
                 </>
               ) : null}
-            </>
+            </div>
           )}
         </ReviewDialogFooter>
       </ReviewDialogContent>

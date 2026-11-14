@@ -32,7 +32,7 @@ function Toaster(props: ToasterProps) {
       }
       toastOptions={{
         classNames: {
-          toast: 'cn-toast',
+          toast: 'font-sans shadow-lg',
         },
       }}
       {...props}

@@ -25,8 +25,8 @@ function SampleList({
   return (
     <section className="min-w-0" aria-label={label}>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">{label}</h3>
-        <Badge variant="secondary" className="font-mono text-[11px]">{total}</Badge>
+        <h3 className="eyebrow">{label}</h3>
+        <Badge variant="secondary" className="font-mono text-2xs">{total}</Badge>
       </div>
       <ul className="flex max-h-44 flex-col divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/80 bg-card shadow-2xs">
         {items.map((item) => (
@@ -55,12 +55,12 @@ export function ImportPreviewSummary({ result }: { result: ImportResult | null }
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <div className="grid grid-cols-3 gap-2.5 text-center tabular-nums">
-        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5">
-          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{diff.create_count}</p>
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5">
+          <p className="text-2xl font-bold text-primary">{diff.create_count}</p>
           <p className="text-xs text-muted-foreground font-medium mt-0.5">New strings</p>
         </div>
-        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5">
-          <p className="text-2xl font-bold text-primary">{diff.update_count}</p>
+        <div className="rounded-xl border border-border/80 bg-muted/35 p-3.5">
+          <p className="text-2xl font-bold text-foreground">{diff.update_count}</p>
           <p className="text-xs text-muted-foreground font-medium mt-0.5">Updated</p>
         </div>
         <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5">

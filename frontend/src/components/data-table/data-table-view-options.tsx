@@ -9,9 +9,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
 interface DataTableViewOptionsProps<TData> {
   table: Table<TData>
+  className?: string
 }
 
 function columnLabel<TData>(column: ReturnType<Table<TData>['getAllColumns']>[number]) {
@@ -21,15 +23,22 @@ function columnLabel<TData>(column: ReturnType<Table<TData>['getAllColumns']>[nu
   )
 }
 
-export function DataTableViewOptions<TData>({ table }: DataTableViewOptionsProps<TData>) {
+export function DataTableViewOptions<TData>({ table, className }: DataTableViewOptionsProps<TData>) {
   const hideable = table.getAllColumns().filter((column) => column.getCanHide())
   if (hideable.length === 0) return null
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Columns3 data-icon="inline-start" />
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            'h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors',
+            className
+          )}
+        >
+          <Columns3 data-icon="inline-start" className="size-3.5" />
           Columns
         </Button>
       </DropdownMenuTrigger>
