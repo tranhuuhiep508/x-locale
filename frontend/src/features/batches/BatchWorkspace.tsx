@@ -150,7 +150,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {batch.created_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="border-primary/30 bg-primary/5 font-mono text-xs font-normal text-primary"
+                          className="border-accent-foreground/25 bg-accent font-mono text-xs font-normal text-accent-foreground"
                         >
                           +{batch.created_count} new
                         </Badge>
