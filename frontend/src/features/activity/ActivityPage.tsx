@@ -130,12 +130,12 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
             ))}
             {item.blocked_reason ? <p className="text-destructive">{item.blocked_reason}</p> : null}
             {previewTruncated(item.changes.length, item.change_count) ? (
-              <p className="text-muted-foreground/80">…</p>
+              <p className="text-muted-foreground">…</p>
             ) : null}
           </li>
         ))}
         {previewTruncated(visible.length, preview.total) ? (
-          <li className="text-xs text-muted-foreground/80">…</li>
+          <li className="text-xs text-muted-foreground">…</li>
         ) : null}
       </ul>
       {itemsCaption ? <p className="text-xs text-muted-foreground">{itemsCaption}</p> : null}

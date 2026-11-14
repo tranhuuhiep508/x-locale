@@ -396,7 +396,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                               className="flex flex-wrap items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs text-muted-foreground"
                             >
                               <span className="font-medium text-foreground">{change.label}:</span>
-                              <span className="line-through text-muted-foreground/70">
+                              <span className="line-through text-muted-foreground">
                                 {change.published || '—'}
                               </span>
                               <span>→</span>
@@ -466,7 +466,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                     className="size-3 mt-0.5 shrink-0 text-muted-foreground/70"
                                   />
                                   <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-1">
-                                    <span className="eyebrow text-3xs text-muted-foreground/80">
+                                    <span className="eyebrow text-3xs text-muted-foreground">
                                       Published:
                                     </span>
                                     <p lang={locale} className="break-all whitespace-pre-wrap">

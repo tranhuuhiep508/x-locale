@@ -312,11 +312,11 @@ export function NewProjectPage() {
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <Badge
                       variant="secondary"
-                      className="gap-1 rounded-md border border-primary/25 bg-primary/10 font-mono text-2xs font-semibold text-primary"
+                      className="gap-1 rounded-md border border-accent-foreground/25 bg-accent font-mono text-2xs font-semibold text-accent-foreground"
                     >
-                      <Globe className="size-3 text-primary" />
+                      <Globe className="size-3" />
                       {form.base_language.toUpperCase()}
-                      <span className="font-normal text-3xs text-primary/80">(base)</span>
+                      <span className="font-normal text-3xs">(base)</span>
                     </Badge>
                     {form.target_languages.length > 0 ? (
                       form.target_languages.map((lang) => (

@@ -272,7 +272,7 @@ export function LoginPage() {
                             <span>{activeLocale.flag}</span>
                             <span>Target ({activeLocale.code})</span>
                           </span>
-                          <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-3xs font-medium uppercase text-primary">
+                          <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-3xs font-medium uppercase text-accent-foreground">
                             {activeLocale.status}
                           </span>
                         </div>

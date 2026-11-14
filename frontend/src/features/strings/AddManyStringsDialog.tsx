@@ -594,7 +594,7 @@ export function AddManyStringsDialog({
                   size="sm"
                   disabled={busy || aiTargets === 0}
                   onClick={() => void generateTranslations()}
-                  className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30"
+                  className="border-accent-foreground/25 bg-accent text-accent-foreground hover:border-accent-foreground/40 hover:bg-accent"
                 >
                   {aiBusy ? (
                     <Spinner data-icon="inline-start" className="size-3.5" />

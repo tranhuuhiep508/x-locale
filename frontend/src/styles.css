@@ -112,7 +112,7 @@
   --tag-azure: var(--color-azure-600);
   --tag-navy: oklch(0.40 0.11 258);
   --tag-ember: var(--color-ember-500);
-  --tag-gold: oklch(0.68 0.14 75);
+  --tag-gold: oklch(0.64 0.14 75);
   --tag-kelp: oklch(0.48 0.08 160);
   --tag-dusk: oklch(0.52 0.14 310);
   --tag-tide: oklch(0.55 0.10 200);

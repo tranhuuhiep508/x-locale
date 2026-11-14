@@ -208,7 +208,7 @@ function ChildRow({
         {onOpenDetail ? (
           <button
             type="button"
-            className="text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            className="text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
             onClick={() => onOpenDetail(child.id)}
           >
             View details
@@ -225,7 +225,7 @@ function ChildRow({
       {extra > 0 && onOpenDetail ? (
         <button
           type="button"
-          className="mt-1 pl-1 text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          className="mt-1 pl-1 text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           onClick={() => onOpenDetail(child.id)}
         >
           +{extra} more change{extra === 1 ? '' : 's'}

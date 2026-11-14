@@ -337,7 +337,7 @@ export function ProjectListPage() {
                         <LayoutDashboard className="size-3" />
                         <span>Overview</span>
                       </Link>
-                      <span className="flex items-center gap-1 font-mono text-2xs text-muted-foreground/80">
+                      <span className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
                         <Calendar aria-hidden="true" className="size-3 text-muted-foreground" />
                         <span>{formatDateShort(p.updated_at)}</span>
                       </span>

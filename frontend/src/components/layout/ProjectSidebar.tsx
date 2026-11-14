@@ -173,7 +173,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
                 {pendingCount > 0 ? (
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-primary/15 px-1.5 py-0 font-mono text-3xs font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-accent px-1.5 py-0 font-mono text-3xs font-semibold tabular-nums text-accent-foreground group-data-[collapsible=icon]:hidden"
                   >
                     {pendingCount}
                   </span>

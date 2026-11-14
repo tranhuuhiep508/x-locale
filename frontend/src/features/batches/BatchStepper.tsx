@@ -43,7 +43,7 @@ export function BatchStepper({
                 active
                   ? 'bg-primary font-semibold text-primary-foreground shadow-xs'
                   : complete
-                    ? 'bg-primary/15 text-primary scale-95'
+                    ? 'bg-accent text-accent-foreground scale-95'
                     : 'bg-muted text-muted-foreground'
               )}
             >

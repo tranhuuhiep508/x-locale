@@ -62,7 +62,7 @@ export function AppHeader({
           aria-label="x-locale"
           className="group flex shrink-0 items-center gap-2.5 rounded-lg text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="flex size-7 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary transition-colors group-hover:border-primary/40 group-hover:bg-primary/15">
+          <span className="flex size-7 items-center justify-center rounded-md border border-accent-foreground/25 bg-accent text-accent-foreground transition-colors group-hover:border-accent-foreground/40 group-hover:bg-accent">
             <MeridianMark className="size-4" />
           </span>
           <span className="hidden font-heading text-base font-semibold tracking-tight sm:inline">

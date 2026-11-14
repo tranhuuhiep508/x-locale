@@ -152,10 +152,10 @@ export function BatchActionBar({
       />
       <div className="flex min-w-0 items-center gap-1.5">
         <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-          <div className="flex shrink-0 items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-primary">
+          <div className="flex shrink-0 items-center gap-2 rounded-lg bg-accent px-2.5 py-1 text-accent-foreground">
             <Badge className="font-mono text-xs tabular-nums">{selectedCount}</Badge>
             <span className="text-xs font-medium">selected</span>
-            {busy ? <Spinner aria-hidden="true" className="size-3.5 text-primary" /> : null}
+            {busy ? <Spinner aria-hidden="true" className="size-3.5" /> : null}
           </div>
           <Separator orientation="vertical" className="mx-0.5 h-5" />
           <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}

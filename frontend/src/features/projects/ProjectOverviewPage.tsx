@@ -875,7 +875,7 @@ export function ProjectOverviewPage() {
                   </span>
                   <Badge
                     variant="secondary"
-                    className="rounded-md border border-primary/25 bg-primary/10 font-mono text-xs font-semibold text-primary"
+                    className="rounded-md border border-accent-foreground/25 bg-accent font-mono text-xs font-semibold text-accent-foreground"
                   >
                     {project.base_language.toUpperCase()}
                   </Badge>

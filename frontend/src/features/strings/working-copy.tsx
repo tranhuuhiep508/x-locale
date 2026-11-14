@@ -67,7 +67,7 @@ const STATE_BADGE_STYLE: Record<ReleaseState, string> = {
   edited:
     'eyebrow border-public-foreground/25 bg-public text-public-foreground text-3xs px-1.5 py-0',
   removing:
-    'eyebrow border-destructive/30 bg-destructive/10 text-destructive text-3xs px-1.5 py-0',
+    'eyebrow border-transparent bg-destructive text-destructive-foreground text-3xs px-1.5 py-0',
   deleted:
     'eyebrow border-border bg-muted text-muted-foreground text-3xs px-1.5 py-0',
 }

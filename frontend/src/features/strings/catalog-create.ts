@@ -10,7 +10,7 @@ export const TAG_DAYLIGHT: Record<TagTone, string> = {
   azure: '#0076c2',
   navy: '#1d4682',
   ember: '#ca322e',
-  gold: '#ca8a10',
+  gold: '#bb7e00',
   kelp: '#2f6b4e',
   dusk: '#814ea4',
   tide: '#008388',
@@ -18,13 +18,14 @@ export const TAG_DAYLIGHT: Record<TagTone, string> = {
 
 export const TAG_PRESET_COLORS = TAG_TONES.map((tone) => TAG_DAYLIGHT[tone])
 
-/** Tailwind presets saved before the atmosphere set. Orange shares gold: both are the warm swatch. */
+/** Tailwind presets saved before the atmosphere set. Orange shares gold: both are the warm swatch. `#ca8a10` is the previous daylight gold. */
 const LEGACY_TAG_TONE: Record<string, TagTone> = {
   '#64748b': 'haze',
   '#2563eb': 'azure',
   '#e11d48': 'ember',
   '#f59e0b': 'gold',
   '#f97316': 'gold',
+  '#ca8a10': 'gold',
   '#10b981': 'kelp',
   '#9333ea': 'dusk',
   '#0d9488': 'tide',

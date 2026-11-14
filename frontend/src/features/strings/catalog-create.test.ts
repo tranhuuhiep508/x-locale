@@ -41,6 +41,7 @@ describe('tagSwatchColor', () => {
     expect(tagSwatchColor('#64748B')).toBe('var(--tag-haze)')
     expect(tagSwatchColor('#2563eb')).toBe('var(--tag-azure)')
     expect(tagSwatchColor('#f97316')).toBe('var(--tag-gold)')
+    expect(tagSwatchColor('#ca8a10')).toBe('var(--tag-gold)')
   })
 
   it('leaves a custom picker color untouched', () => {

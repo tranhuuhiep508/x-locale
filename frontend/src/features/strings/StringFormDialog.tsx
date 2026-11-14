@@ -660,14 +660,14 @@ export default function StringFormDialog({
                   className={cn(
                     'eyebrow min-w-14 shrink-0 justify-center text-3xs',
                     status === 'public' &&
-                      'border-primary/30 bg-primary/12 text-primary',
+                      'border-accent-foreground/25 bg-accent text-accent-foreground',
                   )}
                 >
                   {status}
                 </Badge>
               ) : null}
               {reviewOpen ? (
-                <Badge variant="outline" className="eyebrow shrink-0 border-primary/40 bg-primary/10 text-3xs text-primary">
+                <Badge variant="outline" className="eyebrow shrink-0 border-accent-foreground/25 bg-accent text-3xs text-accent-foreground">
                   Publication Review
                 </Badge>
               ) : null}

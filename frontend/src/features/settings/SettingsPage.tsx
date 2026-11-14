@@ -198,7 +198,7 @@ export function SettingsPage() {
                     <Badge
                       role="status"
                       variant="outline"
-                      className="border-primary/35 bg-primary/10 text-primary"
+                      className="border-accent-foreground/25 bg-accent text-accent-foreground"
                     >
                       Unsaved changes
                     </Badge>

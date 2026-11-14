@@ -32,7 +32,7 @@ function ChangeRow({ change }: { change: ActivityChange }) {
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-foreground/90">{label}</span>
         {isChanged ? (
-          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-3xs font-medium text-primary">
+          <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-3xs font-medium text-accent-foreground">
             Modified
           </span>
         ) : null}

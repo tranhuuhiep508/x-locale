@@ -144,7 +144,7 @@ function ExportManifestPanel({
             variant="outline"
             className={`font-mono text-3xs ${
               stage === 'public'
-                ? 'border-primary/35 bg-primary/10 text-primary'
+                ? 'border-accent-foreground/25 bg-accent text-accent-foreground'
                 : 'bg-background text-muted-foreground'
             }`}
           >
@@ -644,7 +644,7 @@ export function ImportExportPage() {
                   className={`font-mono text-3xs ${
                     dryRun
                       ? 'border-border/80 bg-muted/50 text-muted-foreground'
-                      : 'border-primary/35 bg-primary/10 text-primary'
+                      : 'border-accent-foreground/25 bg-accent text-accent-foreground'
                   }`}
                 >
                   {dryRun ? (
@@ -780,7 +780,7 @@ export function ImportExportPage() {
                     className={`rounded-md border px-2 py-0.5 ${
                       dryRun
                         ? 'border-border/80 bg-background/90 text-muted-foreground'
-                        : 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-accent-foreground/25 bg-accent text-accent-foreground'
                     }`}
                   >
                     {dryRun ? 'preview diff' : 'immediate write'}
