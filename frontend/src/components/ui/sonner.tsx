@@ -14,6 +14,7 @@ function Toaster(props: ToasterProps) {
   return (
     <Sonner
       theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+      richColors
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

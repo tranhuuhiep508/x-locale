@@ -260,7 +260,7 @@ export function LoginPage() {
                     {/* Target Galley — re-animates smoothly whenever activeLocale changes */}
                     <div
                       key={activeLocale.code}
-                      className="animate-galley-swap relative flex flex-col justify-between overflow-hidden rounded-lg border border-primary/40 bg-primary/5 p-3.5 shadow-2xs"
+                      className="animate-galley-swap relative flex flex-col justify-between overflow-hidden rounded-lg border border-primary/40 p-3.5 shadow-2xs"
                     >
                       <div
                         aria-hidden="true"

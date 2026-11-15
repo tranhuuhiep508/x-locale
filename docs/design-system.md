@@ -8,7 +8,8 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 - No hex, no Tailwind palette colours, and no inline colour styles in components. Brand marks (for example the Microsoft logo) are the only exception.
 - Text on a fill uses that fill's foreground: `bg-X` with `text-X-foreground`.
 - Soft tinted chips use `bg-accent text-accent-foreground`, never `text-primary` on a `bg-primary/N` wash.
-- Alert or danger chips are filled: `bg-destructive` or `bg-warning` with their foreground.
+- Danger chips are filled: `bg-destructive` or `bg-warning` with their foreground. The destructive Alert is `text-destructive` on `card`, and its description uses the same colour. Success and info alerts are filled.
+- Known exceptions, still in the product: the login terminal showcase and the import JSON sample use `haze-*` and `azure-*` utilities; dialog, alert-dialog and sheet backdrops use `bg-haze-950/40`; a tag swatch sets its colour inline because the stored value is data.
 
 ## 2. Contrast (WCAG AA)
 
@@ -25,12 +26,12 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 
 - Dark mode is mainly a token remap in `.dark` in `styles.css`.
 - A `dark:` override in a component is fine when one state really behaves differently between modes (for example a hover that darkens in light and lightens in dark).
-- If the same override appears in three places, make it a token.
+- If the same override appears in three places, make it a token. Primary hover is `--primary-hover`: 88% primary mixed toward black in Daylight, and primary at 80% in Nightfall. Buttons, link badges and the batch stepper all use it.
 - A new token gets values for both modes in the same change.
 
 ## 5. Scales
 
-- Spacing, sizing, radius, type size, shadow, duration and easing come from their scales.
+- Spacing, sizing, radius, type size, shadow and easing come from their scales. Duration tokens are a known follow-up.
 - An arbitrary value (for example `h-[18.4px]`) is allowed only with a one-line comment saying why. If the same value appears twice, add it to the scale.
 
 ## 6. Tags and data colour
@@ -45,7 +46,7 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 
 ## 8. Motion
 
-- Durations and easings come from the motion tokens (for example `ease-drift`).
+- Easings that exist come from the motion tokens (for example `ease-drift`). Duration tokens are a known follow-up, so durations are not a scale yet.
 - Everything respects `prefers-reduced-motion`, turning off both the animation and any delay.
 
 ## 9. Components
@@ -58,15 +59,21 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 - A new token needs a name, values for both modes, its measured contrast, and a note in this doc.
 - Check existing tokens first to avoid near-duplicates.
 
+## Typography and ledger
+
+- `--font-heading` (Bricolage Grotesque) is for titles and KPI gauges. `--font-sans` (Geist) is for UI copy and translations. `--font-mono` (IBM Plex Mono, `tabular-nums`, up to `font-semibold`) is for keys, locale codes, slugs and counters. Use the semantic scale (`text-3xs` through `text-3xl`) and the `eyebrow` utility.
+- Sticky headers use `sky-chrome` (`--app-header-height`). `sky-panel` is the card surface (`bg-card`) plus a small shadow. The strings ledger uses opaque `.string-row-*` rows. Edited, removing and selected rows keep a 3px left bar; a base row uses a 2px bar on hover.
+
 ## Tokens added with the fix-up
 
 Measured as the rendered pair (Daylight / Nightfall). Text floor is 4.5:1. Icons, borders, focus rings and swatches floor is 3:1.
 
 - `--success` on `--success-foreground`: 8.9:1 / 9.4:1. Alert `success` and Sonner success toasts use this filled pair.
-- `--info` on `--info-foreground`: 8.0:1 / 10.1:1. Alert `info` and Sonner info toasts use this filled pair.
-- `--ring` stays azure-500. The `focus-ring` utility draws a 2px outline of it with a 2px offset: 3.1:1 on the Daylight page (3.2:1 on the card) and 5.9:1 on the Nightfall page (5.5:1 on the card).
-- `--tag-*-ink` is sun in Daylight and haze-950 in Nightfall. The check is at least 3.3:1 on every preset swatch in Daylight (gold is the lowest) and at least 5.7:1 in Nightfall. `tagCheckColor()` returns that ink.
-- `--row-hover`, `--row-selected` and `--row-removing` read 1.17:1, 1.20:1 and 1.18:1 against the Daylight card, and 1.28:1, 1.40:1 and 1.41:1 in Nightfall. The left bar still carries the meaning.
+- `--info` on `--info-foreground`: 8.0:1 / 10.05:1. Alert `info` and Sonner info toasts (`richColors`) use this filled pair.
+- `--ring` stays azure-500. `focus-ring` draws a 2px outline of it. The lowest pair is 3.02:1 on accent in Daylight and 4.20:1 on accent in Nightfall. On a `muted/55` wash over the card it is 3.13:1 / 5.30:1.
+- `--tag-*-ink` is sun in Daylight and haze-950 in Nightfall. Sun on the Daylight swatches is 3.36–9.10:1. Haze-950 on the Nightfall swatches is 5.73–11.04:1. `tagCheckColor()` returns that ink.
+- `--row-hover`, `--row-selected` and `--row-removing` are a light mix of the card with haze, azure, or destructive (97% card in Daylight; 94%, 92% and 90% in Nightfall). The weakest text on those rows is primary on the selected row at 4.58:1 in Daylight and destructive on the selected row at 4.69:1 in Nightfall. The left bar still carries the meaning.
+- `--primary-hover` is the shared primary hover for the default button, the default badge link, and the batch stepper.
 
 Badge variants `soft` (accent), `warning`, `public` and `code` (muted mono) are the chips. Button variant `soft` is the same accent fill for actions such as Generate with AI.
 

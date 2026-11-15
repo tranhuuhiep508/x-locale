@@ -32,7 +32,7 @@ export function BatchStepper({
               active
                 ? 'bg-background text-foreground font-semibold shadow-xs ring-1 ring-border/50 scale-[1.02]'
                 : complete
-                  ? 'text-primary font-medium hover:text-[color-mix(in_oklab,var(--primary)_88%,black)] dark:hover:text-primary/80'
+                  ? 'text-primary font-medium hover:text-primary-hover'
                   : 'text-muted-foreground'
             )}
           >

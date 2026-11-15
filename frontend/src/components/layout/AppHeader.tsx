@@ -75,7 +75,7 @@ export function AppHeader({
               /
             </span>
             <span
-              className="min-w-0 max-w-60 truncate text-sm font-medium text-foreground/85"
+              className="min-w-0 max-w-60 truncate text-sm font-medium text-foreground"
               title={title}
             >
               {title}

@@ -243,7 +243,7 @@ function LocaleHorizonStrip({
               params={{ projectRef }}
               search={isComplete ? { complete_locale: locale } : { missing_locale: locale }}
               aria-label={`${languageName(locale)}: ${percent}% translated`}
-              className="group flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/75 bg-background/75 px-2.5 py-2 transition-colors hover:border-primary/45 hover:bg-background"
+              className="focus-ring group flex min-w-0 flex-col gap-1.5 rounded-lg border border-border/75 bg-background/75 px-2.5 py-2 transition-colors hover:border-primary/45 hover:bg-background"
             >
               <div className="flex items-center justify-between gap-1.5">
                 <span className="font-mono text-2xs font-semibold uppercase text-foreground">
@@ -461,7 +461,7 @@ function CatalogBlueprintCard({
         <Link
           to="/projects/$projectRef/modules"
           params={{ projectRef }}
-          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
+          className="focus-ring group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -504,7 +504,7 @@ function CatalogBlueprintCard({
         <Link
           to="/projects/$projectRef/tags"
           params={{ projectRef }}
-          className="group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
+          className="focus-ring group flex flex-col gap-2.5 rounded-xl border border-border/75 bg-muted/20 p-3.5 transition-all duration-200 hover:border-border hover:bg-muted/35"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">

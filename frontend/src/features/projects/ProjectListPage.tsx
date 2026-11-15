@@ -332,7 +332,7 @@ export function ProjectListPage() {
                       <Link
                         to="/projects/$projectRef"
                         params={{ projectRef: p.slug }}
-                        className="relative z-10 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+                        className="focus-ring relative z-10 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
                       >
                         <LayoutDashboard className="size-3" />
                         <span>Overview</span>

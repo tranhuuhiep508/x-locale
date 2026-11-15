@@ -106,7 +106,7 @@
   --destructive-foreground: oklch(0.985 0.01 27);
   --warning: oklch(0.95 0.055 72);
   --warning-foreground: oklch(0.40 0.11 55);
-  /* Filled status. Text on the fill clears 4.5:1 (measured 8.9 / 9.4 success, 8.0 / 10.1 info). */
+  /* Filled status. Text on the fill clears 4.5:1 (measured 8.9 / 9.4 success, 8.0 / 10.05 info). */
   --success: oklch(0.94 0.04 155);
   --success-foreground: oklch(0.36 0.08 155);
   --info: oklch(0.95 0.03 230);
@@ -121,7 +121,7 @@
   --tag-kelp: oklch(0.48 0.08 160);
   --tag-dusk: oklch(0.52 0.14 310);
   --tag-tide: oklch(0.55 0.10 200);
-  /* Check marks. Sun clears 3:1 on every Daylight swatch (8.1–17.4). */
+  /* Check marks. Sun on the Daylight swatches is 3.36–9.10:1. */
   --tag-haze-ink: var(--color-sun);
   --tag-azure-ink: var(--color-sun);
   --tag-navy-ink: var(--color-sun);
@@ -130,10 +130,12 @@
   --tag-kelp-ink: var(--color-sun);
   --tag-dusk-ink: var(--color-sun);
   --tag-tide-ink: var(--color-sun);
-  /* Row tints. A visible step off the card; the left bar still carries the meaning. */
-  --row-hover: color-mix(in oklab, var(--card) 88%, var(--color-haze-500));
-  --row-selected: color-mix(in oklab, var(--card) 88%, var(--color-azure-700));
-  --row-removing: color-mix(in oklab, var(--card) 88%, var(--destructive));
+  /* Row tints stay light enough that muted, primary and destructive text clear 4.5:1. */
+  --row-hover: color-mix(in oklab, var(--card) 97%, var(--color-haze-500));
+  --row-selected: color-mix(in oklab, var(--card) 97%, var(--color-azure-700));
+  --row-removing: color-mix(in oklab, var(--card) 97%, var(--destructive));
+  /* Primary hover darkens toward black in Daylight. */
+  --primary-hover: color-mix(in oklab, var(--primary) 88%, black);
 
   /* `border` divides, `input` bounds an interactive control — so `input` is
      deliberately heavier and clears 3:1 on card. */
@@ -243,7 +245,7 @@
   --tag-kelp: oklch(0.74 0.10 160);
   --tag-dusk: oklch(0.74 0.12 310);
   --tag-tide: oklch(0.76 0.09 200);
-  /* Nightfall swatches are light, so the check is haze-950 (3.2–6.8:1). */
+  /* Nightfall swatches are light, so the check is haze-950 (5.73–11.04:1). */
   --tag-haze-ink: var(--color-haze-950);
   --tag-azure-ink: var(--color-haze-950);
   --tag-navy-ink: var(--color-haze-950);
@@ -252,9 +254,11 @@
   --tag-kelp-ink: var(--color-haze-950);
   --tag-dusk-ink: var(--color-haze-950);
   --tag-tide-ink: var(--color-haze-950);
-  --row-hover: color-mix(in oklab, var(--card) 88%, var(--foreground));
-  --row-selected: color-mix(in oklab, var(--card) 80%, var(--color-azure-400));
-  --row-removing: color-mix(in oklab, var(--card) 74%, var(--destructive));
+  --row-hover: color-mix(in oklab, var(--card) 94%, var(--foreground));
+  --row-selected: color-mix(in oklab, var(--card) 92%, var(--color-azure-400));
+  --row-removing: color-mix(in oklab, var(--card) 90%, var(--destructive));
+  /* Nightfall hover is primary at 80%, so the label lightens instead of turning black. */
+  --primary-hover: color-mix(in oklab, var(--primary) 80%, transparent);
 
   --border: oklch(0.295 0.022 250);
   --input: oklch(0.585 0.022 246);
@@ -321,6 +325,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -457,7 +462,7 @@
   background-size: 100% 1px;
 }
 
-/* Full --ring. Daylight azure-500 is 3.1:1 on the page; Nightfall azure-500 is 5.5:1 on the card. */
+/* Full --ring. Lowest pair is 3.02:1 on accent in Daylight and 4.20:1 on accent in Nightfall. */
 @utility focus-ring {
   &:focus-visible {
     outline: 2px solid var(--ring);
