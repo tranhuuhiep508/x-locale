@@ -4,7 +4,7 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 
 ## 1. Colour
 
-- Components use semantic tokens only (`background`, `card`, `popover`, `primary`, `accent`, `muted`, `destructive`, `warning`, `border`, `ring`). Raw ramps (`azure`, `haze`, `ember`) only feed those tokens.
+- Components use semantic tokens only (`background`, `card`, `popover`, `primary`, `accent`, `muted`, `destructive`, `destructive-soft`, `warning`, `border`, `ring`). Raw ramps (`azure`, `haze`, `ember`) only feed those tokens.
 - No hex, no Tailwind palette colours, and no inline colour styles in components. Brand marks (for example the Microsoft logo) are the only exception.
 - Text on a fill uses that fill's foreground: `bg-X` with `text-X-foreground`.
 - Soft tinted chips use `bg-accent text-accent-foreground`, never `text-primary` on a `bg-primary/N` wash.
@@ -68,10 +68,10 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 
 Measured as the rendered pair (Daylight / Nightfall). Text floor is 4.5:1. Icons, borders, focus rings and swatches floor is 3:1.
 
-- `--success` on `--success-foreground`: 8.90:1 / 9.43:1. `--info` on `--info-foreground`: 8.01:1 / 10.05:1. `--warning` on `--warning-foreground`: 8.08:1 / 9.49:1. `--destructive` on `--destructive-foreground`: 4.98:1 / 5.75:1. Alerts and Sonner toasts (`richColors`) use these tokens: success, info, warning, and error mapped to destructive.
+- `--success` on `--success-foreground`: 8.90:1 / 9.43:1. `--info` on `--info-foreground`: 8.01:1 / 10.05:1. `--warning` on `--warning-foreground`: 8.08:1 / 9.49:1. `--destructive` on `--destructive-foreground`: 4.98:1 / 5.75:1, and that solid pair is for actions such as destructive buttons. `--destructive-soft` on `--destructive-soft-foreground`: 6.83:1 / 9.38:1. Sonner toasts (`richColors`) use success, info, and warning directly. The error toast maps to `--destructive-soft`, text and icon on the fill, with the border the same colour as the fill. The soft fill against the card is 1.18:1 / 1.36:1.
 - `--ring` stays azure-500. `focus-ring` draws a 2px outline of it. The lowest pair is 3.02:1 on accent in Daylight and 4.20:1 on accent in Nightfall. On a `muted/55` wash over the card it is 3.13:1 / 5.30:1.
 - `--tag-*-ink` is sun in Daylight and haze-950 in Nightfall. Sun on the Daylight swatches is 3.36–9.10:1. Haze-950 on the Nightfall swatches is 5.73–11.04:1. `tagCheckColor()` returns that ink.
-- `--row-hover`, `--row-selected` and `--row-removing` are a light mix of the card with haze, azure, or destructive (97% card in Daylight; 94%, 92% and 90% in Nightfall). The weakest text on the row states is primary on the selected row at 4.58:1 in Daylight and destructive on the selected row at 4.69:1 in Nightfall. `--missing-foreground` is at least 4.75:1 in Daylight and 4.73:1 in Nightfall on every row state, including edited and deleted hover. The left bar still carries the meaning.
+- `--row-hover`, `--row-selected` and `--row-removing` are a light mix of the card with haze, azure, or destructive (97% card in Daylight; 94%, 92% and 90% in Nightfall). The weakest text on the row states is primary on the deleted hover at 4.52:1 in Daylight and destructive on the edited hover at 4.69:1 in Nightfall. `--missing-foreground` is at least 4.75:1 in Daylight and 4.73:1 in Nightfall on every row state, including edited and deleted hover. The left bar still carries the meaning.
 - `--primary-hover` is the shared primary hover for the default button, the default badge link, and the batch stepper.
 
 Badge variants `soft` (accent), `warning`, `public` and `code` (muted mono) are the chips. Button variant `soft` is the same accent fill for actions such as Generate with AI.

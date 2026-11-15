@@ -104,6 +104,8 @@
 
   --destructive: var(--color-ember-500);
   --destructive-foreground: oklch(0.985 0.01 27);
+  --destructive-soft: oklch(0.95 0.03 27);
+  --destructive-soft-foreground: oklch(0.45 0.15 27);
   --warning: oklch(0.95 0.055 72);
   --warning-foreground: oklch(0.40 0.11 55);
   /* Filled status. Text on the fill clears 4.5:1 (measured 8.9 / 9.4 success, 8.0 / 10.05 info). */
@@ -230,6 +232,8 @@
 
   --destructive: var(--color-ember-400);
   --destructive-foreground: oklch(0.16 0.02 27);
+  --destructive-soft: oklch(0.32 0.07 27);
+  --destructive-soft-foreground: oklch(0.90 0.06 27);
   --warning: oklch(0.32 0.07 70);
   --warning-foreground: oklch(0.90 0.08 80);
   --success: oklch(0.32 0.06 160);
@@ -336,6 +340,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-foreground: var(--destructive-soft-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
