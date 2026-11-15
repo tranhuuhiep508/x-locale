@@ -256,7 +256,7 @@ function FilterSearchSelect({
           ) : (
             <span className="font-normal text-muted-foreground">{label}</span>
           )}
-          <ChevronDown data-icon="inline-end" className="size-3.5 opacity-60 ml-0.5" />
+          <ChevronDown data-icon="inline-end" className="size-3.5 ml-0.5 text-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -676,6 +676,7 @@ export function StringsFilters({
                 >
                   <button
                     type="button"
+                    className="focus-ring"
                     title={chip.label}
                     aria-label={
                       chip.id === 'batch' ? 'Clear batch filter' : `Remove ${chip.id} filter`

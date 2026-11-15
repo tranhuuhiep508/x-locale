@@ -151,7 +151,7 @@ export function BatchActionBar({
         aria-hidden="true"
       />
       <div className="flex min-w-0 items-center gap-1.5">
-        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <div className="flex shrink-0 items-center gap-2 rounded-lg bg-accent px-2.5 py-1 text-accent-foreground">
             <Badge className="font-mono text-xs tabular-nums">{selectedCount}</Badge>
             <span className="text-xs font-medium">selected</span>

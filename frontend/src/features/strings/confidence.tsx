@@ -52,7 +52,7 @@ export function ConfidenceBadge({
           )}
           aria-label={`${confidenceLabel(score)}. ${CONFIDENCE_ESTIMATE_NOTE}`}
         >
-          <span className="font-medium opacity-70">Est.</span>
+          <span className="font-medium">Est.</span>
           {score}
         </span>
       </TooltipTrigger>

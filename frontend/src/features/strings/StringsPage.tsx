@@ -193,7 +193,7 @@ function AddStringMenu({
         <Button size={size} className={className} aria-haspopup="menu" aria-expanded={open}>
           <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
           Add string
-          <ChevronDown data-icon="inline-end" className="size-3.5 opacity-80" />
+          <ChevronDown data-icon="inline-end" className="size-3.5 text-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align={align} className="w-56 p-1">
@@ -206,7 +206,7 @@ function AddStringMenu({
               setOpen(false)
               onAddSingle()
             }}
-            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+            className="focus-ring flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent"
           >
             <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
             <span className="flex min-w-0 flex-col">
@@ -222,7 +222,7 @@ function AddStringMenu({
               setOpen(false)
               onAddMany()
             }}
-            className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-hidden"
+            className="focus-ring flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent"
           >
             <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
             <span className="flex min-w-0 flex-col">
@@ -924,7 +924,7 @@ export function StringsPage() {
                         aria-pressed={density === 'comfortable'}
                         onClick={() => updateDensity('comfortable')}
                         className={cn(
-                          'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
+                          'focus-ring inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
                           density === 'comfortable'
                             ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:text-foreground',
@@ -943,7 +943,7 @@ export function StringsPage() {
                         aria-pressed={density === 'compact'}
                         onClick={() => updateDensity('compact')}
                         className={cn(
-                          'inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
+                          'focus-ring inline-flex h-6.5 items-center justify-center rounded-md px-2 transition-colors',
                           density === 'compact'
                             ? 'bg-accent text-accent-foreground'
                             : 'text-muted-foreground hover:text-foreground',
@@ -1068,7 +1068,7 @@ export function StringsPage() {
                 aria-selected={lens.active}
                 onClick={lens.onSelect}
                 className={cn(
-                  'inline-flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all duration-200 ease-drift',
+                  'focus-ring inline-flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all duration-200 ease-drift',
                   lens.active
                     ? 'bg-card text-foreground shadow-xs ring-1 ring-border/80'
                     : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',

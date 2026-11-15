@@ -14,6 +14,10 @@ const badgeVariants = cva(
           "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
         destructive:
           "bg-destructive text-destructive-foreground focus-visible:ring-destructive/40 [a]:hover:bg-[color-mix(in_oklab,var(--destructive)_88%,black)] dark:[a]:hover:bg-destructive/90",
+        soft: "border-transparent bg-accent text-accent-foreground",
+        warning: "border-transparent bg-warning text-warning-foreground",
+        public: "border-transparent bg-public text-public-foreground",
+        code: "border-border bg-muted font-mono text-foreground",
         outline:
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:

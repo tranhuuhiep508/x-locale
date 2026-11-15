@@ -158,7 +158,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                       {batch.updated_count > 0 && (
                         <Badge
                           variant="outline"
-                          className="border-border bg-muted/50 font-mono text-xs font-normal text-foreground/85"
+                          className="border-border bg-muted/50 font-mono text-xs font-normal text-muted-foreground"
                         >
                           ~{batch.updated_count} updated
                         </Badge>
@@ -463,7 +463,7 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
                                 >
                                   <Globe2
                                     aria-hidden="true"
-                                    className="size-3 mt-0.5 shrink-0 text-muted-foreground/70"
+                                    className="size-3 mt-0.5 shrink-0 text-muted-foreground"
                                   />
                                   <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-1">
                                     <span className="eyebrow text-3xs text-muted-foreground">

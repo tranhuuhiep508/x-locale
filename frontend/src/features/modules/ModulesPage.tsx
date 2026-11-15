@@ -105,13 +105,13 @@ function ModuleCard({
                   onClick={() => onCopySlug(module)}
                   aria-label={`Copy ${module.slug}`}
                   title="Copy slug"
-                  className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  className="focus-ring mt-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
                 >
                   <code className="truncate">{module.slug}</code>
                   {copied ? (
                     <Check className="size-3 shrink-0 text-primary" />
                   ) : (
-                    <Copy className="size-3 shrink-0 opacity-65" />
+                    <Copy className="size-3 shrink-0 text-foreground" />
                   )}
                 </button>
               </div>
@@ -150,7 +150,7 @@ function ModuleCard({
                 <Sparkles className="size-3 shrink-0 text-primary" aria-hidden="true" />
                 <span className="eyebrow text-3xs">AI guidance</span>
               </div>
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-foreground/90">
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                 {module.translation_context}
               </p>
             </div>
@@ -158,7 +158,7 @@ function ModuleCard({
             <button
               type="button"
               onClick={() => onEdit(module)}
-              className="flex w-fit items-center gap-1.5 rounded-md border border-dashed border-border/80 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
+              className="focus-ring flex w-fit items-center gap-1.5 rounded-md border border-dashed border-border/80 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
             >
               <Sparkles className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>Add AI translation guidance</span>
@@ -187,7 +187,7 @@ function ModuleCard({
               params={{ projectRef: projectId }}
               search={{ module: module.id }}
               aria-label={`View strings in ${module.name}`}
-              className="group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="focus-ring group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <span>Open strings</span>
               <ArrowUpRight className="size-3.5 transition-transform duration-200 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5" />

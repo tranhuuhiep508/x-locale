@@ -7,7 +7,6 @@ import { Spinner } from '@/components/ui/spinner'
 import { issueCounts, presentQaIssues, type QaView } from '@/features/strings/qa-issues'
 import { cn } from '@/lib/utils'
 
-const warningBadgeClass = 'bg-warning text-warning-foreground'
 const warningIconClass = 'text-warning-foreground'
 
 /** Long enough for the pointer to cross from the badge into the popover. */
@@ -178,13 +177,14 @@ export function QaIssueBadge({
       <PopoverTrigger asChild>
         <Badge
           asChild
-          variant={errors > 0 ? 'destructive' : 'outline'}
-          className={cn('cursor-default', stale && 'opacity-50', errors === 0 && warningBadgeClass)}
+          variant={errors > 0 ? 'destructive' : 'warning'}
+          className="cursor-default"
         >
           <button
             ref={triggerRef}
             id={id}
             type="button"
+            className="focus-ring"
             aria-label={`QA for ${label}: ${breakdown(errors, warnings)}. Advisory only.`}
             onPointerDown={() => { fromPointer.current = true }}
             onPointerEnter={(event) => onPointer(event, 'show')}
@@ -198,6 +198,7 @@ export function QaIssueBadge({
           >
             {errors > 0 ? <OctagonX /> : <TriangleAlert className={warningIconClass} />}
             {countLabel(errors, warnings)}
+            {stale ? <span>Stale</span> : null}
           </button>
         </Badge>
       </PopoverTrigger>

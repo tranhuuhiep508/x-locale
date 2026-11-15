@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TAG_PRESET_COLORS, moduleSlugFromName, nextTagColor, tagSwatchColor, uniqueModuleSlug } from './catalog-create'
+import { TAG_PRESET_COLORS, moduleSlugFromName, nextTagColor, tagCheckColor, tagSwatchColor, uniqueModuleSlug } from './catalog-create'
 
 describe('moduleSlugFromName', () => {
   it('slugifies a display name', () => {
@@ -42,6 +42,8 @@ describe('tagSwatchColor', () => {
     expect(tagSwatchColor('#2563eb')).toBe('var(--tag-azure)')
     expect(tagSwatchColor('#f97316')).toBe('var(--tag-gold)')
     expect(tagSwatchColor('#ca8a10')).toBe('var(--tag-gold)')
+    expect(tagCheckColor('#ca8a10')).toBe('var(--tag-gold-ink)')
+    expect(tagCheckColor('#123456')).toBe('light-dark(var(--color-sun), var(--color-haze-950))')
   })
 
   it('leaves a custom picker color untouched', () => {

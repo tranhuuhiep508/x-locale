@@ -656,18 +656,14 @@ export default function StringFormDialog({
               <DialogTitle className="truncate">{isEdit ? 'Edit string' : 'Add string'}</DialogTitle>
               {isEdit && !reviewOpen ? (
                 <Badge
-                  variant={status === 'public' ? 'default' : 'secondary'}
-                  className={cn(
-                    'eyebrow min-w-14 shrink-0 justify-center text-3xs',
-                    status === 'public' &&
-                      'border-accent-foreground/25 bg-accent text-accent-foreground',
-                  )}
+                  variant={status === 'public' ? 'soft' : 'secondary'}
+                  className="eyebrow min-w-14 shrink-0 justify-center text-3xs"
                 >
                   {status}
                 </Badge>
               ) : null}
               {reviewOpen ? (
-                <Badge variant="outline" className="eyebrow shrink-0 border-accent-foreground/25 bg-accent text-3xs text-accent-foreground">
+                <Badge variant="soft" className="eyebrow shrink-0 text-3xs">
                   Publication Review
                 </Badge>
               ) : null}
@@ -995,7 +991,7 @@ export default function StringFormDialog({
                   </h3>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="soft"
                     size="sm"
                     disabled={!canAutoTranslate || busy || memory.loading || aiLocales.length === 0}
                     onClick={() => {
@@ -1007,7 +1003,6 @@ export default function StringFormDialog({
                         current: translations,
                       })
                     }}
-                    className="border-accent-foreground/25 bg-accent text-accent-foreground hover:border-accent-foreground/40 hover:bg-accent"
                   >
                     {translateMut.isPending ? (
                       <Spinner data-icon="inline-start" className="size-3.5" />

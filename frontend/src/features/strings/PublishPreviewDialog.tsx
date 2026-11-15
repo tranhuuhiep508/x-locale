@@ -33,7 +33,7 @@ function FieldDiff({ change }: { change: PublishFieldChange }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs font-medium text-foreground/80">{change.label}</p>
+        <p className="text-xs font-medium text-muted-foreground">{change.label}</p>
         {change.firstPublish ? <Badge variant="outline" className="text-3xs">First publish</Badge> : null}
       </div>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -106,7 +106,7 @@ function PreviewRow({ row }: { row: PublishPreviewRow }) {
   return (
     <li className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <code className="font-mono text-xs break-all rounded bg-muted/60 px-1.5 py-0.5 text-foreground/80" translate="no">
+        <code className="font-mono text-xs break-all rounded bg-muted/60 px-1.5 py-0.5 text-muted-foreground" translate="no">
           {row.key}
         </code>
         {row.moduleSlug ? (

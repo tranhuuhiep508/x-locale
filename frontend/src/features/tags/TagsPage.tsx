@@ -103,13 +103,13 @@ function TagCard({
                 onClick={() => onCopyColor(tag)}
                 aria-label={`Copy ${tag.color}`}
                 title="Copy hex color"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs uppercase text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
+                className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs uppercase text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
               >
                 <span>{tag.color.toUpperCase()}</span>
                 {copied ? (
                   <Check className="size-3 text-primary" />
                 ) : (
-                  <Copy className="size-3 opacity-60" />
+                  <Copy className="size-3 text-foreground" />
                 )}
               </button>
               {tag.string_count === 0 ? (
@@ -162,7 +162,7 @@ function TagCard({
               params={{ projectRef: projectId }}
               search={{ tag: tag.id }}
               aria-label={`View strings tagged ${tag.name}`}
-              className="group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="focus-ring group/link inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <span>View strings</span>
               <ArrowUpRight className="size-3.5 transition-transform duration-200 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5" />

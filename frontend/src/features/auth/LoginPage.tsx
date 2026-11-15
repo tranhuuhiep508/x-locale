@@ -281,7 +281,7 @@ export function LoginPage() {
                         </p>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2 pl-1">
-                        <p className="font-mono text-2xs text-primary/85">
+                        <p className="font-mono text-2xs text-primary">
                           {activeLocale.context}
                         </p>
                         <div
@@ -422,7 +422,7 @@ export function LoginPage() {
                         </span>
                         <span className="truncate">Continue with Microsoft</span>
                       </span>
-                      <ArrowRight className="size-4 shrink-0 text-primary-foreground/80 transition-transform duration-200 ease-drift group-hover:translate-x-1" />
+                      <ArrowRight className="size-4 shrink-0 text-primary-foreground transition-transform duration-200 ease-drift group-hover:translate-x-1" />
                     </a>
                   </Button>
 
@@ -443,7 +443,7 @@ export function LoginPage() {
                         <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           1
                         </span>
-                        <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
+                        <span className="text-muted-foreground transition-colors group-hover/step:text-foreground">
                           Connect your projects & team members
                         </span>
                       </li>
@@ -451,7 +451,7 @@ export function LoginPage() {
                         <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           2
                         </span>
-                        <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
+                        <span className="text-muted-foreground transition-colors group-hover/step:text-foreground">
                           Review and polish translations together
                         </span>
                       </li>
@@ -459,7 +459,7 @@ export function LoginPage() {
                         <span className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-accent font-mono text-3xs font-semibold text-accent-foreground transition-transform duration-200 ease-drift group-hover/step:scale-110 group-hover/step:border-accent-foreground/40">
                           3
                         </span>
-                        <span className="text-foreground/90 transition-colors group-hover/step:text-foreground">
+                        <span className="text-muted-foreground transition-colors group-hover/step:text-foreground">
                           Publish approved copy directly to your apps
                         </span>
                       </li>

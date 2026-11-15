@@ -37,60 +37,60 @@ const VISIBLE_CHILD_CHANGES = 2
 
 interface ActivityVisual {
   icon: LucideIcon
-  badgeClass: string
+  badgeVariant: 'soft' | 'destructive' | 'code'
   nodeClass: string
 }
 
 const VISUAL_PRESETS = {
   import: {
     icon: FileSpreadsheet,
-    badgeClass: 'border-border bg-muted/65 text-foreground/85',
-    nodeClass: 'border-border bg-muted text-foreground/85',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted text-muted-foreground',
   },
   cli: {
     icon: Terminal,
-    badgeClass: 'border-border bg-muted/65 text-foreground/85',
-    nodeClass: 'border-border bg-muted text-foreground/85',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted text-muted-foreground',
   },
   ai: {
     icon: Sparkles,
-    badgeClass: 'bg-accent text-accent-foreground',
+    badgeVariant: 'soft',
     nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   publish: {
     icon: Globe,
-    badgeClass: 'bg-accent text-accent-foreground',
+    badgeVariant: 'soft',
     nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   revert: {
     icon: RotateCcw,
-    badgeClass: 'border-border bg-muted/65 text-foreground/85',
-    nodeClass: 'border-border bg-muted text-foreground/85',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted text-muted-foreground',
   },
   danger: {
     icon: Trash2,
-    badgeClass: 'border-transparent bg-destructive text-destructive-foreground',
+    badgeVariant: 'destructive',
     nodeClass: 'border-transparent bg-destructive text-destructive-foreground',
   },
   create: {
     icon: Plus,
-    badgeClass: 'border-border bg-muted/65 text-foreground/85',
-    nodeClass: 'border-border bg-muted text-foreground/85',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted text-muted-foreground',
   },
   translation: {
     icon: Languages,
-    badgeClass: 'bg-accent text-accent-foreground',
+    badgeVariant: 'soft',
     nodeClass: 'border-border bg-accent text-accent-foreground',
   },
   batch: {
     icon: Layers,
-    badgeClass: 'border-border bg-muted/70 text-foreground/85',
-    nodeClass: 'border-border bg-muted text-foreground/80',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted text-muted-foreground',
   },
   edit: {
     icon: FileEdit,
-    badgeClass: 'border-border bg-muted/60 text-foreground/80',
-    nodeClass: 'border-border bg-muted/80 text-foreground/75',
+    badgeVariant: 'code',
+    nodeClass: 'border-border bg-muted/80 text-muted-foreground',
   },
 } satisfies Record<string, ActivityVisual>
 
@@ -129,13 +129,13 @@ function ChangeLine({ change }: { change: ActivityChange }) {
 
   return (
     <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-      <span className="inline-flex shrink-0 items-center rounded bg-background/80 px-1.5 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border/70">
+      <span className="inline-flex shrink-0 items-center rounded bg-background/80 px-1.5 py-0.5 text-2xs font-medium text-muted-foreground ring-1 ring-border/70">
         {label}
       </span>
       {!change.before ? (
-        <span className="truncate font-mono text-2xs text-foreground/85">“{after}”</span>
+        <span className="truncate font-mono text-2xs text-muted-foreground">“{after}”</span>
       ) : !change.after ? (
-        <span className="truncate font-mono text-2xs line-through opacity-75">“{before}”</span>
+        <span className="truncate font-mono text-2xs line-through">“{before}”</span>
       ) : (
         <span className="inline-flex min-w-0 flex-wrap items-baseline gap-1 font-mono text-2xs">
           <span className="max-w-full truncate text-muted-foreground line-through decoration-muted-foreground/60">
@@ -157,7 +157,7 @@ function changeKey(change: ActivityChange) {
 
 interface CountChip {
   label: string
-  className: string
+  variant: 'code' | 'soft' | 'destructive'
 }
 
 function countChips(counts: Record<string, number>): CountChip[] {
@@ -165,25 +165,25 @@ function countChips(counts: Record<string, number>): CountChip[] {
   if (counts.created) {
     chips.push({
       label: `+${counts.created} created`,
-      className: 'border-border/80 bg-muted/60 text-foreground/85',
+      variant: 'code',
     })
   }
   if (counts.updated) {
     chips.push({
       label: `${counts.updated} updated`,
-      className: 'border-border/80 bg-muted/60 text-foreground/80',
+      variant: 'code',
     })
   }
   if (counts.published) {
     chips.push({
       label: `${counts.published} published`,
-      className: 'bg-accent text-accent-foreground',
+      variant: 'soft',
     })
   }
   if (counts.deleted) {
     chips.push({
       label: `${counts.deleted} deleted`,
-      className: 'border-transparent bg-destructive text-destructive-foreground',
+      variant: 'destructive',
     })
   }
   return chips
@@ -201,14 +201,14 @@ function ChildRow({
   return (
     <li className="min-w-0 py-1.5 text-xs wrap-anywhere text-muted-foreground first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-2xs break-all text-foreground/90">
+        <span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-2xs break-all text-muted-foreground">
           {child.string_key ?? 'string'}
         </span>
-        <span className="text-foreground/75">{child.summary}</span>
+        <span className="text-muted-foreground">{child.summary}</span>
         {onOpenDetail ? (
           <button
             type="button"
-            className="text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            className="focus-ring text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
             onClick={() => onOpenDetail(child.id)}
           >
             View details
@@ -225,7 +225,7 @@ function ChildRow({
       {extra > 0 && onOpenDetail ? (
         <button
           type="button"
-          className="mt-1 pl-1 text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          className="focus-ring mt-1 pl-1 text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           onClick={() => onOpenDetail(child.id)}
         >
           +{extra} more change{extra === 1 ? '' : 's'}
@@ -376,8 +376,8 @@ export function ActivityCard({
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <Badge
-              variant="outline"
-              className={cn('gap-1.5 font-medium', visual.badgeClass)}
+              variant={visual.badgeVariant}
+              className="gap-1.5 font-medium"
             >
               <KindIcon className="size-3" aria-hidden="true" />
               {kindLabel}
@@ -389,21 +389,15 @@ export function ActivityCard({
             ) : null}
             {isBatch && chips.length > 0
               ? chips.map((chip) => (
-                  <span
-                    key={chip.label}
-                    className={cn(
-                      'inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-2xs tabular-nums',
-                      chip.className
-                    )}
-                  >
+                  <Badge key={chip.label} variant={chip.variant} className="font-mono text-2xs tabular-nums">
                     {chip.label}
-                  </span>
+                  </Badge>
                 ))
               : null}
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/85 wrap-anywhere">{card.actor_label}</span>
+            <span className="font-medium text-muted-foreground wrap-anywhere">{card.actor_label}</span>
             <span aria-hidden="true" className="text-border">
               /
             </span>
@@ -422,7 +416,7 @@ export function ActivityCard({
             {card.summary}
           </p>
           {!isBatch && card.string_key ? (
-            <span className="max-w-full truncate rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs text-foreground/80">
+            <span className="max-w-full truncate rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 font-mono text-2xs text-muted-foreground">
               {card.string_key}
             </span>
           ) : null}
@@ -437,7 +431,7 @@ export function ActivityCard({
           {extraChanges > 0 && onOpenDetail ? (
             <button
               type="button"
-              className="self-start text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              className="focus-ring self-start text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
               onClick={() => onOpenDetail(card.id)}
             >
               +{extraChanges} more change{extraChanges === 1 ? '' : 's'}

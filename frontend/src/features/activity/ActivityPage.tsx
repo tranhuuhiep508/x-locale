@@ -105,22 +105,22 @@ function UndoPreviewList({ preview }: { preview: RevertPreview | undefined }) {
               </li>
             ))}
             {previewTruncated(conflicts.length, preview.conflict_count) ? (
-              <li className="font-mono text-destructive/80">…</li>
+              <li className="font-mono text-destructive">…</li>
             ) : null}
           </ul>
-          {conflictsCaption ? <p className="mt-1 text-destructive/80">{conflictsCaption}</p> : null}
+          {conflictsCaption ? <p className="mt-1 text-destructive">{conflictsCaption}</p> : null}
         </div>
       ) : null}
       <ul className="flex max-h-56 flex-col gap-1.5 overflow-y-auto rounded-md border border-border/80 bg-muted/20 p-2.5">
         {visible.map((item) => (
           <li key={item.activity_id} className="text-xs text-muted-foreground">
             <div className="flex flex-wrap items-baseline gap-1">
-              <span className="font-mono text-foreground/85">{item.string_key ?? 'string'}</span>
+              <span className="font-mono text-muted-foreground">{item.string_key ?? 'string'}</span>
               <span>{outcomeLabel(item)}</span>
             </div>
             {item.changes.map((change) => (
               <p key={changeKey(change)} className="truncate">
-                <span className="font-medium text-foreground/75">
+                <span className="font-medium text-muted-foreground">
                   {changeFieldLabel(change)}
                   {change.scope === 'published' ? ' (published)' : ''}
                 </span>{' '}
@@ -344,7 +344,7 @@ export function ActivityPage() {
                         >
                           <RuleIcon
                             aria-hidden="true"
-                            className="mt-0.5 size-3.5 shrink-0 text-primary/80"
+                            className="mt-0.5 size-3.5 shrink-0 text-primary"
                           />
                           <span>{rule.text}</span>
                         </li>

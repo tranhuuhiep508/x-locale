@@ -141,11 +141,9 @@ function ExportManifestPanel({
             {manifest.scope}
           </Badge>
           <Badge
-            variant="outline"
+            variant={stage === 'public' ? 'soft' : 'outline'}
             className={`font-mono text-3xs ${
-              stage === 'public'
-                ? 'border-accent-foreground/25 bg-accent text-accent-foreground'
-                : 'bg-background text-muted-foreground'
+              stage === 'public' ? '' : 'bg-background text-muted-foreground'
             }`}
           >
             {stage === 'public' ? 'published' : 'working'}
@@ -155,7 +153,7 @@ function ExportManifestPanel({
       <dl className="mt-2.5 grid gap-1.5 border-t border-border/60 pt-2.5 text-xs">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
           <dt className="shrink-0 font-mono text-2xs text-muted-foreground">Shape:</dt>
-          <dd className="text-foreground/90">{manifest.structure}</dd>
+          <dd className="text-muted-foreground">{manifest.structure}</dd>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
           <dt className="shrink-0 font-mono text-2xs text-muted-foreground">Source:</dt>
@@ -640,12 +638,8 @@ export function ImportExportPage() {
               </CardDescription>
               <CardAction>
                 <Badge
-                  variant="outline"
-                  className={`font-mono text-3xs ${
-                    dryRun
-                      ? 'border-border/80 bg-muted/50 text-muted-foreground'
-                      : 'border-accent-foreground/25 bg-accent text-accent-foreground'
-                  }`}
+                  variant={dryRun ? 'code' : 'soft'}
+                  className="font-mono text-3xs"
                 >
                   {dryRun ? (
                     <ShieldCheck className="mr-1 size-3" aria-hidden="true" />
@@ -776,15 +770,9 @@ export function ImportExportPage() {
                       module: {moduleSummary}
                     </span>
                   ) : null}
-                  <span
-                    className={`rounded-md border px-2 py-0.5 ${
-                      dryRun
-                        ? 'border-border/80 bg-background/90 text-muted-foreground'
-                        : 'border-accent-foreground/25 bg-accent text-accent-foreground'
-                    }`}
-                  >
+                  <Badge variant={dryRun ? 'outline' : 'soft'}>
                     {dryRun ? 'preview diff' : 'immediate write'}
-                  </span>
+                  </Badge>
                 </div>
               </button>
 

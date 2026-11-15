@@ -191,7 +191,7 @@ function TelemetryCell({
         </span>
         <ArrowUpRight
           aria-hidden="true"
-          className="size-3.5 text-muted-foreground/75 transition-transform duration-200 ease-drift group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary"
+          className="size-3.5 text-muted-foreground transition-transform duration-200 ease-drift group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary"
         />
       </div>
 
@@ -483,7 +483,7 @@ function CatalogBlueprintCard({
               {visibleModules.map((mod) => (
                 <span
                   key={mod.id}
-                  className="rounded-md border border-border/70 bg-background/85 px-2 py-0.5 font-mono text-2xs text-foreground/85"
+                  className="rounded-md border border-border/70 bg-background/85 px-2 py-0.5 font-mono text-2xs text-muted-foreground"
                 >
                   {mod.slug}
                 </span>
@@ -526,7 +526,7 @@ function CatalogBlueprintCard({
               {visibleTags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background/85 px-2 py-0.5 text-2xs font-medium text-foreground/90"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background/85 px-2 py-0.5 text-2xs font-medium text-muted-foreground"
                 >
                   <span
                     className="size-2 shrink-0 rounded-full"
@@ -732,7 +732,7 @@ export function ProjectOverviewPage() {
           <div className="flex flex-col gap-5 p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex min-w-0 flex-col gap-2">
-                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-border/80 bg-background/90 px-2.5 py-0.5 text-xs font-medium text-foreground/85">
+                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-border/80 bg-background/90 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                   <span
                     aria-hidden="true"
                     className={`size-1.5 rounded-full ${TONE_DOT_CLASS[dispatch.tone]}`}

@@ -167,7 +167,7 @@ function ProposalLocaleRow({
               <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-muted-foreground">
                 <MatchBar match={bestMatch} />
                 <span aria-hidden="true">·</span>
-                <span className="truncate text-foreground/80">{bestMatch.translation}</span>
+                <span className="truncate text-muted-foreground">{bestMatch.translation}</span>
               </div>
               <Button
                 type="button"
@@ -227,7 +227,7 @@ function ProposalTreeNode({
     >
       <div className="flex flex-col gap-1 border-b border-border/60 bg-muted/25 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium break-all text-foreground/90" translate="no">
+          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium break-all text-muted-foreground" translate="no">
             {item.key}
           </code>
           {moduleLabel ? (

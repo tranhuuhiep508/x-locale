@@ -58,6 +58,18 @@ Rules for the x-locale UI. Tokens and utilities live in `frontend/src/styles.css
 - A new token needs a name, values for both modes, its measured contrast, and a note in this doc.
 - Check existing tokens first to avoid near-duplicates.
 
+## Tokens added with the fix-up
+
+Measured as the rendered pair (Daylight / Nightfall). Text floor is 4.5:1. Icons, borders, focus rings and swatches floor is 3:1.
+
+- `--success` on `--success-foreground`: 8.9:1 / 9.4:1. Alert `success` and Sonner success toasts use this filled pair.
+- `--info` on `--info-foreground`: 8.0:1 / 10.1:1. Alert `info` and Sonner info toasts use this filled pair.
+- `--ring` stays azure-500. The `focus-ring` utility draws a 2px outline of it with a 2px offset: 3.1:1 on the Daylight page (3.2:1 on the card) and 5.9:1 on the Nightfall page (5.5:1 on the card).
+- `--tag-*-ink` is sun in Daylight and haze-950 in Nightfall. The check is at least 3.3:1 on every preset swatch in Daylight (gold is the lowest) and at least 5.7:1 in Nightfall. `tagCheckColor()` returns that ink.
+- `--row-hover`, `--row-selected` and `--row-removing` read 1.17:1, 1.20:1 and 1.18:1 against the Daylight card, and 1.28:1, 1.40:1 and 1.41:1 in Nightfall. The left bar still carries the meaning.
+
+Badge variants `soft` (accent), `warning`, `public` and `code` (muted mono) are the chips. Button variant `soft` is the same accent fill for actions such as Generate with AI.
+
 ## Known follow-ups
 
 These are out of scope for the current fix-up:

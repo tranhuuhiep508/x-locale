@@ -106,6 +106,11 @@
   --destructive-foreground: oklch(0.985 0.01 27);
   --warning: oklch(0.95 0.055 72);
   --warning-foreground: oklch(0.40 0.11 55);
+  /* Filled status. Text on the fill clears 4.5:1 (measured 8.9 / 9.4 success, 8.0 / 10.1 info). */
+  --success: oklch(0.94 0.04 155);
+  --success-foreground: oklch(0.36 0.08 155);
+  --info: oklch(0.95 0.03 230);
+  --info-foreground: oklch(0.40 0.11 250);
 
   /* Tag dots. Daylight values are what we store; Nightfall lifts them off the dark card. */
   --tag-haze: var(--color-haze-500);
@@ -116,6 +121,19 @@
   --tag-kelp: oklch(0.48 0.08 160);
   --tag-dusk: oklch(0.52 0.14 310);
   --tag-tide: oklch(0.55 0.10 200);
+  /* Check marks. Sun clears 3:1 on every Daylight swatch (8.1–17.4). */
+  --tag-haze-ink: var(--color-sun);
+  --tag-azure-ink: var(--color-sun);
+  --tag-navy-ink: var(--color-sun);
+  --tag-ember-ink: var(--color-sun);
+  --tag-gold-ink: var(--color-sun);
+  --tag-kelp-ink: var(--color-sun);
+  --tag-dusk-ink: var(--color-sun);
+  --tag-tide-ink: var(--color-sun);
+  /* Row tints. A visible step off the card; the left bar still carries the meaning. */
+  --row-hover: color-mix(in oklab, var(--card) 88%, var(--color-haze-500));
+  --row-selected: color-mix(in oklab, var(--card) 88%, var(--color-azure-700));
+  --row-removing: color-mix(in oklab, var(--card) 88%, var(--destructive));
 
   /* `border` divides, `input` bounds an interactive control — so `input` is
      deliberately heavier and clears 3:1 on card. */
@@ -212,6 +230,10 @@
   --destructive-foreground: oklch(0.16 0.02 27);
   --warning: oklch(0.32 0.07 70);
   --warning-foreground: oklch(0.90 0.08 80);
+  --success: oklch(0.32 0.06 160);
+  --success-foreground: oklch(0.90 0.08 155);
+  --info: oklch(0.32 0.06 245);
+  --info-foreground: oklch(0.92 0.04 230);
 
   --tag-haze: oklch(0.72 0.02 245);
   --tag-azure: var(--color-azure-400);
@@ -221,6 +243,18 @@
   --tag-kelp: oklch(0.74 0.10 160);
   --tag-dusk: oklch(0.74 0.12 310);
   --tag-tide: oklch(0.76 0.09 200);
+  /* Nightfall swatches are light, so the check is haze-950 (3.2–6.8:1). */
+  --tag-haze-ink: var(--color-haze-950);
+  --tag-azure-ink: var(--color-haze-950);
+  --tag-navy-ink: var(--color-haze-950);
+  --tag-ember-ink: var(--color-haze-950);
+  --tag-gold-ink: var(--color-haze-950);
+  --tag-kelp-ink: var(--color-haze-950);
+  --tag-dusk-ink: var(--color-haze-950);
+  --tag-tide-ink: var(--color-haze-950);
+  --row-hover: color-mix(in oklab, var(--card) 88%, var(--foreground));
+  --row-selected: color-mix(in oklab, var(--card) 80%, var(--color-azure-400));
+  --row-removing: color-mix(in oklab, var(--card) 74%, var(--destructive));
 
   --border: oklch(0.295 0.022 250);
   --input: oklch(0.585 0.022 246);
@@ -298,6 +332,10 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -419,6 +457,14 @@
   background-size: 100% 1px;
 }
 
+/* Full --ring. Daylight azure-500 is 3.1:1 on the page; Nightfall azure-500 is 5.5:1 on the card. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
 /* Architectural coordinate grid for studio showcases and empty galleys. */
 @utility galley-grid {
   background-image: linear-gradient(to right, color-mix(in oklab, var(--border) 55%, transparent) 1px, transparent 1px),
@@ -432,7 +478,7 @@
   background-color: var(--card);
 }
 .string-row-base:hover {
-  background-color: color-mix(in oklab, var(--card) 50%, var(--muted));
+  background-color: var(--row-hover);
 }
 .string-row-base:hover > td:first-child {
   box-shadow: inset 2px 0 0 0 var(--border);
@@ -449,10 +495,10 @@
 }
 
 .string-row-removing {
-  background-color: color-mix(in oklab, var(--card) 96%, var(--destructive));
+  background-color: var(--row-removing);
 }
 .string-row-removing:hover {
-  background-color: color-mix(in oklab, var(--card) 92%, var(--destructive));
+  background-color: var(--row-removing);
 }
 .string-row-removing > td:first-child {
   box-shadow: inset 3px 0 0 0 var(--color-destructive);
@@ -467,10 +513,10 @@
 }
 
 [data-slot="table-row"][data-state="selected"] {
-  background-color: color-mix(in oklab, var(--card) 55%, var(--public));
+  background-color: var(--row-selected);
 }
 [data-slot="table-row"][data-state="selected"]:hover {
-  background-color: color-mix(in oklab, var(--card) 35%, var(--public));
+  background-color: var(--row-selected);
 }
 [data-slot="table-row"][data-state="selected"] > td:first-child {
   box-shadow: inset 3px 0 0 0 var(--primary);

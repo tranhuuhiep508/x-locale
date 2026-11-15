@@ -48,20 +48,20 @@ export function ChangeLine({
   if (!preview && !change.before) {
     return (
       <p className={lineClass}>
-        <span className="font-medium text-foreground/80">{label}</span> “{after}”
+        <span className="font-medium text-muted-foreground">{label}</span> “{after}”
       </p>
     )
   }
   if (!preview && !change.after) {
     return (
       <p className={lineClass}>
-        <span className="font-medium text-foreground/80">{label}</span> “{before}”
+        <span className="font-medium text-muted-foreground">{label}</span> “{before}”
       </p>
     )
   }
   return (
     <p className={lineClass}>
-      <span className="font-medium text-foreground/80">{label}</span> “{before}” → “{after}”
+      <span className="font-medium text-muted-foreground">{label}</span> “{before}” → “{after}”
     </p>
   )
 }
@@ -174,7 +174,7 @@ export function StringHistoryPanel({
                   {extra > 0 ? (
                     <button
                       type="button"
-                      className="text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      className="focus-ring text-left text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                       onClick={() => setDetailId(activity.id)}
                     >
                       +{extra} more change{extra === 1 ? '' : 's'}

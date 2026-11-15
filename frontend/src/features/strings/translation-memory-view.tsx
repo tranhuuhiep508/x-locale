@@ -174,7 +174,7 @@ function MemoryLocale({
               accessory={index === 0 && extra > 0 ? (
                 <button
                   type="button"
-                  className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
+                  className="focus-ring inline-flex items-center gap-0.5 text-xs text-muted-foreground"
                   aria-label={`${expanded ? 'Collapse' : 'More'} matches for ${locale}`}
                   aria-expanded={expanded}
                   onClick={() => setExpanded((open) => !open)}
@@ -290,7 +290,8 @@ export function TranslationMemoryPanel({
           No previously published match for this source text. Generate with AI fills the empty locales.
         </p>
       ) : (
-        <div className={cn('divide-y', stale && 'opacity-60')}>
+        <div className="divide-y">
+          {stale ? <p className="py-2 text-xs font-medium text-muted-foreground">Stale</p> : null}
           {locales.map((locale) => (
             <MemoryLocale
               key={locale}

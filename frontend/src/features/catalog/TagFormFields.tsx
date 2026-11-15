@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import type { TagCreateForm } from '@/lib/schemas'
-import { TAG_PRESET_COLORS, tagSwatchColor } from '@/features/strings/catalog-create'
+import { TAG_PRESET_COLORS, tagCheckColor, tagSwatchColor } from '@/features/strings/catalog-create'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -55,9 +55,10 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
                   variant="ghost"
                   size="icon-xs"
                   onClick={() => onChange({ ...form, color: c })}
-                  className="relative size-6 rounded-full p-0 text-sun transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative size-6 rounded-full p-0 transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
                     backgroundColor: tagSwatchColor(c),
+                    color: tagCheckColor(c),
                     boxShadow: selected
                       ? `0 0 0 2px var(--background), 0 0 0 4px ${tagSwatchColor(c)}`
                       : undefined,

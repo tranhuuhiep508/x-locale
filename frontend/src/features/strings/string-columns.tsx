@@ -505,11 +505,16 @@ export function getStringColumns(targetLocales: string[]): ColumnDef<StringEntry
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span
                   className={cn(
-                    'min-w-0 font-mono text-xs font-medium text-foreground break-all leading-snug',
+                    'min-w-0 font-mono text-xs font-medium text-foreground wrap-anywhere leading-snug',
                     state === 'removing' && 'line-through text-muted-foreground',
                   )}
                 >
-                  {entry.key}
+                  {entry.key.split('.').map((part, index, parts) => (
+                    <span key={`${part}-${index}`}>
+                      {part}
+                      {index < parts.length - 1 ? <>.<wbr /></> : null}
+                    </span>
+                  ))}
                 </span>
                 {keyChanged ? (
                   <ChangedValueHint published={entry.published_key} working={entry.key} mono />

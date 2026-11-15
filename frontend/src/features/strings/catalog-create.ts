@@ -42,6 +42,12 @@ export function tagSwatchColor(color: string): string {
   return tone ? `var(--tag-${tone})` : color
 }
 
+/** Check mark that clears 3:1 on that swatch in both modes. */
+export function tagCheckColor(color: string): string {
+  const tone = TONE_BY_STORED.get(color.trim().toLowerCase())
+  return tone ? `var(--tag-${tone}-ink)` : 'light-dark(var(--color-sun), var(--color-haze-950))'
+}
+
 export function moduleSlugFromName(name: string): string {
   let slug = slugify(name)
   if (!slug) return ''

@@ -30,7 +30,7 @@ function ChangeRow({ change }: { change: ActivityChange }) {
   return (
     <div className="flex min-w-0 flex-col gap-2.5 px-3.5 py-3 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-foreground/90">{label}</span>
+        <span className="font-medium text-muted-foreground">{label}</span>
         {isChanged ? (
           <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-3xs font-medium text-accent-foreground">
             Modified
@@ -136,7 +136,7 @@ export function ActivityDetailSheet({
           <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {detail ? (
               <>
-                <span className="font-medium wrap-anywhere text-foreground/85">
+                <span className="font-medium wrap-anywhere text-muted-foreground">
                   {detail.actor_label}
                 </span>
                 <span aria-hidden="true">·</span>

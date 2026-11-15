@@ -88,7 +88,7 @@ it('puts extra matches inline and marks only the chosen match used', () => {
 it('keeps stale matches on screen and refuses Use until they refresh', () => {
   const onUse = vi.fn()
   const onUseExact = vi.fn()
-  const { container } = render(
+  render(
     <TranslationMemoryPanel
       {...panel}
       locales={['en']}
@@ -103,7 +103,7 @@ it('keeps stale matches on screen and refuses Use until they refresh', () => {
   const exact = screen.getByRole('button', { name: 'Use 1 exact' }) as HTMLButtonElement
   expect(use.disabled).toBe(true)
   expect(exact.disabled).toBe(true)
-  expect(container.querySelector('.opacity-60')).toBeTruthy()
+  expect(screen.getByText('Stale')).toBeTruthy()
   expect(screen.getByText('Bonjour')).toBeTruthy()
   expect(screen.queryByRole('status', { name: 'Finding published translations…' })).toBeNull()
   fireEvent.click(use)
