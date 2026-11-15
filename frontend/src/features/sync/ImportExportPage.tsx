@@ -318,7 +318,7 @@ function SchemaContractSection({
 
           {isModularProject ? (
             <details className="rounded-lg border border-border/75 bg-muted/20 px-3.5 py-2.5 text-xs text-muted-foreground">
-              <summary className="cursor-pointer font-medium text-foreground select-none">
+              <summary className="focus-ring cursor-pointer font-medium text-foreground select-none">
                 Excel worksheet mapping details (_meta)
               </summary>
               <p className="mt-2 leading-relaxed">

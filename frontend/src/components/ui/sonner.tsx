@@ -34,6 +34,12 @@ function Toaster(props: ToasterProps) {
           '--info-bg': 'var(--info)',
           '--info-text': 'var(--info-foreground)',
           '--info-border': 'var(--info)',
+          '--warning-bg': 'var(--warning)',
+          '--warning-text': 'var(--warning-foreground)',
+          '--warning-border': 'var(--warning)',
+          '--error-bg': 'var(--destructive)',
+          '--error-text': 'var(--destructive-foreground)',
+          '--error-border': 'var(--destructive)',
           '--border-radius': 'var(--radius)',
         } as React.CSSProperties
       }

@@ -43,7 +43,7 @@ export function TagFormFields({ form, errors, onChange, idPrefix = 'tag' }: Prop
             type="color"
             value={form.color}
             onChange={(e) => onChange({ ...form, color: e.target.value })}
-            className="size-9 shrink-0 cursor-pointer rounded-lg border border-input bg-background p-0.5"
+            className="focus-ring size-9 shrink-0 cursor-pointer rounded-lg border border-input bg-background p-0.5"
           />
           <div className="flex flex-wrap items-center gap-1.5">
             {TAG_PRESET_COLORS.map((c) => {

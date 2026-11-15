@@ -269,7 +269,8 @@
   --public: oklch(0.305 0.055 240);
   --public-foreground: var(--color-azure-300);
   --missing: transparent;
-  --missing-foreground: oklch(0.62 0.022 246);
+  /* Lighter than the card pair so Missing still clears 4.5:1 on the row tints. */
+  --missing-foreground: oklch(0.64 0.022 246);
 
   --chart-1: var(--color-azure-400);
   --chart-2: oklch(0.78 0.115 208);

@@ -35,7 +35,7 @@ export function MemoryCount({
           tabIndex={0}
           data-memory-count=""
           aria-label={label}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          className="focus-ring inline-flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           <Icon className="size-3.5" aria-hidden="true" />
           {children}
