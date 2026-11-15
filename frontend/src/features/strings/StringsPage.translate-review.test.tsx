@@ -11,12 +11,12 @@ import type { Project, TranslateProposalItem, TranslateProposalsResult, Translat
 import { StringsPage } from './StringsPage'
 
 // These tests drive StringsPage through multi-step translate and job-polling chains.
-// Under a loaded CI runner a step can exceed Testing Library's 1s waitFor default
-// (two different tests here have flaked on it). Vitest isolates modules per file,
-// so this only applies to this file. The suite timeout stays above that wait so a
-// slow step finishes instead of the test being killed at the same instant.
-configure({ asyncUtilTimeout: 5000 })
-const suiteTimeout = { timeout: 15_000 }
+// Under a loaded CI runner a step can exceed Testing Library's default wait
+// (the source-conflict case missed "Translate again" at 5s). Vitest isolates
+// modules per file, so this only applies here. The suite timeout stays above
+// that wait so a slow step finishes instead of the test being killed with it.
+configure({ asyncUtilTimeout: 8_000 })
+const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
