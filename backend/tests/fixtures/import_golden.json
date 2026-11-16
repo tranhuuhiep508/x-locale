@@ -2902,11 +2902,9 @@
             "source_text": "First existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3012,11 +3010,9 @@
             "source_text": "First revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3098,19 +3094,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -3341,11 +3329,9 @@
             "source_text": "Second existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3373,11 +3359,9 @@
             "source_text": "First existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3481,11 +3465,9 @@
             "source_text": "Second revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3513,11 +3495,9 @@
             "source_text": "First revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -3568,19 +3548,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -3812,19 +3784,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -4055,11 +4019,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4087,11 +4049,9 @@
             "source_text": "Second existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4129,19 +4089,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -4372,11 +4324,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4404,11 +4354,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4446,19 +4394,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -4691,11 +4631,9 @@
             "source_text": "First existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4801,11 +4739,9 @@
             "source_text": "First revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -4908,19 +4844,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -5151,11 +5079,9 @@
             "source_text": "Second existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -5183,11 +5109,9 @@
             "source_text": "First existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -5291,11 +5215,9 @@
             "source_text": "Second revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -5323,11 +5245,9 @@
             "source_text": "First revived",
             "status": "draft",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -5399,19 +5319,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -5664,19 +5576,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -5907,11 +5811,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -5939,11 +5841,9 @@
             "source_text": "Second existing",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -6002,19 +5902,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",
@@ -6245,11 +6137,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -6277,11 +6167,9 @@
             "source_text": "Partial source",
             "status": "public",
             "tag_ids": [
-              "tag:original",
               "tag:selected"
             ],
             "tag_names": [
-              "original",
               "selected"
             ],
             "translations": {
@@ -6340,19 +6228,11 @@
         "string_tags": [
           {
             "string_id": "string:existing",
-            "tag_id": "tag:original"
-          },
-          {
-            "string_id": "string:existing",
             "tag_id": "tag:selected"
           },
           {
             "string_id": "string:new",
             "tag_id": "tag:selected"
-          },
-          {
-            "string_id": "string:revived",
-            "tag_id": "tag:original"
           },
           {
             "string_id": "string:revived",

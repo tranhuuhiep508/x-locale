@@ -27,7 +27,7 @@ const ACTION_HINT: Record<BatchAction, string> = {
   restore: 'Deleted strings only. Pending removals stay queued.',
   restore_last_history: 'Strings that have not been deleted, with a previous edit. Strings without edit history are skipped.',
   move_module: 'All selected strings, including deleted strings.',
-  add_tags: 'All selected strings. Existing tags are kept.',
+  add_tags: 'All selected strings. Existing tags are replaced.',
   remove_tags: 'All selected strings.',
 }
 
@@ -171,7 +171,7 @@ export function BatchActionBar({
               count={actions.move_module.length} onClick={onMove} />
           ) : null}
           {tags.length > 0 ? (
-            <SelectionActionButton {...common} action="add_tags" label="Tags" icon={TagIcon}
+            <SelectionActionButton {...common} action="add_tags" label="Set tag" icon={TagIcon}
               count={actions.add_tags.length} onClick={onAddTags} />
           ) : null}
 

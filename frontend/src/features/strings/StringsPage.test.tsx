@@ -218,6 +218,22 @@ describe('StringsPage revamp', () => {
     }
   )
 
+  it('does not mark a quick view active while another view filter narrows it', async () => {
+    useSearch.mockReturnValue({ missing_any: true, status: 'public' })
+    renderPage()
+    expect((await screen.findByRole('button', { name: 'Missing translations' })).getAttribute('aria-pressed')).toBe('false')
+
+    cleanup()
+    useSearch.mockReturnValue({ has_unpublished_changes: true, missing_any: true })
+    renderPage()
+    expect((await screen.findByRole('button', { name: /Needs publish/ })).getAttribute('aria-pressed')).toBe('false')
+
+    cleanup()
+    useSearch.mockReturnValue({ deleted: true, missing_locale: 'en' })
+    renderPage()
+    expect((await screen.findByRole('button', { name: 'Deleted' })).getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('supports arrow-key navigation in the Add string menu', async () => {
     const user = userEvent.setup()
     renderPage()

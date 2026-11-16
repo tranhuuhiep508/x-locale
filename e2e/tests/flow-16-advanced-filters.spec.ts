@@ -66,8 +66,8 @@ async function chooseSelect(page: Page, label: string, option: string) {
 
 async function chooseOrganization(page: Page, label: string, option: string) {
   await page.getByRole('button', { name: label, exact: true }).click()
-  const list = page.getByRole('listbox', { name: label, exact: true })
-  await list.getByRole('option', { name: option, exact: true }).click()
+  const list = page.getByRole('list', { name: `${label} options`, exact: true })
+  await list.getByRole('button', { name: option, exact: true }).click()
   await expect(list).toBeHidden()
 }
 

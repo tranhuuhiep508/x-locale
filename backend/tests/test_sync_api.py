@@ -969,3 +969,18 @@ def test_json_import_unknown_tag_is_rejected(client):
     assert r.status_code == 400
     assert "Unknown tag" in r.json()["detail"]
 
+
+def test_json_import_rejects_multiple_tags(client):
+    project = _make_project(client, "Multiple Import Tags")
+    pid = project["id"]
+    root = f"/api/projects/{pid}"
+    first = client.post(f"{root}/tags", json={"name": "first"}).json()["id"]
+    second = client.post(f"{root}/tags", json={"name": "second"}).json()["id"]
+    response = client.post(
+        f"{root}/import",
+        params={"locale": "vi", "tag_ids": [first, second]},
+        files=_json_upload({"hello": "Hello"}),
+    )
+    assert response.status_code == 400
+    assert "Choose one tag" in response.json()["detail"]
+

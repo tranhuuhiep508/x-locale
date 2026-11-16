@@ -972,6 +972,7 @@ export default function StringFormDialog({
                       tags={tagOptions}
                       tagId={tagIds[0] ?? ''}
                       disabled={busy}
+                      description={tagIds.length > 1 ? 'This string has multiple tags. Choosing one replaces them all.' : undefined}
                       onSelect={(nextTagId) => setTagIds(nextTagId ? [nextTagId] : [])}
                       onCreated={(created) => {
                         setCreatedTags((prev) =>

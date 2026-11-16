@@ -1,11 +1,15 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StringsSearch } from '@/lib/schemas'
 import { StringsFilters } from './StringsFilters'
 
 afterEach(cleanup)
 
-function renderFilters(search: StringsSearch) {
+function renderFilters(
+  search: StringsSearch,
+  tags: ComponentProps<typeof StringsFilters>['tags'] = [],
+) {
   const onFilter = vi.fn()
   const onSearchInputChange = vi.fn()
   const onClear = vi.fn()
@@ -14,7 +18,7 @@ function renderFilters(search: StringsSearch) {
       search={search}
       searchInput={search.q ?? ''}
       modules={[]}
-      tags={[]}
+      tags={tags}
       locales={['en', 'fr']}
       onFilter={onFilter}
       onSearchInputChange={onSearchInputChange}
@@ -97,5 +101,13 @@ describe('active string filter chips', () => {
     const chips = within(screen.getByRole('list', { name: 'Active filters' }))
     expect(chips.getByRole('button', { name: 'Remove status filter' })).toBeDefined()
     expect(chips.getByRole('button', { name: 'Remove confidence filter' })).toBeDefined()
+  })
+
+  it('exposes searchable tag choices as ordinary buttons', async () => {
+    renderFilters({}, [{ id: 'tag-1', name: 'Core', color: '#65707b', string_count: 1 }])
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    const choices = within(await screen.findByRole('list', { name: 'Tag options' }))
+    expect(choices.getByRole('button', { name: 'Core' })).toBeDefined()
+    expect(screen.queryByRole('listbox')).toBeNull()
   })
 })

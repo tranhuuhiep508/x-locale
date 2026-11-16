@@ -324,6 +324,8 @@ export function StringsPage() {
     stringsQueryOptions(projectId, { has_unpublished_changes: true, page: 1, page_size: 1 }),
   )
   const pendingCount = pendingStringsResult.data?.total ?? 0
+  const hasOtherStatusFilter = Boolean(search.status || search.pending_delete || search.never_published)
+  const hasOtherTranslationFilter = Boolean(search.missing_locale || search.complete_locale)
   useEffect(() => {
     const row = savedRow.current
     if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
@@ -1018,7 +1020,7 @@ export function StringsPage() {
               {
                 id: 'missing',
                 label: 'Missing translations',
-                active: Boolean(search.missing_any) && !search.deleted,
+                active: Boolean(search.missing_any) && !hasOtherTranslationFilter && !hasOtherStatusFilter && !search.has_unpublished_changes && !search.deleted,
                 onSelect: () =>
                   setFilter({
                     missing_any: true,
@@ -1035,7 +1037,7 @@ export function StringsPage() {
                 id: 'pending',
                 label: 'Needs publish',
                 count: pendingCount,
-                active: Boolean(search.has_unpublished_changes) && !search.deleted,
+                active: Boolean(search.has_unpublished_changes) && !hasOtherStatusFilter && !search.missing_any && !hasOtherTranslationFilter && !search.deleted,
                 onSelect: () =>
                   setFilter({
                     has_unpublished_changes: true,
@@ -1051,7 +1053,7 @@ export function StringsPage() {
               {
                 id: 'deleted',
                 label: 'Deleted',
-                active: Boolean(search.deleted),
+                active: Boolean(search.deleted) && !hasOtherStatusFilter && !search.has_unpublished_changes && !search.missing_any && !hasOtherTranslationFilter,
                 onSelect: () =>
                   setFilter({
                     deleted: true,
@@ -1331,8 +1333,8 @@ export function StringsPage() {
         open={showAddTags}
         onClose={() => setShowAddTags(false)}
         tags={tags}
-        onApply={(tagIds) =>
-          runSelectedAction('add_tags', { tag_ids: tagIds })
+        onApply={(tagId) =>
+          runSelectedAction('add_tags', { tag_ids: [tagId] })
         }
         isLoading={batchMut.isPending}
       />

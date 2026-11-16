@@ -286,35 +286,33 @@ function FilterSearchSelect({
             aria-label={searchPlaceholder}
           />
         </InputGroup>
-        <div className="max-h-64 overflow-auto" role="listbox" aria-label={label}>
-          <div className="flex flex-col p-0.5">
+        <ul className="max-h-64 overflow-auto p-0.5" aria-label={`${label} options`}>
             {visible.length === 0 ? (
-              <p className="px-1.5 py-2 text-center text-xs text-muted-foreground">No matches</p>
+              <li className="px-1.5 py-2 text-center text-xs text-muted-foreground">No matches</li>
             ) : (
               visible.map((option) => {
                 const isSelected = option.value === value
                 return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    className={cn(
-                      'relative flex w-full cursor-default items-center rounded-md py-1.5 pr-8 pl-2 text-left text-xs outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent',
-                      isSelected && 'bg-accent font-medium text-accent-foreground'
-                    )}
-                    onClick={() => choose(option.value)}
-                  >
-                    <span className="min-w-0 wrap-anywhere">{option.label}</span>
-                    {isSelected ? (
-                      <Check className="pointer-events-none absolute right-2 size-3.5 text-primary" />
-                    ) : null}
-                  </button>
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      className={cn(
+                        'relative flex w-full cursor-default items-center rounded-md py-1.5 pr-8 pl-2 text-left text-xs outline-hidden hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent',
+                        isSelected && 'bg-accent font-medium text-accent-foreground'
+                      )}
+                      onClick={() => choose(option.value)}
+                    >
+                      <span className="min-w-0 wrap-anywhere">{option.label}</span>
+                      {isSelected ? (
+                        <Check className="pointer-events-none absolute right-2 size-3.5 text-primary" />
+                      ) : null}
+                    </button>
+                  </li>
                 )
               })
             )}
-          </div>
-        </div>
+        </ul>
         {truncated ? (
           <p className="px-1.5 pb-1 text-2xs text-muted-foreground">
             Showing {visible.length} of {matchCount}. Type to narrow.

@@ -154,6 +154,19 @@ describe('project overview', () => {
     )
   })
 
+  it('keeps incomplete coverage below 100 percent after rounding', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, string_count: 201, target_languages: ['en'] })
+    vi.mocked(projectsApi.coverage).mockResolvedValue({
+      total: 201,
+      locales: [{ locale: 'en', translated: 200, missing: 1 }],
+    })
+    renderOverview()
+    const progress = await screen.findByRole('progressbar', { name: 'English translation coverage' })
+    expect(progress.getAttribute('aria-valuenow')).toBe('99')
+    expect(screen.getByRole('link', { name: 'English: 99% translated' })).toBeDefined()
+    expect(screen.queryByText('100%')).toBeNull()
+  })
+
   it('shows an empty catalog without claiming completed translations or querying missing counts', async () => {
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, string_count: 0 })
     vi.mocked(projectsApi.coverage).mockResolvedValue({

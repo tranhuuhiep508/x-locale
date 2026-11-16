@@ -485,6 +485,24 @@ def test_build_template_workbook_flat_and_modular():
     assert UNASSIGNED_SHEET in mod_wb.sheetnames
 
 
+def test_import_workbook_rejects_multiple_tags(client):
+    project = _make_project(client, name="Single Tag Import")
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = FLAT_SHEET
+    sheet.append(["key", "tags", "vi"])
+    sheet.append(["hello", "first,second", "Hello"])
+    raw = io.BytesIO()
+    workbook.save(raw)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/import",
+        files={"file": ("multiple-tags.xlsx", raw.getvalue())},
+    )
+    assert response.status_code == 400
+    assert "at most one tag" in response.json()["detail"]
+
+
 def test_import_workbook_dry_run_via_api(client):
     project = _make_project(client, name="Import Dry Run App")
     pid = project["id"]
@@ -727,14 +745,14 @@ def test_import_workbook_literal_key_and_tags_round_trip(client):
         source_text="=SUM(A1:A10)",
         description="+cmd|' /C calc'",
         status=TranslationStatus.draft,
-        tags=[Tag(name="@malicious"), Tag(name="safe"), Tag(name="-1day")],
+        tags=[Tag(name="@malicious")],
         translations=[Translation(locale="en", value="@malicious_link")],
     )
     plus_key_entry = StringEntry(
         key="+plus.key",
         source_text="Nguồn",
         status=TranslationStatus.draft,
-        tags=[Tag(name="v2"), Tag(name="=cmd")],
+        tags=[Tag(name="=cmd")],
         translations=[],
     )
     normal_entry = StringEntry(
@@ -792,12 +810,12 @@ def test_import_workbook_literal_key_and_tags_round_trip(client):
     by_key = {item["key"]: item for item in catalog["items"]}
 
     dangerous = by_key['=HYPERLINK("http://evil")']
-    assert {t["name"] for t in dangerous["tags"]} == {"@malicious", "safe", "-1day"}
+    assert {t["name"] for t in dangerous["tags"]} == {"@malicious"}
     assert dangerous["source_text"] == "=SUM(A1:A10)"
     assert dangerous["description"] == "+cmd|' /C calc'"
 
     plus_key = by_key["+plus.key"]
-    assert {t["name"] for t in plus_key["tags"]} == {"v2", "=cmd"}
+    assert {t["name"] for t in plus_key["tags"]} == {"=cmd"}
 
     normal = by_key["btn.save"]
     assert {t["name"] for t in normal["tags"]} == {"v1"}

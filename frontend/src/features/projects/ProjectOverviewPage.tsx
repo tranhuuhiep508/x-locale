@@ -233,7 +233,9 @@ function LocaleHorizonStrip({
         {targetLocales.map((locale) => {
           const missing = coverageByLocale.get(locale)?.missing
           const translated = missing == null ? 0 : Math.max(0, total - missing)
-          const percent = missing == null ? 0 : Math.round((translated / total) * 100)
+          const percent = missing == null
+            ? 0
+            : missing > 0 ? Math.min(99, Math.round((translated / total) * 100)) : 100
           const isComplete = missing === 0
 
           return (
@@ -339,9 +341,14 @@ function LanguageCoverage({
   onRetry: () => void
 }) {
   const translated = missing == null ? null : Math.max(0, total - missing)
-  const percent =
-    translated == null ? null : total === 0 ? 0 : Math.round((translated / total) * 100)
-  const isComplete = percent === 100 && total > 0
+  const percent = translated == null
+    ? null
+    : total === 0
+      ? 0
+      : missing === 0
+        ? 100
+        : Math.min(99, Math.round((translated / total) * 100))
+  const isComplete = missing === 0 && total > 0
 
   return (
     <li className="flex min-w-0 flex-col gap-2 py-3.5 first:pt-0 last:pb-0">
@@ -658,7 +665,8 @@ export function ProjectOverviewPage() {
       if (missing == null) return null
       sumTranslated += Math.max(0, total - missing)
     }
-    return Math.round((sumTranslated / (total * targetLocales.length)) * 100)
+    const percent = Math.round((sumTranslated / (total * targetLocales.length)) * 100)
+    return sumTranslated === total * targetLocales.length ? 100 : Math.min(99, percent)
   })()
 
   const pendingCount = publish.data?.total ?? 0

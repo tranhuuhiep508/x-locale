@@ -4,8 +4,6 @@ import type { Module, Tag } from '@/lib/api/types'
 import { tagSwatchColor } from '@/features/strings/catalog-create'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Dialog,
   DialogContent,
@@ -93,10 +91,10 @@ export function BatchTagDialog({
   open: boolean
   onClose: () => void
   tags: Tag[]
-  onApply: (tagIds: string[]) => void
+  onApply: (tagId: string) => void
   isLoading: boolean
 }) {
-  const [selected, setSelected] = useState<string[]>([])
+  const [selected, setSelected] = useState('')
 
   return (
     <Dialog
@@ -108,48 +106,31 @@ export function BatchTagDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center justify-between gap-2">
-            <DialogTitle>Add tags</DialogTitle>
-            {selected.length > 0 ? (
-              <Badge variant="secondary" className="font-mono text-xs tabular-nums">
-                {selected.length} selected
-              </Badge>
-            ) : null}
+            <DialogTitle>Set tag</DialogTitle>
           </div>
-          <DialogDescription>Apply tags to all selected strings. Existing tags are kept.</DialogDescription>
+          <DialogDescription>Choose one tag for all selected strings. Existing tags will be replaced.</DialogDescription>
         </DialogHeader>
-        <FieldGroup className="max-h-72 gap-1.5 overflow-y-auto pr-0.5">
+        <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-0.5" role="group" aria-label="Choose tag">
           {tags.map((t) => (
-            <Field
+            <button
               key={t.id}
-              orientation="horizontal"
-              className="gap-2.5 rounded-xl border border-border/70 bg-card/70 px-3.5 py-2.5 transition-colors hover:bg-accent/40 has-data-[state=checked]:border-primary/45 has-data-[state=checked]:bg-primary/5"
+              type="button"
+              disabled={isLoading}
+              aria-pressed={selected === t.id}
+              onClick={() => setSelected(t.id)}
+              className="focus-ring flex items-center gap-2.5 rounded-xl border border-border/70 bg-card/70 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/40 aria-pressed:border-primary/45 aria-pressed:bg-primary/5"
             >
-              <Checkbox
-                id={`batch-tag-${t.id}`}
-                disabled={isLoading}
-                checked={selected.includes(t.id)}
-                onCheckedChange={(checked) =>
-                  setSelected((prev) =>
-                    checked ? [...prev, t.id] : prev.filter((id) => id !== t.id)
-                  )
-                }
-              />
-              <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 cursor-pointer wrap-anywhere">
-                <span
-                  className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
-                  style={{ backgroundColor: tagSwatchColor(t.color) }}
-                />
-                {t.name}
-              </FieldLabel>
-            </Field>
+              <span className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15" style={{ backgroundColor: tagSwatchColor(t.color) }} />
+              <span className="min-w-0 flex-1 wrap-anywhere">{t.name}</span>
+            </button>
           ))}
-        </FieldGroup>
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={() => onApply(selected)} disabled={selected.length === 0 || isLoading}>
-            <PendingLabel pending={isLoading}>Add tags</PendingLabel>
+          <Button onClick={() => onApply(selected)} disabled={!selected || isLoading}>
+            <PendingLabel pending={isLoading}>Set tag</PendingLabel>
           </Button>
         </DialogFooter>
       </DialogContent>
