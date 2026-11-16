@@ -450,12 +450,12 @@ export function ImportExportPage() {
   }
 
   function importParams(file: File, dry: boolean) {
-    const params: { locale: string; dry_run: string; module_id?: string } = {
-      locale: targetLocale,
+    const params: { locale?: string; dry_run: string; module_id?: string } = {
       dry_run: String(dry),
     }
-    if (isModularProject && !isExcelFile(file) && importModuleId) {
-      params.module_id = importModuleId
+    if (!isExcelFile(file)) {
+      params.locale = targetLocale
+      if (isModularProject && importModuleId) params.module_id = importModuleId
     }
     return params
   }
@@ -634,7 +634,7 @@ export function ImportExportPage() {
                 <span>Import Strings</span>
               </CardTitle>
               <CardDescription>
-                Stage a JSON or Excel file into a single target locale with conflict checking.
+                JSON uses the selected locale. Excel imports every locale column in the workbook.
               </CardDescription>
               <CardAction>
                 <Badge
@@ -654,7 +654,7 @@ export function ImportExportPage() {
             <CardContent className="flex flex-1 flex-col gap-5 pt-5">
               <FieldGroup className="grid gap-4 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="import_locale">Target locale</FieldLabel>
+                  <FieldLabel htmlFor="import_locale">Target locale (JSON only)</FieldLabel>
                   <Select value={targetLocale} onValueChange={setImportLocale}>
                     <SelectTrigger id="import_locale" className="h-9 w-full">
                       <SelectValue placeholder="Target locale" />
@@ -763,11 +763,11 @@ export function ImportExportPage() {
                 </span>
                 <div className="mt-3.5 flex flex-wrap items-center justify-center gap-1.5 font-mono text-2xs text-muted-foreground">
                   <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5 text-foreground">
-                    {targetLocale.toUpperCase()}
+                    JSON: {targetLocale.toUpperCase()}
                   </span>
                   {moduleSummary ? (
                     <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5">
-                      module: {moduleSummary}
+                      JSON module: {moduleSummary}
                     </span>
                   ) : null}
                   <Badge variant={dryRun ? 'outline' : 'soft'}>
@@ -953,6 +953,11 @@ export function ImportExportPage() {
         open={showPreview}
         result={previewResult}
         pending={importBusy}
+        description={
+          isExcelFile(pendingFileRef.current)
+            ? 'Excel imports every locale column in the workbook. The JSON target locale does not apply.'
+            : undefined
+        }
         onCancel={() => setShowPreview(false)}
         onApply={confirmImport}
       />

@@ -130,6 +130,8 @@ describe('ImportExportPage', () => {
     expect(screen.getByText('vi → 2 targets')).toBeTruthy()
     expect(screen.getByText('modular layout')).toBeTruthy()
 
+    expect(screen.getByRole('combobox', { name: 'Target locale (JSON only)' })).toBeTruthy()
+    expect(screen.getByText('JSON uses the selected locale. Excel imports every locale column in the workbook.')).toBeTruthy()
     expect(await screen.findByRole('combobox', { name: 'Module (JSON only)' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Click to browse or drop/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Choose file (JSON or XLSX)' })).toBeTruthy()
@@ -221,6 +223,32 @@ describe('ImportExportPage', () => {
       })
     })
     expect(toastMock.success).toHaveBeenCalledWith('Import complete: 1 created, 0 updated')
+  })
+
+  it('explains Excel scope in the preview and omits the JSON locale parameter', async () => {
+    vi.mocked(syncApi.importFile).mockResolvedValue({
+      dry_run: true,
+      total: 0,
+      created: 0,
+      updated: 0,
+      batch_id: null,
+      diff: { create_count: 0, update_count: 0, orphan_count: 0, create: [], update: [], orphan: [] },
+    })
+
+    renderPage()
+    await screen.findByText('demo-app')
+    const file = new File(['xlsx'], 'translations.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    })
+
+    expect(await screen.findByRole('dialog', { name: 'Import preview (dry run)' })).toBeTruthy()
+    expect(screen.getByText('Excel imports every locale column in the workbook. The JSON target locale does not apply.')).toBeTruthy()
+    expect(syncApi.importFile).toHaveBeenCalledWith('demo-app', expect.any(FormData), {
+      dry_run: 'true',
+    })
   })
 
   it('triggers export download with configured project layout and stage', async () => {
