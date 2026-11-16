@@ -47,6 +47,10 @@ created from `.env.example` with `AUTH_DEV_BYPASS=true` when the file is missing
 - `strings.key`, `strings.published_key`, `modules.slug`, `tags.name`, and `projects.slug` are `COLLATE "C"` (model and migrations `u0a38e9f1234`, `v1b49f0a2345`), so they sort like Python `sorted()` on any database collation. New identifier columns that are sorted or exported in order should use `String(..., collation="C")` too. Free text keeps the database collation. Email lookup uses `lower(email COLLATE "C")` so ASCII casefold does not follow the database locale.
 - Flat export uses the stored key as-is (public export uses `published_key`). Modular export groups by module slug; keys inside each file are never prefixed.
 
+### Frontend
+
+UI follows the Atmosphere design system in [docs/design-system.md](docs/design-system.md). Tokens and utilities live in `frontend/src/styles.css`.
+
 ### Lint / test / build
 
 - Backend: `cd backend && uv run pytest` (add `-n auto` to run on every core with pytest-xdist, as CI does; each worker gets its own throwaway database). Ruff available via `uv run ruff check`. Requires `TEST_DATABASE_URL`, a Postgres URL that is not equal to `DATABASE_URL`. `scripts/dev.sh` creates `xlocale_test` when Postgres is up.

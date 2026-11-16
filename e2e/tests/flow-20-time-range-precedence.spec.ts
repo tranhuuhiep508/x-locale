@@ -48,7 +48,7 @@ for (const surface of ['strings', 'activity'] as const) {
 
       const scope = surface === 'strings' ? page.locator('main') : activityFilterBar(page)
       const trigger = scope.getByRole('button', {
-        name: period === '7d' ? 'Last 7 days' : 'All time', exact: true,
+        name: period === '7d' ? 'Last 7 days' : surface === 'strings' ? 'Time' : 'All time', exact: true,
       })
       await expect(trigger).toBeVisible()
       await trigger.click()

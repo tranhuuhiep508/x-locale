@@ -55,7 +55,7 @@ class CustomJsonFormatter(logging.Formatter):
                 "event.dataset": "application",
                 "thread.name": record.threadName,
                 "process.name": record.processName,
-                "log.logger": record.filename,
+                "log.logger": record.name,
                 "log.origin.file.name": record.filename,
                 "log.origin.function": record.funcName,
                 "log.origin.file.line": record.lineno,
@@ -74,7 +74,7 @@ class HealthCheckFilter(logging.Filter):
             and isinstance(record.args, tuple)
             and len(record.args) == 5
         ):
-            return record.args[2].split("?", 1)[0] not in self._PATHS
+            return record.args[4] >= 400 or record.args[2].split("?", 1)[0] not in self._PATHS
         return True
 
 

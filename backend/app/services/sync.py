@@ -420,6 +420,8 @@ def resolve_json_import_tags(
     if not tag_ids:
         return []
     unique_ids = list(dict.fromkeys(tag_ids))
+    if len(unique_ids) > 1:
+        raise HTTPException(status_code=400, detail="Choose one tag")
     tags = db.query(Tag).filter(Tag.project_id == project.id, Tag.id.in_(unique_ids)).all()
     if len(tags) != len(unique_ids):
         raise HTTPException(status_code=400, detail="Unknown tag")

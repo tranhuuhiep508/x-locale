@@ -28,18 +28,15 @@ it('truncates a near-exact match and reserves Exact for exact matches', () => {
 it('uses theme tokens for exact, high, and low similarity', () => {
   const { rerender } = render(<MatchBar match={{ ...match, exact: true, similarity: 1 }} />)
   const exact = screen.getByText('Exact match')
-  expect(exact.className).toContain('text-azure-800')
-  expect(exact.className).toContain('dark:text-azure-200')
+  expect(exact.className).toContain('text-public-foreground')
 
   rerender(<MatchBar match={{ ...match, similarity: 0.91 }} />)
   const high = screen.getByText('91% similar')
-  expect(high.className).toContain('text-azure-700')
-  expect(high.className).toContain('dark:text-azure-300')
+  expect(high.className).toContain('text-primary')
 
   rerender(<MatchBar match={{ ...match, similarity: 0.82 }} />)
   const low = screen.getByText('82% similar')
-  expect(low.className).toContain('text-haze-600')
-  expect(low.className).toContain('dark:text-haze-400')
+  expect(low.className).toContain('text-muted-foreground')
 })
 
 const panel = {
@@ -91,7 +88,7 @@ it('puts extra matches inline and marks only the chosen match used', () => {
 it('keeps stale matches on screen and refuses Use until they refresh', () => {
   const onUse = vi.fn()
   const onUseExact = vi.fn()
-  const { container } = render(
+  render(
     <TranslationMemoryPanel
       {...panel}
       locales={['en']}
@@ -106,7 +103,7 @@ it('keeps stale matches on screen and refuses Use until they refresh', () => {
   const exact = screen.getByRole('button', { name: 'Use 1 exact' }) as HTMLButtonElement
   expect(use.disabled).toBe(true)
   expect(exact.disabled).toBe(true)
-  expect(container.querySelector('.opacity-60')).toBeTruthy()
+  expect(screen.getByText('Stale')).toBeTruthy()
   expect(screen.getByText('Bonjour')).toBeTruthy()
   expect(screen.queryByRole('status', { name: 'Finding published translations…' })).toBeNull()
   fireEvent.click(use)

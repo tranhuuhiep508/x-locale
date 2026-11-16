@@ -29,8 +29,9 @@ test('manage modules: create module and view in table', async ({ page }) => {
   await expect(dialog).toBeHidden()
 
   await page.getByPlaceholder('Search modules…').fill(moduleSlug)
-  await expect(page.getByRole('row').filter({ hasText: moduleName })).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: moduleSlug })).toBeVisible()
+  const modulesCatalog = page.getByRole('list', { name: 'Modules catalog' })
+  await expect(modulesCatalog.getByRole('listitem').filter({ hasText: moduleName })).toBeVisible()
+  await expect(modulesCatalog.getByRole('listitem').filter({ hasText: moduleSlug })).toBeVisible()
 
   await page.getByRole('button', { name: `Edit ${moduleName}` }).click()
   const edit = page.getByRole('dialog').filter({ hasText: 'Edit module' })
@@ -59,5 +60,5 @@ test('manage tags: create tag and view in table', async ({ page }) => {
   await expect(dialog).toBeHidden()
 
   await page.getByPlaceholder('Search tags…').fill(tagName)
-  await expect(page.getByRole('row').filter({ hasText: tagName })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Tags catalog' }).getByRole('listitem').filter({ hasText: tagName })).toBeVisible()
 })

@@ -33,8 +33,7 @@ test('settings: generate API key, show secret once, revoke blocks bootstrap', as
   await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 
-  const apiKeysHeaderRow = page.getByRole('heading', { name: 'API keys' }).locator('..').locator('..')
-  await apiKeysHeaderRow.getByRole('button', { name: 'Generate key' }).click()
+  await page.getByRole('button', { name: 'Generate key', exact: true }).click()
   const createDialog = page.getByRole('dialog').filter({ hasText: 'Generate API key' })
   await createDialog.getByLabel('Key name').fill(keyName)
   await createDialog.getByRole('button', { name: 'Generate key' }).click()

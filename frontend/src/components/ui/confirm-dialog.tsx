@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel } from '@/components/ui/spinner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,8 +66,7 @@ export function ConfirmDialog({
               onConfirm()
             }}
           >
-            {isLoading ? <Spinner data-icon="inline-start" /> : null}
-            {confirmLabel}
+            <PendingLabel pending={Boolean(isLoading)}>{confirmLabel}</PendingLabel>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -108,7 +108,7 @@ export type ModuleCreateForm = z.infer<typeof moduleCreateSchema>
 
 export const tagCreateSchema = z.object({
   name: z.string().min(1, 'Name is required').max(128),
-  color: z.string().default('#64748b'),
+  color: z.string().default('#65707b'),
 })
 
 export type TagCreateForm = z.infer<typeof tagCreateSchema>

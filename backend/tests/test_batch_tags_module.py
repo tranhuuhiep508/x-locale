@@ -47,7 +47,7 @@ def test_batch_move_module_updates_module_id(client):
         assert row["module_slug"] == "home"
 
 
-def test_batch_add_tags_merges_and_is_idempotent(client):
+def test_batch_set_tag_replaces_and_is_idempotent(client):
     project = make_project(client, "Batch Add Tags")
     pid = project["id"]
     _, _, s1, s2 = _modules_and_string(client, pid)
@@ -68,41 +68,38 @@ def test_batch_add_tags_merges_and_is_idempotent(client):
         json={
             "action": "add_tags",
             "string_ids": [s1["id"], s2["id"]],
-            "payload": {"tag_ids": [t1["id"], t2["id"]]},
+            "payload": {"tag_ids": [t2["id"]]},
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["affected"] >= 2
+    assert r.json()["affected"] == 2
 
     row1 = client.get(f"/api/projects/{pid}/strings/{s1['id']}").json()
     names1 = {t["name"] for t in row1["tags"]}
-    assert names1 == {"prio", "ui"}
+    assert names1 == {"ui"}
 
     again = client.post(
         f"/api/projects/{pid}/strings/batch",
         json={
             "action": "add_tags",
             "string_ids": [s1["id"]],
-            "payload": {"tag_ids": [t1["id"], t2["id"]]},
+            "payload": {"tag_ids": [t2["id"]]},
         },
     )
     assert again.status_code == 200, again.text
     assert again.json()["affected"] == 0
 
 
-def test_batch_remove_tags_only_named_tags_unknown_is_noop(client):
+def test_batch_remove_tag_and_unknown_is_noop(client):
     project = make_project(client, "Batch Remove Tags")
     pid = project["id"]
     _, _, s1, _ = _modules_and_string(client, pid)
-    keep = client.post(
-        f"/api/projects/{pid}/tags", json={"name": "keep", "color": "#111"}
-    ).json()
     drop = client.post(
         f"/api/projects/{pid}/tags", json={"name": "drop", "color": "#222"}
     ).json()
     client.patch(
         f"/api/projects/{pid}/strings/{s1['id']}",
-        json={"tag_ids": [keep["id"], drop["id"]]},
+        json={"tag_ids": [drop["id"]]},
     )
 
     r = client.post(
@@ -116,7 +113,7 @@ def test_batch_remove_tags_only_named_tags_unknown_is_noop(client):
     assert r.status_code == 200, r.text
     assert r.json()["affected"] == 1
     names = {t["name"] for t in client.get(f"/api/projects/{pid}/strings/{s1['id']}").json()["tags"]}
-    assert names == {"keep"}
+    assert names == set()
 
     unknown = str(uuid.uuid4())
     noop = client.post(
@@ -130,7 +127,7 @@ def test_batch_remove_tags_only_named_tags_unknown_is_noop(client):
     assert noop.status_code == 200, noop.text
     assert noop.json()["affected"] == 0
     names = {t["name"] for t in client.get(f"/api/projects/{pid}/strings/{s1['id']}").json()["tags"]}
-    assert names == {"keep"}
+    assert names == set()
 
 
 def test_batch_move_module_soft_deleted_still_updates_or_skips(client):
@@ -169,13 +166,23 @@ def test_batch_add_tags_skips_unknown_project_tag_ids(client):
         json={
             "action": "add_tags",
             "string_ids": [s1["id"]],
-            "payload": {"tag_ids": [real["id"], bogus]},
+            "payload": {"tag_ids": [bogus]},
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["affected"] == 1
+    assert r.json()["affected"] == 0
     names = {t["name"] for t in client.get(f"/api/projects/{pid}/strings/{s1['id']}").json()["tags"]}
-    assert names == {"real"}
+    assert names == set()
+
+    rejected = client.post(
+        f"/api/projects/{pid}/strings/batch",
+        json={
+            "action": "add_tags",
+            "string_ids": [s1["id"]],
+            "payload": {"tag_ids": [real["id"], bogus]},
+        },
+    )
+    assert rejected.status_code == 400
 
 
 def test_batch_move_module_empty_selection(client):

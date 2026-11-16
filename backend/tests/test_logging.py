@@ -67,7 +67,8 @@ def test_format_and_metadata(clean_metadata, monkeypatch):
     assert data["organization.name"] == "digital"
     assert data["service.name"] == "x-locale"
     assert data["event.dataset"] == "application"
-    assert data["log.logger"] == data["log.origin.file.name"] == "analyze.py"
+    assert data["log.logger"] == "different.logger"
+    assert data["log.origin.file.name"] == "analyze.py"
     assert data["log.origin.function"] == "analyze"
     assert data["log.origin.file.line"] == 120
     assert data["message"] == "Started Tiếng Việt\nnext line"
@@ -117,6 +118,8 @@ def test_health_filter_is_access_only(path, clean_metadata):
         None,
     )
     assert not HealthCheckFilter().filter(record)
+    record.args = ("client", "GET", path, "1.1", 503)
+    assert HealthCheckFilter().filter(record)
     record.name = "app.example"
     assert HealthCheckFilter().filter(record)
     record.name = "uvicorn.access"
@@ -139,6 +142,8 @@ setup_logging()
 setup_logging()
 assert logging.getLogger('sqlalchemy.engine').getEffectiveLevel() == logging.WARNING
 assert logging.getLogger('alembic').getEffectiveLevel() == logging.INFO
+assert logging.getLogger('httpx').getEffectiveLevel() == logging.WARNING
+assert logging.getLogger('httpcore').getEffectiveLevel() == logging.WARNING
 for name in ('example', 'uvicorn', 'uvicorn.error', 'uvicorn.access'):
     logging.getLogger(name).info('one message')
 """,
@@ -152,6 +157,27 @@ for name in ('example', 'uvicorn', 'uvicorn.error', 'uvicorn.access'):
     assert len(result.stdout.splitlines()) == 4
     for line in result.stdout.splitlines():
         assert assert_record(line)["message"] == "one message"
+
+
+def test_httpx_request_url_is_not_logged():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import httpx
+from app.logging import setup_logging
+setup_logging()
+with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as client:
+    client.get('https://issuer.example/userinfo?token=SECRET')
+""",
+        ],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == result.stderr == ""
 
 
 @pytest.mark.parametrize("level, access", [("warning", True), ("debug", True), ("warning", False)])

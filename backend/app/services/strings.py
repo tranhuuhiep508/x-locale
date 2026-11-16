@@ -1306,12 +1306,13 @@ def apply_batch(db: Session, project: Project, payload: BatchRequest) -> BatchRe
             affected += 1
     elif action == "add_tags":
         tag_ids = [uuid.UUID(t) for t in payload.payload.get("tag_ids", [])]
+        if len(tag_ids) != 1:
+            raise HTTPException(status_code=400, detail="Choose one tag")
         tags = db.query(Tag).filter(Tag.project_id == project.id, Tag.id.in_(tag_ids)).all()
-        for entry in entries:
-            existing_ids = {t.id for t in entry.tags}
-            for tag in tags:
-                if tag.id not in existing_ids:
-                    entry.tags.append(tag)
+        if tags:
+            for entry in entries:
+                if {tag.id for tag in entry.tags} != {tag.id for tag in tags}:
+                    entry.tags = tags
                     affected += 1
     elif action == "remove_tags":
         tag_ids = {uuid.UUID(t) for t in payload.payload.get("tag_ids", [])}

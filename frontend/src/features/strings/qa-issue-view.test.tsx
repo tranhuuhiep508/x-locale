@@ -92,8 +92,9 @@ describe('QA badge state', () => {
     renderBadge([length, { ...length, code: 'length_ratio', message: 'Length ratio is high.' }])
     const button = badgeButton('en')
     expect(button.textContent).toContain('2 warnings')
-    expect(button.getAttribute('data-variant')).toBe('outline')
-    expect(button.className).toContain('border-amber-500/30')
+    expect(button.getAttribute('data-variant')).toBe('warning')
+    expect(button.className).toContain('bg-warning')
+    expect(button.className).toContain('text-warning-foreground')
     expect(button.className).not.toContain('bg-destructive/10')
   })
 

@@ -52,7 +52,7 @@ test('CLI hints connect to the current server and API Docs is absent from the he
 
 test('project header keeps Help and the user menu usable at 320px', async ({ page }) => {
   await page.goto('/projects/demo-app/settings')
-  const header = page.locator('header')
+  const header = page.locator('header').filter({ has: page.getByRole('button', { name: 'Help', exact: true }) })
   const help = header.getByRole('button', { name: 'Help', exact: true })
   const userMenu = header.getByRole('button').filter({ has: page.locator('[data-slot="avatar"]') })
 

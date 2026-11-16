@@ -8,7 +8,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/com
 import { ActiveJobWatcher } from '@/components/active-job-watcher'
 import { ApiError } from '@/lib/api/client'
 import { canonicalProjectHref } from '@/lib/project-route'
-import { projectQuery } from '@/lib/queries'
+import { projectQuery, projectsQuery, stringsQuery } from '@/lib/queries'
 import { queryKeys } from '@/lib/query-keys'
 
 export const Route = createFileRoute('/projects/$projectRef')({
@@ -52,6 +52,11 @@ function CloseMobileSidebarOnNavigate() {
 function ProjectLayout() {
   const { projectRef } = Route.useParams()
   const { data: project } = useQuery(projectQuery(projectRef))
+  const { data: projects } = useQuery(projectsQuery())
+  const { data: pendingStrings } = useQuery({
+    ...stringsQuery(projectRef, { has_unpublished_changes: true, page: 1, page_size: 1 }),
+    enabled: Boolean(project),
+  })
 
   if (!project) return null
 
@@ -60,7 +65,11 @@ function ProjectLayout() {
       <CloseMobileSidebarOnNavigate />
       <AppHeader leading={<SidebarTrigger />} title={project.name} />
       <div className="flex min-h-0 flex-1">
-        <ProjectSidebar project={project} />
+        <ProjectSidebar
+          project={project}
+          projects={projects}
+          pendingCount={pendingStrings?.total ?? 0}
+        />
         <SidebarInset className="min-h-0 overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <ActiveJobWatcher />

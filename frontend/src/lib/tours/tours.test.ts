@@ -192,12 +192,6 @@ describe('screen tours', () => {
     expect(body('batch-undo')).toBe(
       "Imports, AI translations, and batch actions can each be undone as a whole batch. An undo can't itself be undone.",
     )
-    expect(body('string-history')).toBe(
-      'To revert a single string, open its History and restore an earlier version.',
-    )
-    expect(body('restore-limits')).toBe(
-      "History can't restore publish or unpublish actions or deletes. To bring back a deleted string, use the Deleted filter and choose Restore.",
-    )
 
     const present = () => true
     const settings = (role: string | null) =>
@@ -227,7 +221,7 @@ describe('screen tours', () => {
       'push-limits',
     ])
 
-    const activityTargets = ['activity-list', 'batch-undo', 'string-history', 'restore-limits']
+    const activityTargets = ['activity-list', 'batch-undo']
     const activity = (role: string | null, targets: string[]) =>
       selectTourSteps(TOUR_STEPS, {
         tourId: 'activity',
@@ -236,9 +230,9 @@ describe('screen tours', () => {
       }).map((step) => step.target)
     expect(activity('editor', activityTargets)).toEqual(activityTargets)
     expect(activity('admin', activityTargets)).toEqual(activityTargets)
-    expect(activity(null, activityTargets)).toEqual(['activity-list', 'string-history', 'restore-limits'])
+    expect(activity(null, activityTargets)).toEqual(['activity-list'])
 
-    const hints = ['batch-undo', 'string-history', 'restore-limits']
+    const hints = ['batch-undo']
     const covers = (role: string, targets: string[]) =>
       tourCoversRoleSteps(TOUR_STEPS, {
         tourId: 'activity',

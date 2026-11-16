@@ -15,7 +15,7 @@ export function TranslatePublishReview({
 }) {
   if (!entries) {
     return (
-      <div className="flex h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" aria-live="polite">
+      <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" aria-live="polite">
         {loading ? <Spinner /> : null}
         Preparing publication review…
       </div>
@@ -24,7 +24,7 @@ export function TranslatePublishReview({
   const preview = buildPublishPreview(entries)
   const empty = emptyPublicLocales(entries)
   return (
-    <div className="flex flex-col gap-4" aria-busy={loading}>
+    <div className="flex flex-col gap-4 animate-step-fade" aria-busy={loading}>
       {empty.length > 0 ? (
         <Alert>
           <AlertTitle>

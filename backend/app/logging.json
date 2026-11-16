@@ -19,6 +19,8 @@
     "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": false},
     "uvicorn.error": {"handlers": [], "level": "INFO", "propagate": true},
     "uvicorn.access": {"handlers": [], "level": "INFO", "propagate": true},
+    "httpx": {"level": "WARNING"},
+    "httpcore": {"level": "WARNING"},
     "sqlalchemy.engine": {"level": "WARNING"},
     "alembic": {"level": "INFO"}
   },

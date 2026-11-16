@@ -30,6 +30,42 @@ def values(entry, field="value"):
     return {t["locale"]: t[field] for t in entry["translations"]}
 
 
+def test_direct_writes_reject_multiple_tags(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    first = client.post(f"{root}/tags", json={"name": "first"}).json()["id"]
+    second = client.post(f"{root}/tags", json={"name": "second"}).json()["id"]
+    tags = [first, second]
+
+    assert client.post(
+        f"{root}/strings", json={"key": "hello", "source_text": "Hello", "tag_ids": tags}
+    ).status_code == 422
+    entry = client.post(
+        f"{root}/strings", json={"key": "hello", "source_text": "Hello", "tag_ids": [first]}
+    ).json()
+    assert client.patch(f"{root}/strings/{entry['id']}", json={"tag_ids": tags}).status_code == 422
+    assert client.post(
+        f"{root}/strings/paste-review",
+        json={"rows": [{"key": "another"}], "tag_ids": tags},
+    ).status_code == 422
+
+
+def test_paste_selected_tag_replaces_existing_tag(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    first = client.post(f"{root}/tags", json={"name": "first"}).json()["id"]
+    second = client.post(f"{root}/tags", json={"name": "second"}).json()["id"]
+    entry = client.post(
+        f"{root}/strings", json={"key": "hello", "source_text": "Hello", "tag_ids": [first]}
+    ).json()
+    rows = [{"key": "hello", "source_text": "Hello"}]
+    fingerprint = review(client, pid, rows, tag_ids=[second])["fingerprint"]
+    response = save(client, pid, rows, fingerprint, tag_ids=[second])
+    assert response.status_code == 200, response.text
+    current = client.get(f"{root}/strings/{entry['id']}").json()
+    assert [tag["id"] for tag in current["tags"]] == [second]
+
+
 def test_review_projects_creates_and_updates_without_writing(client):
     pid = make_project(client, targets=["en", "ja"])["id"]
     root = f"/api/projects/{pid}"
