@@ -1,5 +1,10 @@
-import { Search } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { Search, X } from 'lucide-react'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 
 interface DataTableToolbarProps {
   search: string
@@ -15,18 +20,30 @@ export function DataTableToolbar({
   children,
 }: DataTableToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="w-56 pl-8"
+    <div className="flex flex-wrap items-center justify-between gap-2.5">
+      <InputGroup className="w-full sm:w-64">
+        <InputGroupAddon>
+          <Search />
+        </InputGroupAddon>
+        <InputGroupInput
           placeholder={placeholder}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           aria-label={placeholder}
         />
-      </div>
-      {children}
+        {search ? (
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              size="icon-xs"
+              aria-label="Clear search"
+              onClick={() => onSearchChange('')}
+            >
+              <X />
+            </InputGroupButton>
+          </InputGroupAddon>
+        ) : null}
+      </InputGroup>
+      {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   )
 }

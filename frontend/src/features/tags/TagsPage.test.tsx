@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { tagsApi } from '@/lib/api/catalog'
@@ -11,6 +11,12 @@ vi.mock('@tanstack/react-router', () => ({
     useParams: () => ({ projectRef: 'p1' }),
     useSearch: () => ({}),
   }),
+  Link: ({ children, to, params, ...props }: {
+    children: ReactNode
+    to: string
+    params?: { projectRef: string }
+    [key: string]: unknown
+  }) => <a href={to.replace('$projectRef', params?.projectRef ?? '')} {...props}>{children}</a>,
 }))
 
 vi.mock('@/lib/toast', () => ({
@@ -100,8 +106,34 @@ describe('TagsPage', () => {
     await waitFor(() => {
       expect(tagsApi.create).toHaveBeenCalledWith('p1', {
         name: 'android',
-        color: '#64748b',
+        color: '#65707b',
       })
     })
+  })
+
+  it('filters tags by usage and surfaces unused badges', async () => {
+    vi.mocked(tagsApi.list).mockResolvedValue([
+      ...sampleTags,
+      {
+        id: 'tag-2',
+        name: 'legacy',
+        color: '#e11d48',
+        string_count: 0,
+      },
+    ])
+
+    renderWithClient(<TagsPage />)
+
+    const list = await screen.findByRole('list', { name: 'Tags catalog' })
+    expect(within(list).getByText('Unused')).toBeTruthy()
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Unused/i }))
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getByText('legacy')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('radio', { name: /In use/i }))
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getByText('ios')).toBeTruthy()
   })
 })

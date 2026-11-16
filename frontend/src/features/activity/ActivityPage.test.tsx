@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivityPage } from '@/features/activity/ActivityPage'
 import { clearActiveJob, getActiveJob, rememberJob } from '@/lib/active-job'
 import { ActiveJobWatcher } from '@/components/active-job-watcher'
@@ -299,5 +299,75 @@ describe('Activity undo published_key_conflict', () => {
     await waitFor(() => expect((within(reopened).getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false))
     expect(activitiesApi.revertBatch).toHaveBeenCalledTimes(1)
     expect(activitiesApi.revertBatchPreview).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Activity ledger layout and timeline', () => {
+  beforeEach(() => {
+    polyfillPointer()
+    clearActiveJob()
+    vi.mocked(projectsApi.get).mockReset().mockResolvedValue(project)
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('renders ledger rules, tour targets, and chronological card metadata', async () => {
+    const stringCard: ActivityFeedCard = {
+      id: 'card-string',
+      kind: 'single',
+      event_type: 'string.updated',
+      summary: "Updated 'save'",
+      actor_type: 'user',
+      actor_label: 'alice',
+      created_at: '2026-10-18T12:00:00Z',
+      string_id: 'str-1',
+      string_key: 'common.save',
+      locale: 'en',
+      batch_id: null,
+      batch_kind: null,
+      children_count: 0,
+      is_undoable: false,
+      counts: {},
+      changed: [
+        {
+          scope: 'draft',
+          kind: 'translation',
+          field: 'translation',
+          locale: 'en',
+          before: 'Save',
+          after: 'Save changes',
+        },
+      ],
+      changed_count: 1,
+      children: [],
+    }
+    vi.mocked(activitiesApi.feed).mockReset().mockResolvedValue({
+      items: [card, stringCard],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    })
+
+    const { container } = renderPage()
+
+    expect(await screen.findByText('Imported strings')).toBeTruthy()
+    expect(screen.getAllByText('2 events').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('2 entries')).toBeTruthy()
+    expect(screen.getByText('common.save')).toBeTruthy()
+    expect(screen.getByText('“Save”')).toBeTruthy()
+    expect(screen.getByText('“Save changes”')).toBeTruthy()
+
+    const pageRoot = container.querySelector('[data-tour-ready="activity"]')
+    expect(pageRoot).toBeTruthy()
+    expect(container.querySelector('[data-tour="batch-undo"]')).toBeTruthy()
+    expect(container.querySelector('[data-tour="activity-list"]')).toBeTruthy()
+    // Undo rules live inside a compact popover rather than cluttering the header
+    expect(screen.queryByText('Publish, unpublish, and deletes are not in History.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo rules' }))
+    expect(screen.getByText('Publish, unpublish, and deletes are not in History.')).toBeTruthy()
+    // Each card root inside activity-list keeps div.rounded-lg cleanly for E2E filters
+    expect(container.querySelectorAll('[data-tour="activity-list"] div.rounded-lg').length).toBe(2)
   })
 })

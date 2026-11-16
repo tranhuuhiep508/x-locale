@@ -427,17 +427,23 @@ describe('StringFormDialog inline catalog create', () => {
     expect(savedCreates).not.toHaveBeenCalled()
   })
 
-  it('selects and clears a tag via the dropdown', async () => {
+  it('selects and clears a single tag via the dropdown', async () => {
     const a = { ...createdTag, id: 'a', name: 'Alpha' }
-    renderDialog({ tags: [a] })
+    const b = { ...createdTag, id: 'b', name: 'Beta' }
+    renderDialog({ tags: [a, b] })
 
-    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'Alpha' }))
-    expect(screen.getByLabelText('Tag').textContent).toContain('Alpha')
+    expect(screen.getByRole('combobox', { name: 'Tag' }).textContent).toContain('Alpha')
 
-    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'Beta' }))
+    expect(screen.getByRole('combobox', { name: 'Tag' }).textContent).toContain('Beta')
+    expect(screen.getByRole('combobox', { name: 'Tag' }).textContent).not.toContain('Alpha')
+
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: '— None —' }))
-    expect(screen.getByLabelText('Tag').textContent).toContain('— None —')
+    expect(screen.getByRole('combobox', { name: 'Tag' }).textContent).toContain('— None —')
   })
 
   it('closes only the popover when New is cancelled', async () => {
@@ -585,7 +591,7 @@ describe('StringFormDialog stale saves', () => {
     const current = { ...entry, tags: [b, c] }
     vi.mocked(savedUpdates).mockRejectedValueOnce(staleSave(current, ['tag_ids']))
     renderDialog({ entry, tags: [a, b, c] })
-    fireEvent.click(screen.getByLabelText('Tag'))
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'B' }))
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Bob context' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
@@ -859,5 +865,29 @@ describe('compact editor save and review', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Unsaved context')
     expect(stringsApi.editorSave).not.toHaveBeenCalled()
+  })
+
+  it('replaces the tag when choosing another tag from the single-tag selector during edit', async () => {
+    const a = { ...createdTag, id: 'a', name: 'Alpha' }
+    const b = { ...createdTag, id: 'b', name: 'Beta' }
+    const c = { ...createdTag, id: 'c', name: 'Gamma' }
+    const entry = { ...draftEntry(), tags: [a] }
+    vi.mocked(stringsApi.editorSave).mockResolvedValue({ ...entry, tags: [c] })
+    renderDialog({ entry, tags: [a, b, c] })
+
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'Gamma' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+
+    await waitFor(() =>
+      expect(stringsApi.editorSave).toHaveBeenCalledWith('proj-1', {
+        action: 'save_draft',
+        proposal: {
+          mode: 'update',
+          string_id: 'str-1',
+          values: { tag_ids: ['c'], expected: { tag_ids: ['a'] } },
+        },
+      }),
+    )
   })
 })

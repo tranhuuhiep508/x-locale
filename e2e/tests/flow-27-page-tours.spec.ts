@@ -83,7 +83,6 @@ test('page tours start once, replay from Help, and skip steps the role cannot se
   await page.goto('/projects/demo-app/activity')
   await expect(page.getByText('No activity yet')).toBeVisible()
   await expect(tour).toContainText("An undo can't itself be undone.")
-  await expect(tour).toContainText('1 of 3')
   await tour.getByRole('button', { name: 'Skip tour' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-tour-status', 'idle')
   await page.reload()

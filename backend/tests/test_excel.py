@@ -485,6 +485,24 @@ def test_build_template_workbook_flat_and_modular():
     assert UNASSIGNED_SHEET in mod_wb.sheetnames
 
 
+def test_import_workbook_rejects_multiple_tags(client):
+    project = _make_project(client, name="Single Tag Import")
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = FLAT_SHEET
+    sheet.append(["key", "tags", "vi"])
+    sheet.append(["hello", "first,second", "Hello"])
+    raw = io.BytesIO()
+    workbook.save(raw)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/import",
+        files={"file": ("multiple-tags.xlsx", raw.getvalue())},
+    )
+    assert response.status_code == 400
+    assert "at most one tag" in response.json()["detail"]
+
+
 def test_import_workbook_dry_run_via_api(client):
     project = _make_project(client, name="Import Dry Run App")
     pid = project["id"]
@@ -727,14 +745,14 @@ def test_import_workbook_literal_key_and_tags_round_trip(client):
         source_text="=SUM(A1:A10)",
         description="+cmd|' /C calc'",
         status=TranslationStatus.draft,
-        tags=[Tag(name="@malicious"), Tag(name="safe"), Tag(name="-1day")],
+        tags=[Tag(name="@malicious")],
         translations=[Translation(locale="en", value="@malicious_link")],
     )
     plus_key_entry = StringEntry(
         key="+plus.key",
         source_text="Nguồn",
         status=TranslationStatus.draft,
-        tags=[Tag(name="v2"), Tag(name="=cmd")],
+        tags=[Tag(name="=cmd")],
         translations=[],
     )
     normal_entry = StringEntry(
@@ -792,12 +810,12 @@ def test_import_workbook_literal_key_and_tags_round_trip(client):
     by_key = {item["key"]: item for item in catalog["items"]}
 
     dangerous = by_key['=HYPERLINK("http://evil")']
-    assert {t["name"] for t in dangerous["tags"]} == {"@malicious", "safe", "-1day"}
+    assert {t["name"] for t in dangerous["tags"]} == {"@malicious"}
     assert dangerous["source_text"] == "=SUM(A1:A10)"
     assert dangerous["description"] == "+cmd|' /C calc'"
 
     plus_key = by_key["+plus.key"]
-    assert {t["name"] for t in plus_key["tags"]} == {"v2", "=cmd"}
+    assert {t["name"] for t in plus_key["tags"]} == {"=cmd"}
 
     normal = by_key["btn.save"]
     assert {t["name"] for t in normal["tags"]} == {"v1"}
@@ -968,24 +986,16 @@ def test_import_stores_formula_tag_text(client):
     ws.title = FLAT_SHEET
     ws.append(["key", "description", "tags", "vi", "en"])
     ws.append(["array-tag", "note", "ARRAYTAG", "src", "Hello"])
-    ws.append(["table-tag", "note", "TABLETAG", "src", "Hello"])
     raw = io.BytesIO()
     wb.save(raw)
     content = _replace_inline_cell(
         raw.getvalue(), "C2", "ARRAYTAG", '<f t="array" ref="C2">SUM(A1:A2)</f><v>3</v>'
-    )
-    content = _replace_inline_cell(
-        content,
-        "C3",
-        "TABLETAG",
-        '<f t="dataTable" ref="C3" dt2D="1" dtr="0" r1="A1" r2="B1"/><v>9</v>',
     )
 
     response = client.post(f"{root}/import", files={"file": ("tags.xlsx", content)})
     assert response.status_code == 200, response.text
     by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
     assert {tag["name"] for tag in by_key["array-tag"]["tags"]} == {"=SUM(A1:A2)"}
-    assert {tag["name"] for tag in by_key["table-tag"]["tags"]} == {"=TABLE(A1", "B1)"}
 
 
 def test_import_stores_formula_cells_as_typed_text(client):

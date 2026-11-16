@@ -236,8 +236,8 @@ def _paste_proposal(
         changes["translation_scores"] = scored
         expected["translation_scores"] = {k: current_scores.get(k) for k in scored}
     current_tags = [tag.id for tag in entry.tags]
-    if set(payload.tag_ids) - set(current_tags):
-        changes["tag_ids"] = sorted({*current_tags, *payload.tag_ids}, key=str)
+    if payload.tag_ids and set(payload.tag_ids) != set(current_tags):
+        changes["tag_ids"] = payload.tag_ids
         expected["tag_ids"] = current_tags
     return EditorUpdateProposal(
         mode="update",

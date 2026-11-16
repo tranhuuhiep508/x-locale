@@ -184,7 +184,8 @@ describe('AddManyStringsDialog', () => {
     renderDialog()
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Module' }), { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'Common' }))
-    fireEvent.click(screen.getByRole('button', { name: 'ios' }))
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Tag' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'ios' }))
     await previewed()
     expect(stringsApi.pasteReview).toHaveBeenCalledWith('proj-1', {
       module_id: 'mod-common',

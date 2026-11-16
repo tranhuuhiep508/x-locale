@@ -44,7 +44,7 @@ test('activity undo reverts a batch import', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
 
   await expect(page.getByText(/Imported · \d+ string/)).toBeVisible()
-  await page.getByRole('button', { name: 'Undo' }).first().click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).first().click()
 
   const confirm = page.getByRole('alertdialog', { name: 'Undo this batch?' })
   await expect(confirm).toBeVisible()

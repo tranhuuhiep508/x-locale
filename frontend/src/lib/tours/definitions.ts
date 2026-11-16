@@ -184,16 +184,4 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body: "Imports, AI translations, and batch actions can each be undone as a whole batch. An undo can't itself be undone.",
     roles: importRoles,
   },
-  {
-    tourId: 'activity',
-    target: 'string-history',
-    title: 'String history',
-    body: 'To revert a single string, open its History and restore an earlier version.',
-  },
-  {
-    tourId: 'activity',
-    target: 'restore-limits',
-    title: 'Restore limits',
-    body: "History can't restore publish or unpublish actions or deletes. To bring back a deleted string, use the Deleted filter and choose Restore.",
-  },
 ]

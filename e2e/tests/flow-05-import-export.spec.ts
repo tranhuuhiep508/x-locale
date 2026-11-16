@@ -44,7 +44,7 @@ test('dropping JSON previews it and applies the retained file after confirmation
     data.items.add(new File([JSON.stringify({ [key]: 'Dropped source' })], 'vi.json', { type: 'application/json' }))
     return data
   }, key)
-  const dropZone = page.getByRole('button', { name: /Click to browse or drop/ })
+  const dropZone = page.locator('[data-tour="import-file"]')
   await dropZone.dispatchEvent('dragover', { dataTransfer: transfer })
   await dropZone.dispatchEvent('drop', { dataTransfer: transfer })
   await transfer.dispose()

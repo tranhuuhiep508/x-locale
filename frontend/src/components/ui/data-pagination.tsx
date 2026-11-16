@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -81,12 +82,12 @@ export function DataPagination({
   const end = Math.min(page * pageSize, total)
 
   return (
-    <div className="flex items-center justify-between gap-3 px-1 py-3">
+    <div className="flex items-center justify-between gap-3 px-1 py-2.5">
       <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">
+        <p className="font-mono text-xs tabular-nums text-muted-foreground">
           {start}–{end} of {total}
         </p>
-        {note ? <p className="text-sm text-muted-foreground">{note}</p> : null}
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </div>
       <div className="flex items-center gap-1">
         <PageButton
@@ -97,9 +98,12 @@ export function DataPagination({
         >
           <ChevronLeftIcon />
         </PageButton>
-        <span className="px-2 text-sm text-muted-foreground">
+        <Badge
+          variant="outline"
+          className="h-7 px-2.5 font-mono text-xs font-normal tabular-nums text-muted-foreground"
+        >
           {page} / {totalPages}
-        </span>
+        </Badge>
         <PageButton
           label="Next page"
           disabled={disabled || page >= totalPages}

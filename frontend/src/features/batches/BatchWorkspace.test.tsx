@@ -9,6 +9,7 @@ import { jobsApi } from '@/lib/api/jobs'
 import { ApiError } from '@/lib/api/client'
 import { toast } from 'sonner'
 import { projectQuery } from '@/lib/queries'
+import { formatRelativeTime } from '@/lib/utils'
 import type { CliPushBatch, Project, StringEntry, TranslateProposalItem } from '@/lib/api/types'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -149,6 +150,13 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   qc.clear()
+})
+
+it('shows who pushed the batch and when', async () => {
+  batch.created_at = '2026-01-01T00:00:00Z'
+  show()
+  await loaded()
+  expect(screen.getByText(`Dev User · ${formatRelativeTime(batch.created_at)}`)).toBeDefined()
 })
 
 it('keeps generated translations temporary and never calls intermediate write APIs', async () => {

@@ -380,3 +380,21 @@ it('marks the active step across Translate, Review, and Publish', () => {
   expect(within(stepper()).getByText('Publish').closest('[aria-current="step"]')).toBeTruthy()
 })
 
+it('displays confidence score after translating and removes it upon manual edit', () => {
+  const proposalWithScore: TranslateProposalItem = {
+    string_id: 'a',
+    key: 'greeting',
+    source_text: 'Xin chào',
+    status: 'draft',
+    translations: { en: 'Hello' },
+    scores: { en: 92 },
+  }
+  review([proposalWithScore])
+  expect(screen.getByLabelText(/Model estimate 92\/100/)).toBeTruthy()
+  expect(screen.getByText('92')).toBeTruthy()
+
+  const textarea = screen.getByLabelText('en')
+  fireEvent.change(textarea, { target: { value: 'Hi there' } })
+  expect(screen.queryByLabelText(/Model estimate/)).toBeNull()
+})
+

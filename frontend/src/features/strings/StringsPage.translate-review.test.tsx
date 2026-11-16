@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
@@ -11,10 +12,12 @@ import type { Project, TranslateProposalItem, TranslateProposalsResult, Translat
 import { StringsPage } from './StringsPage'
 
 // These tests drive StringsPage through multi-step translate and job-polling chains.
-// Under a loaded CI runner a step can exceed Testing Library's 1s waitFor default
-// (two different tests here have flaked on it). Vitest isolates modules per file,
-// so this only applies to this file.
-configure({ asyncUtilTimeout: 5000 })
+// Under a loaded CI runner a step can exceed Testing Library's default wait
+// (the source-conflict case missed "Translate again" at 5s). Vitest isolates
+// modules per file, so this only applies here. The suite timeout stays above
+// that wait so a slow step finishes instead of the test being killed with it.
+configure({ asyncUtilTimeout: 8_000 })
+const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
@@ -92,7 +95,7 @@ beforeEach(() => {
   vi.mocked(stringsApi.translateSave).mockResolvedValue({ action: 'draft', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'batch' })
 })
 
-describe('translation review retranslation', () => {
+describe('translation review retranslation', suiteTimeout, () => {
   it('shows a quiet memory error without blocking AI or offering a retry button', async () => {
     vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory_error: 'Memory unavailable' }] })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
@@ -208,7 +211,9 @@ describe('translation review retranslation', () => {
       'demo-app', expect.objectContaining({ locales: ['en'] }),
     ))
     fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add string' })[0])
+    await userEvent.setup().click(screen.getAllByRole('button', { name: 'Add string' })[0])
+    expect(await screen.findByRole('menuitem', { name: 'Add many' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add single string' }))
     fireEvent.change(await screen.findByLabelText('Key'), { target: { value: 'save' } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'Lưu' } })
     expect(screen.queryByLabelText(/^vi$/i)).toBeNull()
@@ -290,7 +295,7 @@ async function openSourceConflict() {
   await waitUntilEnabled('Regenerate changed strings')
 }
 
-describe('source conflict recovery', () => {
+describe('source conflict recovery', suiteTimeout, () => {
   it.each([false, true])('regenerates only affected rows and preserves other drafts (background: %s)', async (background) => {
     await openSourceConflict()
     expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(true)
@@ -365,7 +370,7 @@ describe('source conflict recovery', () => {
   })
 })
 
-describe('save as draft or publish in place', () => {
+describe('save as draft or publish in place', suiteTimeout, () => {
   const reviewed = {
     id: 'a', key: 'greeting', source_text: 'Xin chào', description: 'Original', status: 'public' as const,
     pending_delete: false, deleted_at: null, has_unpublished_changes: true, published_at: null,

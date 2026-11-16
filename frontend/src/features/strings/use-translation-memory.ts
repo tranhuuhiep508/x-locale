@@ -58,17 +58,21 @@ export function useTranslationMemory(
     }
   }, [projectId, stringId])
   const initial = useRef(true)
+  const prevStringId = useRef(stringId)
   useEffect(() => {
+    const stringChanged = prevStringId.current !== stringId
+    prevStringId.current = stringId
     if (!source.trim() || latest.current.locales.length === 0) {
       generation.current += 1
       setState({ source, localeKey, loading: false })
       return
     }
     const token = ++generation.current
-    const delay = initial.current ? 0 : 800
+    const immediate = initial.current || stringChanged
+    const delay = immediate ? 0 : 800
     initial.current = false
     setState((prev) =>
-      prev.result || prev.error ? prev : { source, localeKey, loading: true },
+      !stringChanged && (prev.result || prev.error) ? prev : { source, localeKey, loading: true },
     )
     if (delay === 0) {
       void load(token)
@@ -83,7 +87,7 @@ export function useTranslationMemory(
       clearTimeout(timer)
       if (generation.current === token) generation.current += 1
     }
-  }, [load, source, localeKey, expectedSource])
+  }, [load, source, localeKey, expectedSource, stringId])
   const retry = useCallback(() => {
     const input = latest.current
     if (!input.source.trim() || input.locales.length === 0) return

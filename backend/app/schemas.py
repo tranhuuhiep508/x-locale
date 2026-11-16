@@ -287,7 +287,7 @@ class StringCreateContent(BaseModel):
     source_text: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
-    tag_ids: list[UUID] = Field(default_factory=list)
+    tag_ids: list[UUID] = Field(default_factory=list, max_length=1)
     translations: TextValues = Field(default_factory=dict)
     translation_scores: dict[str, ConfidenceScore] = Field(default_factory=dict)
 
@@ -322,7 +322,7 @@ class StringUpdateContent(BaseModel):
     source_text: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     module_id: UUID | None = None
-    tag_ids: list[UUID] | None = None
+    tag_ids: list[UUID] | None = Field(default=None, max_length=1)
     translations: OptionalTextValues = None
     translation_scores: dict[str, ConfidenceScore | None] | None = None
     expected: StringExpected | None = None
@@ -397,7 +397,7 @@ class PasteRow(BaseModel):
 class PasteReviewRequest(BaseModel):
     model_config = {"extra": "forbid"}
     module_id: UUID | None = None
-    tag_ids: list[UUID] = Field(default_factory=list)
+    tag_ids: list[UUID] = Field(default_factory=list, max_length=1)
     rows: list[PasteRow] = Field(min_length=1, max_length=PASTE_MAX_ROWS)
 
     @model_validator(mode="after")

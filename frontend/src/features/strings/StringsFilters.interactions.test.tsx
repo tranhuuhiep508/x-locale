@@ -1,11 +1,15 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StringsSearch } from '@/lib/schemas'
 import { StringsFilters } from './StringsFilters'
 
 afterEach(cleanup)
 
-function renderFilters(search: StringsSearch) {
+function renderFilters(
+  search: StringsSearch,
+  tags: ComponentProps<typeof StringsFilters>['tags'] = [],
+) {
   const onFilter = vi.fn()
   const onSearchInputChange = vi.fn()
   const onClear = vi.fn()
@@ -14,7 +18,7 @@ function renderFilters(search: StringsSearch) {
       search={search}
       searchInput={search.q ?? ''}
       modules={[]}
-      tags={[]}
+      tags={tags}
       locales={['en', 'fr']}
       onFilter={onFilter}
       onSearchInputChange={onSearchInputChange}
@@ -80,5 +84,67 @@ describe('active string filter chips', () => {
     expect(screen.getByRole('combobox', { name: 'AI' }).textContent).toContain('≤ 74')
     fireEvent.click(screen.getByRole('button', { name: 'Remove confidence filter' }))
     expect(onFilter).toHaveBeenCalledWith({ max_confidence: undefined })
+  })
+
+  it('renders all filters in a single compact row directly accessible without extra clicks', () => {
+    renderFilters({})
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: 'Translation' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: 'AI' })).toBeDefined()
+    expect(screen.getByRole('textbox', { name: 'Search strings' })).toBeDefined()
+  })
+
+  it('displays active filter criteria directly in the compact triggers and active list', () => {
+    renderFilters({ status: 'draft', max_confidence: 60 })
+    expect(screen.getByRole('combobox', { name: 'Status' }).textContent).toContain('Draft')
+    expect(screen.getByRole('combobox', { name: 'AI' }).textContent).toContain('≤ 60')
+    const chips = within(screen.getByRole('list', { name: 'Active filters' }))
+    expect(chips.getByRole('button', { name: 'Remove status filter' })).toBeDefined()
+    expect(chips.getByRole('button', { name: 'Remove confidence filter' })).toBeDefined()
+  })
+
+  it('exposes searchable tag choices as ordinary buttons', async () => {
+    renderFilters({}, [{ id: 'tag-1', name: 'Core', color: '#65707b', string_count: 1 }])
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    const choices = within(await screen.findByRole('list', { name: 'Tag options' }))
+    expect(choices.getByRole('button', { name: 'Core' })).toBeDefined()
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('uses the first search match on Enter instead of the pinned selected tag', async () => {
+    const tags = [
+      { id: 'alpha', name: 'Alpha', color: '#65707b', string_count: 1 },
+      { id: 'beta', name: 'Beta', color: '#65707b', string_count: 1 },
+    ]
+    const { onFilter } = renderFilters({ tag: 'alpha' }, tags)
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    const search = await screen.findByRole('textbox', { name: 'Search tags…' })
+    fireEvent.change(search, { target: { value: 'Beta' } })
+    const choices = within(screen.getByRole('list', { name: 'Tag options' }))
+    expect(choices.getByRole('button', { name: 'Alpha' })).toBeDefined()
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(onFilter).toHaveBeenCalledWith({ tag: 'beta', untagged: undefined })
+  })
+
+  it('counts only matching choices when the selected tag is pinned', async () => {
+    const tags = [
+      { id: 'other', name: 'Other', color: '#65707b', string_count: 1 },
+      ...Array.from({ length: 81 }, (_, index) => ({
+        id: `target-${index}`,
+        name: `Target ${index + 1}`,
+        color: '#65707b',
+        string_count: 1,
+      })),
+    ]
+    renderFilters({ tag: 'other' }, tags)
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Search tags…' }), {
+      target: { value: 'Target' },
+    })
+
+    expect(screen.getByText('Showing 80 of 81. Type to narrow.')).toBeDefined()
+    const choices = within(screen.getByRole('list', { name: 'Tag options' }))
+    expect(choices.getAllByRole('button')).toHaveLength(81)
+    expect(choices.queryByRole('button', { name: 'Target 81' })).toBeNull()
   })
 })

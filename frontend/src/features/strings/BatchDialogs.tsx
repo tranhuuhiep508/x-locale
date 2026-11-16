@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { FolderGit2, FolderX } from 'lucide-react'
 import type { Module, Tag } from '@/lib/api/types'
+import { tagSwatchColor } from '@/features/strings/catalog-create'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
+import { PendingLabel } from '@/components/ui/spinner'
 
 export function BatchMoveDialog({
   open,
@@ -33,34 +34,40 @@ export function BatchMoveDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Move to module</DialogTitle>
-          <DialogDescription>Choose a module for the selected strings.</DialogDescription>
+          <DialogDescription>Choose a target module for the selected strings.</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+        <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-0.5">
           <Button
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground italic"
+            variant="outline"
+            className="h-auto min-h-10 w-full justify-start gap-2.5 border-dashed border-input bg-muted/20 px-3.5 py-2.5 text-muted-foreground italic hover:bg-muted/50 hover:text-foreground"
             disabled={isLoading}
             onClick={() => onSelect(null)}
           >
+            <FolderX className="size-4 shrink-0 text-muted-foreground" />
             — No module —
           </Button>
           {modules.map((m) => (
             <Button
               key={m.id}
-              variant="ghost"
-              className="h-auto min-h-10 w-full justify-start py-2"
+              variant="outline"
+              className="h-auto min-h-11 w-full justify-between gap-3 border-input bg-card/70 px-3.5 py-2.5 hover:border-primary hover:bg-accent/50"
               disabled={isLoading}
               onClick={() => onSelect(m.id)}
             >
-              <span className="flex min-w-0 flex-col items-start gap-0.5">
-                <span className="max-w-full truncate">{m.name}</span>
-                <span className="max-w-full truncate font-mono text-xs text-muted-foreground">
-                  {m.slug}
-                </span>
+              <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                <FolderGit2 className="size-4 shrink-0 text-primary" />
+                <span className="truncate font-medium">{m.name}</span>
               </span>
+              <Badge
+                variant="secondary"
+                className="max-w-[45%] shrink-0 font-mono text-2xs font-normal"
+                title={m.slug}
+              >
+                <span className="truncate">{m.slug}</span>
+              </Badge>
             </Button>
           ))}
         </div>
@@ -84,10 +91,14 @@ export function BatchTagDialog({
   open: boolean
   onClose: () => void
   tags: Tag[]
-  onApply: (tagIds: string[]) => void
+  onApply: (tagId: string) => void
   isLoading: boolean
 }) {
-  const [selected, setSelected] = useState<string[]>([])
+  const [selected, setSelected] = useState('')
+
+  useEffect(() => {
+    if (!open) setSelected('')
+  }, [open])
 
   return (
     <Dialog
@@ -96,45 +107,34 @@ export function BatchTagDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add tags</DialogTitle>
-          <DialogDescription>Apply tags to all selected strings.</DialogDescription>
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle>Set tag</DialogTitle>
+          </div>
+          <DialogDescription>Choose one tag for all selected strings. Existing tags will be replaced.</DialogDescription>
         </DialogHeader>
-        <FieldGroup className="max-h-64 gap-1 overflow-y-auto">
+        <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-0.5" role="group" aria-label="Choose tag">
           {tags.map((t) => (
-            <Field
+            <button
               key={t.id}
-              orientation="horizontal"
-              className="gap-2 rounded-md px-3 py-2 hover:bg-muted"
+              type="button"
+              disabled={isLoading}
+              aria-pressed={selected === t.id}
+              onClick={() => setSelected(t.id)}
+              className="focus-ring flex items-center gap-2.5 rounded-xl border border-input bg-card/70 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/40 aria-pressed:border-primary aria-pressed:bg-primary/5"
             >
-              <Checkbox
-                id={`batch-tag-${t.id}`}
-                disabled={isLoading}
-                checked={selected.includes(t.id)}
-                onCheckedChange={(checked) =>
-                  setSelected((prev) =>
-                    checked ? [...prev, t.id] : prev.filter((id) => id !== t.id)
-                  )
-                }
-              />
-              <FieldLabel htmlFor={`batch-tag-${t.id}`} className="min-w-0 flex-1 wrap-anywhere">
-                <span
-                  className="size-3 shrink-0 rounded-full"
-                  style={{ backgroundColor: t.color }}
-                />
-                {t.name}
-              </FieldLabel>
-            </Field>
+              <span className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15" style={{ backgroundColor: tagSwatchColor(t.color) }} />
+              <span className="min-w-0 flex-1 wrap-anywhere">{t.name}</span>
+            </button>
           ))}
-        </FieldGroup>
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={() => onApply(selected)} disabled={selected.length === 0 || isLoading}>
-            {isLoading && <Spinner data-icon="inline-start" />}
-            Add tags
+          <Button onClick={() => onApply(selected)} disabled={!selected || isLoading}>
+            <PendingLabel pending={isLoading}>Set tag</PendingLabel>
           </Button>
         </DialogFooter>
       </DialogContent>

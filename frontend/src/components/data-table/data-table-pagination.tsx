@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Table } from '@tanstack/react-table'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -37,9 +38,9 @@ export function DataTablePagination<TData>({
   const page = pageIndex + 1
 
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1 py-3">
-      {center ? <div className="col-span-2 flex min-w-0 justify-center">{center}</div> : null}
-      <p className="text-sm tabular-nums text-muted-foreground">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1 py-2.5">
+      {center ? <div className="col-span-2 flex min-w-0 justify-center pt-0.5">{center}</div> : null}
+      <p className="font-mono text-xs tabular-nums text-muted-foreground">
         {start}–{end} of {total}
       </p>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -47,7 +48,7 @@ export function DataTablePagination<TData>({
           value={String(pageSize)}
           onValueChange={(value) => table.setPageSize(Number(value))}
         >
-          <SelectTrigger size="sm" aria-label="Rows per page">
+          <SelectTrigger size="sm" aria-label="Rows per page" className="font-mono text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -70,9 +71,9 @@ export function DataTablePagination<TData>({
           >
             <ChevronLeftIcon />
           </Button>
-          <span className="px-2 text-sm text-muted-foreground">
+          <Badge variant="outline" className="h-7 px-2.5 font-mono text-xs font-normal tabular-nums text-muted-foreground">
             {page} / {pageCount}
-          </span>
+          </Badge>
           <Button
             variant="outline"
             size="icon-sm"
