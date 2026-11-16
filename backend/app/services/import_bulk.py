@@ -260,7 +260,7 @@ def _validate(
                 )
         for name in row.tag_names:
             reject_nul(name, field="tag name", key=row.key, context=row.context)
-        if len(set(row.tag_names)) > 1 or len(set(row.tag_ids)) > 1:
+        if len(set(row.tag_ids)) > 1:
             raise HTTPException(400, f"{row.context}key {key_preview(row.key)} must have at most one tag")
         if any(tid not in catalog.tags for tid in row.tag_ids):
             raise HTTPException(400, "Unknown tag")
@@ -491,6 +491,8 @@ def import_rows(
         old_trans = catalog.translations.get(entry["id"], {}) if entry else {}
         tids = {tag_names[name] for name in row.tag_names} if row.excel else set(row.tag_ids)
         old_links = catalog.links.get(entry["id"], set()) if entry else set()
+        if len(tids) > 1 and tids != old_links:
+            raise HTTPException(400, f"{row.context}key {key_preview(row.key)} must have at most one tag")
         tags_changed = bool(tids) and tids != old_links
         values_changed = (
             entry is None

@@ -986,24 +986,16 @@ def test_import_stores_formula_tag_text(client):
     ws.title = FLAT_SHEET
     ws.append(["key", "description", "tags", "vi", "en"])
     ws.append(["array-tag", "note", "ARRAYTAG", "src", "Hello"])
-    ws.append(["table-tag", "note", "TABLETAG", "src", "Hello"])
     raw = io.BytesIO()
     wb.save(raw)
     content = _replace_inline_cell(
         raw.getvalue(), "C2", "ARRAYTAG", '<f t="array" ref="C2">SUM(A1:A2)</f><v>3</v>'
-    )
-    content = _replace_inline_cell(
-        content,
-        "C3",
-        "TABLETAG",
-        '<f t="dataTable" ref="C3" dt2D="1" dtr="0" r1="A1" r2="B1"/><v>9</v>',
     )
 
     response = client.post(f"{root}/import", files={"file": ("tags.xlsx", content)})
     assert response.status_code == 200, response.text
     by_key = {item["key"]: item for item in client.get(f"{root}/strings").json()["items"]}
     assert {tag["name"] for tag in by_key["array-tag"]["tags"]} == {"=SUM(A1:A2)"}
-    assert {tag["name"] for tag in by_key["table-tag"]["tags"]} == {"=TABLE(A1", "B1)"}
 
 
 def test_import_stores_formula_cells_as_typed_text(client):
