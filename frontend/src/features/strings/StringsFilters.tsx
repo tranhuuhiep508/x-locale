@@ -150,15 +150,20 @@ function filterOptions(options: FilterOption[], query: string, selectedValue: st
       })
     : options
   const visible = matched.slice(0, VISIBLE_LIMIT)
+  let shownMatchCount = visible.length
   if (selectedValue && !visible.some((option) => option.value === selectedValue)) {
     const selected = options.find((option) => option.value === selectedValue)
-    if (selected) visible.unshift(selected)
+    if (selected) {
+      visible.unshift(selected)
+      if (matched.includes(selected)) shownMatchCount++
+    }
   }
   return {
     visible,
     firstMatch: matched.find((option) => option.value !== 'all') ?? matched[0],
     matchCount: matched.length,
-    truncated: matched.length > visible.length,
+    shownMatchCount,
+    truncated: matched.length > shownMatchCount,
   }
 }
 
@@ -223,7 +228,7 @@ function FilterSearchSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const selected = options.find((option) => option.value === value) ?? ALL_OPTION
-  const { visible, firstMatch, matchCount, truncated } = filterOptions(options, query, value)
+  const { visible, firstMatch, matchCount, shownMatchCount, truncated } = filterOptions(options, query, value)
 
   function choose(next: string) {
     onValueChange(next)
@@ -315,7 +320,7 @@ function FilterSearchSelect({
         </ul>
         {truncated ? (
           <p className="px-1.5 pb-1 text-2xs text-muted-foreground">
-            Showing {visible.length} of {matchCount}. Type to narrow.
+            Showing {shownMatchCount} of {matchCount}. Type to narrow.
           </p>
         ) : null}
       </PopoverContent>

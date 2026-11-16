@@ -125,4 +125,26 @@ describe('active string filter chips', () => {
     fireEvent.keyDown(search, { key: 'Enter' })
     expect(onFilter).toHaveBeenCalledWith({ tag: 'beta', untagged: undefined })
   })
+
+  it('counts only matching choices when the selected tag is pinned', async () => {
+    const tags = [
+      { id: 'other', name: 'Other', color: '#65707b', string_count: 1 },
+      ...Array.from({ length: 81 }, (_, index) => ({
+        id: `target-${index}`,
+        name: `Target ${index + 1}`,
+        color: '#65707b',
+        string_count: 1,
+      })),
+    ]
+    renderFilters({ tag: 'other' }, tags)
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Search tags…' }), {
+      target: { value: 'Target' },
+    })
+
+    expect(screen.getByText('Showing 80 of 81. Type to narrow.')).toBeDefined()
+    const choices = within(screen.getByRole('list', { name: 'Tag options' }))
+    expect(choices.getAllByRole('button')).toHaveLength(81)
+    expect(choices.queryByRole('button', { name: 'Target 81' })).toBeNull()
+  })
 })

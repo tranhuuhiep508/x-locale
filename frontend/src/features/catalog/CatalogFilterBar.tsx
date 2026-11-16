@@ -39,9 +39,14 @@ export function useCopiedToken() {
     return () => window.clearTimeout(timer)
   }, [copiedId])
 
-  function copyToken(id: string, value: string) {
-    void navigator.clipboard?.writeText(value)
-    setCopiedId(id)
+  async function copyToken(id: string, value: string) {
+    setCopiedId(null)
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedId(id)
+    } catch {
+      // Clipboard access can be unavailable or denied.
+    }
   }
 
   return { copiedId, copyToken }
