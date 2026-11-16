@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FolderGit2, FolderX } from 'lucide-react'
 import type { Module, Tag } from '@/lib/api/types'
 import { tagSwatchColor } from '@/features/strings/catalog-create'
@@ -42,7 +42,7 @@ export function BatchMoveDialog({
         <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-0.5">
           <Button
             variant="outline"
-            className="h-auto min-h-10 w-full justify-start gap-2.5 border-dashed border-border/80 bg-muted/20 px-3.5 py-2.5 text-muted-foreground italic hover:border-border hover:bg-muted/50 hover:text-foreground"
+            className="h-auto min-h-10 w-full justify-start gap-2.5 border-dashed border-input bg-muted/20 px-3.5 py-2.5 text-muted-foreground italic hover:bg-muted/50 hover:text-foreground"
             disabled={isLoading}
             onClick={() => onSelect(null)}
           >
@@ -53,7 +53,7 @@ export function BatchMoveDialog({
             <Button
               key={m.id}
               variant="outline"
-              className="h-auto min-h-11 w-full justify-between gap-3 border-border/70 bg-card/70 px-3.5 py-2.5 hover:border-primary/40 hover:bg-accent/50"
+              className="h-auto min-h-11 w-full justify-between gap-3 border-input bg-card/70 px-3.5 py-2.5 hover:border-primary hover:bg-accent/50"
               disabled={isLoading}
               onClick={() => onSelect(m.id)}
             >
@@ -96,6 +96,10 @@ export function BatchTagDialog({
 }) {
   const [selected, setSelected] = useState('')
 
+  useEffect(() => {
+    if (!open) setSelected('')
+  }, [open])
+
   return (
     <Dialog
       open={open}
@@ -118,7 +122,7 @@ export function BatchTagDialog({
               disabled={isLoading}
               aria-pressed={selected === t.id}
               onClick={() => setSelected(t.id)}
-              className="focus-ring flex items-center gap-2.5 rounded-xl border border-border/70 bg-card/70 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/40 aria-pressed:border-primary/45 aria-pressed:bg-primary/5"
+              className="focus-ring flex items-center gap-2.5 rounded-xl border border-input bg-card/70 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/40 aria-pressed:border-primary aria-pressed:bg-primary/5"
             >
               <span className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15" style={{ backgroundColor: tagSwatchColor(t.color) }} />
               <span className="min-w-0 flex-1 wrap-anywhere">{t.name}</span>

@@ -27,4 +27,21 @@ describe('BatchTagDialog', () => {
     expect(onApply).toHaveBeenCalledOnce()
     expect(onApply).toHaveBeenCalledWith('second')
   })
+
+  it('requires a fresh tag selection each time the dialog opens', () => {
+    const onApply = vi.fn()
+    const props = { onClose: vi.fn(), tags, onApply, isLoading: false }
+    const { rerender } = render(<BatchTagDialog {...props} open />)
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Choose tag' })).getByRole('button', { name: 'First' }))
+    rerender(<BatchTagDialog {...props} open={false} />)
+    rerender(<BatchTagDialog {...props} open />)
+
+    const first = within(screen.getByRole('group', { name: 'Choose tag' })).getByRole('button', { name: 'First' })
+    expect(first.getAttribute('aria-pressed')).toBe('false')
+    const apply = screen.getByRole('button', { name: 'Set tag' }) as HTMLButtonElement
+    expect(apply.disabled).toBe(true)
+    fireEvent.click(apply)
+    expect(onApply).not.toHaveBeenCalled()
+  })
 })
