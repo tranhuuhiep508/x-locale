@@ -156,6 +156,7 @@ function filterOptions(options: FilterOption[], query: string, selectedValue: st
   }
   return {
     visible,
+    firstMatch: matched.find((option) => option.value !== 'all') ?? matched[0],
     matchCount: matched.length,
     truncated: matched.length > visible.length,
   }
@@ -179,8 +180,8 @@ function FilterSelect({
       <SelectTrigger
         aria-label={label}
         className={cn(
-          'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
-          isActive && 'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
+          'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-input bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
+          isActive && 'border-primary bg-accent text-accent-foreground font-medium hover:bg-accent'
         )}
       >
         {isActive ? (
@@ -222,7 +223,7 @@ function FilterSearchSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const selected = options.find((option) => option.value === value) ?? ALL_OPTION
-  const { visible, matchCount, truncated } = filterOptions(options, query, value)
+  const { visible, firstMatch, matchCount, truncated } = filterOptions(options, query, value)
 
   function choose(next: string) {
     onValueChange(next)
@@ -244,8 +245,8 @@ function FilterSearchSelect({
           aria-label={label}
           size="sm"
           className={cn(
-            'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
-            isActive && 'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
+            'h-8 max-w-full min-w-0 text-xs font-normal gap-1 px-2.5 rounded-lg border-input bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0',
+            isActive && 'border-primary bg-accent text-accent-foreground font-medium hover:bg-accent'
           )}
         >
           {isActive ? (
@@ -280,8 +281,7 @@ function FilterSearchSelect({
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
               event.preventDefault()
-              const first = visible.find((option) => option.value !== 'all') ?? visible[0]
-              if (first) choose(first.value)
+              if (firstMatch) choose(firstMatch.value)
             }}
             aria-label={searchPlaceholder}
           />
@@ -602,9 +602,9 @@ export function StringsFilters({
             <TimeRangePicker
               placeholder="Time"
               className={cn(
-                'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-border/80 bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors',
+                'h-8 text-xs max-w-full w-auto gap-1 px-2.5 rounded-lg border-input bg-background/85 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors',
                 isTimeActive &&
-                  'border-accent-foreground/25 bg-accent text-accent-foreground font-medium hover:bg-accent'
+                  'border-primary bg-accent text-accent-foreground font-medium hover:bg-accent'
               )}
               value={{
                 period: search.period,
@@ -635,7 +635,7 @@ export function StringsFilters({
               variant="outline"
               size="sm"
               onClick={onReviewPublish}
-              className="h-8 text-xs gap-1.5 shrink-0 border-primary/30 text-primary hover:bg-accent hover:text-accent-foreground"
+              className="h-8 text-xs gap-1.5 shrink-0 border-input text-primary hover:bg-accent hover:text-accent-foreground"
             >
               <GitCompareArrows data-icon="inline-start" className="size-3.5" />
               Review publish changes
@@ -670,7 +670,7 @@ export function StringsFilters({
                 <Badge
                   variant="secondary"
                   asChild
-                  className="h-6 max-w-full gap-1 border border-border/70 bg-secondary/80 text-secondary-foreground transition-colors hover:border-primary/40 hover:bg-accent px-2 py-0 text-xs"
+                  className="h-6 max-w-full gap-1 border border-primary bg-secondary/80 text-secondary-foreground transition-colors hover:bg-accent px-2 py-0 text-xs"
                 >
                   <button
                     type="button"

@@ -110,4 +110,19 @@ describe('active string filter chips', () => {
     expect(choices.getByRole('button', { name: 'Core' })).toBeDefined()
     expect(screen.queryByRole('listbox')).toBeNull()
   })
+
+  it('uses the first search match on Enter instead of the pinned selected tag', async () => {
+    const tags = [
+      { id: 'alpha', name: 'Alpha', color: '#65707b', string_count: 1 },
+      { id: 'beta', name: 'Beta', color: '#65707b', string_count: 1 },
+    ]
+    const { onFilter } = renderFilters({ tag: 'alpha' }, tags)
+    fireEvent.click(screen.getByRole('button', { name: /^Tag$/ }))
+    const search = await screen.findByRole('textbox', { name: 'Search tags…' })
+    fireEvent.change(search, { target: { value: 'Beta' } })
+    const choices = within(screen.getByRole('list', { name: 'Tag options' }))
+    expect(choices.getByRole('button', { name: 'Alpha' })).toBeDefined()
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(onFilter).toHaveBeenCalledWith({ tag: 'beta', untagged: undefined })
+  })
 })
