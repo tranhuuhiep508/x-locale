@@ -80,8 +80,7 @@ function ModuleCard({
       : 0
 
   return (
-    <div
-      role="row"
+    <li
       style={{ '--stagger': Math.min(index, 10) } as React.CSSProperties}
       className="animate-stage-in group relative overflow-hidden rounded-xl border border-border/85 bg-card shadow-2xs transition-all duration-300 ease-drift hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md focus-within:ring-2 focus-within:ring-primary/35"
     >
@@ -89,7 +88,7 @@ function ModuleCard({
         aria-hidden="true"
         className="absolute inset-y-0 left-0 w-1 origin-center scale-y-0 bg-primary transition-transform duration-300 ease-drift group-hover:scale-y-100"
       />
-      <div role="gridcell" className="flex h-full flex-col justify-between gap-4 p-4 pl-5 sm:p-5">
+      <div className="flex h-full flex-col justify-between gap-4 p-4 pl-5 sm:p-5">
         <div className="flex flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -195,7 +194,7 @@ function ModuleCard({
           </div>
         </div>
       </div>
-    </div>
+    </li>
   )
 }
 
@@ -478,7 +477,7 @@ export function ModulesPage() {
                   }}
                 />
               ) : (
-                <div role="grid" aria-label="Modules catalog" className="grid gap-4 md:grid-cols-2">
+                <ul aria-label="Modules catalog" className="grid gap-4 md:grid-cols-2">
                   {visibleModules.map((module, index) => (
                     <ModuleCard
                       key={module.id}
@@ -492,7 +491,7 @@ export function ModulesPage() {
                       onDelete={setDeleteTarget}
                     />
                   ))}
-                </div>
+                </ul>
               )}
 
               <DataPagination

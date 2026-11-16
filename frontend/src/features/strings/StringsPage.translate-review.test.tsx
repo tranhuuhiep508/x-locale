@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
@@ -210,7 +211,7 @@ describe('translation review retranslation', suiteTimeout, () => {
       'demo-app', expect.objectContaining({ locales: ['en'] }),
     ))
     fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add string' })[0])
+    await userEvent.setup().click(screen.getAllByRole('button', { name: 'Add string' })[0])
     expect(await screen.findByRole('menuitem', { name: 'Add many' })).toBeTruthy()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Add single string' }))
     fireEvent.change(await screen.findByLabelText('Key'), { target: { value: 'save' } })

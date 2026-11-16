@@ -22,6 +22,7 @@ export function MarkWell({
 export function PageHeader({
   leading,
   title,
+  description,
   badge,
   actions,
   titleAs: TitleTag = 'h1',
@@ -29,6 +30,7 @@ export function PageHeader({
 }: {
   leading?: React.ReactNode
   title: React.ReactNode
+  description?: React.ReactNode
   badge?: React.ReactNode
   actions?: React.ReactNode
   titleAs?: 'h1' | 'h2'
@@ -43,14 +45,17 @@ export function PageHeader({
     >
       <div className="flex min-w-0 items-center gap-2">
         {leading}
-        <TitleTag
-          className={cn(
-            'font-heading font-semibold tracking-tight text-foreground',
-            TitleTag === 'h1' ? 'text-lg leading-tight sm:text-xl' : 'text-base leading-tight'
-          )}
-        >
-          {title}
-        </TitleTag>
+        <div className="min-w-0">
+          <TitleTag
+            className={cn(
+              'font-heading font-semibold tracking-tight text-foreground',
+              TitleTag === 'h1' ? 'text-lg leading-tight sm:text-xl' : 'text-base leading-tight'
+            )}
+          >
+            {title}
+          </TitleTag>
+          {description ? <p className="truncate text-xs text-muted-foreground">{description}</p> : null}
+        </div>
         {badge}
       </div>
       {actions ? (

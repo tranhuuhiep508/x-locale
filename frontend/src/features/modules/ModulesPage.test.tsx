@@ -188,15 +188,15 @@ describe('ModulesPage', () => {
 
     expect(await screen.findByText('Use concise labels')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add AI translation guidance' })).toBeTruthy()
-    expect(screen.getAllByRole('row')).toHaveLength(2)
+    expect(within(screen.getByRole('list', { name: 'Modules catalog' })).getAllByRole('listitem')).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('radio', { name: /Empty/i }))
-    expect(screen.getAllByRole('row')).toHaveLength(1)
-    expect(within(screen.getByRole('grid')).getByText('Billing')).toBeTruthy()
+    expect(within(screen.getByRole('list', { name: 'Modules catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Modules catalog' })).getByText('Billing')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('radio', { name: /AI guidance/i }))
-    expect(screen.getAllByRole('row')).toHaveLength(1)
-    expect(within(screen.getByRole('grid')).getByText('Authentication')).toBeTruthy()
+    expect(within(screen.getByRole('list', { name: 'Modules catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Modules catalog' })).getByText('Authentication')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'New module' }))
     const nameInput = await screen.findByLabelText(/Name/i)

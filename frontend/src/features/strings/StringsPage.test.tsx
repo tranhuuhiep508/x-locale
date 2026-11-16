@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
@@ -173,6 +174,61 @@ describe('StringsPage revamp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Comfortable density' }))
     expect(region.getAttribute('data-density')).toBe('comfortable')
     expect(window.localStorage.getItem('x-locale:strings-density')).toBe('comfortable')
+  })
+
+  it('switches quick views without retaining the previous view filter', async () => {
+    useSearch.mockReturnValue({ missing_any: true })
+    renderPage()
+    const pending = await screen.findByRole('button', { name: 'Needs publish' })
+    expect(pending.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(pending)
+    const pendingSearch = navigate.mock.lastCall?.[0].search as (previous: StringsSearch) => StringsSearch
+    expect(pendingSearch({ missing_any: true, page: 4 })).toMatchObject({
+      missing_any: undefined,
+      has_unpublished_changes: true,
+      page: 1,
+    })
+
+    cleanup()
+    useSearch.mockReturnValue({ has_unpublished_changes: true })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Missing translations' }))
+    const missingSearch = navigate.mock.lastCall?.[0].search as (previous: StringsSearch) => StringsSearch
+    expect(missingSearch({ has_unpublished_changes: true, page: 4 })).toMatchObject({
+      has_unpublished_changes: undefined,
+      missing_any: true,
+      page: 1,
+    })
+  })
+
+  it.each(['missing_locale', 'complete_locale'] as const)(
+    'does not mark All strings active when %s is filtered',
+    async (localeFilter) => {
+      useSearch.mockReturnValue({ [localeFilter]: 'fr' })
+      renderPage()
+      const all = await screen.findByRole('button', { name: 'All strings' })
+      expect(all.getAttribute('aria-pressed')).toBe('false')
+
+      fireEvent.click(all)
+      const nextSearch = navigate.mock.lastCall?.[0].search as (previous: StringsSearch) => StringsSearch
+      expect(nextSearch({ [localeFilter]: 'fr', page: 4 })).toMatchObject({
+        [localeFilter]: undefined,
+        page: 1,
+      })
+    }
+  )
+
+  it('supports arrow-key navigation in the Add string menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Add string' }))
+    const first = await screen.findByRole('menuitem', { name: 'Add single string' })
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() => expect(document.activeElement).toBe(first))
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Add many' }))
+    )
   })
 
   it('focuses the search input on "/" shortcut without hijacking input typing', async () => {

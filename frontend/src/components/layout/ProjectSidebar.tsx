@@ -102,7 +102,7 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Switch project"
+                aria-label={`Switch project, current: ${project.name}`}
                 className="group/passport relative w-full overflow-hidden rounded-lg border border-border/80 bg-card px-2.5 py-2 text-left shadow-2xs transition-all duration-300 ease-drift hover:border-primary/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[collapsible=icon]:hidden"
               >
                 {passportContent}
@@ -165,7 +165,12 @@ export function ProjectSidebar({ project, projects, pendingCount = 0 }: ProjectS
                   isActive={isProjectPath(pathname, projectRef, '/strings')}
                   tooltip="Strings"
                 >
-                  <Link to="/projects/$projectRef/strings" params={{ projectRef }} search={{}}>
+                  <Link
+                    to="/projects/$projectRef/strings"
+                    params={{ projectRef }}
+                    search={{}}
+                    aria-label={pendingCount > 0 ? `Strings, ${pendingCount} need publishing` : undefined}
+                  >
                     <AlignLeft />
                     <span>Strings</span>
                   </Link>

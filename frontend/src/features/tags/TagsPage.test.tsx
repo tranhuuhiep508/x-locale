@@ -124,16 +124,16 @@ describe('TagsPage', () => {
 
     renderWithClient(<TagsPage />)
 
-    const grid = await screen.findByRole('grid')
-    expect(within(grid).getByText('Unused')).toBeTruthy()
-    expect(screen.getAllByRole('row')).toHaveLength(2)
+    const list = await screen.findByRole('list', { name: 'Tags catalog' })
+    expect(within(list).getByText('Unused')).toBeTruthy()
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('radio', { name: /Unused/i }))
-    expect(screen.getAllByRole('row')).toHaveLength(1)
-    expect(within(screen.getByRole('grid')).getByText('legacy')).toBeTruthy()
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getByText('legacy')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('radio', { name: /In use/i }))
-    expect(screen.getAllByRole('row')).toHaveLength(1)
-    expect(within(screen.getByRole('grid')).getByText('ios')).toBeTruthy()
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(screen.getByRole('list', { name: 'Tags catalog' })).getByText('ios')).toBeTruthy()
   })
 })

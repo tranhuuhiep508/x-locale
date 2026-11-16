@@ -72,8 +72,14 @@ import {
 } from '@/features/strings/translate-review'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
@@ -185,54 +191,42 @@ function AddStringMenu({
   onAddSingle: () => void
   onAddMany: () => void
 }) {
-  const [open, setOpen] = useState(false)
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button size={size} className={className} aria-haspopup="menu" aria-expanded={open}>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size={size} className={className}>
           <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
           Add string
           <ChevronDown data-icon="inline-end" className="size-3.5 text-foreground" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent align={align} className="w-56 p-1">
-        <div role="menu" aria-label="Add string options" className="flex flex-col gap-0.5">
-          <button
-            type="button"
-            role="menuitem"
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} aria-label="Add string options" className="w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuItem
             aria-label="Add single string"
-            onClick={() => {
-              setOpen(false)
-              onAddSingle()
-            }}
-            className="focus-ring flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent"
+            onSelect={onAddSingle}
+            className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
             <span className="flex min-w-0 flex-col">
               <span className="text-sm font-medium leading-tight">Add single string</span>
               <span className="text-xs text-muted-foreground">Key, context &amp; translations</span>
             </span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
+          </DropdownMenuItem>
+          <DropdownMenuItem
             aria-label="Add many"
-            onClick={() => {
-              setOpen(false)
-              onAddMany()
-            }}
-            className="focus-ring flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent"
+            onSelect={onAddMany}
+            className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
             <span className="flex min-w-0 flex-col">
               <span className="text-sm font-medium leading-tight">Add many</span>
               <span className="text-xs text-muted-foreground">Paste JSON or CSV lines</span>
             </span>
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1000,7 +994,7 @@ export function StringsPage() {
             }
           />
           <div
-            role="tablist"
+            role="group"
             aria-label="Quick views"
             className="inline-flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-border/80 bg-muted/55 p-1 shadow-2xs"
           >
@@ -1008,7 +1002,7 @@ export function StringsPage() {
               {
                 id: 'all',
                 label: 'All strings',
-                active: !search.deleted && !search.missing_any && !search.has_unpublished_changes && !search.status && !search.pending_delete && !search.never_published,
+                active: !search.deleted && !search.missing_any && !search.missing_locale && !search.complete_locale && !search.has_unpublished_changes && !search.status && !search.pending_delete && !search.never_published,
                 onSelect: () =>
                   setFilter({
                     status: undefined,
@@ -1030,6 +1024,10 @@ export function StringsPage() {
                     missing_any: true,
                     missing_locale: undefined,
                     complete_locale: undefined,
+                    has_unpublished_changes: undefined,
+                    status: undefined,
+                    pending_delete: undefined,
+                    never_published: undefined,
                     deleted: undefined,
                   }),
               },
@@ -1044,6 +1042,9 @@ export function StringsPage() {
                     status: undefined,
                     pending_delete: undefined,
                     never_published: undefined,
+                    missing_any: undefined,
+                    missing_locale: undefined,
+                    complete_locale: undefined,
                     deleted: undefined,
                   }),
               },
@@ -1058,14 +1059,16 @@ export function StringsPage() {
                     has_unpublished_changes: undefined,
                     pending_delete: undefined,
                     never_published: undefined,
+                    missing_any: undefined,
+                    missing_locale: undefined,
+                    complete_locale: undefined,
                   }),
               },
             ].map((lens) => (
               <button
                 key={lens.id}
                 type="button"
-                role="tab"
-                aria-selected={lens.active}
+                aria-pressed={lens.active}
                 onClick={lens.onSelect}
                 className={cn(
                   'focus-ring inline-flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all duration-200 ease-drift',

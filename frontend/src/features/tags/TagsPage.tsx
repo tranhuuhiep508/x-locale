@@ -78,12 +78,11 @@ function TagCard({
     maxCount > 0 ? Math.max(tag.string_count > 0 ? 6 : 0, Math.round((tag.string_count / maxCount) * 100)) : 0
 
   return (
-    <div
-      role="row"
+    <li
       style={{ '--stagger': Math.min(index, 12) } as React.CSSProperties}
       className="animate-stage-in group relative overflow-hidden rounded-xl border border-border/85 bg-card shadow-2xs transition-all duration-300 ease-drift hover:-translate-y-0.5 hover:border-border hover:shadow-md focus-within:ring-2 focus-within:ring-ring/40"
     >
-      <div role="gridcell" className="relative flex h-full flex-col justify-between gap-4 p-4 sm:p-5">
+      <div className="relative flex h-full flex-col justify-between gap-4 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
@@ -170,7 +169,7 @@ function TagCard({
           </div>
         </div>
       </div>
-    </div>
+    </li>
   )
 }
 
@@ -442,8 +441,7 @@ export function TagsPage() {
                   }}
                 />
               ) : (
-                <div
-                  role="grid"
+                <ul
                   aria-label="Tags catalog"
                   className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3"
                 >
@@ -460,7 +458,7 @@ export function TagsPage() {
                       onDelete={setDeleteTarget}
                     />
                   ))}
-                </div>
+                </ul>
               )}
 
               <DataPagination

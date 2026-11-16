@@ -18,7 +18,7 @@ import { ConfidenceBadge } from '@/features/strings/confidence'
 import { contentFieldChanges } from '@/features/strings/publish-preview'
 import { useBatchWorkspace } from '@/features/batches/use-batch-workspace'
 import { BatchStepper } from '@/features/batches/BatchStepper'
-import { cn } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 
 export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; batchId: string }) {
   const workspace = useBatchWorkspace(projectRef, batchId)
@@ -93,6 +93,11 @@ export function BatchWorkspace({ projectRef, batchId }: { projectRef: string; ba
             </Button>
           }
           title="CLI push batch"
+          description={
+            batch
+              ? `${batch.actor_label} · ${batch.created_at ? formatRelativeTime(batch.created_at) : 'CLI push'}`
+              : undefined
+          }
           badge={
             batch ? (
               <Badge

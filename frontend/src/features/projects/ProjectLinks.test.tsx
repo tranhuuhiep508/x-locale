@@ -8,11 +8,12 @@ import { queryKeys } from '@/lib/query-keys'
 import { ProjectListPage } from './ProjectListPage'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, params }: {
+  Link: ({ children, to, params, 'aria-label': ariaLabel }: {
     children: ReactNode
     to: string
     params?: { projectRef: string }
-  }) => <a href={to.replace('$projectRef', params?.projectRef ?? '')}>{children}</a>,
+    'aria-label'?: string
+  }) => <a href={to.replace('$projectRef', params?.projectRef ?? '')} aria-label={ariaLabel}>{children}</a>,
   useRouterState: () => '/projects/demo-app/strings',
 }))
 
@@ -67,5 +68,17 @@ describe('project links', () => {
     render(<ProjectSidebar project={project} />)
     expect(screen.getByRole('link', { name: 'Strings' }).getAttribute('href'))
       .toBe('/projects/demo-app/strings')
+  })
+
+  it('announces the current project and pending count in the sidebar', () => {
+    render(
+      <ProjectSidebar
+        project={project}
+        projects={[project, { ...project, id: 'other', slug: 'other', name: 'Other' }]}
+        pendingCount={3}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Switch project, current: Demo App' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Strings, 3 need publishing' })).toBeDefined()
   })
 })
