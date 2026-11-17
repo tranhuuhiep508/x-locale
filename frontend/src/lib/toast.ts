@@ -2,9 +2,10 @@ import { toast as sonnerToast, type ExternalToast } from 'sonner'
 
 export function useToast() {
   return {
+    message: (message: string, options?: ExternalToast) => sonnerToast(message, options),
     success: (message: string, options?: ExternalToast) => sonnerToast.success(message, options),
-    error: (message: string) => sonnerToast.error(message),
-    info: (message: string) => sonnerToast.info(message),
-    warning: (message: string) => sonnerToast.warning(message),
+    error: (message: string, options?: ExternalToast) => sonnerToast.error(message, options),
+    info: (message: string, options?: ExternalToast) => sonnerToast.info(message, options),
+    warning: (message: string, options?: ExternalToast) => sonnerToast.warning(message, options),
   }
 }

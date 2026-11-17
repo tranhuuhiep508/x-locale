@@ -682,7 +682,21 @@
   color: var(--muted-foreground);
 }
 
-/* Unlayered selectors override Sonner's bundled defaults with our compact button tokens. */
+/* Unlayered selectors override Sonner's bundled defaults with Atmosphere tokens. */
+.toaster [data-sonner-toast][data-styled="true"] {
+  box-shadow: var(--shadow-lg);
+}
+
+.toaster [data-sonner-toast][data-styled="true"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-lg);
+}
+
+.toaster [data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--muted-foreground);
+}
+
 .toaster [data-sonner-toast][data-styled="true"] [data-action] {
   @apply h-7 gap-1 rounded-md px-2.5 text-xs font-medium whitespace-nowrap focus-ring;
   background: var(--primary);
@@ -694,14 +708,43 @@
   background: var(--primary-hover);
 }
 
-.toaster [data-sonner-toast][data-styled="true"] [data-action]:focus-visible {
-  /* The plain ring token falls below 3:1 on the Daylight success fill. */
-  outline-color: color-mix(in oklab, var(--ring) 80%, var(--foreground));
+.toaster [data-sonner-toast][data-styled="true"] [data-action]:focus-visible,
+.toaster [data-sonner-toast][data-styled="true"] [data-cancel]:focus-visible {
   box-shadow: none;
 }
 
-.toaster [data-sonner-toast][data-styled="true"] [data-action]:active {
+.toaster [data-sonner-toast][data-styled="true"] [data-action]:active,
+.toaster [data-sonner-toast][data-styled="true"] [data-cancel]:active {
   transform: translateY(1px);
+}
+
+.toaster [data-sonner-toast][data-styled="true"] [data-cancel] {
+  @apply h-7 gap-1 rounded-md px-2.5 text-xs font-medium whitespace-nowrap focus-ring;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  transition: background-color 150ms var(--ease-drift);
+}
+
+.toaster [data-sonner-toast][data-styled="true"] [data-cancel]:hover {
+  background: color-mix(in oklab, var(--secondary), var(--foreground) 5%);
+}
+
+.toaster [data-sonner-toast][data-styled="true"] [data-close-button] {
+  background: var(--popover);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
+
+.toaster [data-sonner-toast][data-styled="true"]:hover [data-close-button]:hover {
+  background: var(--muted);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.toaster [data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* In-app tours. driver.js draws the overlay; these rules match the app chrome. */
@@ -827,6 +870,7 @@
   }
 
   .toaster [data-sonner-toast][data-styled="true"] [data-action],
+  .toaster [data-sonner-toast][data-styled="true"] [data-cancel],
   .driver-popover.xl-tour,
   .driver-overlay,
   .driver-active-element,
