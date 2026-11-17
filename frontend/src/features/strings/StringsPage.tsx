@@ -249,7 +249,7 @@ export function StringsPage() {
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
   const savedRow = useRef<HTMLTableRowElement>(null)
-  const pendingSavedFocus = useRef<string | null>(null)
+  const [pendingSavedFocus, setPendingSavedFocus] = useState<string | null>(null)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
@@ -267,9 +267,6 @@ export function StringsPage() {
     payload: ReviewPayload
     review: TranslateReview | null
   } | null>(null)
-  const [savedNotice, setSavedNotice] = useState<string | null>(null)
-  const [refreshError, setRefreshError] = useState<string | null>(null)
-  const refreshingAfterSave = useRef(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -328,11 +325,11 @@ export function StringsPage() {
   const hasOtherTranslationFilter = Boolean(search.missing_locale || search.complete_locale)
   useEffect(() => {
     const row = savedRow.current
-    if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
-    pendingSavedFocus.current = null
+    if (dialogOpen || !row || pendingSavedFocus !== search.saved_string) return
+    setPendingSavedFocus(null)
     row.focus({ preventScroll: true })
     row.scrollIntoView?.({ block: 'nearest' })
-  }, [dialogOpen, search.saved_string, stringsResult.isPlaceholderData])
+  }, [dialogOpen, pendingSavedFocus, search.saved_string, stringsResult.data, stringsResult.isPlaceholderData])
 
   const catalogSortSearch = useMemo(
     () => ({ sort: rawSearch.sort, order: rawSearch.order }),
@@ -425,7 +422,12 @@ export function StringsPage() {
         publishRequestRef.current = null
       }
       const message = batchSuccessMessage(req.action, data.affected, selectedCount)
-      if (message) toast.success(message)
+      if (message) {
+        toast.success(message, req.action === 'publish' && data.affected > 0 ? {
+          duration: 8000,
+          action: { label: 'View changes', onClick: () => showChangedBatch(data.batch_id) },
+        } : undefined)
+      }
     },
     onError: (e, { request: req }) => {
       if (req.action === 'publish' && isPublishFingerprintMismatch(e)) {
@@ -453,15 +455,8 @@ export function StringsPage() {
       setReviewPage(res.page)
       setReviewPageSize(res.page_size)
       setProposalsReady(false)
-      refreshingAfterSave.current = false
-      setRefreshError(null)
     },
-    onError: (error) => {
-      if (refreshingAfterSave.current) {
-        // The write already committed; offer a read retry, never a second write.
-        setRefreshError(error instanceof Error ? error.message : 'Failed to load missing translations')
-        return
-      }
+    onError: () => {
       toast.error('Failed to load missing translations')
     },
   })
@@ -564,24 +559,15 @@ export function StringsPage() {
     mutationFn: ({ action, payload, fingerprint }: SaveVariables) =>
       stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
     onSuccess: (res) => {
-      const message = saveSuccessMessage(res)
-      toast.success(message)
       invalidateStrings()
-      if (res.action === 'publish') {
-        showPublishedStrings(res.batch_id)
-        return
-      }
-      setSavedNotice(message)
-      setPublishReview(null)
       setApplySourceConflicts([])
       setRecoveryMessage(null)
-      setProposalJobId(null)
-      setProposalsReady(false)
       setProposalItems([])
-      proposeMut.reset()
-      refreshingAfterSave.current = true
-      setRefreshError(null)
-      missingMut.mutate(missingRequest(reviewPage))
+      resetReview()
+      toast.success(saveSuccessMessage(res), {
+        duration: 8000,
+        action: { label: 'View changes', onClick: () => showChangedBatch(res.batch_id) },
+      })
     },
     onError: (error, { action, payload }) => {
       if (action === 'publish' && isPublishFingerprintMismatch(error)) {
@@ -601,20 +587,16 @@ export function StringsPage() {
     setProposalJobId(null)
     setProposalsReady(false)
     setPublishReview(null)
-    setSavedNotice(null)
-    setRefreshError(null)
-    refreshingAfterSave.current = false
     proposeMut.reset()
   }
 
-  /** Close the review and show exactly the strings this publish changed. */
-  function showPublishedStrings(batchId: string) {
-    setApplySourceConflicts([])
-    setRecoveryMessage(null)
-    setProposalItems([])
-    resetReview()
+  function showChangedBatch(batchId: string) {
     startTransition(() => {
-      navigate({ search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }) })
+      navigate({
+        to: '/projects/$projectRef/strings',
+        params: { projectRef: projectId },
+        search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }),
+      })
     })
   }
 
@@ -642,7 +624,7 @@ export function StringsPage() {
   )
 
   const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
-    pendingSavedFocus.current = null
+    setPendingSavedFocus(null)
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
@@ -654,6 +636,14 @@ export function StringsPage() {
     setDialogTab('details')
   }
 
+  function savedString(entry: StringEntry, action: 'save_draft' | 'publish') {
+    closeEditor()
+    toast.success(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
+      duration: 8000,
+      action: { label: 'View changes', onClick: () => showSavedString(entry) },
+    })
+  }
+
   function showSavedString(entry: StringEntry) {
     const nextSearch = {
       q: entry.key,
@@ -663,13 +653,10 @@ export function StringsPage() {
       sort: search.sort,
       order: search.order,
     }
-    qc.setQueryData(stringsQueryOptions(projectId, nextSearch).queryKey, {
-      items: [entry], total: 1, page: 1, page_size: 1,
-    })
-    pendingSavedFocus.current = entry.id
-    closeEditor()
+    void qc.invalidateQueries({ queryKey: stringsQueryOptions(projectId, nextSearch).queryKey })
+    setPendingSavedFocus(entry.id)
     setSearchInput(entry.key)
-    void navigate({ search: nextSearch })
+    void navigate({ to: '/projects/$projectRef/strings', params: { projectRef: projectId }, search: nextSearch })
   }
 
   function setFilter(updates: Partial<StringsSearch>) {
@@ -1216,7 +1203,7 @@ export function StringsPage() {
             onClose={closeEditor}
             initialTab={dialogTab}
             onSuccess={invalidateStrings}
-            onSaved={showSavedString}
+            onSaved={savedString}
           />
         </Suspense>
       )}
@@ -1281,14 +1268,12 @@ export function StringsPage() {
           })
         }}
         onSaveDraft={(items) => {
-          setSavedNotice(null)
           saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
         }}
         onReviewPublish={(items) => {
           // Freeze membership, values, and baseline; later edits need a new review.
           const payload = reviewedPayloadFromDrafts(items)
           setProposalItems(items)
-          setSavedNotice(null)
           requestPublicationReview(payload)
         }}
         reviewing={publishReview !== null}
@@ -1305,9 +1290,6 @@ export function StringsPage() {
           if (!frozen?.review) return
           saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
-        savedNotice={savedNotice}
-        refreshError={refreshError}
-        onRetryRefresh={() => missingMut.mutate(missingRequest(reviewPage))}
       />
 
       <PublishPreviewDialog

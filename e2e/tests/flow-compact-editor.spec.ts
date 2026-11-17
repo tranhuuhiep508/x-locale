@@ -5,11 +5,12 @@ import { fetchStringByKey, projectIdFromUrl } from '../helpers/api'
 
 test.beforeAll(() => resetDemoDatabase())
 
-test('publishing closes the editor and focuses the saved row even when filters hide it', async ({ page }, testInfo) => {
+test('publishing preserves filters until the toast action reveals the saved row', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openDemoStrings(page)
   await setStatusFilter(page, 'Draft')
   await expect(page).toHaveURL(/[?&]status=draft(?:&|$)/)
+  const originalUrl = page.url()
   const key = `compact_${Date.now()}`
   await openAddStringDialog(page)
   await fillStringForm(page, { key, source: 'Welcome' })
@@ -27,6 +28,9 @@ test('publishing closes the editor and focuses the saved row even when filters h
   const row = page.getByRole('row').filter({ hasText: key })
   await expect(page.getByRole('dialog', { name: 'Add string', exact: true })).toBeHidden()
   await expect(page.getByText('String saved and published', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(originalUrl)
+  await expect(row).toHaveCount(0)
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(row).toBeFocused()
   expect(new URL(page.url()).searchParams.has('status')).toBe(false)
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Welcome')
@@ -37,6 +41,7 @@ test('publishing closes the editor and focuses the saved row even when filters h
   await dialog.getByRole('button', { name: 'Save as draft' }).click()
   await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
   await expect(dialog).toBeHidden()
+  await page.locator('[data-sonner-toast]').filter({ hasText: 'String saved as draft' }).getByRole('button', { name: 'View changes' }).click()
   await expect(row).toBeFocused()
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Welcome')
   await row.getByText('Good morning', { exact: true }).click()
@@ -44,12 +49,13 @@ test('publishing closes the editor and focuses the saved row even when filters h
   await expect(page.getByRole('region', { name: 'Content updates' })).toBeVisible()
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
   await expect(dialog).toBeHidden()
+  await page.locator('[data-sonner-toast]').filter({ hasText: 'String saved and published' }).getByRole('button', { name: 'View changes' }).click()
   await expect(row).toBeFocused()
   await page.screenshot({ path: testInfo.outputPath('editor-saved-mobile.png') })
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Good morning')
 })
 
-test('draft creation shows the exact saved row and typing a new search keeps focus', async ({ page }) => {
+test('draft creation preserves the catalog and its toast opens the exact saved row', async ({ page }) => {
   await openDemoStrings(page)
   const project = projectIdFromUrl(page)
   const key = `zz_compact_draft_${Date.now()}`
@@ -57,11 +63,15 @@ test('draft creation shows the exact saved row and typing a new search keeps foc
     data: { key: `${key}_other`, source_text: 'Other draft' },
   })
   expect(similar.ok()).toBeTruthy()
+  const originalUrl = page.url()
   await openAddStringDialog(page)
   await fillStringForm(page, { key, source: 'Draft content' })
   await page.getByRole('button', { name: 'Save as draft' }).click()
   const dialog = page.getByRole('dialog', { name: 'Edit string', exact: true })
   const row = page.getByRole('row').filter({ has: page.getByText(key, { exact: true }) })
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(page).toHaveURL(originalUrl)
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(row).toBeFocused()
   await expect(page.getByText(`${key}_other`, { exact: true })).toHaveCount(0)
   const first = await fetchStringByKey(page, project, key)
@@ -74,6 +84,7 @@ test('draft creation shows the exact saved row and typing a new search keeps foc
   expect((await response).ok()).toBeTruthy()
   expect((await fetchStringByKey(page, project, key)).id).toBe(first.id)
   await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(row).toBeFocused()
   const search = page.getByRole('textbox', { name: 'Search strings' })
   await search.fill(key.slice(0, -1))

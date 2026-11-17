@@ -657,7 +657,7 @@ it('announces publication success, stays in the workspace, and offers a Strings 
   expect(confirmation.closest('[role="status"]')?.textContent).toContain(
     'Available on the next public pull or export.'
   )
-  expect(toast.success).not.toHaveBeenCalled()
+  expect(toast.success).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(stringsApi.cliPushBatch).toHaveBeenCalledTimes(2))
   expect(navigate).not.toHaveBeenCalled()
   expect(screen.getByRole('heading', { name: 'CLI push batch' })).toBeDefined()
@@ -728,7 +728,10 @@ it('saves edits as draft without publication and uses the refreshed fingerprint 
   expect(confirmation.closest('[role="status"]')?.textContent).toContain(
     'Saved to the working copy. Public translations are unchanged.'
   )
-  expect(toast.success).not.toHaveBeenCalled()
+  expect(toast.success).toHaveBeenCalledTimes(1)
+  expect(toast.success).toHaveBeenCalledWith('Batch saved as draft. Public translations are unchanged.', {
+    duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+  })
   await waitFor(() =>
     expect(
       (screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled
@@ -803,4 +806,25 @@ it('allows partial generation to be saved as draft while publication still requi
     })
   )
   expect(stringsApi.publishCliPushBatch).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('offers this save batch in the toast without leaving the workspace (publish: %s)', async (publish) => {
+  show()
+  await loaded()
+  fireEvent.change(screen.getByRole('textbox', { name: 'EN translation for login.0' }), {
+    target: { value: 'Working English' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: publish ? 'Publish batch' : 'Save as draft' }))
+  await screen.findByText(publish ? 'Batch published' : 'Batch saved as draft')
+  expect(toast.success).toHaveBeenCalledTimes(1)
+  expect(navigate).not.toHaveBeenCalled()
+  const options = vi.mocked(toast.success).mock.calls[0][1]!
+  expect(options.duration).toBe(8000)
+  const action = options.action as { label: string; onClick: () => void }
+  expect(action.label).toBe('View changes')
+  act(() => action.onClick())
+  expect(navigate).toHaveBeenCalledWith({
+    to: '/projects/$projectRef/strings', params: { projectRef: 'demo' },
+    search: { page: 1, batch_id: publish ? 'publication' : 'draft-save' },
+  })
 })

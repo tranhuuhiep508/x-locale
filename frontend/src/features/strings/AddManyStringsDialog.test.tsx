@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError } from '@/lib/api/client'
@@ -8,35 +7,8 @@ import { stringsApi } from '@/lib/api/strings'
 import type { Module, PasteReview, Project, StringEntry, Tag } from '@/lib/api/types'
 import { AddManyStringsDialog } from './AddManyStringsDialog'
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-    search,
-    onClick,
-  }: {
-    children: ReactNode
-    to: string
-    params: Record<string, string>
-    search?: Record<string, string>
-    onClick?: () => void
-  }) => {
-    const path = Object.entries(params).reduce((url, [k, v]) => url.replace('$' + k, v), to)
-    const query = new URLSearchParams(search ?? {}).toString()
-    return (
-      <a
-        href={query ? path + '?' + query : path}
-        onClick={(e) => {
-          e.preventDefault()
-          onClick?.()
-        }}
-      >
-        {children}
-      </a>
-    )
-  },
-}))
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
@@ -414,13 +386,13 @@ describe('AddManyStringsDialog', () => {
     expect(generate.disabled).toBe(false)
   })
 
-  it('saves as draft, stays open, and offers the saved batch in Strings', async () => {
+  it('saves as draft, closes, and navigates only from the toast action', async () => {
     const { onSuccess, onClose } = renderDialog()
     await previewed()
     fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
     vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce(savedDraft)
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    expect(await screen.findByText('Saved 2 strings as draft')).toBeTruthy()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(stringsApi.pasteSave).toHaveBeenCalledWith('proj-1', {
       module_id: null,
       tag_ids: [],
@@ -432,11 +404,16 @@ describe('AddManyStringsDialog', () => {
       ],
     })
     expect(onSuccess).toHaveBeenCalledTimes(1)
-    expect(onClose).not.toHaveBeenCalled()
-    const link = screen.getByRole('link', { name: 'View in Strings' })
-    expect(link.getAttribute('href')).toBe('/projects/proj-1/strings?batch_id=batch-1&batch_kind=import')
-    fireEvent.click(link)
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith('Saved 2 strings as draft', {
+      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    })
+    expect(navigate).not.toHaveBeenCalled()
+    toast.success.mock.calls[0][1].action.onClick()
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/projects/$projectRef/strings', params: { projectRef: 'proj-1' },
+      search: { page: 1, batch_id: 'batch-1' },
+    })
   })
 
   it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {
@@ -451,7 +428,10 @@ describe('AddManyStringsDialog', () => {
     fireEvent.click(publish)
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(onSuccess).toHaveBeenCalledTimes(1)
-    expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings')
+    expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings', {
+      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    })
+    expect(navigate).not.toHaveBeenCalled()
     const request = vi.mocked(stringsApi.pasteSave).mock.calls[0][1]
     expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-1' })
     expect(request.rows[1]).toEqual({ key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } })
@@ -525,7 +505,7 @@ describe('AddManyStringsDialog', () => {
     expect(toast.info).toHaveBeenCalled()
     vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce(savedDraft)
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    await screen.findByText('Saved 2 strings as draft')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Saved 2 strings as draft', expect.any(Object)))
     expect(vi.mocked(stringsApi.pasteSave).mock.calls[1][1].fingerprint).toBe('fp-2')
   })
 

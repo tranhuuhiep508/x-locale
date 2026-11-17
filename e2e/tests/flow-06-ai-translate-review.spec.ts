@@ -72,14 +72,12 @@ test('translate missing: paging stays mounted, progress while generating, apply 
 
   const applyButton = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(applyButton).toBeEnabled()
+  const originalUrl = page.url()
   await applyButton.click()
 
-  await expect(
-    dialog.getByRole('status').filter({ hasText: /Saved \d+ strings as draft/ }),
-  ).toBeVisible()
-
-  await dialog.getByRole('button', { name: 'Discard' }).click()
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: /Saved \d+ strings as draft/ })).toBeVisible()
   await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(originalUrl)
 
   await page.getByRole('textbox', { name: 'Search strings' }).fill(`${pagingPrefix}_0`)
   const row = page.getByRole('row').filter({ hasText: `${pagingPrefix}_0` }).first()
@@ -161,9 +159,12 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   const response = await published
   expect(response.ok(), await response.text()).toBeTruthy()
   expect(response.request().postDataJSON().action).toBe('publish')
-  // No second confirmation: toast, close the dialog, and show the published batch.
+  // Keep the search until the user explicitly opens the saved batch.
   await expect(page.getByText('Saved and published 1 string')).toBeVisible()
   await expect(dialog).toBeHidden()
+  await expect(page).not.toHaveURL(/batch_id=/)
+  await expect(page.getByRole('textbox', { name: 'Search strings' })).toHaveValue(`${prefix}_a`)
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(page).toHaveURL(/batch_id=/)
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_b` })).toHaveCount(0)

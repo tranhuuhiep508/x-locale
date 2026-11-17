@@ -791,7 +791,7 @@ describe('compact editor save and review', () => {
     fireEvent.change(screen.getByLabelText('Key'), { target: { value: saved.key } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: saved.source_text } })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved, 'save_draft'))
     expect(onSuccess).toHaveBeenCalledTimes(1)
   })
 
@@ -837,7 +837,7 @@ describe('compact editor save and review', () => {
     await waitFor(() => expect(stringsApi.editorSave).toHaveBeenLastCalledWith('proj-1', {
       action: 'publish', fingerprint: 'second', proposal: { mode: 'update', string_id: 'str-1', values: { expected: {} } },
     }))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' })))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' }), 'publish'))
   })
 
   it('disables publication of an in-sync public string while allowing draft saves', async () => {

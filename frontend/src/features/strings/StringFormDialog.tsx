@@ -51,7 +51,7 @@ interface Props {
   initialTab?: 'details' | 'history'
   onClose: () => void
   onSuccess: () => void
-  onSaved: (entry: StringEntry) => void
+  onSaved: (entry: StringEntry, action: EditorSaveRequest['action']) => void
 }
 
 const NONE_MODULE = '__none__'
@@ -490,10 +490,7 @@ export default function StringFormDialog({
 
   const saveMut = useMutation({
     mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
-    onSuccess: (_fresh, request) => {
-      refreshQueries()
-      toast.success(request.action === 'publish' ? 'String saved and published' : 'String saved as draft')
-    },
+    onSuccess: refreshQueries,
     onError: (error, request) => {
       if (isPublishFingerprintMismatch(error)) {
         setReview(null)
@@ -591,7 +588,7 @@ export default function StringFormDialog({
   })
 
   function save(request: EditorSaveRequest) {
-    saveMut.mutate(request, { onSuccess: (entry) => onSaved(entry) })
+    saveMut.mutate(request, { onSuccess: (entry) => onSaved(entry, request.action) })
   }
 
   function submitAction(action: 'save_draft' | 'publish') {

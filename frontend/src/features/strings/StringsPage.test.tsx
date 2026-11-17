@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -8,9 +8,11 @@ import { projectsApi } from '@/lib/api/projects'
 import { stringsApi } from '@/lib/api/strings'
 import type { Project, StringEntry } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
+import { stringsQuery } from '@/lib/queries'
 import { StringsPage } from './StringsPage'
 
 const navigate = vi.hoisted(() => vi.fn())
+const toastSuccess = vi.hoisted(() => vi.fn())
 const useSearch = vi.hoisted(() => vi.fn<() => StringsSearch>(() => ({})))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -22,7 +24,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }))
 
 vi.mock('@/lib/api/catalog', () => ({
@@ -38,7 +40,8 @@ vi.mock('@/lib/api/projects', () => ({
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/strings')>()),
   stringsApi: {
-    list: vi.fn(),
+    list: vi.fn(), get: vi.fn(), editorSave: vi.fn(), editorPreview: vi.fn(), translateMemory: vi.fn(), translateQa: vi.fn(),
+    publishPreview: vi.fn(), batch: vi.fn(),
   },
 }))
 
@@ -302,5 +305,88 @@ describe('StringsPage revamp', () => {
         order: undefined,
       },
     })
+  })
+})
+
+describe('save and publish feedback', () => {
+  it.each([false, true])('fetches the latest string when clicking an older toast (cached: %s)', async (cached) => {
+    client.setDefaultOptions({ queries: { retry: false, staleTime: 120_000 } })
+    const earlier = { ...rows[0], source_text: 'Earlier saved draft' }
+    const latest = { ...rows[0], source_text: 'Latest concurrent edit' }
+    let resolveLatest!: (entry: StringEntry) => void
+    vi.mocked(stringsApi.get).mockImplementation(() => new Promise((resolve) => { resolveLatest = resolve }))
+    vi.mocked(stringsApi.editorSave).mockResolvedValue(earlier)
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: rows[0].source_text, matches: {} })
+    const view = renderPage()
+    fireEvent.click(await screen.findByText('Đăng nhập'))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit string' })
+    fireEvent.change(within(dialog).getByLabelText('Source text'), { target: { value: earlier.source_text } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    if (cached) {
+      client.setQueryData(stringsQuery('demo-app', { saved_string: earlier.id }).queryKey, {
+        items: [earlier], total: 1, page: 1, page_size: 1,
+      })
+    }
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    useSearch.mockReturnValue(navigate.mock.lastCall![0].search)
+    view.rerender(
+      <QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>,
+    )
+    await waitFor(() => expect(stringsApi.get).toHaveBeenCalledWith('demo-app', earlier.id))
+    await act(async () => resolveLatest(latest))
+    const latestCell = await screen.findByText(latest.source_text)
+    expect(screen.queryByText(earlier.source_text)).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(latestCell.closest('tr')))
+  })
+
+  it.each(['save_draft', 'publish'] as const)('closes the editor and preserves filters until the toast action (%s)', async (action) => {
+    const search: StringsSearch = { q: 'auth', status: 'draft', module: 'm1', page: 3, page_size: 20, sort: 'key', order: 'desc' }
+    useSearch.mockReturnValue(search)
+    vi.mocked(stringsApi.editorSave).mockResolvedValue(rows[0])
+    vi.mocked(stringsApi.editorPreview).mockResolvedValue({ entry: rows[0], fingerprint: 'review' })
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: rows[0].source_text, matches: {} })
+    renderPage()
+    fireEvent.click(await screen.findByText('Đăng nhập'))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit string' })
+    fireEvent.change(within(dialog).getByLabelText('Source text'), { target: { value: 'Updated source' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: action === 'publish' ? 'Publish changes' : 'Save as draft' }))
+    if (action === 'publish') fireEvent.click(await within(dialog).findByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(toastSuccess).toHaveBeenCalledWith(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
+      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    })
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'Search strings' })).toHaveProperty('value', 'auth')
+    const catalogRequests = vi.mocked(stringsApi.list).mock.calls.filter(([, params]) => params?.q === 'auth')
+    expect(catalogRequests.length).toBeGreaterThanOrEqual(2)
+    for (const [, params] of catalogRequests) expect(params).toMatchObject(search)
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/projects/$projectRef/strings', params: { projectRef: 'demo-app' },
+      search: { q: rows[0].key, saved_string: rows[0].id, page: 1, page_size: 20, sort: 'key', order: 'desc' },
+    })
+  })
+
+  it('adds a toast action for the published batch without changing filters', async () => {
+    useSearch.mockReturnValue({ status: 'draft', page: 2, page_size: 20 })
+    vi.mocked(stringsApi.publishPreview).mockResolvedValue({ items: [rows[0]], fingerprint: 'review' })
+    vi.mocked(stringsApi.batch).mockResolvedValue({ affected: 1, batch_id: 'published-batch' })
+    renderPage()
+    fireEvent.click((await screen.findAllByRole('checkbox', { name: 'Select row' }))[0])
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Batch actions' })).getByRole('button', { name: 'Publish' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(navigate).not.toHaveBeenCalled()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    expect(navigation.search({ status: 'draft', page: 2, page_size: 20 }))
+      .toEqual({ page: 1, page_size: 20, batch_id: 'published-batch' })
   })
 })

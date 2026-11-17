@@ -21,7 +21,7 @@ import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
-import { PendingLabel, Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { MatchBar } from '@/features/strings/translation-memory-view'
@@ -310,9 +310,6 @@ export function TranslateReviewDialog({
   reviewLoading = false,
   onBackToEdit,
   onPublish,
-  savedNotice,
-  refreshError,
-  onRetryRefresh,
   progress,
   sourceConflicts = [],
   recoveryMessage,
@@ -344,9 +341,6 @@ export function TranslateReviewDialog({
   reviewLoading?: boolean
   onBackToEdit?: () => void
   onPublish?: () => void
-  savedNotice?: string | null
-  refreshError?: string | null
-  onRetryRefresh?: () => void
   sourceConflicts?: TranslationSourceConflict[]
   recoveryMessage?: string | null
   onRegenerate?: (items: TranslateProposalItem[]) => void
@@ -594,24 +588,7 @@ export function TranslateReviewDialog({
               </div>
             ) : null}
           </div>
-          {savedNotice && !reviewing ? (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status">
-              <Check className="size-4 text-primary" aria-hidden="true" />
-              {savedNotice}
-            </p>
-          ) : null}
-          {refreshError ? (
-            <Alert>
-              <AlertTitle>Saved, but the list could not refresh</AlertTitle>
-              <AlertDescription>
-                <p>{refreshError}</p>
-                <Button type="button" variant="outline" size="sm" disabled={loadingQueue} onClick={onRetryRefresh}>
-                  <PendingLabel pending={loadingQueue}>Retry loading</PendingLabel>
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {!reviewing && error && !loadingQueue && !refreshError ? (
+          {!reviewing && error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : null}
           {recoveryMessage ? (
@@ -640,11 +617,6 @@ export function TranslateReviewDialog({
               <Spinner />
               Loading missing strings…
             </div>
-          ) : refreshError && draftList.length === 0 ? (
-            <EmptyState
-              title="List not refreshed"
-              description="Your changes were saved. Retry loading to continue reviewing."
-            />
           ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
           ) : draftList.length === 0 ? (

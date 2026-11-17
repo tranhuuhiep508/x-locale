@@ -412,11 +412,16 @@ describe('save as draft or publish in place', suiteTimeout, () => {
       action: 'publish', fingerprint: 'fp-1',
       items: [{ string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Hello' }, scores: {} }],
     }))
-    // Toast, close the dialog, and show the published batch in Strings.
+    // Close without navigation; the toast action opens the saved batch.
     await waitFor(() => expect(screen.queryByText('Review Publication')).toBeNull())
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByRole('button', { name: 'View in Strings' })).toBeNull()
-    expect(toastSuccess).toHaveBeenCalledWith('Saved and published 1 string. Available on the next public pull or export.')
+    expect(toastSuccess).toHaveBeenCalledWith('Saved and published 1 string. Available on the next public pull or export.', {
+      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    })
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(navigate).not.toHaveBeenCalled()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
     expect(navigate).toHaveBeenCalledTimes(1)
     const { search } = navigate.mock.calls[0][0] as { search: (prev: { page_size?: number }) => unknown }
     expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub' })
@@ -475,16 +480,20 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     })
   })
 
-  it('retries only the read when the list refresh fails after a successful save', async () => {
+  it('closes after saving draft without reloading the queue or navigating', async () => {
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ ...published, action: 'draft', published_count: 0 })
     await openAndFill()
-    vi.mocked(stringsApi.translateMissing).mockRejectedValueOnce(new Error('Gateway timeout'))
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    expect(await screen.findByText('Saved, but the list could not refresh')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry loading' }))
-    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(screen.queryByText('Saved, but the list could not refresh')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1)
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(navigate).not.toHaveBeenCalled()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    expect(navigation.search({ page: 4, q: 'old', status: 'draft', page_size: 20 }))
+      .toEqual({ page: 1, page_size: 20, batch_id: 'pub' })
   })
 
   it('shows cells filled elsewhere and saves nothing', async () => {
