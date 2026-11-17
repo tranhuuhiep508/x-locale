@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import subprocess
@@ -122,13 +123,16 @@ def _seed_env(**overrides: str) -> dict[str, str]:
 
 
 def _run_seed(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-m", "app.cli", "seed-demo", *args],
         cwd=_BACKEND_ROOT,
         env=env,
         capture_output=True,
         text=True,
     )
+    for line in result.stdout.splitlines():
+        assert json.loads(line)["event.dataset"] == "application"
+    return result
 
 
 def _key_count(env: dict[str, str]) -> int:
@@ -167,7 +171,8 @@ def test_seed_demo_refuses_when_oidc_is_configured_unless_allowed():
     before = _key_count(env)
     refused = _run_seed(env)
     assert refused.returncode == 1
-    assert "OIDC is configured" in refused.stderr
+    assert refused.stderr == ""
+    assert "OIDC is configured" in json.loads(refused.stdout)["message"]
     assert "Demo project ready" not in refused.stdout
     assert _key_count(env) == before
     forced = _run_seed(env, "--force")
@@ -185,7 +190,8 @@ def test_seed_demo_refuses_in_production_unless_allowed():
     before = _key_count(env)
     refused = _run_seed(env)
     assert refused.returncode == 1
-    assert "ENV=production" in refused.stderr
+    assert refused.stderr == ""
+    assert "ENV=production" in json.loads(refused.stdout)["message"]
     assert "Demo project ready" not in refused.stdout
     assert _key_count(env) == before
     forced = _run_seed(env, "--force")

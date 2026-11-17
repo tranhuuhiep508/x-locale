@@ -46,7 +46,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: `uv run uvicorn app.main:app --host 127.0.0.1 --port ${backendPort}`,
+      command: `uv run uvicorn app.main:app --log-config app/logging.json --host 127.0.0.1 --port ${backendPort}`,
       cwd: path.join(repoRoot, 'backend'),
       url: `${backendUrl}/health`,
       reuseExistingServer: false,

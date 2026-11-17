@@ -370,7 +370,7 @@ def _production_command():
 
 def _run_production_guard(secret_id):
     args = _production_command()
-    script = args[2].replace("alembic upgrade head", "echo MIGRATIONS_STARTED")
+    script = args[2].replace("python -m app.cli migrate", "echo MIGRATIONS_STARTED")
     script = script.replace("exec uvicorn", "echo uvicorn")
     env = {**os.environ, "X_LOCALE_SECRET_ID": secret_id}
     return subprocess.run([*args[:2], script], capture_output=True, text=True, env=env)

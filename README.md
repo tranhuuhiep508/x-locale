@@ -24,10 +24,18 @@ The commands below are the setup. `scripts/dev.sh` is only a local shortcut and 
 ```bash
 cd backend
 uv sync --all-extras
-uv run alembic upgrade head
+uv run python -m app.cli migrate
 uv run python -m app.cli seed-demo
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --log-config app/logging.json --host 0.0.0.0 --port 8000 --reload
 ```
+
+Backend, migration, and management status logs are JSON objects on stdout for the
+cluster log collector. `SCRUM_TEAM` (default `digital`) and `APP_NAME` (default
+`x-locale`) set the organization and service fields. Timestamps use the process's
+local timezone. Health-check access logs are suppressed, and other access logs
+omit query strings to keep API keys and OAuth codes out of logs. Keep
+`--log-config app/logging.json` when launching Uvicorn so reload and worker
+supervisor logs use the same format.
 
 **Terminal 2 — frontend:**
 
@@ -85,7 +93,7 @@ docker compose up --build
 
 - Dashboard: http://localhost:5173
 - API: http://localhost:8000
-- Entrypoint runs `alembic upgrade head` then seeds the Demo App
+- Entrypoint runs `python -m app.cli migrate` then seeds the Demo App
 
 Production (single origin, SPA served by FastAPI):
 

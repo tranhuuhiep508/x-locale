@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import typer
+
+from app.logging import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     help="x-locale backend management commands",
@@ -30,28 +38,32 @@ def seed_demo(
 
     require_postgres_database_url(settings.database_url)
     if not allow_production and _seed_demo_refused(settings):
-        typer.echo(
+        logger.error(
             "seed-demo refuses to run when OIDC is configured or ENV=production. "
             "Pass --allow-production to seed anyway.",
-            err=True,
         )
         raise typer.Exit(1)
     from app.seed import seed_demo_data
 
     project = seed_demo_data(force=force)
     if project:
-        typer.echo(f"Demo project ready: {project.name} ({project.id}) slug={project.slug}")
+        logger.info(f"Demo project ready: {project.name} ({project.id}) slug={project.slug}")
     else:
-        typer.echo("Seed failed")
+        logger.error("Seed failed")
 
 
 @app.command("migrate")
 def migrate() -> None:
     """Run Alembic migrations to head."""
-    import subprocess
-    import sys
+    from alembic.config import Config
 
-    raise SystemExit(subprocess.call([sys.executable, "-m", "alembic", "upgrade", "head"]))
+    from alembic import command
+
+    try:
+        command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
+    except Exception, SystemExit:
+        logger.exception("Database migration failed")
+        raise typer.Exit(1) from None
 
 
 @app.command("prune-activities")
@@ -69,9 +81,9 @@ def prune_activities_cmd() -> None:
         deleted = prune_activities(db, days=settings.activity_retention_days)
         db.commit()
         if settings.activity_retention_days <= 0:
-            typer.echo("ACTIVITY_RETENTION_DAYS=0; nothing pruned")
+            logger.info("ACTIVITY_RETENTION_DAYS=0; nothing pruned")
         else:
-            typer.echo(
+            logger.info(
                 f"Pruned {deleted} activity rows older than {settings.activity_retention_days} days"
             )
     finally:

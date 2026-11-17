@@ -89,14 +89,14 @@ echo "==> Creating the test database if it is missing (from template0)..."
 echo "==> Preparing backend (migrate + seed)..."
 (
   cd "$ROOT/backend"
-  uv run alembic upgrade head
+  uv run python -m app.cli migrate
   uv run python -m app.cli seed-demo
 )
 
 echo "==> Starting backend ($BACKEND_URL)..."
 (
   cd "$ROOT/backend"
-  uv run uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload
+  uv run uvicorn app.main:app --log-config app/logging.json --host 0.0.0.0 --port "$BACKEND_PORT" --reload
 ) &
 BACKEND_PID=$!
 

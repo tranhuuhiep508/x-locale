@@ -29,6 +29,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - SCRUM_TEAM=${SCRUM_TEAM:-digital}
+      - APP_NAME=${APP_NAME:-x-locale}
       - SECRET_ENABLE=${SECRET_ENABLE:-false}
       - X_LOCALE_SECRET_ID
       - AUTH_DEV_BYPASS=${AUTH_DEV_BYPASS:-false}

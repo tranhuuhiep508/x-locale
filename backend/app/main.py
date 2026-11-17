@@ -1,3 +1,8 @@
+# ruff: noqa: E402
+from app.logging import setup_logging
+
+setup_logging()
+
 import asyncio
 import threading
 from contextlib import asynccontextmanager

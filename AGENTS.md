@@ -19,7 +19,7 @@ do not use `docker compose` for Postgres. Do not re-run installs unless a tool o
 | Service | Dir | Start (dev) | Port | Notes |
 |----------|------------|-------------------------------------------------------------------------|------|-------|
 | Postgres | n/a | `sudo pg_ctlcluster 16 main start` (already started by `.cursor/start.sh`) | 5432 | Native PostgreSQL 16. The cluster keeps the image locale; the app does not require one. Backend CI covers C, C.UTF-8, en_US.UTF-8, and ICU en-US. Role `xlocale`, databases `xlocale` and `xlocale_test`. |
-| Backend | `backend/` | tmux `backend`: `uv run alembic upgrade head && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
+| Backend | `backend/` | tmux `backend`: `uv run python -m app.cli migrate && uv run python -m app.cli seed-demo && uv run uvicorn app.main:app --log-config app/logging.json --host 0.0.0.0 --port 8000 --reload` | 8000 | FastAPI + Postgres. `DATABASE_URL` must be Postgres. Schema via Alembic (not `create_all`). |
 | Frontend | `frontend/`| tmux `frontend`: `npm run dev` | 5173 | Vite; proxies `/api` → backend `:8000` (no path rewrite). |
 | CLI | `cli/` | `uv run --project cli loc <init\|push\|pull\|sync\|status> ...` | n/a | Config-driven via `.x-locale/config.yaml`. |
 
