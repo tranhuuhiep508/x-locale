@@ -255,13 +255,20 @@ test('Translate missing honors combined grid filters through generation and Appl
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   const apply = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(apply).toBeEnabled()
+  const originalUrl = page.url()
+  await apply.click()
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(originalUrl)
+  await expect(page.getByText('Saved 1 string as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+
   const refreshedResponse = page.waitForResponse(
     (res) => res.request().method() === 'POST' && res.url().endsWith('/translate/missing'),
   )
-  await apply.click()
+  await page.getByRole('button', { name: 'Translate missing', exact: true }).click()
   const refreshed = await refreshedResponse
   const refreshedBody = refreshed.request().postDataJSON()
-  expect(refreshedBody).toEqual(missingBody)
+  expect(refreshedBody).toEqual({ ...missingBody, since: refreshedBody.since })
+  expect(Date.parse(refreshedBody.since)).toBeGreaterThanOrEqual(Date.parse(missingBody.since))
   expect((await refreshed.json()).total).toBe(0)
   await expect(dialog.getByText('Nothing to translate', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Discard', exact: true }).click()

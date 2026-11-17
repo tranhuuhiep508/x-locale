@@ -213,6 +213,9 @@ test("real CLI push → batch translation → temporary review → atomic public
   await expect(page.locator('[aria-current="step"]')).toHaveCount(0);
   await expect(page).toHaveURL(workspaceUrl);
   await expect(english).toHaveValue("Log in with email");
+  // Hovering the link underneath the toast pauses Sonner's dismissal timer.
+  await page.mouse.move(0, 0);
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   await page.getByRole("link", { name: "View in Strings", exact: true }).click();
   await expect(page).toHaveURL((url) =>
     url.pathname === `/projects/${project.slug}/strings` &&
