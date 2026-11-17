@@ -506,27 +506,6 @@ class PublishPreviewEntriesOut(BaseModel):
     fingerprint: str
 
 
-class CliPushBatchOut(PublishPreviewEntriesOut):
-    batch_id: UUID
-    actor_label: str
-    created_at: UtcDateTime | None
-    created_count: int
-    updated_count: int
-    excluded_count: int
-
-
-class CliPushPublishItem(BaseModel):
-    string_id: UUID
-    expected_source_text: str
-    translations: TextValues
-    scores: dict[str, ConfidenceScore | None] = Field(default_factory=dict)
-
-
-class CliPushPublishRequest(BaseModel):
-    fingerprint: str = Field(min_length=1)
-    items: list[CliPushPublishItem] = Field(default_factory=list)
-
-
 # ── Translate ─────────────────────────────────────────────────────────
 
 

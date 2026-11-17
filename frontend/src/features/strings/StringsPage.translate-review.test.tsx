@@ -7,6 +7,7 @@ import { languagesApi, modulesApi, tagsApi } from '@/lib/api/catalog'
 import { ApiError } from '@/lib/api/client'
 import { jobsApi } from '@/lib/api/jobs'
 import { projectsApi } from '@/lib/api/projects'
+import { queryKeys } from '@/lib/query-keys'
 import { stringsApi } from '@/lib/api/strings'
 import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
 import { StringsPage } from './StringsPage'
@@ -21,16 +22,18 @@ const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
+const toastError = vi.hoisted(() => vi.fn())
+const useSearch = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
     useParams: () => ({ projectRef: 'demo-app' }),
-    useSearch: () => ({}),
+    useSearch,
   }),
   useNavigate: () => navigate,
 }))
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: toastSuccess, error: toastError, info: vi.fn() }),
 }))
 vi.mock('@/lib/api/catalog', () => ({
   languagesApi: { list: vi.fn() },
@@ -80,6 +83,7 @@ afterEach(() => {
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  useSearch.mockReturnValue({})
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   vi.mocked(projectsApi.get).mockResolvedValue(project)
@@ -96,6 +100,78 @@ beforeEach(() => {
 })
 
 describe('translation review retranslation', suiteTimeout, () => {
+  it.each([
+    ['queue', 'success'],
+    ['queue', 'error'],
+    ['proposal', 'success'],
+    ['proposal', 'error'],
+    ['proposal', 'job'],
+  ] as const)('ignores a late %s %s after switching CLI batches', async (stage, outcome) => {
+    const batchA = '11111111-1111-4111-8111-111111111111'
+    const batchB = '22222222-2222-4222-8222-222222222222'
+    const nextItem = { ...item, string_id: 'b', key: 'next', source_text: 'Next source' }
+    let resolveOld!: (result: TranslateProposalsResult) => void
+    let rejectOld!: (error: Error) => void
+    const oldResponse = new Promise<TranslateProposalsResult>((resolve, reject) => {
+      resolveOld = resolve
+      rejectOld = reject
+    })
+    vi.mocked(stringsApi.translateMissing).mockReset()
+      .mockImplementationOnce(() => stage === 'queue' ? oldResponse : Promise.resolve(page))
+      .mockResolvedValueOnce({ ...page, items: [nextItem] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockReturnValueOnce(oldResponse)
+    useSearch.mockReturnValue({ batch_id: batchA, batch_kind: 'cli_push' })
+    const { rerender } = render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1))
+    if (stage === 'proposal') {
+      await waitUntilEnabled('Translate')
+      fireEvent.click(screen.getByRole('button', { name: 'Translate' }))
+      await waitFor(() => expect(stringsApi.translateProposals).toHaveBeenCalledTimes(1))
+    }
+
+    useSearch.mockReturnValue({ batch_id: batchB, batch_kind: 'cli_push' })
+    rerender(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenLastCalledWith(
+      'demo-app', expect.objectContaining({ batch_id: batchB }),
+    ))
+    await screen.findByText('Next source')
+    await act(async () => {
+      if (outcome === 'error') rejectOld(new Error('Old batch failed'))
+      else resolveOld({
+        ...page,
+        items: [{ ...item, translations: { en: 'Old translation' } }],
+        job_id: outcome === 'job' ? 'old-job' : null,
+      })
+    })
+    expect(screen.queryByText('Xin chào')).toBeNull()
+    expect(screen.getByText('Next source')).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('')
+    expect(toastError).not.toHaveBeenCalled()
+    expect(jobsApi.get).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Next translation' } })
+    await waitUntilEnabled('Save as draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledWith('demo-app', {
+      action: 'draft',
+      items: [{ string_id: 'b', expected_source_text: 'Next source', translations: { en: 'Next translation' }, scores: {} }],
+    }))
+  })
+
+  it('excludes pending removals from automatic CLI review without filtering them from the catalog', async () => {
+    const batchId = '11111111-1111-4111-8111-111111111111'
+    useSearch.mockReturnValue({ batch_id: batchId, batch_kind: 'cli_push' })
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await screen.findByRole('heading', { name: 'Missing Translations' })
+    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledWith(
+      'demo-app', expect.objectContaining({ batch_id: batchId, pending_delete: false }),
+    ))
+    const catalogCalls = vi.mocked(stringsApi.list).mock.calls.filter(
+      ([, params]) => params?.batch_id === batchId,
+    )
+    expect(catalogCalls.length).toBeGreaterThan(0)
+    expect(catalogCalls.every(([, params]) => params?.pending_delete === undefined)).toBe(true)
+  })
+
   it('shows a quiet memory error without blocking AI or offering a retry button', async () => {
     vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory_error: 'Memory unavailable' }] })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
@@ -391,6 +467,114 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
     fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
   }
+
+  it.each([false, true])('abandons the previous CLI publication review on batch switch (pending: %s)', async (pending) => {
+    const batchA = '11111111-1111-4111-8111-111111111111'
+    const batchB = '22222222-2222-4222-8222-222222222222'
+    const nextItem = { ...item, string_id: 'b', key: 'next', source_text: 'Next source' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce({ ...page, items: [nextItem] })
+    let resolveOld!: (result: Awaited<ReturnType<typeof stringsApi.translateReview>>) => void
+    vi.mocked(stringsApi.translateReview)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+      .mockResolvedValueOnce({
+        items: [{ ...reviewed, id: 'b', key: 'next', source_text: 'Next source' }],
+        fingerprint: 'next-fingerprint',
+      })
+    useSearch.mockReturnValue({ batch_id: batchA, batch_kind: 'cli_push' })
+    const view = <QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>
+    const { rerender } = render(view)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
+    await waitUntilEnabled('Review & publish')
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    await waitFor(() => expect(stringsApi.translateReview).toHaveBeenCalledTimes(1))
+    if (!pending) {
+      await act(async () => { resolveOld({ items: [reviewed], fingerprint: 'old-fingerprint' }) })
+      await waitUntilEnabled('Publish 1 string')
+    }
+
+    useSearch.mockReturnValue({ batch_id: batchB, batch_kind: 'cli_push' })
+    rerender(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenLastCalledWith(
+      'demo-app', expect.objectContaining({ batch_id: batchB }),
+    ))
+    await screen.findByRole('heading', { name: 'Missing Translations' })
+    if (pending) {
+      await act(async () => { resolveOld({ items: [reviewed], fingerprint: 'old-fingerprint' }) })
+    }
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Publish 1 string' })).toBeNull()
+    expect(stringsApi.translateSave).not.toHaveBeenCalled()
+    fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Next translation' } })
+    await waitUntilEnabled('Review & publish')
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    await waitUntilEnabled('Publish 1 string')
+    fireEvent.click(screen.getByRole('button', { name: 'Publish 1 string' }))
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledWith('demo-app', {
+      action: 'publish', fingerprint: 'next-fingerprint',
+      items: [{ string_id: 'b', expected_source_text: 'Next source', translations: { en: 'Next translation' }, scores: {} }],
+    }))
+  })
+
+  it.each([
+    ['publish', 'success'],
+    ['publish', 'conflict'],
+    ['draft', 'success'],
+  ] as const)('ignores an old %s save %s after switching CLI batches', async (action, outcome) => {
+    const batchA = '11111111-1111-4111-8111-111111111111'
+    const batchB = '22222222-2222-4222-8222-222222222222'
+    const nextItem = { ...item, string_id: 'b', key: 'next', source_text: 'Next source' }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValueOnce(page)
+      .mockResolvedValueOnce({ ...page, items: [nextItem] })
+    vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'old-fingerprint' })
+    let resolveSave!: (result: Awaited<ReturnType<typeof stringsApi.translateSave>>) => void
+    let rejectSave!: (error: Error) => void
+    vi.mocked(stringsApi.translateSave).mockImplementationOnce(() => new Promise((resolve, reject) => {
+      resolveSave = resolve
+      rejectSave = reject
+    }))
+    useSearch.mockReturnValue({ batch_id: batchA, batch_kind: 'cli_push' })
+    const { rerender } = render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
+    if (action === 'publish') {
+      await waitUntilEnabled('Review & publish')
+      fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+      await waitUntilEnabled('Publish 1 string')
+      fireEvent.click(screen.getByRole('button', { name: 'Publish 1 string' }))
+    } else {
+      await waitUntilEnabled('Save as draft')
+      fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    }
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
+
+    useSearch.mockReturnValue({ batch_id: batchB, batch_kind: 'cli_push' })
+    rerender(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    await screen.findByText('Next source')
+    await waitUntilEnabled('Translate')
+    fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Next translation' } })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    await act(async () => {
+      if (outcome === 'success') resolveSave({ ...published, action })
+      else rejectSave(new ApiError(409, 'Conflict', { detail: { code: 'publish_fingerprint_mismatch' } }))
+    })
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    expect(screen.getByText('Next source')).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Next translation')
+    expect(stringsApi.translateReview).toHaveBeenCalledTimes(action === 'publish' ? 1 : 0)
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalled()
+    if (outcome === 'success') {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.projects.strings.all('demo-app') })
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.projects.activities.all('demo-app') })
+    }
+    await waitUntilEnabled('Save as draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenLastCalledWith('demo-app', {
+      action: 'draft',
+      items: [{ string_id: 'b', expected_source_text: 'Next source', translations: { en: 'Next translation' }, scores: {} }],
+    }))
+  })
 
   it('freezes the reviewed rows, shows the full public diff, and publishes without a second confirmation', async () => {
     vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'fp-1' })

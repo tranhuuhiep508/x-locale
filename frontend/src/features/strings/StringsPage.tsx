@@ -113,7 +113,10 @@ const StringFormDialog = lazy(() => import('@/features/strings/StringFormDialog'
 const stringsRoute = getRouteApi('/projects/$projectRef/strings')
 
 type ReviewPayload = TranslateSaveRequest['items']
+type ReviewRequest = { request: TranslateRequest; sessionId: number }
 type SaveVariables = {
+  sessionId: number
+  projectRef: string
   action: TranslateSaveRequest['action']
   payload: ReviewPayload
   fingerprint?: string
@@ -253,6 +256,7 @@ export function StringsPage() {
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
+  const reviewSessionId = useRef(0)
   const [reviewPage, setReviewPage] = useState(1)
   const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
   const [reviewTotal, setReviewTotal] = useState(0)
@@ -379,10 +383,10 @@ export function StringsPage() {
     [project?.target_languages, project?.base_language],
   )
 
-  function missingRequest(page: number): TranslateRequest {
+  function missingRequest(page: number): ReviewRequest {
     const request = reviewRequestRef.current
     if (!request) throw new Error('Translation review session is not open')
-    return { ...request, page }
+    return { request: { ...request, page }, sessionId: reviewSessionId.current }
   }
 
   const invalidateStrings = useCallback(() => {
@@ -445,8 +449,9 @@ export function StringsPage() {
   })
 
   const missingMut = useMutation({
-    mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
-    onSuccess: (res) => {
+    mutationFn: ({ request }: ReviewRequest) => stringsApi.translateMissing(projectId, request),
+    onSuccess: (res, { sessionId }) => {
+      if (sessionId !== reviewSessionId.current) return
       setApplySourceConflicts([])
       regenerationIds.current = null
       setRecoveryMessage(null)
@@ -456,7 +461,8 @@ export function StringsPage() {
       setReviewPageSize(res.page_size)
       setProposalsReady(false)
     },
-    onError: () => {
+    onError: (_, { sessionId }) => {
+      if (sessionId !== reviewSessionId.current) return
       toast.error('Failed to load missing translations')
     },
   })
@@ -482,15 +488,19 @@ export function StringsPage() {
   }
 
   const proposeMut = useMutation({
-    mutationFn: (req: TranslateRequest) => stringsApi.translateProposals(projectId, req),
-    onSuccess: (res) => {
+    mutationFn: ({ request }: ReviewRequest) => stringsApi.translateProposals(projectId, request),
+    onSuccess: (res, { sessionId }) => {
+      if (sessionId !== reviewSessionId.current) return
       if (res.job_id) {
         setProposalJobId(res.job_id)
         return
       }
       acceptProposals(res.items)
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error, { sessionId }) => {
+      if (sessionId !== reviewSessionId.current) return
+      toast.error(error.message)
+    },
   })
 
   const proposalJobQuery = useQuery({
@@ -552,14 +562,17 @@ export function StringsPage() {
   })
 
   const saveMut = useMutation({
-    onMutate: ({ items }: SaveVariables) => {
+    onMutate: ({ items, sessionId }: SaveVariables) => {
+      if (sessionId !== reviewSessionId.current) return
       // Keep the reviewer's edits as the dialog's items so a failed save loses nothing.
       if (items) setProposalItems(items)
     },
-    mutationFn: ({ action, payload, fingerprint }: SaveVariables) =>
-      stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
-    onSuccess: (res) => {
-      invalidateStrings()
+    mutationFn: ({ projectRef, action, payload, fingerprint }: SaveVariables) =>
+      stringsApi.translateSave(projectRef, { action, items: payload, fingerprint }),
+    onSuccess: (res, { projectRef, sessionId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.projects.strings.all(projectRef) })
+      qc.invalidateQueries({ queryKey: queryKeys.projects.activities.all(projectRef) })
+      if (sessionId !== reviewSessionId.current) return
       setApplySourceConflicts([])
       setRecoveryMessage(null)
       setProposalItems([])
@@ -569,7 +582,8 @@ export function StringsPage() {
         action: { label: 'View changes', onClick: () => showChangedBatch(res.batch_id) },
       })
     },
-    onError: (error, { action, payload }) => {
+    onError: (error, { action, payload, sessionId }) => {
+      if (sessionId !== reviewSessionId.current) return
       if (action === 'publish' && isPublishFingerprintMismatch(error)) {
         toast.info('Content changed since review. Nothing was published. Review the updated changes.')
         requestPublicationReview(payload)
@@ -581,13 +595,17 @@ export function StringsPage() {
   })
 
   function resetReview() {
+    reviewSessionId.current += 1
     reviewRequestId.current += 1
     setReviewOpen(false)
     reviewRequestRef.current = null
     setProposalJobId(null)
     setProposalsReady(false)
     setPublishReview(null)
+    reviewMut.reset()
+    missingMut.reset()
     proposeMut.reset()
+    saveMut.reset()
   }
 
   function showChangedBatch(batchId: string) {
@@ -604,6 +622,41 @@ export function StringsPage() {
     if (saveMut.isPending || reviewMut.isPending || proposeMut.isPending) return
     resetReview()
   }
+
+  function openMissingReview() {
+    resetReview()
+    reviewRequestRef.current = search.saved_string
+      ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
+      : createMissingReviewRequest(search, locales)
+    if (search.batch_kind === 'cli_push' && search.batch_id) {
+      reviewRequestRef.current.pending_delete = false
+    }
+    setProposalItems([])
+    setProposalJobId(null)
+    setProposalsReady(false)
+    setReviewPage(1)
+    setReviewTotal(0)
+    setReviewOpen(true)
+    missingMut.mutate(missingRequest(1))
+  }
+
+  const autoOpenedBatch = useRef<string | null>(null)
+  const openBatchReview = useEffectEvent(openMissingReview)
+  useEffect(() => {
+    if (search.batch_kind !== 'cli_push' || !search.batch_id) {
+      autoOpenedBatch.current = null
+      return
+    }
+    if (!project) return
+    const batch = `${projectId}:${search.batch_id}`
+    if (autoOpenedBatch.current === batch) return
+    // Let mount effects finish subscribing before starting the review mutation.
+    const timer = window.setTimeout(() => {
+      autoOpenedBatch.current = batch
+      openBatchReview()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [project, projectId, search.batch_id, search.batch_kind])
 
   function loadMissingPage(page: number) {
     if (!reviewRequestRef.current || saveMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
@@ -950,18 +1003,7 @@ export function StringsPage() {
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/80 bg-background/85 text-foreground hover:bg-muted/60 transition-colors shadow-2xs"
-                  onClick={() => {
-                    reviewRequestRef.current = search.saved_string
-                      ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
-                      : createMissingReviewRequest(search, locales)
-                    setProposalItems([])
-                    setProposalJobId(null)
-                    setProposalsReady(false)
-                    setReviewPage(1)
-                    setReviewTotal(0)
-                    setReviewOpen(true)
-                    missingMut.mutate(missingRequest(1))
-                  }}
+                  onClick={openMissingReview}
                   disabled={missingMut.isPending || reviewOpen}
                 >
                   {missingMut.isPending ? (
@@ -1236,9 +1278,8 @@ export function StringsPage() {
           const ids = applySourceConflicts.map((item) => item.string_id)
           regenerationIds.current = ids
           proposeMut.mutate({
-            scope: 'strings',
-            string_ids: ids,
-            locales,
+            sessionId: reviewSessionId.current,
+            request: { scope: 'strings', string_ids: ids, locales },
           })
         }}
         onRemoveFromReview={(items, stringId) => {
@@ -1261,14 +1302,17 @@ export function StringsPage() {
           regenerationIds.current = null
           setRecoveryMessage(null)
           proposeMut.mutate({
-            scope: 'strings',
-            string_ids: items.map((item) => item.string_id),
-            locales,
-            exclude_cells: excludedMemoryCells(items),
+            sessionId: reviewSessionId.current,
+            request: {
+              scope: 'strings',
+              string_ids: items.map((item) => item.string_id),
+              locales,
+              exclude_cells: excludedMemoryCells(items),
+            },
           })
         }}
         onSaveDraft={(items) => {
-          saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
+          saveMut.mutate({ sessionId: reviewSessionId.current, projectRef: projectId, action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
         }}
         onReviewPublish={(items) => {
           // Freeze membership, values, and baseline; later edits need a new review.
@@ -1288,7 +1332,7 @@ export function StringsPage() {
         onPublish={() => {
           const frozen = publishReview
           if (!frozen?.review) return
-          saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
+          saveMut.mutate({ sessionId: reviewSessionId.current, projectRef: projectId, action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
       />
 
