@@ -56,7 +56,7 @@ for (const filter of [
     await apply.click()
     await expect(dialog).toBeHidden()
     await expect(page).toHaveURL(originalUrl)
-    await expect(page.getByText('Saved 5 strings as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+    await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
 
     // The original snapshot still has the first page missing after saving page 2.
     const refreshed = await page.request.post(endpoint, { data: secondBody })

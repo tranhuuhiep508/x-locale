@@ -432,6 +432,7 @@ class PasteSaveResult(BaseModel):
     action: Literal["draft", "publish"]
     created: int
     updated: int
+    changed: int = Field(description="Rows created or with actual working copy changes.")
     published: int
     batch_id: UUID
 

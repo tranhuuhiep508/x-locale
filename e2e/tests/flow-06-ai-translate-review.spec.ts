@@ -75,9 +75,11 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   const originalUrl = page.url()
   await applyButton.click()
 
-  await expect(page.locator('[data-sonner-toast]').filter({ hasText: /Saved \d+ strings as draft/ })).toBeVisible()
+  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(originalUrl)
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
+  await expect(page.getByText('Filtered to this translation', { exact: true })).toBeVisible()
 
   await page.getByRole('textbox', { name: 'Search strings' }).fill(`${pagingPrefix}_0`)
   const row = page.getByRole('row').filter({ hasText: `${pagingPrefix}_0` }).first()
@@ -166,6 +168,7 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   await expect(page.getByRole('textbox', { name: 'Search strings' })).toHaveValue(`${prefix}_a`)
   await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(page).toHaveURL(/batch_id=/)
+  await expect(page.getByText('Filtered to this translation', { exact: true })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_b` })).toHaveCount(0)
   const saved = await (await page.request.get(`${root}/strings/${entry.id}`)).json()

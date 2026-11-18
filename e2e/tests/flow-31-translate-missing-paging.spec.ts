@@ -128,7 +128,7 @@ test('saving generated translations closes review and reopening allows paging th
   await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(originalUrl)
-  await expect(page.getByText('Saved 50 strings as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
 
   const reload = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),

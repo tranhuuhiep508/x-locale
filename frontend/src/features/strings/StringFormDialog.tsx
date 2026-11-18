@@ -490,7 +490,10 @@ export default function StringFormDialog({
 
   const saveMut = useMutation({
     mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
-    onSuccess: refreshQueries,
+    onSuccess: (entry, request) => {
+      refreshQueries()
+      onSaved(entry, request.action)
+    },
     onError: (error, request) => {
       if (isPublishFingerprintMismatch(error)) {
         setReview(null)
@@ -588,7 +591,7 @@ export default function StringFormDialog({
   })
 
   function save(request: EditorSaveRequest) {
-    saveMut.mutate(request, { onSuccess: (entry) => onSaved(entry, request.action) })
+    saveMut.mutate(request, { onSuccess: () => onClose() })
   }
 
   function submitAction(action: 'save_draft' | 'publish') {

@@ -9,7 +9,7 @@ import {
   lazy,
   Suspense,
 } from 'react'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { getRouteApi, useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCoreRowModel,
@@ -235,6 +235,8 @@ export function StringsPage() {
   const rawSearch = stringsRoute.useSearch()
   const search = resolveStringsSearch(rawSearch)
   const navigate = useNavigate({ from: '/projects/$projectRef/strings' })
+  const router = useRouter()
+  const savedStringFocus = useLocation({ select: ({ state }) => state.savedStringFocus })
   const [, startTransition] = useTransition()
   const qc = useQueryClient()
   const toast = useToast()
@@ -249,7 +251,7 @@ export function StringsPage() {
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
   const savedRow = useRef<HTMLTableRowElement>(null)
-  const [pendingSavedFocus, setPendingSavedFocus] = useState<string | null>(null)
+  const focusedSavedString = useRef<number | undefined>(undefined)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
@@ -290,7 +292,7 @@ export function StringsPage() {
 
   useEffect(() => {
     setSearchInput(search.q ?? '')
-  }, [search.q])
+  }, [search.q, savedStringFocus])
 
   const applySearchQ = useEffectEvent((value: string) => {
     startTransition(() => {
@@ -316,7 +318,9 @@ export function StringsPage() {
     return () => window.clearTimeout(handle)
   }, [searchInput, search.q])
 
-  const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  const stringsResult = useQuery(stringsQueryOptions(projectId, search, savedStringFocus))
+  const catalogLoading = stringsResult.isLoading ||
+    Boolean((search.saved_string || search.batch_id) && stringsResult.isPending)
   const pendingStringsResult = useQuery(
     stringsQueryOptions(projectId, { has_unpublished_changes: true, page: 1, page_size: 1 }),
   )
@@ -325,11 +329,11 @@ export function StringsPage() {
   const hasOtherTranslationFilter = Boolean(search.missing_locale || search.complete_locale)
   useEffect(() => {
     const row = savedRow.current
-    if (dialogOpen || !row || pendingSavedFocus !== search.saved_string) return
-    setPendingSavedFocus(null)
+    if (dialogOpen || !row || savedStringFocus === undefined || focusedSavedString.current === savedStringFocus) return
+    focusedSavedString.current = savedStringFocus
     row.focus({ preventScroll: true })
     row.scrollIntoView?.({ block: 'nearest' })
-  }, [dialogOpen, pendingSavedFocus, search.saved_string, stringsResult.data, stringsResult.isPlaceholderData])
+  }, [dialogOpen, savedStringFocus, stringsResult.data])
 
   const catalogSortSearch = useMemo(
     () => ({ sort: rawSearch.sort, order: rawSearch.order }),
@@ -564,10 +568,14 @@ export function StringsPage() {
       setRecoveryMessage(null)
       setProposalItems([])
       resetReview()
-      toast.success(saveSuccessMessage(res), {
-        duration: 8000,
-        action: { label: 'View changes', onClick: () => showChangedBatch(res.batch_id) },
-      })
+      if (res.translated_count > 0 || res.published_count > 0) {
+        toast.success(saveSuccessMessage(res), {
+          duration: 8000,
+          action: { label: 'View changes', onClick: () => showChangedBatch(res.batch_id, 'translate') },
+        })
+      } else {
+        toast.info('No translation changes to save')
+      }
     },
     onError: (error, { action, payload }) => {
       if (action === 'publish' && isPublishFingerprintMismatch(error)) {
@@ -590,12 +598,12 @@ export function StringsPage() {
     proposeMut.reset()
   }
 
-  function showChangedBatch(batchId: string) {
+  function showChangedBatch(batchId: string, batchKind?: string) {
     startTransition(() => {
       navigate({
         to: '/projects/$projectRef/strings',
         params: { projectRef: projectId },
-        search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }),
+        search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId, batch_kind: batchKind }),
       })
     })
   }
@@ -624,7 +632,6 @@ export function StringsPage() {
   )
 
   const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
-    setPendingSavedFocus(null)
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
@@ -637,10 +644,16 @@ export function StringsPage() {
   }
 
   function savedString(entry: StringEntry, action: 'save_draft' | 'publish') {
-    closeEditor()
     toast.success(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
       duration: 8000,
-      action: { label: 'View changes', onClick: () => showSavedString(entry) },
+      action: {
+        label: 'View changes',
+        onClick: (event) => {
+          // Let the toast restore its previous focus before the saved row takes focus.
+          event.currentTarget.blur()
+          showSavedString(entry)
+        },
+      },
     })
   }
 
@@ -653,10 +666,16 @@ export function StringsPage() {
       sort: search.sort,
       order: search.order,
     }
-    void qc.invalidateQueries({ queryKey: stringsQueryOptions(projectId, nextSearch).queryKey })
-    setPendingSavedFocus(entry.id)
-    setSearchInput(entry.key)
-    void navigate({ to: '/projects/$projectRef/strings', params: { projectRef: projectId }, search: nextSearch })
+    const destination = {
+      to: '/projects/$projectRef/strings' as const,
+      params: { projectRef: projectId },
+      search: nextSearch,
+    }
+    void router.navigate({
+      ...destination,
+      replace: router.buildLocation(destination).href === router.state.location.href,
+      state: (prev) => ({ savedStringFocus: Math.max(Date.now(), (prev.savedStringFocus ?? 0) + 1) }),
+    })
   }
 
   function setFilter(updates: Partial<StringsSearch>) {
@@ -716,13 +735,13 @@ export function StringsPage() {
 
   const catalogRefetchingEmpty =
     stringsResult.isFetching &&
-    !stringsResult.isLoading &&
+    !catalogLoading &&
     data.length === 0 &&
     !search.batch_id
 
   const tourReady =
     modulesResult.isFetched &&
-    !stringsResult.isLoading &&
+    !catalogLoading &&
     !catalogSortListError &&
     !catalogRefetchingEmpty
 
@@ -1103,7 +1122,7 @@ export function StringsPage() {
         className="relative min-h-0 flex-1 bg-card"
         data-tour={data.length > 0 ? 'grid' : undefined}
       >
-        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
+        {catalogLoading || catalogSortListError || catalogRefetchingEmpty ? (
           <StringsTableSkeleton localeCount={locales.length} />
         ) : stringsResult.isError ? (
           <div className="flex h-full min-h-48 items-center justify-center galley-grid p-6">

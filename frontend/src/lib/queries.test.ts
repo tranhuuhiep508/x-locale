@@ -11,14 +11,18 @@ afterEach(() => {
 })
 
 describe('stringsQuery', () => {
-  it('waits for the exact saved string instead of showing previous catalog results', () => {
+  it.each([
+    ['opening a saved string', {}, { saved_string: 'saved-id' }],
+    ['entering a batch', {}, { batch_id: 'batch-id' }],
+    ['leaving a batch', { batch_id: 'batch-id' }, {}],
+  ] as const)('waits for the requested data when %s', (_scenario, from, to) => {
     const client = new QueryClient()
-    const catalog = stringsQuery('project', {})
+    const catalog = stringsQuery('project', from)
     client.setQueryData(catalog.queryKey, { items: [], total: 0, page: 1, page_size: 20 })
     const observer = new QueryObserver(client, catalog)
 
     try {
-      observer.setOptions(stringsQuery('project', { saved_string: 'saved-id' }))
+      observer.setOptions(stringsQuery('project', to))
       expect(observer.getCurrentResult()).toMatchObject({
         status: 'pending',
         data: undefined,

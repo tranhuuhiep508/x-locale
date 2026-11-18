@@ -73,7 +73,7 @@ Measured as the rendered pair (Daylight / Nightfall). Text floor is 4.5:1. Icons
 - `--tag-*-ink` is sun in Daylight and haze-950 in Nightfall. Sun on the Daylight swatches is 3.36–9.10:1. Haze-950 on the Nightfall swatches is 5.73–11.04:1. `tagCheckColor()` returns that ink.
 - `--row-hover`, `--row-selected` and `--row-removing` are a light mix of the card with haze, azure, or destructive (97% card in Daylight; 94%, 92% and 90% in Nightfall). The weakest text on the row states is primary on the deleted hover at 4.52:1 in Daylight and destructive on the edited hover at 4.69:1 in Nightfall. `--missing-foreground` is at least 4.75:1 in Daylight and 4.73:1 in Nightfall on every row state, including edited and deleted hover. The left bar still carries the meaning.
 - `--primary-hover` is the shared primary hover for the default button, the default badge link, and the batch stepper.
-- Sonner action buttons use the compact `sm` button sizing, `--primary` / `--primary-foreground`, `--primary-hover`, and the standard `focus-ring` outline (`--ring`) against `--popover`. Cancel buttons use `--secondary` / `--secondary-foreground`.
+- Sonner action buttons use the compact `sm` button sizing, `--primary` / `--primary-foreground`, `--primary-hover`, and the standard `focus-ring` outline (`--ring`) against `--popover`.
 
 Badge variants `soft` (accent), `warning`, `public` and `code` (muted mono) are the chips. Button variant `soft` is the same accent fill for actions such as Generate with AI.
 

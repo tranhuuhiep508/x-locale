@@ -249,12 +249,14 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
         items: buildBatchPublishItems(snapshot.items, drafts),
       })
       refreshProjectContent(qc, projectRef)
+      const published = publish && result.affected > 0
       toast.success(
-        publish
+        published
           ? 'Batch saved and published. Available on the next public pull or export.'
           : 'Batch saved as draft. Public translations are unchanged.',
         {
           duration: 8000,
+          position: 'top-right',
           action: {
             label: 'View changes',
             onClick: () => {
@@ -269,7 +271,7 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
       )
       if (!mounted.current) return
       setStarted(false)
-      setCompletion(publish ? 'public' : 'draft')
+      setCompletion(published ? 'public' : 'draft')
       setGenerationStarted(false)
       setNotice('')
       setStale(true)

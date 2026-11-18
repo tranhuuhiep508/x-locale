@@ -259,7 +259,7 @@ test('Translate missing honors combined grid filters through generation and Appl
   await apply.click()
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(originalUrl)
-  await expect(page.getByText('Saved 1 string as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
 
   const refreshedResponse = page.waitForResponse(
     (res) => res.request().method() === 'POST' && res.url().endsWith('/translate/missing'),

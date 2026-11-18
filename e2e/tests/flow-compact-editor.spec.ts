@@ -55,7 +55,7 @@ test('publishing preserves filters until the toast action reveals the saved row'
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Good morning')
 })
 
-test('draft creation preserves the catalog and its toast opens the exact saved row', async ({ page }) => {
+test('draft creation preserves the catalog and its toast opens the exact saved row from Activity', async ({ page }) => {
   await openDemoStrings(page)
   const project = projectIdFromUrl(page)
   const key = `zz_compact_draft_${Date.now()}`
@@ -71,6 +71,8 @@ test('draft creation preserves the catalog and its toast opens the exact saved r
   const row = page.getByRole('row').filter({ has: page.getByText(key, { exact: true }) })
   await expect(page.getByRole('dialog')).toBeHidden()
   await expect(page).toHaveURL(originalUrl)
+  await page.getByRole('link', { name: 'Activity', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(row).toBeFocused()
   await expect(page.getByText(`${key}_other`, { exact: true })).toHaveCount(0)
@@ -84,12 +86,47 @@ test('draft creation preserves the catalog and its toast opens the exact saved r
   expect((await response).ok()).toBeTruthy()
   expect((await fetchStringByKey(page, project, key)).id).toBe(first.id)
   await expect(dialog).toBeHidden()
-  await page.getByRole('button', { name: 'View changes', exact: true }).click()
-  await expect(row).toBeFocused()
   const search = page.getByRole('textbox', { name: 'Search strings' })
+  await search.focus()
+  await page.getByRole('button', { name: 'View changes', exact: true }).press('Enter')
+  await expect(row).toBeFocused()
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
+  await page.goForward()
+  await expect(row).toBeVisible()
   await search.fill(key.slice(0, -1))
   await expect(page.getByText(`${key}_other`, { exact: true })).toBeVisible()
   await expect(search).toBeFocused()
+})
+
+test('a pending save still shows View changes after leaving the editor', async ({ page }) => {
+  await openDemoStrings(page)
+  await page.getByRole('link', { name: 'Activity', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'Strings', exact: true }).click()
+  const key = `compact_pending_${Date.now()}`
+  await openAddStringDialog(page)
+  await fillStringForm(page, { key, source: 'Pending save' })
+
+  let releaseResponse!: () => void
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve })
+  await page.route('**/strings/editor-save', async (route) => {
+    const response = await route.fetch()
+    await responseGate
+    await route.fulfill({ response })
+  })
+  const request = page.waitForRequest('**/strings/editor-save')
+  try {
+    await page.getByRole('button', { name: 'Save as draft', exact: true }).click()
+    await request
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
+  } finally {
+    releaseResponse()
+  }
+  await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'View changes', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: key })).toBeFocused()
 })
 
 test('a competing locale edit refreshes the review and requires another confirmation', async ({ page }) => {

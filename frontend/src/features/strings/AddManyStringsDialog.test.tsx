@@ -96,7 +96,7 @@ const reviewed: PasteReview = {
   ],
 }
 
-const savedDraft = { action: 'draft' as const, created: 1, updated: 1, published: 0, batch_id: 'batch-1' }
+const savedDraft = { action: 'draft' as const, created: 1, updated: 1, changed: 2, published: 0, batch_id: 'batch-1' }
 
 function polyfillPointer() {
   for (const name of ['hasPointerCapture', 'setPointerCapture', 'releasePointerCapture', 'scrollIntoView']) {
@@ -414,6 +414,17 @@ describe('AddManyStringsDialog', () => {
       to: '/projects/$projectRef/strings', params: { projectRef: 'proj-1' },
       search: { page: 1, batch_id: 'batch-1' },
     })
+  })
+
+  it('omits View changes when the pasted values already match the working copy', async () => {
+    const { onClose } = renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, created: 0, updated: 2, changed: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(toast.info).toHaveBeenCalledWith('No string changes to save')
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
   })
 
   it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {

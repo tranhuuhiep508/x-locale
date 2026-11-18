@@ -370,6 +370,11 @@ describe('StringFormDialog inline catalog create', () => {
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false))
 
+    document.body.tabIndex = -1
+    document.body.focus()
+    fireEvent.focusIn(document.body)
+    expect(onClose).not.toHaveBeenCalled()
+
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => {
       expect(savedCreates).toHaveBeenCalledWith(
@@ -382,10 +387,7 @@ describe('StringFormDialog inline catalog create', () => {
       )
     })
 
-    document.body.tabIndex = -1
-    document.body.focus()
-    fireEvent.focusIn(document.body)
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 
   it('previews with the current module selection and explicit null when unassigned', async () => {
@@ -475,7 +477,7 @@ describe('StringFormDialog inline catalog create', () => {
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalled()
     })
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 })
 

@@ -69,11 +69,14 @@ export const tagsQuery = (projectId: string) =>
 export const stringsQuery = (
   projectId: string,
   search: StringListParams & { batch_kind?: string; saved_string?: string },
+  savedStringFocus?: number,
 ) => {
   const { batch_kind: _batchKind, saved_string: savedString, ...keySearch } = search
+  // Each toast navigation starts a fresh read before the destination can focus the row.
   return queryOptions({
     queryKey: savedString
-      ? [...queryKeys.projects.strings.all(projectId), 'saved', savedString]
+      ? [...queryKeys.projects.strings.all(projectId), 'saved', savedString,
+          ...(savedStringFocus === undefined ? [] : [savedStringFocus])]
       : queryKeys.projects.strings.list(projectId, keySearch),
     queryFn: async () => {
       if (!savedString) return stringsApi.list(projectId, toStringListParams(search))
@@ -81,7 +84,12 @@ export const stringsQuery = (
       const items = entry.deleted_at ? [] : [entry]
       return { items, total: items.length, page: 1, page_size: 1 }
     },
-    placeholderData: savedString ? undefined : (prev) => prev,
+    placeholderData: savedString || search.batch_id ? undefined : (prev, previousQuery) => {
+      const previousKey = previousQuery?.queryKey
+      const previousSearch = previousKey?.[previousKey.length - 1]
+      if (typeof previousSearch === 'object' && previousSearch.batch_id) return undefined
+      return prev
+    },
   })
 }
 

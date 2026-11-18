@@ -225,7 +225,14 @@ it('saves a correction that restores the published translation', async () => {
       ],
     })
   )
-  await screen.findByText('Batch published')
+  const confirmation = await screen.findByText('Batch saved as draft')
+  expect(confirmation.closest('[role="status"]')?.textContent).toContain(
+    'Saved to the working copy. Public translations are unchanged.'
+  )
+  expect(toast.success).toHaveBeenCalledWith(
+    'Batch saved as draft. Public translations are unchanged.',
+    expect.objectContaining({ action: expect.objectContaining({ label: 'View changes' }) }),
+  )
 })
 
 it('keeps completion disabled when temporary edits match the saved working copy', async () => {
@@ -730,7 +737,7 @@ it('saves edits as draft without publication and uses the refreshed fingerprint 
   )
   expect(toast.success).toHaveBeenCalledTimes(1)
   expect(toast.success).toHaveBeenCalledWith('Batch saved as draft. Public translations are unchanged.', {
-    duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    duration: 8000, position: 'top-right', action: { label: 'View changes', onClick: expect.any(Function) },
   })
   await waitFor(() =>
     expect(

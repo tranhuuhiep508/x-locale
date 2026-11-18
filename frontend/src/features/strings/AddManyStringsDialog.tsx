@@ -216,10 +216,15 @@ export function AddManyStringsDialog({
       onSuccess()
       resetAll()
       onClose()
+      const count = result.action === 'publish' ? result.published : result.changed
+      if (count === 0) {
+        toast.info('No string changes to save')
+        return
+      }
       toast.success(
         result.action === 'publish'
-          ? `Saved and published ${result.published} ${result.published === 1 ? 'string' : 'strings'}`
-          : `Saved ${result.created + result.updated} strings as draft`,
+          ? `Saved and published ${count} ${count === 1 ? 'string' : 'strings'}`
+          : `Saved ${count} ${count === 1 ? 'string' : 'strings'} as draft`,
         {
           duration: 8000,
           action: {

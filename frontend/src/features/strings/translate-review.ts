@@ -245,12 +245,12 @@ export function valueConflictMessage(conflicts: ValueConflict[]): string {
 }
 
 export function saveSuccessMessage(result: TranslateSaveResult): string {
-  const strings = `${result.string_count} ${result.string_count === 1 ? 'string' : 'strings'}`
   if (result.action === 'publish') {
+    if (result.published_count === 0) return 'Translations saved. Public translations are unchanged.'
     const published = `${result.published_count} ${result.published_count === 1 ? 'string' : 'strings'}`
     return `Saved and published ${published}. Available on the next public pull or export.`
   }
-  return `Saved ${strings} as draft. Public translations are unchanged.`
+  return 'Translations saved as draft. Public translations are unchanged.'
 }
 
 /** Locales that would export empty for each string once published. */

@@ -21,6 +21,7 @@ const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
+const toastInfo = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
@@ -28,9 +29,11 @@ vi.mock('@tanstack/react-router', () => ({
     useSearch: () => ({}),
   }),
   useNavigate: () => navigate,
+  useLocation: () => undefined,
+  useRouter: () => ({}),
 }))
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: toastInfo }),
 }))
 vi.mock('@/lib/api/catalog', () => ({
   languagesApi: { list: vi.fn() },
@@ -424,7 +427,7 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     act(() => toastSuccess.mock.calls[0][1].action.onClick())
     expect(navigate).toHaveBeenCalledTimes(1)
     const { search } = navigate.mock.calls[0][0] as { search: (prev: { page_size?: number }) => unknown }
-    expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub' })
+    expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub', batch_kind: 'translate' })
     // No queue reload after publish: the dialog is gone.
     expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1)
   })
@@ -488,12 +491,13 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
     expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1)
     expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(toastSuccess).toHaveBeenCalledWith('Translations saved as draft. Public translations are unchanged.', expect.any(Object))
     expect(navigate).not.toHaveBeenCalled()
     act(() => toastSuccess.mock.calls[0][1].action.onClick())
     const navigation = navigate.mock.calls[0][0]
     expect(navigation.params).toEqual({ projectRef: 'demo-app' })
     expect(navigation.search({ page: 4, q: 'old', status: 'draft', page_size: 20 }))
-      .toEqual({ page: 1, page_size: 20, batch_id: 'pub' })
+      .toEqual({ page: 1, page_size: 20, batch_id: 'pub', batch_kind: 'translate' })
   })
 
   it('shows cells filled elsewhere and saves nothing', async () => {
@@ -504,5 +508,17 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     expect(await screen.findByText(/Filled elsewhere since review: greeting \(EN\)/)).toBeTruthy()
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
+  })
+
+  it('omits View changes when the proposed translations already match the saved values', async () => {
+    vi.mocked(stringsApi.translateSave).mockResolvedValue({
+      ...published, action: 'draft', translated_count: 0, published_count: 0,
+    })
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastInfo).toHaveBeenCalledWith('No translation changes to save')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

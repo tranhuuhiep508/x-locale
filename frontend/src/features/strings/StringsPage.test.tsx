@@ -14,6 +14,7 @@ import { StringsPage } from './StringsPage'
 const navigate = vi.hoisted(() => vi.fn())
 const toastSuccess = vi.hoisted(() => vi.fn())
 const useSearch = vi.hoisted(() => vi.fn<() => StringsSearch>(() => ({})))
+const useLocation = vi.hoisted(() => vi.fn<() => number | undefined>())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
@@ -21,6 +22,12 @@ vi.mock('@tanstack/react-router', () => ({
     useSearch,
   }),
   useNavigate: () => navigate,
+  useLocation,
+  useRouter: () => ({
+    navigate,
+    buildLocation: () => ({ href: '/projects/demo-app/strings?saved_string=s1' }),
+    state: { location: { href: '/projects/demo-app/strings' } },
+  }),
 }))
 
 vi.mock('@/lib/toast', () => ({
@@ -309,7 +316,7 @@ describe('StringsPage revamp', () => {
 })
 
 describe('save and publish feedback', () => {
-  it.each([false, true])('fetches the latest string when clicking an older toast (cached: %s)', async (cached) => {
+  it.each([false, true])('waits for the latest string before focusing it (page remounted: %s)', async (remount) => {
     client.setDefaultOptions({ queries: { retry: false, staleTime: 120_000 } })
     const earlier = { ...rows[0], source_text: 'Earlier saved draft' }
     const latest = { ...rows[0], source_text: 'Latest concurrent edit' }
@@ -324,17 +331,20 @@ describe('save and publish feedback', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    if (cached) {
-      client.setQueryData(stringsQuery('demo-app', { saved_string: earlier.id }).queryKey, {
-        items: [earlier], total: 1, page: 1, page_size: 1,
-      })
-    }
-    act(() => toastSuccess.mock.calls[0][1].action.onClick())
-    useSearch.mockReturnValue(navigate.mock.lastCall![0].search)
-    view.rerender(
+    client.setQueryData(stringsQuery('demo-app', { saved_string: earlier.id }).queryKey, {
+      items: [earlier], total: 1, page: 1, page_size: 1,
+    })
+    if (remount) view.unmount()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick({ currentTarget: document.createElement('button') }))
+    const navigation = navigate.mock.lastCall![0]
+    useSearch.mockReturnValue(navigation.search)
+    useLocation.mockReturnValue(navigation.state({}).savedStringFocus)
+    if (remount) renderPage()
+    else view.rerender(
       <QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>,
     )
     await waitFor(() => expect(stringsApi.get).toHaveBeenCalledWith('demo-app', earlier.id))
+    expect(screen.queryByText(earlier.source_text)).toBeNull()
     await act(async () => resolveLatest(latest))
     const latestCell = await screen.findByText(latest.source_text)
     expect(screen.queryByText(earlier.source_text)).toBeNull()
@@ -363,10 +373,12 @@ describe('save and publish feedback', () => {
     const catalogRequests = vi.mocked(stringsApi.list).mock.calls.filter(([, params]) => params?.q === 'auth')
     expect(catalogRequests.length).toBeGreaterThanOrEqual(2)
     for (const [, params] of catalogRequests) expect(params).toMatchObject(search)
-    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    act(() => toastSuccess.mock.calls[0][1].action.onClick({ currentTarget: document.createElement('button') }))
     expect(navigate).toHaveBeenCalledWith({
       to: '/projects/$projectRef/strings', params: { projectRef: 'demo-app' },
       search: { q: rows[0].key, saved_string: rows[0].id, page: 1, page_size: 20, sort: 'key', order: 'desc' },
+      replace: false,
+      state: expect.any(Function),
     })
   })
 
