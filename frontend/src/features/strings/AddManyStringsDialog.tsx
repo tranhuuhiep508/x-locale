@@ -94,6 +94,7 @@ export function AddManyStringsDialog({
   modules,
   tags,
   onClose,
+  onCloseAutoFocus,
   onSuccess,
 }: {
   open: boolean
@@ -102,6 +103,7 @@ export function AddManyStringsDialog({
   modules: Module[]
   tags: Tag[]
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   /** Refresh after a successful draft save or publication. */
   onSuccess: () => void
 }) {
@@ -221,10 +223,11 @@ export function AddManyStringsDialog({
         toast.info('No string changes to save')
         return
       }
+      const countLabel = count === undefined ? 'strings' : `${count} ${count === 1 ? 'string' : 'strings'}`
       toast.success(
         result.action === 'publish'
-          ? `Saved and published ${count} ${count === 1 ? 'string' : 'strings'}`
-          : `Saved ${count} ${count === 1 ? 'string' : 'strings'} as draft`,
+          ? `Saved and published ${countLabel}`
+          : `Saved ${countLabel} as draft`,
         {
           duration: 8000,
           action: {
@@ -408,6 +411,7 @@ export function AddManyStringsDialog({
     >
       <ReviewDialogContent
         className={stage === 'paste' ? undefined : 'sm:max-w-4xl'}
+        onCloseAutoFocus={onCloseAutoFocus}
         onFocusOutside={(event) => {
           event.preventDefault()
         }}

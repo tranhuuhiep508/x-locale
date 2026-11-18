@@ -185,6 +185,7 @@ beforeEach(() => {
   }))
   toast.success.mockReset()
   toast.error.mockReset()
+  toast.info.mockReset()
   vi.mocked(stringsApi.translateMemory).mockReset().mockImplementation((_project, body) => Promise.resolve({ source_text: body.source_text, matches: {} }))
 })
 
@@ -842,16 +843,20 @@ describe('compact editor save and review', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' }), 'publish'))
   })
 
-  it('disables publication of an in-sync public string while allowing draft saves', async () => {
+  it('disables publication and reports an unchanged draft save for an in-sync public string', async () => {
     const entry = { ...draftEntry(), status: 'public' as const, published_key: 'note', published_source_text: 'Ghi chú' }
     vi.mocked(stringsApi.editorPreview).mockResolvedValue({ entry, fingerprint: 'sync' })
-    renderDialog({ entry })
+    const { onClose, onSaved } = renderDialog({ entry })
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }))
     const publish = await screen.findByRole('button', { name: 'Nothing to publish' })
     expect((publish as HTMLButtonElement).disabled).toBe(true)
     expect(stringsApi.editorSave).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Back to editing' }))
-    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(toast.info).toHaveBeenCalledWith('No string changes to save')
+    expect(stringsApi.editorSave).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
   })
 
   it('unpublishes separately without saving or discarding local edits', async () => {

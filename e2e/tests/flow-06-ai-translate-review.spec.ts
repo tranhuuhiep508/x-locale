@@ -73,10 +73,11 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   const applyButton = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(applyButton).toBeEnabled()
   const originalUrl = page.url()
-  await applyButton.click()
+  await applyButton.press('Enter')
 
   await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
   await expect(dialog).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Translate missing', exact: true })).toBeFocused()
   await expect(page).toHaveURL(originalUrl)
   await page.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(page.getByText('Filtered to this translation', { exact: true })).toBeVisible()

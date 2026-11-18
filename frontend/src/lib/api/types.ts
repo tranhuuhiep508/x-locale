@@ -244,7 +244,7 @@ export interface PasteSaveResult {
   action: 'draft' | 'publish'
   created: number
   updated: number
-  changed: number
+  changed?: number
   published: number
   batch_id: string
 }

@@ -427,6 +427,19 @@ describe('AddManyStringsDialog', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  it('confirms a draft save when the server omits the changed count', async () => {
+    const { onClose } = renderDialog()
+    await previewed()
+    vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({
+      action: 'draft', created: 1, updated: 1, published: 0, batch_id: 'batch-1',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(toast.success).toHaveBeenCalledWith('Saved strings as draft', expect.objectContaining({
+      action: expect.objectContaining({ label: 'View changes' }),
+    }))
+  })
+
   it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {
     const { onSuccess, onClose } = renderDialog()
     await previewed()

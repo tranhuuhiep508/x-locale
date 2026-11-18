@@ -50,7 +50,7 @@ interface Props {
   targetLocales: string[]
   initialTab?: 'details' | 'history'
   onClose: () => void
-  onRestoreFocus?: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onSuccess: () => void
   onSaved: (entry: StringEntry, action: EditorSaveRequest['action']) => void
 }
@@ -176,7 +176,7 @@ export default function StringFormDialog({
   targetLocales,
   initialTab = 'details',
   onClose,
-  onRestoreFocus,
+  onCloseAutoFocus,
   onSuccess,
   onSaved,
 }: Props) {
@@ -603,8 +603,17 @@ export default function StringFormDialog({
     if (!sourceText.trim()) nextErrors.source_text = 'Source text is required'
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
-    if (action === 'publish') previewMut.mutate(proposal())
-    else save({ proposal: proposal(), action })
+    const proposed = proposal()
+    if (action === 'publish') {
+      previewMut.mutate(proposed)
+      return
+    }
+    if (proposed.mode === 'update' && Object.keys(proposed.values.expected).length === 0) {
+      onClose()
+      toast.info('No string changes to save')
+      return
+    }
+    save({ proposal: proposed, action })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -641,11 +650,7 @@ export default function StringFormDialog({
         className={cn(
           'flex h-[min(90dvh,760px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl',
         )}
-        onCloseAutoFocus={(event) => {
-          if (!onRestoreFocus) return
-          event.preventDefault()
-          onRestoreFocus()
-        }}
+        onCloseAutoFocus={onCloseAutoFocus}
         onFocusOutside={(event) => {
           // Nested popovers unmount after Create; focus then lands on body, not the
           // popover node. Blocking focus-outside keeps pointer-outside dismiss intact.

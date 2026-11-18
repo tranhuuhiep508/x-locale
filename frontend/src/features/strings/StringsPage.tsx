@@ -190,7 +190,7 @@ function AddStringMenu({
   align?: 'center' | 'end'
   className?: string
   onAddSingle: (opener: HTMLButtonElement | null) => void
-  onAddMany: () => void
+  onAddMany: (opener: HTMLButtonElement | null) => void
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null)
 
@@ -218,7 +218,7 @@ function AddStringMenu({
           </DropdownMenuItem>
           <DropdownMenuItem
             aria-label="Add many"
-            onSelect={onAddMany}
+            onSelect={() => onAddMany(triggerRef.current)}
             className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -253,7 +253,7 @@ export function StringsPage() {
   const [addManyOpen, setAddManyOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
-  const editorOpener = useRef<HTMLElement | null>(null)
+  const dialogOpener = useRef<HTMLElement | null>(null)
   const savedRow = useRef<HTMLTableRowElement>(null)
   const focusedSavedString = useRef<number | undefined>(undefined)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
@@ -636,11 +636,16 @@ export function StringsPage() {
   )
 
   const openEditor = useCallback((entry: StringEntry | null, opener: HTMLElement | null, tab: 'details' | 'history' = 'details') => {
-    editorOpener.current = opener
+    dialogOpener.current = opener
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
   }, [])
+
+  function openAddMany(opener: HTMLButtonElement | null) {
+    dialogOpener.current = opener
+    setAddManyOpen(true)
+  }
 
   function closeEditor() {
     setDialogOpen(false)
@@ -648,8 +653,9 @@ export function StringsPage() {
     setDialogTab('details')
   }
 
-  function restoreEditorFocus() {
-    const opener = editorOpener.current
+  function restoreDialogFocus(event: Event) {
+    event.preventDefault()
+    const opener = dialogOpener.current
     if (opener?.isConnected) {
       opener.focus({ preventScroll: true })
       if (document.activeElement === opener) return
@@ -713,12 +719,12 @@ export function StringsPage() {
   const strings = stringsResult.data?.items
   const data = useMemo(() => strings ?? [], [strings])
   useEffect(() => {
-    const opener = editorOpener.current
-    if (dialogOpen || !opener || opener.isConnected) return
-    editorOpener.current = null
+    const opener = dialogOpener.current
+    if (dialogOpen || addManyOpen || reviewOpen || !opener || opener.isConnected) return
+    dialogOpener.current = null
     // A catalog refresh can remove the opener after the dialog has restored focus.
     if (document.activeElement === document.body) searchInputRef.current?.focus({ preventScroll: true })
-  }, [data, dialogOpen])
+  }, [data, dialogOpen, addManyOpen, reviewOpen])
   const total = stringsResult.data?.total ?? 0
   const lastPage = Math.max(1, Math.ceil(total / search.page_size))
   const pageOutOfRange =
@@ -1009,7 +1015,8 @@ export function StringsPage() {
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/80 bg-background/85 text-foreground hover:bg-muted/60 transition-colors shadow-2xs"
-                  onClick={() => {
+                  onClick={(event) => {
+                    dialogOpener.current = event.currentTarget
                     reviewRequestRef.current = search.saved_string
                       ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
                       : createMissingReviewRequest(search, locales)
@@ -1036,7 +1043,7 @@ export function StringsPage() {
                 <AddStringMenu
                   className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
                   onAddSingle={(opener) => openEditor(null, opener)}
-                  onAddMany={() => setAddManyOpen(true)}
+                  onAddMany={openAddMany}
                 />
               </div>
             }
@@ -1188,7 +1195,7 @@ export function StringsPage() {
                     size="default"
                     align="center"
                     onAddSingle={(opener) => openEditor(null, opener)}
-                    onAddMany={() => setAddManyOpen(true)}
+                    onAddMany={openAddMany}
                   />
                 ) : (
                   <Button variant="outline" size="sm" onClick={clearAllFilters}>
@@ -1260,7 +1267,7 @@ export function StringsPage() {
             tags={tags}
             targetLocales={locales}
             onClose={closeEditor}
-            onRestoreFocus={restoreEditorFocus}
+            onCloseAutoFocus={restoreDialogFocus}
             initialTab={dialogTab}
             onSuccess={invalidateStrings}
             onSaved={savedString}
@@ -1275,12 +1282,14 @@ export function StringsPage() {
         modules={modules}
         tags={tags}
         onClose={() => setAddManyOpen(false)}
+        onCloseAutoFocus={restoreDialogFocus}
         onSuccess={invalidateStrings}
       />
 
       <TranslateReviewDialog
         open={reviewOpen}
         projectId={projectId}
+        onCloseAutoFocus={restoreDialogFocus}
         loadingQueue={missingMut.isPending}
         generating={reviewGenerating}
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}

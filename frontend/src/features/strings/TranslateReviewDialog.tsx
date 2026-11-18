@@ -302,6 +302,7 @@ export function TranslateReviewDialog({
   total,
   onPageChange,
   onClose,
+  onCloseAutoFocus,
   onTranslate,
   onSaveDraft,
   onReviewPublish,
@@ -331,6 +332,7 @@ export function TranslateReviewDialog({
   progress?: TranslateJobProgress | null
   onPageChange: (page: number) => void
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onTranslate: (items: TranslateProposalItem[]) => void
   onSaveDraft: (items: TranslateProposalItem[]) => void
   /** Freeze the current page's reviewed rows and show the full public diff. */
@@ -540,6 +542,7 @@ export function TranslateReviewDialog({
       }}
     >
       <ReviewDialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           const root = event.currentTarget
