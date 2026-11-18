@@ -687,6 +687,15 @@ export function StringsPage() {
   const strings = stringsResult.data?.items
   const data = useMemo(() => strings ?? [], [strings])
   const total = stringsResult.data?.total ?? 0
+  const lastPage = Math.max(1, Math.ceil(total / search.page_size))
+  const pageOutOfRange =
+    !search.saved_string && stringsResult.isSuccess && !stringsResult.isPlaceholderData && search.page > lastPage
+
+  useEffect(() => {
+    if (!pageOutOfRange || stringsResult.fetchStatus !== 'idle') return
+    void navigate({ replace: true, search: (prev) => ({ ...prev, page: lastPage }) })
+  }, [pageOutOfRange, lastPage, stringsResult.fetchStatus, navigate])
+
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
@@ -739,11 +748,8 @@ export function StringsPage() {
     data.length === 0 &&
     !search.batch_id
 
-  const tourReady =
-    modulesResult.isFetched &&
-    !catalogLoading &&
-    !catalogSortListError &&
-    !catalogRefetchingEmpty
+  const catalogDisplayLoading = catalogLoading || catalogSortListError || catalogRefetchingEmpty || pageOutOfRange
+  const tourReady = modulesResult.isFetched && !catalogDisplayLoading
 
   const table = useReactTable({
     data,
@@ -773,7 +779,7 @@ export function StringsPage() {
     enableRowSelection: true,
     manualPagination: true,
     autoResetPageIndex: false,
-    pageCount: Math.max(1, Math.ceil(total / search.page_size) || 1),
+    pageCount: lastPage,
     rowCount: total,
     meta: tableMeta,
   })
@@ -1122,7 +1128,7 @@ export function StringsPage() {
         className="relative min-h-0 flex-1 bg-card"
         data-tour={data.length > 0 ? 'grid' : undefined}
       >
-        {catalogLoading || catalogSortListError || catalogRefetchingEmpty ? (
+        {catalogDisplayLoading ? (
           <StringsTableSkeleton localeCount={locales.length} />
         ) : stringsResult.isError ? (
           <div className="flex h-full min-h-48 items-center justify-center galley-grid p-6">
@@ -1204,7 +1210,7 @@ export function StringsPage() {
         ) : null}
       </div>
 
-      {total > 0 ? (
+      {total > 0 && search.page <= lastPage && !catalogDisplayLoading ? (
         <div className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
           <DataTablePagination table={table} />
         </div>
