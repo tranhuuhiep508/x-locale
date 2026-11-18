@@ -53,8 +53,8 @@ import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 
 export type StringTableMeta = {
   projectId: string
-  onEdit: (entry: StringEntry) => void
-  onHistory: (entry: StringEntry) => void
+  onEdit: (entry: StringEntry, opener: HTMLButtonElement | null) => void
+  onHistory: (entry: StringEntry, opener: HTMLButtonElement | null) => void
   onRefresh: () => void
   onPublishPreview: (entry: StringEntry) => void
   catalogSort: CatalogSortSearch
@@ -243,12 +243,13 @@ function StringActionsCell({
 }: {
   entry: StringEntry
   projectId: string
-  onEdit: (entry: StringEntry) => void
-  onHistory: (entry: StringEntry) => void
+  onEdit: StringTableMeta['onEdit']
+  onHistory: StringTableMeta['onHistory']
   onRefresh: () => void
   onPublishPreview: (entry: StringEntry) => void
 }) {
   const toast = useToast()
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const released = isReleased(entry)
@@ -299,6 +300,7 @@ function StringActionsCell({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
+            ref={triggerRef}
             type="button"
             variant="ghost"
             size="icon-sm"
@@ -311,11 +313,11 @@ function StringActionsCell({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-44">
           <DropdownMenuGroup>
-            <DropdownMenuItem onSelect={() => onEdit(entry)}>
+            <DropdownMenuItem onSelect={() => onEdit(entry, triggerRef.current)}>
               <Pencil />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onHistory(entry)}>
+            <DropdownMenuItem onSelect={() => onHistory(entry, triggerRef.current)}>
               <History />
               History
             </DropdownMenuItem>

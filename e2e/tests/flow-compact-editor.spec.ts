@@ -27,6 +27,7 @@ test('publishing preserves filters until the toast action reveals the saved row'
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
   const row = page.getByRole('row').filter({ hasText: key })
   await expect(page.getByRole('dialog', { name: 'Add string', exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Add string', exact: true }).first()).toBeFocused()
   await expect(page.getByText('String saved and published', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(originalUrl)
   await expect(row).toHaveCount(0)
@@ -41,6 +42,7 @@ test('publishing preserves filters until the toast action reveals the saved row'
   await dialog.getByRole('button', { name: 'Save as draft' }).click()
   await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
   await expect(dialog).toBeHidden()
+  await expect(row).toBeFocused()
   await page.locator('[data-sonner-toast]').filter({ hasText: 'String saved as draft' }).getByRole('button', { name: 'View changes' }).click()
   await expect(row).toBeFocused()
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Welcome')
@@ -53,6 +55,75 @@ test('publishing preserves filters until the toast action reveals the saved row'
   await expect(row).toBeFocused()
   await page.screenshot({ path: testInfo.outputPath('editor-saved-mobile.png') })
   expect((await fetchStringByKey(page, project, key)).published_source_text).toBe('Good morning')
+})
+
+test('mobile draft saves restore focus and allow editing and paging during a slow refresh', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openDemoStrings(page)
+  const project = projectIdFromUrl(page)
+  const prefix = `compact_paged_${Date.now()}`
+  for (const suffix of ['a', 'b']) {
+    const response = await page.request.post(`/api/projects/${project}/strings`, {
+      data: { key: `${prefix}_${suffix}`, source_text: 'Original source' },
+    })
+    expect(response.status()).toBe(201)
+  }
+  const key = `${prefix}_b`
+  await page.goto(`/projects/${project}/strings?q=${prefix}&page=2&page_size=1&sort=key&order=asc`)
+  const row = page.getByRole('row').filter({ hasText: key })
+  const actions = row.getByRole('button', { name: 'Row actions' })
+  const edit = page.getByRole('menuitem', { name: 'Edit', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Edit string' })
+  const source = dialog.getByLabel('Source text')
+  const save = dialog.getByRole('button', { name: 'Save as draft' })
+  await actions.press('Enter')
+  await edit.press('Enter')
+  await expect(source).toHaveValue('Original source')
+
+  const refresh = Promise.withResolvers<void>()
+  const catalogPage = (url: URL) =>
+    url.pathname.endsWith('/strings') && url.searchParams.get('q') === prefix && url.searchParams.get('page') === '2'
+  await page.route(catalogPage, async (route) => {
+    await refresh.promise
+    await route.continue()
+  })
+  const refreshStarted = page.waitForRequest((request) => catalogPage(new URL(request.url())))
+  try {
+    await source.fill('First edit')
+    await save.click()
+    await refreshStarted
+    await expect(dialog).toBeHidden()
+    await expect(actions).toBeFocused()
+    await page.keyboard.press('Enter')
+    await edit.press('Enter')
+    await expect(source).toHaveValue('First edit')
+    await source.fill('Second edit')
+    await save.click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByText('String saved as draft', { exact: true }).last()).toBeVisible()
+    await page.getByRole('button', { name: 'Previous page', exact: true }).click({ timeout: 2000 })
+    await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
+    expect((await fetchStringByKey(page, project, key)).source_text).toBe('Second edit')
+  } finally {
+    refresh.resolve()
+  }
+})
+
+test('focus returns to search when the saved string leaves the filtered catalog', async ({ page }) => {
+  await openDemoStrings(page)
+  const project = projectIdFromUrl(page)
+  const key = `removed_by_rename_${Date.now()}`
+  const response = await page.request.post(`/api/projects/${project}/strings`, {
+    data: { key, source_text: 'Search result' },
+  })
+  expect(response.status()).toBe(201)
+  await openStringEditor(page, key)
+  const dialog = page.getByRole('dialog', { name: 'Edit string' })
+  await dialog.getByLabel('Key', { exact: true }).fill('renamed_search_result')
+  await dialog.getByRole('button', { name: 'Save as draft' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('row').filter({ hasText: 'Search result' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Search strings' })).toBeFocused()
 })
 
 test('draft creation preserves the catalog and its toast opens the exact saved row from Activity', async ({ page }) => {

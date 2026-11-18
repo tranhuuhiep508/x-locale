@@ -92,6 +92,7 @@ import type {
   BatchAction,
   PublishPreviewRequest,
   StringEntry,
+  StringListResponse,
   TranslateProposalItem,
   TranslateRequest,
   TranslateReview,
@@ -188,13 +189,15 @@ function AddStringMenu({
   size?: 'sm' | 'default'
   align?: 'center' | 'end'
   className?: string
-  onAddSingle: () => void
+  onAddSingle: (opener: HTMLButtonElement | null) => void
   onAddMany: () => void
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size={size} className={className}>
+        <Button ref={triggerRef} size={size} className={className}>
           <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
           Add string
           <ChevronDown data-icon="inline-end" className="size-3.5 text-foreground" />
@@ -204,7 +207,7 @@ function AddStringMenu({
         <DropdownMenuGroup>
           <DropdownMenuItem
             aria-label="Add single string"
-            onSelect={onAddSingle}
+            onSelect={() => onAddSingle(triggerRef.current)}
             className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -250,6 +253,7 @@ export function StringsPage() {
   const [addManyOpen, setAddManyOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
+  const editorOpener = useRef<HTMLElement | null>(null)
   const savedRow = useRef<HTMLTableRowElement>(null)
   const focusedSavedString = useRef<number | undefined>(undefined)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
@@ -631,7 +635,8 @@ export function StringsPage() {
     [loadPublishPreview],
   )
 
-  const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
+  const openEditor = useCallback((entry: StringEntry | null, opener: HTMLElement | null, tab: 'details' | 'history' = 'details') => {
+    editorOpener.current = opener
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
@@ -643,7 +648,28 @@ export function StringsPage() {
     setDialogTab('details')
   }
 
+  function restoreEditorFocus() {
+    const opener = editorOpener.current
+    if (opener?.isConnected) {
+      opener.focus({ preventScroll: true })
+      if (document.activeElement === opener) return
+    }
+    searchInputRef.current?.focus({ preventScroll: true })
+  }
+
   function savedString(entry: StringEntry, action: 'save_draft' | 'publish') {
+    const stringsKey = queryKeys.projects.strings.all(projectId)
+    // Replace existing rows immediately. The refetch resolves filter membership and ordering.
+    qc.setQueriesData<StringListResponse>({
+      queryKey: stringsKey,
+      predicate: ({ queryKey }) => {
+        const scope = queryKey[stringsKey.length]
+        return typeof scope === 'object' || scope === 'saved'
+      },
+    }, (current) => {
+      if (!current?.items.some((item) => item.id === entry.id)) return undefined
+      return { ...current, items: current.items.map((item) => item.id === entry.id ? entry : item) }
+    })
     toast.success(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
       duration: 8000,
       action: {
@@ -686,6 +712,13 @@ export function StringsPage() {
 
   const strings = stringsResult.data?.items
   const data = useMemo(() => strings ?? [], [strings])
+  useEffect(() => {
+    const opener = editorOpener.current
+    if (dialogOpen || !opener || opener.isConnected) return
+    editorOpener.current = null
+    // A catalog refresh can remove the opener after the dialog has restored focus.
+    if (document.activeElement === document.body) searchInputRef.current?.focus({ preventScroll: true })
+  }, [data, dialogOpen])
   const total = stringsResult.data?.total ?? 0
   const lastPage = Math.max(1, Math.ceil(total / search.page_size))
   const pageOutOfRange =
@@ -719,8 +752,8 @@ export function StringsPage() {
   const tableMeta = useMemo(
     () => ({
       projectId,
-      onEdit: (entry: StringEntry) => openEditor(entry),
-      onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
+      onEdit: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener),
+      onHistory: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener, 'history'),
       onRefresh: invalidateStrings,
       onPublishPreview: (entry: StringEntry) => requestPublishPreview({ string_ids: [entry.id] }),
       catalogSort: catalogSortSearch,
@@ -1002,7 +1035,7 @@ export function StringsPage() {
 
                 <AddStringMenu
                   className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
-                  onAddSingle={() => openEditor(null)}
+                  onAddSingle={(opener) => openEditor(null, opener)}
                   onAddMany={() => setAddManyOpen(true)}
                 />
               </div>
@@ -1154,7 +1187,7 @@ export function StringsPage() {
                   <AddStringMenu
                     size="default"
                     align="center"
-                    onAddSingle={() => openEditor(null)}
+                    onAddSingle={(opener) => openEditor(null, opener)}
                     onAddMany={() => setAddManyOpen(true)}
                   />
                 ) : (
@@ -1177,7 +1210,7 @@ export function StringsPage() {
             onRowClick={(row, event) => {
               const target = event.target as HTMLElement
               if (target.closest('button, input, [role="checkbox"], [role="switch"], [role="radio"], [role="menuitem"], a')) return
-              openEditor(row.original)
+              openEditor(row.original, event.currentTarget)
             }}
           />
         )}
@@ -1212,7 +1245,7 @@ export function StringsPage() {
       </div>
 
       {total > 0 && search.page <= lastPage && (!catalogDisplayLoading || batchPageLoading) ? (
-        <div className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
+        <div data-strings-pagination className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
           <DataTablePagination table={table} />
         </div>
       ) : null}
@@ -1227,6 +1260,7 @@ export function StringsPage() {
             tags={tags}
             targetLocales={locales}
             onClose={closeEditor}
+            onRestoreFocus={restoreEditorFocus}
             initialTab={dialogTab}
             onSuccess={invalidateStrings}
             onSaved={savedString}

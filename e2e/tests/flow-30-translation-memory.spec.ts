@@ -62,15 +62,16 @@ test('batch review shows memory inline before AI and skips only the selected loc
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue(`[ja] ${source}`)
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
   await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
-  await expect(dialog.getByText('Every target locale already has text.').first()).toBeVisible()
+  await expect(dialog).toBeHidden()
   const saved = await (
     await page.request.get(`/api/projects/${project.id}/strings/${destination.id}`)
   ).json()
   expect(saved.status).toBe('draft')
   expect(saved.published_at).toBeNull()
-  expect(
-    saved.translations.find((cell: { locale: string }) => cell.locale === 'en').confidence,
-  ).toBeNull()
+  expect(saved.translations).toEqual(expect.arrayContaining([
+    expect.objectContaining({ locale: 'en', value: 'Published hello {name}', confidence: null }),
+    expect.objectContaining({ locale: 'ja', value: `[ja] ${source}` }),
+  ]))
 })
 
 test('retranslation can reuse its own publication and clear confidence for unchanged text', async ({

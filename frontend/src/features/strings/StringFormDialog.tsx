@@ -50,6 +50,7 @@ interface Props {
   targetLocales: string[]
   initialTab?: 'details' | 'history'
   onClose: () => void
+  onRestoreFocus?: () => void
   onSuccess: () => void
   onSaved: (entry: StringEntry, action: EditorSaveRequest['action']) => void
 }
@@ -175,6 +176,7 @@ export default function StringFormDialog({
   targetLocales,
   initialTab = 'details',
   onClose,
+  onRestoreFocus,
   onSuccess,
   onSaved,
 }: Props) {
@@ -491,8 +493,8 @@ export default function StringFormDialog({
   const saveMut = useMutation({
     mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
     onSuccess: (entry, request) => {
-      refreshQueries()
       onSaved(entry, request.action)
+      refreshQueries()
     },
     onError: (error, request) => {
       if (isPublishFingerprintMismatch(error)) {
@@ -639,6 +641,11 @@ export default function StringFormDialog({
         className={cn(
           'flex h-[min(90dvh,760px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl',
         )}
+        onCloseAutoFocus={(event) => {
+          if (!onRestoreFocus) return
+          event.preventDefault()
+          onRestoreFocus()
+        }}
         onFocusOutside={(event) => {
           // Nested popovers unmount after Create; focus then lands on body, not the
           // popover node. Blocking focus-outside keeps pointer-outside dismiss intact.
