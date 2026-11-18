@@ -94,40 +94,111 @@ test('draft creation preserves the catalog and its toast opens the exact saved r
   await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
   await page.goForward()
   await expect(row).toBeVisible()
-  await search.fill(key.slice(0, -1))
+  const query = key.slice(0, -1)
+  const searchResponse = Promise.withResolvers<void>()
+  await page.route(
+    (url) => url.pathname.endsWith('/strings') && url.searchParams.get('q') === query,
+    async (route) => {
+      await searchResponse.promise
+      await route.continue()
+    },
+  )
+  try {
+    await search.fill(query)
+    await expect(page.getByRole('status', { name: 'Loading strings' })).toBeVisible()
+    await expect(row).toHaveCount(0)
+  } finally {
+    searchResponse.resolve()
+  }
   await expect(page.getByText(`${key}_other`, { exact: true })).toBeVisible()
   await expect(search).toBeFocused()
 })
 
-test('a pending save still shows View changes after leaving the editor', async ({ page }) => {
+test('a pending search does not carry into the published batch', async ({ page }) => {
   await openDemoStrings(page)
-  await page.getByRole('link', { name: 'Activity', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
-  await page.getByRole('link', { name: 'Strings', exact: true }).click()
-  const key = `compact_pending_${Date.now()}`
-  await openAddStringDialog(page)
-  await fillStringForm(page, { key, source: 'Pending save' })
-
-  let releaseResponse!: () => void
-  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve })
-  await page.route('**/strings/editor-save', async (route) => {
-    const response = await route.fetch()
-    await responseGate
-    await route.fulfill({ response })
+  const project = projectIdFromUrl(page)
+  const key = `compact_batch_search_${Date.now()}`
+  const response = await page.request.post(`/api/projects/${project}/strings`, {
+    data: { key, source_text: 'Batch search source' },
   })
-  const request = page.waitForRequest('**/strings/editor-save')
-  try {
-    await page.getByRole('button', { name: 'Save as draft', exact: true }).click()
-    await request
-    await page.goBack()
-    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
-  } finally {
-    releaseResponse()
-  }
-  await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'View changes', exact: true }).click()
-  await expect(page.getByRole('row').filter({ hasText: key })).toBeFocused()
+  expect(response.ok()).toBeTruthy()
+  await page.goto(`/projects/${project}/strings?status=draft&sort=created_at&order=desc`)
+  const row = page.getByRole('row').filter({ hasText: key })
+  await row.getByRole('checkbox', { name: 'Select row' }).click()
+  await page.getByRole('toolbar', { name: 'Batch actions' }).getByRole('button', { name: 'Publish', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Publish', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const toast = page.getByRole('button', { name: 'View changes', exact: true })
+  await expect(toast).toBeVisible()
+
+  await page.clock.install()
+  await page.clock.pauseAt(new Date(Date.now() + 100))
+  const search = page.getByRole('textbox', { name: 'Search strings' })
+  await search.fill('key_outside_the_batch')
+  await toast.evaluate((button: HTMLButtonElement) => button.click())
+  await expect(page).toHaveURL(/batch_id=/)
+  await page.clock.runFor(500)
+  await page.clock.resume()
+
+  await expect(search).toHaveValue('')
+  await expect(page).not.toHaveURL(/[?&]q=/)
+  await expect(row).toBeVisible()
 })
+
+for (const destination of ['Activity', 'another project'] as const) {
+  test(`a pending save still shows View changes after leaving the editor for ${destination}`, async ({ page }) => {
+    await openDemoStrings(page)
+    const name = `Pending save project ${Date.now()}`
+    if (destination === 'Activity') {
+      await page.getByRole('link', { name: 'Activity', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
+    } else {
+      const project = await page.request.post('/api/projects', {
+        data: { name, base_language: 'en', target_languages: ['fr'], layout: 'flat' },
+      })
+      expect(project.status()).toBe(201)
+      await page.goto('/')
+      await page.getByRole('link', { name }).click()
+      await expect(page.getByRole('button', { name: `Switch project, current: ${name}` })).toBeVisible()
+    }
+    const previousUrl = page.url()
+    if (destination === 'Activity') {
+      await page.getByRole('link', { name: 'Strings', exact: true }).click()
+    } else {
+      await page.getByRole('button', { name: /Switch project, current:/ }).click()
+      await page.getByRole('menuitem', { name: /Demo App/ }).click()
+    }
+    await expect(page).toHaveURL(/\/projects\/demo-app\/strings/)
+    const key = `compact_pending_${Date.now()}`
+    await openAddStringDialog(page)
+    await fillStringForm(page, { key, source: 'Pending save' })
+
+    let releaseResponse!: () => void
+    const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve })
+    await page.route('**/strings/editor-save', async (route) => {
+      const response = await route.fetch()
+      await responseGate
+      await route.fulfill({ response })
+    })
+    const request = page.waitForRequest('**/strings/editor-save')
+    try {
+      await page.getByRole('button', { name: 'Save as draft', exact: true }).click()
+      await request
+      await page.goBack()
+      await expect(page).toHaveURL(previousUrl)
+      await expect(destination === 'Activity'
+        ? page.getByRole('heading', { name: 'Activity', exact: true })
+        : page.getByRole('button', { name: `Switch project, current: ${name}`, includeHidden: true })).toBeVisible()
+    } finally {
+      releaseResponse()
+    }
+    await expect(page.getByText('String saved as draft', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'View changes', exact: true }).click()
+    await expect(page).toHaveURL(/\/projects\/demo-app\/strings\?.*saved_string=/)
+    await expect(page.getByRole('row').filter({ hasText: key })).toBeFocused()
+  })
+}
 
 test('a competing locale edit refreshes the review and requires another confirmation', async ({ page }) => {
   await openDemoStrings(page)

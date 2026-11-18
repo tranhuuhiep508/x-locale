@@ -292,7 +292,7 @@ export function StringsPage() {
 
   useEffect(() => {
     setSearchInput(search.q ?? '')
-  }, [search.q, savedStringFocus])
+  }, [search.q, search.batch_id, search.saved_string, savedStringFocus])
 
   const applySearchQ = useEffectEvent((value: string) => {
     startTransition(() => {
@@ -316,7 +316,7 @@ export function StringsPage() {
       }
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [searchInput, search.q])
+  }, [searchInput, search.q, search.batch_id, search.saved_string, savedStringFocus])
 
   const stringsResult = useQuery(stringsQueryOptions(projectId, search, savedStringFocus))
   const catalogLoading = stringsResult.isLoading ||
@@ -748,7 +748,8 @@ export function StringsPage() {
     data.length === 0 &&
     !search.batch_id
 
-  const catalogDisplayLoading = catalogLoading || catalogSortListError || catalogRefetchingEmpty || pageOutOfRange
+  const batchPageLoading = Boolean(search.batch_id && stringsResult.isPlaceholderData)
+  const catalogDisplayLoading = catalogLoading || catalogSortListError || catalogRefetchingEmpty || pageOutOfRange || batchPageLoading
   const tourReady = modulesResult.isFetched && !catalogDisplayLoading
 
   const table = useReactTable({
@@ -1210,7 +1211,7 @@ export function StringsPage() {
         ) : null}
       </div>
 
-      {total > 0 && search.page <= lastPage && !catalogDisplayLoading ? (
+      {total > 0 && search.page <= lastPage && (!catalogDisplayLoading || batchPageLoading) ? (
         <div className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
           <DataTablePagination table={table} />
         </div>

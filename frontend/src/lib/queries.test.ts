@@ -13,8 +13,11 @@ afterEach(() => {
 describe('stringsQuery', () => {
   it.each([
     ['opening a saved string', {}, { saved_string: 'saved-id' }],
+    ['leaving a saved string', { saved_string: 'saved-id' }, { q: 'search' }],
     ['entering a batch', {}, { batch_id: 'batch-id' }],
     ['leaving a batch', { batch_id: 'batch-id' }, {}],
+    ['switching batches', { batch_id: 'batch-id' }, { batch_id: 'another-batch' }],
+    ['changing batch filters', { batch_id: 'batch-id', q: 'one' }, { batch_id: 'batch-id', q: 'two' }],
   ] as const)('waits for the requested data when %s', (_scenario, from, to) => {
     const client = new QueryClient()
     const catalog = stringsQuery('project', from)

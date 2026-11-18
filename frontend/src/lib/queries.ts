@@ -1,4 +1,4 @@
-import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
+import { hashKey, infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { activitiesApi } from '@/lib/api/activities'
 import type { ActivityFeedSearchParams } from '@/lib/api/activities'
 import { toActivityFeedApiParams } from '@/lib/api/activities'
@@ -72,10 +72,11 @@ export const stringsQuery = (
   savedStringFocus?: number,
 ) => {
   const { batch_kind: _batchKind, saved_string: savedString, ...keySearch } = search
+  const stringsKey = queryKeys.projects.strings.all(projectId)
   // Each toast navigation starts a fresh read before the destination can focus the row.
   return queryOptions({
     queryKey: savedString
-      ? [...queryKeys.projects.strings.all(projectId), 'saved', savedString,
+      ? [...stringsKey, 'saved', savedString,
           ...(savedStringFocus === undefined ? [] : [savedStringFocus])]
       : queryKeys.projects.strings.list(projectId, keySearch),
     queryFn: async () => {
@@ -84,11 +85,19 @@ export const stringsQuery = (
       const items = entry.deleted_at ? [] : [entry]
       return { items, total: items.length, page: 1, page_size: 1 }
     },
-    placeholderData: savedString || search.batch_id ? undefined : (prev, previousQuery) => {
-      const previousKey = previousQuery?.queryKey
-      const previousSearch = previousKey?.[previousKey.length - 1]
-      if (typeof previousSearch === 'object' && previousSearch.batch_id) return undefined
-      return prev
+    placeholderData: savedString ? undefined : (previous, previousQuery) => {
+      const previousSearch = previousQuery?.queryKey[stringsKey.length]
+      if (!previous || typeof previousSearch !== 'object' || previousSearch === null) return undefined
+      const previousParams = previousSearch as StringListParams
+      if (!keySearch.batch_id && !previousParams.batch_id) return previous
+      if (keySearch.batch_id !== previousParams.batch_id) return undefined
+
+      const filters = { ...keySearch, page: undefined, page_size: undefined }
+      const previousFilters = { ...previousParams, page: undefined, page_size: undefined }
+      if (hashKey([filters]) !== hashKey([previousFilters])) return undefined
+
+      // Keep the pagination controls mounted without showing rows from the previous page.
+      return { ...previous, items: [] }
     },
   })
 }

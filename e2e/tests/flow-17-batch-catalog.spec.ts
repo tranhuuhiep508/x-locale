@@ -131,6 +131,32 @@ test('happy path: Review this batch lists live, soft-deleted, and pending_delete
   await expect(page.getByRole('row').filter({ hasText: pendingKey })).toBeVisible()
 })
 
+test('paging within a batch keeps keyboard focus while loading the next rows', async ({ page }) => {
+  await openDemoStrings(page)
+  await page.goto(`/projects/${projectRef}/strings?batch_id=${batchId}&page_size=1`)
+  await expect(page.getByText('1–1 of 3', { exact: true })).toBeVisible()
+  const next = page.getByRole('button', { name: 'Next page', exact: true })
+  const nextPageResponse = Promise.withResolvers<void>()
+  await page.route(
+    (url) => url.pathname.endsWith('/strings') && url.searchParams.get('batch_id') === batchId && url.searchParams.get('page') === '2',
+    async (route) => {
+      await nextPageResponse.promise
+      await route.continue()
+    },
+  )
+  await next.focus()
+  try {
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('status', { name: 'Loading strings' })).toBeVisible()
+    await expect(page.getByRole('checkbox', { name: 'Select row' })).toHaveCount(0)
+    await expect(next).toBeFocused()
+  } finally {
+    nextPageResponse.resolve()
+  }
+  await expect(page.getByRole('checkbox', { name: 'Select row' })).toHaveCount(1)
+  await expect(next).toBeFocused()
+})
+
 test('clearing search preserves batch_id and batch chip (AC13 preserve-path)', async ({ page }) => {
   await openDemoStrings(page)
   await reviewBatchFromActivityCard(
