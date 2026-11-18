@@ -10,6 +10,8 @@ import type {
   PasteSaveResult,
   TranslatePreviewBatchRequest,
   TranslatePreviewBatchResult,
+  CliPushBatch,
+  CliPushPublishRequest,
   BatchRequest,
   BatchResult,
   PublishPreviewEntries,
@@ -101,6 +103,12 @@ export const stringsApi = {
     api.post<PasteReview>(`/projects/${projectId}/strings/paste-review`, body),
   pasteSave: (projectId: string, body: PasteSaveRequest) =>
     api.post<PasteSaveResult>(`/projects/${projectId}/strings/paste-save`, body),
+  saveCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/draft`, body),
+  publishCliPushBatch: (projectId: string, batchId: string, body: CliPushPublishRequest) =>
+    api.post<BatchResult>(`/projects/${projectId}/cli-push-batches/${batchId}/publish`, body),
+  cliPushBatch: (projectId: string, batchId: string) =>
+    api.get<CliPushBatch>(`/projects/${projectId}/cli-push-batches/${batchId}`),
   translateMemory: (projectId: string, body: TranslationMemoryRequest) =>
     api.post<TranslationMemoryResult>(`/projects/${projectId}/translate/memory`, body),
   list: (projectId: string, params: StringListParams) =>

@@ -209,25 +209,28 @@ commit client IDs or secrets.
 - **Status** is per string: `draft` or `public`. Edits stay on the working copy. `stage=public` export / `loc pull --stage public` uses the last published snapshot until you publish again. Untranslated published locales export as empty. Deletes are soft: never-published keys are hidden immediately; published keys stay on prod until you publish the removal, then remain as a restorable tombstone.
 - **Shared editing:** the string dialog sends only changed fields and locales, with their original values in `expected`. Unrelated edits merge; competing changes return `409` with `detail.code=stale_editor_save`, conflicting field names, and the current string. No part of a conflicting save is applied. The dialog retains input and lets you use the latest conflicting values or keep your changes for another checked save. PATCH accepts an `expected` object matching the changed fields; locale PUT accepts the original text as `expected` (empty text is `""`). Comparisons and writes share a transaction with row locks. Existing API callers that omit `expected` retain unconditional write behavior.
 - **Tags** enable batch selection (e.g. publish everything tagged `release-1.4`).
-- **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string. **Review this batch** opens the catalog at `?batch_id=` for CLI push, import, Excel import, and translate cards. That filter AND-composes with the other string filters and, unlike the default catalog, includes soft-deleted members of the batch. No catalog filter is dropped when `batch_id` is set.
+- **Activity log** records string content changes (keys, source, translations, publish/delete), not modules, tags, project settings, or API keys. Undo reverts a bulk import/translate/publish batch; History restores an older working copy of one string. **Review this batch** opens the catalog at `?batch_id=` for import, Excel import, and translate cards. That filter AND-composes with the other string filters and, unlike the default catalog, includes soft-deleted members of the batch. No catalog filter is dropped when `batch_id` is set.
 
 More detail: [docs/](docs/).
 
 ### CLI push batch review
 
-After `loc push`, follow the printed review link or open
-**Activity → CLI push → Review this batch**. Both open **Strings** filtered to
-that push, using the existing catalog and AI review dialogs.
+After `loc push`, open **Activity → CLI push → Review this batch**. The batch
+workspace shows the pushed strings, their working translations, and their
+published values. A Translate → Review → Publish stepper tracks the workflow.
+Click **Translate all** to regenerate every project target language for review,
+including existing text. Generated results and manual edits
+stay temporary in this workspace. **Save as draft** saves reviewed translations to
+the working copy without changing public exports. **Publish batch** saves and
+publishes the whole batch in one transaction. Both actions show a success toast
+and keep you on the batch screen; **View in Strings** opens the catalog filtered
+to this CLI push batch. Leaving or reloading discards only unsaved progress.
 
-The AI review dialog opens automatically for CLI pushes. Generate translations,
-review and edit them,
-then **Save as draft** or **Review & publish**. Use the catalog's existing
-publication review to publish other changes in the batch. Public exports keep
-the previous snapshot until publication. Existing workspace URLs redirect to
-the filtered catalog.
-
-For JSON changes, **Add many** provides the paste, AI translation, and
-publication flow described below.
+This is the default workflow for new CLI push batches, with no automation setting.
+CLI commands/configuration and dashboard import/catalog workflows are unchanged.
+Older import batches retain their catalog review links. Deleted and pending-delete
+strings are excluded from this workspace. Competing edits require renewed review;
+generation or save failures never publish content.
 
 ### Add many (paste JSON)
 

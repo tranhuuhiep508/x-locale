@@ -1,12 +1,13 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+import { BatchWorkspace } from '@/features/batches/BatchWorkspace'
 
 export const Route = createFileRoute('/projects/$projectRef/batches/$batchId')({
-  beforeLoad: ({ params: { projectRef, batchId } }) => {
-    throw redirect({
-      to: '/projects/$projectRef/strings',
-      params: { projectRef },
-      search: { batch_id: batchId, batch_kind: 'cli_push' },
-      replace: true,
-    })
-  },
+  component: BatchRoute,
 })
+
+function BatchRoute() {
+  const { projectRef, batchId } = Route.useParams()
+  return (
+    <BatchWorkspace key={`${projectRef}:${batchId}`} projectRef={projectRef} batchId={batchId} />
+  )
+}
