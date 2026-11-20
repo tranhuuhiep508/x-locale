@@ -11,11 +11,7 @@ import { stringsApi } from '@/lib/api/strings'
 import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
 import { StringsPage } from './StringsPage'
 
-// These tests drive StringsPage through multi-step translate and job-polling chains.
-// Under a loaded CI runner a step can exceed Testing Library's default wait
-// (the source-conflict case missed "Translate again" at 5s). Vitest isolates
-// modules per file, so this only applies here. The suite timeout stays above
-// that wait so a slow step finishes instead of the test being killed with it.
+// Allow for multi-step translation and job polling under CI load.
 configure({ asyncUtilTimeout: 8_000 })
 const suiteTimeout = { timeout: 20_000 }
 
@@ -69,10 +65,14 @@ const publishedMatch: TranslationMemoryMatch = {
 }
 let client: QueryClient
 
-// Text set in a mutation's onSuccess/onError can render before React Query clears
-// isPending on its timer; until then the button is disabled and a click is dropped.
+// A button can render while React Query still reports a pending mutation.
+// Wait for it to become actionable so fireEvent does not drop the click.
 async function waitUntilEnabled(name: string) {
-  await waitFor(() => expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false))
+  return waitFor(() => {
+    const button = screen.getByRole<HTMLButtonElement>('button', { name })
+    expect(button.disabled).toBe(false)
+    return button
+  })
 }
 
 afterEach(() => {
@@ -185,7 +185,7 @@ describe('translation review retranslation', suiteTimeout, () => {
       .mockResolvedValueOnce({ ...page, items: [{ ...row, translations: { ja: 'New Japanese' }, scores: { ja: 80 } }] })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+    fireEvent.click(await waitUntilEnabled('Translate'))
     await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'))
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
@@ -245,7 +245,7 @@ describe('translation review retranslation', suiteTimeout, () => {
     })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+    fireEvent.click(await waitUntilEnabled('Translate'))
     // The en field is already mounted for the missing queue, so findByLabelText
     // resolves before this click's proposals rename the button.
     await waitUntilEnabled('Translate again')
@@ -289,7 +289,7 @@ async function openSourceConflict() {
     .mockResolvedValue({ action: 'draft', translated_count: 2, string_count: 2, published_count: 0, batch_id: 'batch' })
   render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+  fireEvent.click(await waitUntilEnabled('Translate'))
   await waitUntilEnabled('Translate again')
   fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
@@ -321,7 +321,7 @@ describe('source conflict recovery', suiteTimeout, () => {
     })
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
-    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    fireEvent.click(await waitUntilEnabled('Save as draft'))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].items).toMatchObject([
       { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' } },
@@ -365,7 +365,7 @@ describe('source conflict recovery', suiteTimeout, () => {
     vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
       ...page, items: [{ ...item, source_text: 'Hủy', translations: { en: 'Cancel' } }],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    fireEvent.click(await waitUntilEnabled('Regenerate changed strings'))
     await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
