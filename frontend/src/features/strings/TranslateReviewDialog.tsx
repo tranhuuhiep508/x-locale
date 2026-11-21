@@ -17,6 +17,7 @@ import type {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -290,7 +291,9 @@ export function TranslateReviewDialog({
   open,
   projectId,
   loadingQueue,
-  savedBatchId,
+  savedBatch,
+  noChanges = false,
+  onViewSavedBatch,
   onRetryQueue,
   generating,
   saving = null,
@@ -320,7 +323,9 @@ export function TranslateReviewDialog({
   open: boolean
   projectId: string
   loadingQueue: boolean
-  savedBatchId?: string
+  savedBatch?: { id: string; message: string } | null
+  noChanges?: boolean
+  onViewSavedBatch?: (batchId: string) => void
   onRetryQueue?: () => void
   generating: boolean
   /** The write in flight, if any. */
@@ -355,6 +360,7 @@ export function TranslateReviewDialog({
     draftsFromItems(items),
   )
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
+  const [confirmLeaving, setConfirmLeaving] = useState(false)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
   // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
   const loadedPage = useRef(items)
@@ -362,8 +368,8 @@ export function TranslateReviewDialog({
   const titleRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
-    if (open && savedBatchId) titleRef.current?.focus({ preventScroll: true })
-  }, [open, savedBatchId])
+    if (open && (savedBatch || noChanges)) titleRef.current?.focus({ preventScroll: true })
+  }, [open, savedBatch, noChanges])
 
   useEffect(() => {
     setDrafts(draftsFromItems(items))
@@ -516,8 +522,7 @@ export function TranslateReviewDialog({
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
   const queueUnavailable = Boolean(onRetryQueue) && draftList.length === 0
-  const complete = Boolean(savedBatchId) && total === 0 && !loadingQueue && !onRetryQueue
-  const generatingLabel = translateProgressLabel(progress)
+  const complete = Boolean(savedBatch || noChanges) && total === 0 && !loadingQueue && !onRetryQueue
   const statusDescription = reviewStatusDescription({
     loadingInitial: showInitialSpinner,
     total,
@@ -535,10 +540,18 @@ export function TranslateReviewDialog({
     setStepDirection(reviewing ? 'forward' : 'backward')
   }
 
-  const description = reviewing
-    ? `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
+  const description = generating ? translateProgressLabel(progress)
+    : reviewLoading ? 'Comparing changes…'
+    : reviewing ? `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
+    : queueUnavailable ? 'Retry to load the queue.'
     : statusDescription
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
+
+  function viewSavedBatch() {
+    if (!savedBatch) return
+    setConfirmLeaving(false)
+    onViewSavedBatch?.(savedBatch.id)
+  }
 
   return (
     <Dialog
@@ -571,10 +584,10 @@ export function TranslateReviewDialog({
             <TranslateStepper current={currentStep} />
           </div>
           <div className="flex min-h-6 items-center justify-between gap-3" aria-live="polite">
-            <DialogDescription className="min-w-0 truncate">
-              {queueUnavailable ? (savedBatchId ? 'Your batch was saved.' : 'Retry to load the queue.') : description}
+            <DialogDescription className={cn('min-w-0', !generating && 'truncate')}>
+              {description}
             </DialogDescription>
-            {!reviewing && (unusedExact.length > 0 || memoryUndo) ? (
+            {!reviewing && !generating && (unusedExact.length > 0 || memoryUndo) ? (
               <div className="flex shrink-0 items-center gap-1.5">
                 {unusedExact.length > 0 ? (
                   <Button type="button" variant="outline" size="xs" disabled={busy} onClick={useExactMatches}>
@@ -589,6 +602,26 @@ export function TranslateReviewDialog({
                 ) : null}
               </div>
             ) : null}
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+            <span role="status">
+              {noChanges ? 'No translation changes to save' : savedBatch?.message}
+            </span>
+            {savedBatch && onViewSavedBatch && (
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                className="px-0"
+                disabled={applying || generating || reviewing || reviewLoading}
+                onClick={() => {
+                  if (pageLocked) setConfirmLeaving(true)
+                  else viewSavedBatch()
+                }}
+              >
+                {noChanges ? 'View previous changes' : 'View changes'}
+              </Button>
+            )}
           </div>
           {!reviewing && error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
@@ -702,9 +735,6 @@ export function TranslateReviewDialog({
         ) : null}
 
         <ReviewDialogFooter>
-          <span role="status" className="sr-only">
-            {generating ? generatingLabel : reviewLoading ? 'Comparing changes…' : ''}
-          </span>
           {reviewing ? (
             <div
               key="publish-footer"
@@ -809,6 +839,15 @@ export function TranslateReviewDialog({
             </div>
           )}
         </ReviewDialogFooter>
+        <ConfirmDialog
+          open={confirmLeaving}
+          onClose={() => setConfirmLeaving(false)}
+          onConfirm={viewSavedBatch}
+          title="Discard unsaved translations?"
+          description="Your edits on this page will be discarded when you open the saved batch."
+          cancelLabel="Keep reviewing"
+          confirmLabel="Discard and view changes"
+        />
       </ReviewDialogContent>
     </Dialog>
   )

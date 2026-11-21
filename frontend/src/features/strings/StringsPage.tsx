@@ -258,6 +258,7 @@ export function StringsPage() {
   const focusedSavedString = useRef<number | undefined>(undefined)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [savedReviewBatch, setSavedReviewBatch] = useState<{ id: string; message: string } | null>(null)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
   const [reviewPage, setReviewPage] = useState(1)
   const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
@@ -572,12 +573,7 @@ export function StringsPage() {
       // Saving changes the queue's membership, so offsets from the old page are stale.
       missingMut.mutate(missingRequest(1))
       if (res.translated_count > 0 || res.published_count > 0) {
-        toast.success(saveSuccessMessage(res), {
-          duration: 8000,
-          action: { label: 'View changes', onClick: () => showChangedBatch(res.batch_id, 'translate') },
-        })
-      } else {
-        toast.info('No translation changes to save')
+        setSavedReviewBatch({ id: res.batch_id, message: saveSuccessMessage(res) })
       }
     },
     onError: (error, { action, payload }) => {
@@ -603,6 +599,7 @@ export function StringsPage() {
   function resetReview() {
     clearReviewBatch()
     setReviewOpen(false)
+    setSavedReviewBatch(null)
     reviewRequestRef.current = null
     saveMut.reset()
   }
@@ -1294,7 +1291,12 @@ export function StringsPage() {
         projectId={projectId}
         onCloseAutoFocus={restoreDialogFocus}
         loadingQueue={missingMut.isPending}
-        savedBatchId={saveMut.data?.batch_id}
+        savedBatch={savedReviewBatch}
+        noChanges={saveMut.data?.translated_count === 0 && saveMut.data.published_count === 0}
+        onViewSavedBatch={(batchId) => {
+          resetReview()
+          showChangedBatch(batchId, 'translate')
+        }}
         onRetryQueue={missingMut.isError ? () => loadMissingPage(missingMut.variables.page ?? 1) : undefined}
         generating={reviewGenerating}
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}

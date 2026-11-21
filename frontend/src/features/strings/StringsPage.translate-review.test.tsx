@@ -17,8 +17,6 @@ const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
 const useSearch = vi.hoisted(() => vi.fn<() => { q?: string }>())
-const toastSuccess = vi.hoisted(() => vi.fn())
-const toastInfo = vi.hoisted(() => vi.fn())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
@@ -30,7 +28,7 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({}),
 }))
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: toastInfo }),
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }))
 vi.mock('@/lib/api/catalog', () => ({
   languagesApi: { list: vi.fn() },
@@ -121,7 +119,7 @@ describe('translation review retranslation', suiteTimeout, () => {
     fireEvent.click(translate)
     await waitFor(() => expect(translate.querySelector('[data-slot="spinner"]')).toBeTruthy())
     expect(screen.getByRole('heading', { name: 'Missing Translations' })).toBeTruthy()
-    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.getByText('Generating translations…').classList.contains('sr-only')).toBe(false)
     await act(async () => { finish({ ...page, items: [{ ...item, translations: { en: 'Hello' } }] }) })
     expect(await screen.findByRole('heading', { name: 'Review Translations' })).toBeTruthy()
   })
@@ -411,13 +409,11 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     const opener = await screen.findByRole('button', { name: 'Translate missing' })
     fireEvent.click(opener)
-    return opener
   }
 
   async function openAndFill() {
-    const opener = await openReview()
+    await openReview()
     fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
-    return opener
   }
 
   it('freezes the reviewed rows, shows the full public diff, and publishes without a second confirmation', async () => {
@@ -426,7 +422,7 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     vi.mocked(stringsApi.translateReview).mockReturnValue(response)
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
     vi.mocked(stringsApi.translateMissing).mockResolvedValueOnce(page).mockResolvedValueOnce(emptyPage)
-    const opener = await openAndFill()
+    await openAndFill()
     const review = screen.getByRole<HTMLButtonElement>('button', { name: 'Review & publish' })
     fireEvent.click(review)
     await waitFor(() => expect(review.querySelector('[data-slot="spinner"]')).toBeTruthy())
@@ -451,14 +447,11 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     }))
     expect(await screen.findByText('No missing translations remain')).toBeTruthy()
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true)
-    fireEvent.click(await waitUntilEnabled('Done'))
-    await waitFor(() => expect(document.activeElement).toBe(opener))
-    expect(toastSuccess).toHaveBeenCalledWith('Saved and published 1 string. Available on the next public pull or export.', {
-      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
-    })
-    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Saved and published 1 string. Available on the next public pull or export.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy()
     expect(navigate).not.toHaveBeenCalled()
-    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    fireEvent.click(await waitUntilEnabled('View changes'))
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(navigate).toHaveBeenCalledTimes(1)
     const { search } = navigate.mock.calls[0][0] as { search: (prev: { page_size?: number }) => unknown }
     expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub', batch_kind: 'translate' })
@@ -547,7 +540,7 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     })
   })
 
-  it('keeps a partially translated row in the queue after saving draft', async () => {
+  it('keeps a partially translated row in the queue and guards later edits before opening the saved batch', async () => {
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
     vi.mocked(stringsApi.translateMissing)
       .mockResolvedValueOnce({ ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { en: '', ja: '' } }] })
@@ -560,11 +553,16 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
     expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
-    expect(toastSuccess).toHaveBeenCalledTimes(1)
-    expect(toastSuccess).toHaveBeenCalledWith('Translations saved as draft. Public translations are unchanged.', expect.any(Object))
+    expect(screen.getByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
     expect(navigate).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
-    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    fireEvent.change(screen.getByRole('textbox', { name: 'ja' }), { target: { value: 'こんにちは' } })
+    fireEvent.click(await waitUntilEnabled('View changes'))
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' }).value).toBe('こんにちは')
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.click(await waitUntilEnabled('View changes'))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and view changes' }))
     const navigation = navigate.mock.calls[0][0]
     expect(navigation.params).toEqual({ projectRef: 'demo-app' })
     expect(navigation.search({ page: 4, q: 'old', status: 'draft', page_size: 20 }))
@@ -580,10 +578,12 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
 
     expect(await screen.findByText('Failed to load missing translations')).toBeTruthy()
-    expect(screen.getByText('Your batch was saved.')).toBeTruthy()
+    expect(screen.getByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
+    expect((await waitUntilEnabled('View changes')).closest('[role="dialog"]')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
     fireEvent.click(await waitUntilEnabled('Retry'))
     expect(await screen.findByText('No missing translations remain')).toBeTruthy()
+    expect(await waitUntilEnabled('View changes')).toBeTruthy()
     expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3)
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
   })
@@ -606,8 +606,8 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     await openAndFill()
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await screen.findByRole('button', { name: 'Done' })
-    expect(toastInfo).toHaveBeenCalledWith('No translation changes to save')
-    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(screen.getByText('No translation changes to save')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
 })
