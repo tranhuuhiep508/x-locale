@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { QaIssue, TranslateProposalItem } from '@/lib/api/types'
+import type { QaIssue, TranslateJobProgress, TranslateProposalItem } from '@/lib/api/types'
 import { stringsApi } from '@/lib/api/strings'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { QA_DEBOUNCE_MS } from './qa-issues'
@@ -252,7 +252,13 @@ it.each(['source change', 'page change'])('discards restore history after a %s',
   expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('New AI text')
 })
 
-function pagedReview(initial: { page?: number; total?: number; items?: TranslateProposalItem[]; reviewing?: boolean } = {}) {
+function pagedReview(initial: {
+  page?: number
+  total?: number
+  items?: TranslateProposalItem[]
+  reviewing?: boolean
+  progress?: TranslateJobProgress
+} = {}) {
   const onPageChange = vi.fn()
   const props = {
     open: true,
@@ -284,6 +290,15 @@ function pagedReview(initial: { page?: number; total?: number; items?: Translate
     rerender: (next: Partial<typeof props>) => rendered.rerender(view(next)),
   }
 }
+
+it('shows the current AI batch and retry status in the dialog description', () => {
+  const { rerender } = pagedReview()
+  rerender({ generating: true, progress: { phase: 'translating', chunks_done: 1, chunks_total: 3 } })
+  expect(screen.getByRole('dialog').getAttribute('aria-describedby'))
+    .toBe(screen.getByText('Translating batch 2 of 3…').id)
+  rerender({ generating: true, progress: { phase: 'retrying', chunks_done: 1, chunks_total: 3 } })
+  expect(screen.getByText('AI translation is busy, retrying…').closest('.sr-only')).toBeNull()
+})
 
 it('blocks paging while generated translations differ from the loaded page', async () => {
   const loaded: TranslateProposalItem[] = [

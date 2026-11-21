@@ -1,8 +1,9 @@
-/** Chip copy for a catalog opened from an activity batch. */
+/** Chip copy for a batch-filtered catalog. */
 export function batchFilterChipLabel(batchKind: string | undefined): string {
   if (batchKind === 'excel_import') return 'Filtered to this Excel import'
   if (batchKind === 'translate') return 'Filtered to this translation'
-  return 'Filtered to this push'
+  if (batchKind === 'import' || batchKind === 'cli_push') return 'Filtered to this push'
+  return 'Filtered to this batch'
 }
 
 export function catalogEmptyCopy(batchFiltered: boolean, hasOtherFilters: boolean): {

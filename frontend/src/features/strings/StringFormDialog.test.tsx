@@ -185,6 +185,7 @@ beforeEach(() => {
   }))
   toast.success.mockReset()
   toast.error.mockReset()
+  toast.info.mockReset()
   vi.mocked(stringsApi.translateMemory).mockReset().mockImplementation((_project, body) => Promise.resolve({ source_text: body.source_text, matches: {} }))
 })
 
@@ -370,6 +371,11 @@ describe('StringFormDialog inline catalog create', () => {
     await waitFor(() => expect(stringsApi.translatePreview).toHaveBeenCalledWith('proj-1', expect.objectContaining({ module_id: 'mod-new' })))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false))
 
+    document.body.tabIndex = -1
+    document.body.focus()
+    fireEvent.focusIn(document.body)
+    expect(onClose).not.toHaveBeenCalled()
+
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => {
       expect(savedCreates).toHaveBeenCalledWith(
@@ -382,10 +388,7 @@ describe('StringFormDialog inline catalog create', () => {
       )
     })
 
-    document.body.tabIndex = -1
-    document.body.focus()
-    fireEvent.focusIn(document.body)
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 
   it('previews with the current module selection and explicit null when unassigned', async () => {
@@ -475,7 +478,7 @@ describe('StringFormDialog inline catalog create', () => {
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalled()
     })
-    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 })
 
@@ -791,7 +794,7 @@ describe('compact editor save and review', () => {
     fireEvent.change(screen.getByLabelText('Key'), { target: { value: saved.key } })
     fireEvent.change(screen.getByLabelText('Source text'), { target: { value: saved.source_text } })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved, 'save_draft'))
     expect(onSuccess).toHaveBeenCalledTimes(1)
   })
 
@@ -837,19 +840,23 @@ describe('compact editor save and review', () => {
     await waitFor(() => expect(stringsApi.editorSave).toHaveBeenLastCalledWith('proj-1', {
       action: 'publish', fingerprint: 'second', proposal: { mode: 'update', string_id: 'str-1', values: { expected: {} } },
     }))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' })))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'str-1', status: 'public' }), 'publish'))
   })
 
-  it('disables publication of an in-sync public string while allowing draft saves', async () => {
+  it('disables publication and reports an unchanged draft save for an in-sync public string', async () => {
     const entry = { ...draftEntry(), status: 'public' as const, published_key: 'note', published_source_text: 'Ghi chú' }
     vi.mocked(stringsApi.editorPreview).mockResolvedValue({ entry, fingerprint: 'sync' })
-    renderDialog({ entry })
+    const { onClose, onSaved } = renderDialog({ entry })
     fireEvent.click(screen.getByRole('button', { name: 'Publish changes' }))
     const publish = await screen.findByRole('button', { name: 'Nothing to publish' })
     expect((publish as HTMLButtonElement).disabled).toBe(true)
     expect(stringsApi.editorSave).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Back to editing' }))
-    expect((screen.getByRole('button', { name: 'Save as draft' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(toast.info).toHaveBeenCalledWith('No string changes to save')
+    expect(stringsApi.editorSave).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
   })
 
   it('unpublishes separately without saving or discarding local edits', async () => {

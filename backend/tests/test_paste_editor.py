@@ -62,6 +62,7 @@ def test_paste_selected_tag_replaces_existing_tag(client):
     fingerprint = review(client, pid, rows, tag_ids=[second])["fingerprint"]
     response = save(client, pid, rows, fingerprint, tag_ids=[second])
     assert response.status_code == 200, response.text
+    assert response.json()["changed"] == 1
     current = client.get(f"{root}/strings/{entry['id']}").json()
     assert [tag["id"] for tag in current["tags"]] == [second]
 
@@ -116,6 +117,7 @@ def test_draft_save_keeps_public_snapshot_and_groups_one_batch(client):
     assert response.status_code == 200, response.text
     result = response.json()
     assert (result["created"], result["updated"], result["published"]) == (1, 1, 0)
+    assert result["changed"] == 2
 
     current = by_key(client, pid)
     assert current["hello"]["status"] == "public"
@@ -134,6 +136,21 @@ def test_draft_save_keeps_public_snapshot_and_groups_one_batch(client):
     assert all(row["batch_kind"] == "import" for row in rows_["items"])
     preview = client.get(f"{root}/activities/batch/{result['batch_id']}/revert/preview").json()
     assert preview["can_revert"]
+
+
+def test_unchanged_draft_paste_has_no_changes_or_batch_members(client):
+    pid = make_project(client)["id"]
+    root = f"/api/projects/{pid}"
+    rows = [{"key": "hello", "source_text": "Hello", "translations": {"en": "Hi"}}]
+    response = client.post(f"{root}/strings", json=rows[0])
+    assert response.status_code == 201, response.text
+
+    fingerprint = review(client, pid, rows)["fingerprint"]
+    response = save(client, pid, rows, fingerprint)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert (result["created"], result["updated"], result["changed"]) == (0, 1, 0)
+    assert client.get(f"{root}/strings", params={"batch_id": result["batch_id"]}).json()["total"] == 0
 
 
 def test_publish_saves_and_promotes_exactly_the_pasted_strings(client):

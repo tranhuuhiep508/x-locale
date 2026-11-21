@@ -17,11 +17,11 @@ import type {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Progress } from '@/components/ui/progress'
-import { PendingLabel, Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
 import { MatchBar } from '@/features/strings/translation-memory-view'
@@ -34,7 +34,6 @@ import {
   localeCount,
   reviewStatusDescription,
   translateProgressLabel,
-  translateProgressPercent,
   updateDraftTranslation,
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
@@ -292,6 +291,10 @@ export function TranslateReviewDialog({
   open,
   projectId,
   loadingQueue,
+  savedBatch,
+  noChanges = false,
+  onViewSavedBatch,
+  onRetryQueue,
   generating,
   saving = null,
   generated,
@@ -302,6 +305,7 @@ export function TranslateReviewDialog({
   total,
   onPageChange,
   onClose,
+  onCloseAutoFocus,
   onTranslate,
   onSaveDraft,
   onReviewPublish,
@@ -310,9 +314,6 @@ export function TranslateReviewDialog({
   reviewLoading = false,
   onBackToEdit,
   onPublish,
-  savedNotice,
-  refreshError,
-  onRetryRefresh,
   progress,
   sourceConflicts = [],
   recoveryMessage,
@@ -322,6 +323,10 @@ export function TranslateReviewDialog({
   open: boolean
   projectId: string
   loadingQueue: boolean
+  savedBatch?: { id: string; message: string } | null
+  noChanges?: boolean
+  onViewSavedBatch?: (batchId: string) => void
+  onRetryQueue?: () => void
   generating: boolean
   /** The write in flight, if any. */
   saving?: 'draft' | 'publish' | null
@@ -334,19 +339,17 @@ export function TranslateReviewDialog({
   progress?: TranslateJobProgress | null
   onPageChange: (page: number) => void
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onTranslate: (items: TranslateProposalItem[]) => void
   onSaveDraft: (items: TranslateProposalItem[]) => void
   /** Freeze the current page's reviewed rows and show the full public diff. */
   onReviewPublish: (items: TranslateProposalItem[]) => void
-  /** Proposed public state of the frozen review; null while loading. */
+  /** Proposed public state of the frozen review. */
   publishReview?: StringEntry[] | null
   reviewing?: boolean
   reviewLoading?: boolean
   onBackToEdit?: () => void
   onPublish?: () => void
-  savedNotice?: string | null
-  refreshError?: string | null
-  onRetryRefresh?: () => void
   sourceConflicts?: TranslationSourceConflict[]
   recoveryMessage?: string | null
   onRegenerate?: (items: TranslateProposalItem[]) => void
@@ -357,10 +360,17 @@ export function TranslateReviewDialog({
     draftsFromItems(items),
   )
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
+  const [confirmLeaving, setConfirmLeaving] = useState(false)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
   // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
   const loadedPage = useRef(items)
   const sawGenerated = useRef(false)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const viewChangesRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (open && (savedBatch || noChanges)) titleRef.current?.focus({ preventScroll: true })
+  }, [open, savedBatch, noChanges])
 
   useEffect(() => {
     setDrafts(draftsFromItems(items))
@@ -512,8 +522,8 @@ export function TranslateReviewDialog({
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
-  const generatingLabel = translateProgressLabel(progress)
-  const generatingPercent = translateProgressPercent(progress)
+  const queueUnavailable = Boolean(onRetryQueue) && draftList.length === 0
+  const complete = Boolean(savedBatch || noChanges) && total === 0 && !loadingQueue && !onRetryQueue
   const statusDescription = reviewStatusDescription({
     loadingInitial: showInitialSpinner,
     total,
@@ -531,12 +541,18 @@ export function TranslateReviewDialog({
     setStepDirection(reviewing ? 'forward' : 'backward')
   }
 
-  const description = reviewing
-    ? reviewLoading && !publishReview
-      ? 'Comparing changes…'
-      : `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
+  const description = generating ? translateProgressLabel(progress)
+    : reviewLoading ? 'Comparing changes…'
+    : reviewing ? `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
+    : queueUnavailable ? 'Retry to load the queue.'
     : statusDescription
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
+
+  function viewSavedBatch() {
+    if (!savedBatch) return
+    setConfirmLeaving(false)
+    onViewSavedBatch?.(savedBatch.id)
+  }
 
   return (
     <Dialog
@@ -546,6 +562,7 @@ export function TranslateReviewDialog({
       }}
     >
       <ReviewDialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           const root = event.currentTarget
@@ -558,7 +575,7 @@ export function TranslateReviewDialog({
       >
         <ReviewDialogHeader>
           <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-            <DialogTitle className="truncate">
+            <DialogTitle ref={titleRef} tabIndex={-1} className="truncate">
               {reviewing
                 ? 'Review Publication'
                 : generated
@@ -568,17 +585,10 @@ export function TranslateReviewDialog({
             <TranslateStepper current={currentStep} />
           </div>
           <div className="flex min-h-6 items-center justify-between gap-3" aria-live="polite">
-            <DialogDescription className="min-w-0 truncate">
-              {generating ? generatingLabel : description}
+            <DialogDescription className={cn('min-w-0', !generating && 'truncate')}>
+              {description}
             </DialogDescription>
-            {generating ? (
-              <Progress
-                value={generatingPercent}
-                aria-label={generatingLabel}
-                aria-valuetext={generatingLabel}
-                className={cn('w-28 shrink-0', generatingPercent == null && 'animate-pulse')}
-              />
-            ) : !reviewing && (unusedExact.length > 0 || memoryUndo) ? (
+            {!reviewing && !generating && (unusedExact.length > 0 || memoryUndo) ? (
               <div className="flex shrink-0 items-center gap-1.5">
                 {unusedExact.length > 0 ? (
                   <Button type="button" variant="outline" size="xs" disabled={busy} onClick={useExactMatches}>
@@ -594,25 +604,32 @@ export function TranslateReviewDialog({
               </div>
             ) : null}
           </div>
-          {savedNotice && !reviewing ? (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status">
-              <Check className="size-4 text-primary" aria-hidden="true" />
-              {savedNotice}
-            </p>
-          ) : null}
-          {refreshError ? (
-            <Alert>
-              <AlertTitle>Saved, but the list could not refresh</AlertTitle>
-              <AlertDescription>
-                <p>{refreshError}</p>
-                <Button type="button" variant="outline" size="sm" disabled={loadingQueue} onClick={onRetryRefresh}>
-                  <PendingLabel pending={loadingQueue}>Retry loading</PendingLabel>
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {!reviewing && error && !loadingQueue && !refreshError ? (
+          <div className="flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+            <span role="status">
+              {noChanges ? 'No translation changes to save' : savedBatch?.message}
+            </span>
+            {savedBatch && onViewSavedBatch && (
+              <Button
+                ref={viewChangesRef}
+                type="button"
+                variant="link"
+                size="xs"
+                className="px-0"
+                disabled={applying || generating || reviewing || reviewLoading}
+                onClick={() => {
+                  if (pageLocked) setConfirmLeaving(true)
+                  else viewSavedBatch()
+                }}
+              >
+                {noChanges ? 'View previous changes' : 'View changes'}
+              </Button>
+            )}
+          </div>
+          {!reviewing && error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
+          ) : null}
+          {onRetryQueue && !queueUnavailable ? (
+            <p className="text-sm text-destructive" role="status">Failed to load missing translations.</p>
           ) : null}
           {recoveryMessage ? (
             <p className="text-sm text-destructive" role="status">
@@ -630,7 +647,7 @@ export function TranslateReviewDialog({
                 stepDirection === 'forward' ? 'animate-step-in-right' : 'animate-step-in-left'
               )}
             >
-              <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+              <TranslatePublishReview entries={publishReview} loading={false} />
             </div>
           ) : showInitialSpinner ? (
             <div
@@ -640,11 +657,10 @@ export function TranslateReviewDialog({
               <Spinner />
               Loading missing strings…
             </div>
-          ) : refreshError && draftList.length === 0 ? (
-            <EmptyState
-              title="List not refreshed"
-              description="Your changes were saved. Retry loading to continue reviewing."
-            />
+          ) : queueUnavailable ? (
+            <EmptyState title="Failed to load missing translations" />
+          ) : complete ? (
+            <EmptyState title="No missing translations remain" />
           ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
           ) : draftList.length === 0 ? (
@@ -688,7 +704,7 @@ export function TranslateReviewDialog({
                     )}
                     onRemove={() => onRemoveFromReview?.(draftList, item.string_id)}
                     onToggleMemory={toggleMemory}
-                    disabled={applying || generating || pagingInPlace}
+                    disabled={applying || generating || pagingInPlace || reviewLoading}
                     onChange={(stringId, locale, value) => {
                       setMemoryUndo(null)
                       if (!drafts[stringId].memory_selected?.includes(locale) || !value.trim()) {
@@ -735,8 +751,8 @@ export function TranslateReviewDialog({
                 disabled={applying || reviewLoading || publishCount === 0}
                 onClick={onPublish}
               >
-                {saving === 'publish' ? (
-                  <Spinner data-icon="inline-start" />
+                {saving === 'publish' || reviewLoading ? (
+                  <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                 ) : (
                   <Send data-icon="inline-start" />
                 )}
@@ -752,33 +768,47 @@ export function TranslateReviewDialog({
                 variant="outline"
                 type="button"
                 onClick={onClose}
-                disabled={applying || generating}
+                disabled={applying || generating || reviewLoading}
               >
-                Discard
+                {complete ? 'Done' : queueUnavailable || showInitialSpinner ? 'Cancel' : 'Discard'}
               </Button>
+              {onRetryQueue ? (
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    titleRef.current?.focus({ preventScroll: true })
+                    onRetryQueue()
+                  }}
+                >
+                  Retry
+                </Button>
+              ) : null}
               {sourceConflicts.length > 0 ? (
                 <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
                   {generating ? (
-                    <Spinner data-icon="inline-start" />
+                    <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                   ) : (
                     <Wand2 data-icon="inline-start" />
                   )}
                   Regenerate changed strings
                 </Button>
               ) : null}
-              <Button
-                variant={applyCount > 0 ? 'outline' : 'default'}
-                type="button"
-                disabled={!canTranslate}
-                onClick={() => onTranslate(draftList)}
-              >
-                {generating ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Wand2 data-icon="inline-start" />
-                )}
-                {generated ? 'Translate again' : 'Translate'}
-              </Button>
+              {draftList.length > 0 ? (
+                <Button
+                  variant={applyCount > 0 ? 'outline' : 'default'}
+                  type="button"
+                  disabled={!canTranslate}
+                  onClick={() => onTranslate(draftList)}
+                >
+                  {generating && sourceConflicts.length === 0 ? (
+                    <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
+                  ) : (
+                    <Wand2 data-icon="inline-start" />
+                  )}
+                  {generated ? 'Translate again' : 'Translate'}
+                </Button>
+              ) : null}
               {applyCount > 0 ? (
                 <>
                   <Button
@@ -800,7 +830,7 @@ export function TranslateReviewDialog({
                     onClick={() => onReviewPublish(draftList)}
                   >
                     {reviewLoading ? (
-                      <Spinner data-icon="inline-start" />
+                      <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                     ) : (
                       <Check data-icon="inline-start" />
                     )}
@@ -811,6 +841,20 @@ export function TranslateReviewDialog({
             </div>
           )}
         </ReviewDialogFooter>
+        <ConfirmDialog
+          open={confirmLeaving}
+          onClose={() => setConfirmLeaving(false)}
+          onCloseAutoFocus={(event) => {
+            if (!open) return
+            event.preventDefault()
+            viewChangesRef.current?.focus({ preventScroll: true })
+          }}
+          onConfirm={viewSavedBatch}
+          title="Discard unsaved translations?"
+          description="Your edits on this page will be discarded when you open the saved batch."
+          cancelLabel="Keep reviewing"
+          confirmLabel="Discard and view changes"
+        />
       </ReviewDialogContent>
     </Dialog>
   )

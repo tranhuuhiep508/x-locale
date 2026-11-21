@@ -4,7 +4,7 @@ import {
   type Row,
   type Table as TanStackTable,
 } from '@tanstack/react-table'
-import type { CSSProperties, Ref } from 'react'
+import type { CSSProperties, MouseEvent, Ref } from 'react'
 import {
   Table,
   TableBody,
@@ -19,7 +19,7 @@ import './table-meta.ts'
 
 interface DataTableProps<TData> {
   table: TanStackTable<TData>
-  onRowClick?: (row: Row<TData>, event: React.MouseEvent) => void
+  onRowClick?: (row: Row<TData>, event: MouseEvent<HTMLTableRowElement>) => void
   getRowClassName?: (row: Row<TData>) => string | undefined
   focusRowId?: string
   focusRowRef?: Ref<HTMLTableRowElement>
@@ -104,13 +104,13 @@ export function DataTable<TData>({
             <TableRow
               key={row.id}
               ref={row.id === focusRowId ? focusRowRef : undefined}
-              tabIndex={row.id === focusRowId ? -1 : undefined}
+              tabIndex={onRowClick || row.id === focusRowId ? -1 : undefined}
               data-state={row.getIsSelected() ? 'selected' : undefined}
               className={cn(
                 onRowClick && 'cursor-pointer group',
                 hasPinnedColumns && 'string-row-base bg-card',
                 getRowClassName?.(row),
-                row.id === focusRowId && 'focus:outline-2 focus:-outline-offset-2 focus:outline-ring',
+                (onRowClick || row.id === focusRowId) && 'focus:outline-2 focus:-outline-offset-2 focus:outline-ring',
               )}
               onClick={
                 onRowClick

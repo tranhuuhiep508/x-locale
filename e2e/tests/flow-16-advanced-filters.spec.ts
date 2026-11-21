@@ -255,16 +255,18 @@ test('Translate missing honors combined grid filters through generation and Appl
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   const apply = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(apply).toBeEnabled()
+  const originalUrl = page.url()
   const refreshedResponse = page.waitForResponse(
     (res) => res.request().method() === 'POST' && res.url().endsWith('/translate/missing'),
   )
   await apply.click()
   const refreshed = await refreshedResponse
-  const refreshedBody = refreshed.request().postDataJSON()
-  expect(refreshedBody).toEqual(missingBody)
+  expect(refreshed.request().postDataJSON()).toEqual(missingBody)
   expect((await refreshed.json()).total).toBe(0)
-  await expect(dialog.getByText('Nothing to translate', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
+  await expect(dialog.getByText('No missing translations remain', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(originalUrl)
+  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
 
   const stored = await page.request.get(`/api/projects/${project.id}/strings`)
   expect(stored.ok()).toBeTruthy()
