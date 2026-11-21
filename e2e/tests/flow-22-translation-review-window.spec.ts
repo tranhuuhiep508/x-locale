@@ -9,7 +9,7 @@ for (const filter of [
   { param: 'period', value: '1h', advanceHours: 2 },
   { param: 'updated_within_days', value: '7', advanceHours: 8 * 24 },
 ]) {
-  test(`${filter.param} stays fixed while paging; saving closes review and reopening starts a fresh window`, async ({ page }) => {
+  test(`${filter.param} stays fixed while paging and saving, and reopening starts a fresh window`, async ({ page }) => {
     await openDemoStrings(page)
     const projectId = projectIdFromUrl(page)
     const prefix = `review_window_${filter.param}`
@@ -53,18 +53,21 @@ for (const filter of [
     await expect(apply).toBeEnabled()
     await page.clock.setSystemTime(new Date(later + 3_600_000))
     const originalUrl = page.url()
+    const refreshedResponse = waitForQueue()
     await apply.click()
-    await expect(dialog).toBeHidden()
     await expect(page).toHaveURL(originalUrl)
     await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
 
     // The original snapshot still has the first page missing after saving page 2.
-    const refreshed = await page.request.post(endpoint, { data: secondBody })
+    const refreshed = await refreshedResponse
     expect(refreshed.ok()).toBeTruthy()
+    expect(refreshed.request().postDataJSON()).toEqual(firstBody)
     const refreshedQueue = await refreshed.json()
     expect(refreshedQueue.total).toBe(50)
     expect(refreshedQueue.page).toBe(1)
     expect(refreshedQueue.items.map((item: { key: string }) => item.key)).toEqual(keys.slice(0, 50))
+    await expect(dialog.locator('li[id^="proposal-"]')).toHaveCount(50)
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
 
     const reopenedResponse = waitForQueue()
     await page.getByRole('button', { name: 'Translate missing' }).click()

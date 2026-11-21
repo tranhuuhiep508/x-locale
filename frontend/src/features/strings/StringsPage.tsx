@@ -464,9 +464,6 @@ export function StringsPage() {
       setReviewPageSize(res.page_size)
       setProposalsReady(false)
     },
-    onError: () => {
-      toast.error('Failed to load missing translations')
-    },
   })
 
   function acceptProposals(items: TranslateProposalItem[]) {
@@ -566,10 +563,14 @@ export function StringsPage() {
       stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
     onSuccess: (res) => {
       invalidateStrings()
+      clearReviewBatch()
       setApplySourceConflicts([])
       setRecoveryMessage(null)
       setProposalItems([])
-      resetReview()
+      setReviewPage(1)
+      setReviewTotal(0)
+      // Saving changes the queue's membership, so offsets from the old page are stale.
+      missingMut.mutate(missingRequest(1))
       if (res.translated_count > 0 || res.published_count > 0) {
         toast.success(saveSuccessMessage(res), {
           duration: 8000,
@@ -590,15 +591,20 @@ export function StringsPage() {
     },
   })
 
-  function resetReview() {
+  function clearReviewBatch() {
     reviewRequestId.current += 1
-    setReviewOpen(false)
-    reviewRequestRef.current = null
     setProposalJobId(null)
     setProposalsReady(false)
     setPublishReview(null)
     proposeMut.reset()
     reviewMut.reset()
+  }
+
+  function resetReview() {
+    clearReviewBatch()
+    setReviewOpen(false)
+    reviewRequestRef.current = null
+    saveMut.reset()
   }
 
   function showChangedBatch(batchId: string, batchKind?: string) {
@@ -739,13 +745,11 @@ export function StringsPage() {
     proposeMut.isPending ||
     (Boolean(proposalJobId) && proposalJobQuery.data?.status !== 'failed')
   const reviewError =
-    missingMut.error instanceof Error
-      ? missingMut.error.message
-      : proposeMut.error instanceof Error
-        ? proposeMut.error.message
-        : proposalJobQuery.data?.status === 'failed'
-          ? proposalJobQuery.data.error ?? 'Translation job failed'
-          : null
+    proposeMut.error instanceof Error
+      ? proposeMut.error.message
+      : proposalJobQuery.data?.status === 'failed'
+        ? proposalJobQuery.data.error ?? 'Translation job failed'
+        : null
   const hasActiveFilters = hasActiveStringFilters(search)
   const emptyCopy = catalogEmptyCopy(Boolean(search.batch_id), hasActiveFilters)
 
@@ -1290,6 +1294,8 @@ export function StringsPage() {
         projectId={projectId}
         onCloseAutoFocus={restoreDialogFocus}
         loadingQueue={missingMut.isPending}
+        savedBatchId={saveMut.data?.batch_id}
+        onRetryQueue={missingMut.isError ? () => loadMissingPage(missingMut.variables.page ?? 1) : undefined}
         generating={reviewGenerating}
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}
         generated={proposalsReady}

@@ -110,7 +110,7 @@ test('generated translations block the next page until they are discarded', asyn
   await expect(reopened.getByText('tm_gen_50')).toBeVisible()
 })
 
-test('saving generated translations closes review and reopening allows paging the remaining strings', async ({ page }) => {
+test('saving generated translations refreshes the queue and allows paging the remaining strings', async ({ page }) => {
   const project = await setupProject(page)
   const strings: Record<string, string> = {}
   for (let index = 0; index < 101; index += 1) {
@@ -125,18 +125,15 @@ test('saving generated translations closes review and reopening allows paging th
   await expect(dialog.getByRole('button', { name: 'Next page' })).toHaveAttribute('aria-disabled', 'true')
 
   const originalUrl = page.url()
-  await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  await expect(page).toHaveURL(originalUrl)
-  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
-
   const reload = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/translate/missing'),
   )
-  await page.getByRole('button', { name: 'Translate missing' }).click()
+  await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
   const remaining = await reload
   expect(remaining.ok()).toBeTruthy()
   expect((await remaining.json()).total).toBe(51)
+  await expect(page).toHaveURL(originalUrl)
+  await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
   const next = dialog.getByRole('button', { name: 'Next page' })
   await expect(next).not.toHaveAttribute('aria-disabled', 'true')

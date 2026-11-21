@@ -62,7 +62,8 @@ test('batch review shows memory inline before AI and skips only the selected loc
   await expect(dialog.getByLabel('ja', { exact: true })).toHaveValue(`[ja] ${source}`)
   await expect(dialog.getByLabel('en', { exact: true })).toHaveValue('Published hello {name}')
   await dialog.getByRole('button', { name: 'Save as draft', exact: true }).click()
-  await expect(dialog).toBeHidden()
+  await expect(dialog.getByText('No missing translations remain', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   const saved = await (
     await page.request.get(`/api/projects/${project.id}/strings/${destination.id}`)
   ).json()

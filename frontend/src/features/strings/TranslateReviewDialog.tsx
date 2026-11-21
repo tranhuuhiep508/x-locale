@@ -290,6 +290,8 @@ export function TranslateReviewDialog({
   open,
   projectId,
   loadingQueue,
+  savedBatchId,
+  onRetryQueue,
   generating,
   saving = null,
   generated,
@@ -318,6 +320,8 @@ export function TranslateReviewDialog({
   open: boolean
   projectId: string
   loadingQueue: boolean
+  savedBatchId?: string
+  onRetryQueue?: () => void
   generating: boolean
   /** The write in flight, if any. */
   saving?: 'draft' | 'publish' | null
@@ -355,6 +359,11 @@ export function TranslateReviewDialog({
   // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
   const loadedPage = useRef(items)
   const sawGenerated = useRef(false)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (open && savedBatchId) titleRef.current?.focus({ preventScroll: true })
+  }, [open, savedBatchId])
 
   useEffect(() => {
     setDrafts(draftsFromItems(items))
@@ -506,6 +515,8 @@ export function TranslateReviewDialog({
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
+  const queueUnavailable = Boolean(onRetryQueue) && draftList.length === 0
+  const complete = Boolean(savedBatchId) && total === 0 && !loadingQueue && !onRetryQueue
   const generatingLabel = translateProgressLabel(progress)
   const statusDescription = reviewStatusDescription({
     loadingInitial: showInitialSpinner,
@@ -550,7 +561,7 @@ export function TranslateReviewDialog({
       >
         <ReviewDialogHeader>
           <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-            <DialogTitle className="truncate">
+            <DialogTitle ref={titleRef} tabIndex={-1} className="truncate">
               {reviewing
                 ? 'Review Publication'
                 : generated
@@ -561,7 +572,7 @@ export function TranslateReviewDialog({
           </div>
           <div className="flex min-h-6 items-center justify-between gap-3" aria-live="polite">
             <DialogDescription className="min-w-0 truncate">
-              {description}
+              {queueUnavailable ? (savedBatchId ? 'Your batch was saved.' : 'Retry to load the queue.') : description}
             </DialogDescription>
             {!reviewing && (unusedExact.length > 0 || memoryUndo) ? (
               <div className="flex shrink-0 items-center gap-1.5">
@@ -581,6 +592,9 @@ export function TranslateReviewDialog({
           </div>
           {!reviewing && error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
+          ) : null}
+          {onRetryQueue && !queueUnavailable ? (
+            <p className="text-sm text-destructive" role="status">Failed to load missing translations.</p>
           ) : null}
           {recoveryMessage ? (
             <p className="text-sm text-destructive" role="status">
@@ -608,6 +622,10 @@ export function TranslateReviewDialog({
               <Spinner />
               Loading missing strings…
             </div>
+          ) : queueUnavailable ? (
+            <EmptyState title="Failed to load missing translations" />
+          ) : complete ? (
+            <EmptyState title="No missing translations remain" />
           ) : error && draftList.length === 0 ? (
             <EmptyState title="Translation failed" description={error} />
           ) : draftList.length === 0 ? (
@@ -720,8 +738,20 @@ export function TranslateReviewDialog({
                 onClick={onClose}
                 disabled={applying || generating || reviewLoading}
               >
-                Discard
+                {complete ? 'Done' : queueUnavailable || showInitialSpinner ? 'Cancel' : 'Discard'}
               </Button>
+              {onRetryQueue ? (
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    titleRef.current?.focus({ preventScroll: true })
+                    onRetryQueue()
+                  }}
+                >
+                  Retry
+                </Button>
+              ) : null}
               {sourceConflicts.length > 0 ? (
                 <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
                   {generating ? (
@@ -732,19 +762,21 @@ export function TranslateReviewDialog({
                   Regenerate changed strings
                 </Button>
               ) : null}
-              <Button
-                variant={applyCount > 0 ? 'outline' : 'default'}
-                type="button"
-                disabled={!canTranslate}
-                onClick={() => onTranslate(draftList)}
-              >
-                {generating && sourceConflicts.length === 0 ? (
-                  <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
-                ) : (
-                  <Wand2 data-icon="inline-start" />
-                )}
-                {generated ? 'Translate again' : 'Translate'}
-              </Button>
+              {draftList.length > 0 ? (
+                <Button
+                  variant={applyCount > 0 ? 'outline' : 'default'}
+                  type="button"
+                  disabled={!canTranslate}
+                  onClick={() => onTranslate(draftList)}
+                >
+                  {generating && sourceConflicts.length === 0 ? (
+                    <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
+                  ) : (
+                    <Wand2 data-icon="inline-start" />
+                  )}
+                  {generated ? 'Translate again' : 'Translate'}
+                </Button>
+              ) : null}
               {applyCount > 0 ? (
                 <>
                   <Button

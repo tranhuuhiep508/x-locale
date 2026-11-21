@@ -77,6 +77,9 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await applyButton.press('Enter')
 
   await expect(page.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Translate', exact: true })).toBeEnabled()
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('button', { name: 'Translate missing', exact: true })).toBeFocused()
   await expect(page).toHaveURL(originalUrl)
@@ -165,6 +168,8 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   expect(response.request().postDataJSON().action).toBe('publish')
   // Keep the search until the user explicitly opens the saved batch.
   await expect(page.getByText('Saved and published 1 string')).toBeVisible()
+  await expect(dialog.getByText('No missing translations remain', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).not.toHaveURL(/batch_id=/)
   await expect(page.getByRole('textbox', { name: 'Search strings' })).toHaveValue(`${prefix}_a`)
