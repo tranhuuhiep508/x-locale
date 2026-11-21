@@ -15,6 +15,7 @@ import {
 interface ConfirmDialogProps {
   open: boolean
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onConfirm: () => void
   title: string
   description?: ReactNode
@@ -30,6 +31,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   open,
   onClose,
+  onCloseAutoFocus,
   onConfirm,
   title,
   description,
@@ -47,7 +49,10 @@ export function ConfirmDialog({
         if (!next && !isLoading) onClose()
       }}
     >
-      <AlertDialogContent className={cn('min-w-0 overflow-x-hidden', contentClassName)}>
+      <AlertDialogContent
+        className={cn('min-w-0 overflow-x-hidden', contentClassName)}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description ? (

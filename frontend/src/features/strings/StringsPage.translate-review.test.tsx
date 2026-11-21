@@ -541,6 +541,7 @@ describe('save as draft or publish in place', suiteTimeout, () => {
   })
 
   it('keeps a partially translated row in the queue and guards later edits before opening the saved batch', async () => {
+    const user = userEvent.setup()
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
     vi.mocked(stringsApi.translateMissing)
       .mockResolvedValueOnce({ ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { en: '', ja: '' } }] })
@@ -556,12 +557,16 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(screen.getByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
     expect(navigate).not.toHaveBeenCalled()
     fireEvent.change(screen.getByRole('textbox', { name: 'ja' }), { target: { value: 'こんにちは' } })
-    fireEvent.click(await waitUntilEnabled('View changes'))
-    expect(screen.getByRole('alertdialog')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }))
+    const viewChanges = await waitUntilEnabled('View changes')
+    viewChanges.focus()
+    await user.keyboard('{Enter}')
+    const keepReviewing = await screen.findByRole('button', { name: 'Keep reviewing' })
+    await waitFor(() => expect(document.activeElement).toBe(keepReviewing))
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(document.activeElement).toBe(viewChanges))
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' }).value).toBe('こんにちは')
     expect(navigate).not.toHaveBeenCalled()
-    fireEvent.click(await waitUntilEnabled('View changes'))
+    await user.keyboard('{Enter}')
     fireEvent.click(screen.getByRole('button', { name: 'Discard and view changes' }))
     const navigation = navigate.mock.calls[0][0]
     expect(navigation.params).toEqual({ projectRef: 'demo-app' })

@@ -366,6 +366,7 @@ export function TranslateReviewDialog({
   const loadedPage = useRef(items)
   const sawGenerated = useRef(false)
   const titleRef = useRef<HTMLHeadingElement>(null)
+  const viewChangesRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (open && (savedBatch || noChanges)) titleRef.current?.focus({ preventScroll: true })
@@ -609,6 +610,7 @@ export function TranslateReviewDialog({
             </span>
             {savedBatch && onViewSavedBatch && (
               <Button
+                ref={viewChangesRef}
                 type="button"
                 variant="link"
                 size="xs"
@@ -842,6 +844,11 @@ export function TranslateReviewDialog({
         <ConfirmDialog
           open={confirmLeaving}
           onClose={() => setConfirmLeaving(false)}
+          onCloseAutoFocus={(event) => {
+            if (!open) return
+            event.preventDefault()
+            viewChangesRef.current?.focus({ preventScroll: true })
+          }}
           onConfirm={viewSavedBatch}
           title="Discard unsaved translations?"
           description="Your edits on this page will be discarded when you open the saved batch."
