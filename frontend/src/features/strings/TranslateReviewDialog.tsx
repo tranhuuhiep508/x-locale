@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button'
 import { DataPagination } from '@/components/ui/data-pagination'
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfidenceBadge } from '@/features/strings/confidence'
@@ -34,7 +33,6 @@ import {
   localeCount,
   reviewStatusDescription,
   translateProgressLabel,
-  translateProgressPercent,
   updateDraftTranslation,
 } from '@/features/strings/translate-review'
 import { useQaWatch, type QaWatchRow } from '@/features/strings/use-qa-watch'
@@ -337,7 +335,7 @@ export function TranslateReviewDialog({
   onSaveDraft: (items: TranslateProposalItem[]) => void
   /** Freeze the current page's reviewed rows and show the full public diff. */
   onReviewPublish: (items: TranslateProposalItem[]) => void
-  /** Proposed public state of the frozen review; null while loading. */
+  /** Proposed public state of the frozen review. */
   publishReview?: StringEntry[] | null
   reviewing?: boolean
   reviewLoading?: boolean
@@ -509,7 +507,6 @@ export function TranslateReviewDialog({
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
   const generatingLabel = translateProgressLabel(progress)
-  const generatingPercent = translateProgressPercent(progress)
   const statusDescription = reviewStatusDescription({
     loadingInitial: showInitialSpinner,
     total,
@@ -528,9 +525,7 @@ export function TranslateReviewDialog({
   }
 
   const description = reviewing
-    ? reviewLoading && !publishReview
-      ? 'Comparing changes…'
-      : `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
+    ? `Publish ${publishCount} reviewed ${publishCount === 1 ? 'string' : 'strings'}.`
     : statusDescription
   const qa = useQaWatch(projectId, qaRowsFor(draftList, items), open && !generating)
 
@@ -566,16 +561,9 @@ export function TranslateReviewDialog({
           </div>
           <div className="flex min-h-6 items-center justify-between gap-3" aria-live="polite">
             <DialogDescription className="min-w-0 truncate">
-              {generating ? generatingLabel : description}
+              {description}
             </DialogDescription>
-            {generating ? (
-              <Progress
-                value={generatingPercent}
-                aria-label={generatingLabel}
-                aria-valuetext={generatingLabel}
-                className={cn('w-28 shrink-0', generatingPercent == null && 'animate-pulse')}
-              />
-            ) : !reviewing && (unusedExact.length > 0 || memoryUndo) ? (
+            {!reviewing && (unusedExact.length > 0 || memoryUndo) ? (
               <div className="flex shrink-0 items-center gap-1.5">
                 {unusedExact.length > 0 ? (
                   <Button type="button" variant="outline" size="xs" disabled={busy} onClick={useExactMatches}>
@@ -610,7 +598,7 @@ export function TranslateReviewDialog({
                 stepDirection === 'forward' ? 'animate-step-in-right' : 'animate-step-in-left'
               )}
             >
-              <TranslatePublishReview entries={publishReview} loading={reviewLoading} />
+              <TranslatePublishReview entries={publishReview} loading={false} />
             </div>
           ) : showInitialSpinner ? (
             <div
@@ -663,7 +651,7 @@ export function TranslateReviewDialog({
                     )}
                     onRemove={() => onRemoveFromReview?.(draftList, item.string_id)}
                     onToggleMemory={toggleMemory}
-                    disabled={applying || generating || pagingInPlace}
+                    disabled={applying || generating || pagingInPlace || reviewLoading}
                     onChange={(stringId, locale, value) => {
                       setMemoryUndo(null)
                       if (!drafts[stringId].memory_selected?.includes(locale) || !value.trim()) {
@@ -696,6 +684,9 @@ export function TranslateReviewDialog({
         ) : null}
 
         <ReviewDialogFooter>
+          <span role="status" className="sr-only">
+            {generating ? generatingLabel : reviewLoading ? 'Comparing changes…' : ''}
+          </span>
           {reviewing ? (
             <div
               key="publish-footer"
@@ -710,8 +701,8 @@ export function TranslateReviewDialog({
                 disabled={applying || reviewLoading || publishCount === 0}
                 onClick={onPublish}
               >
-                {saving === 'publish' ? (
-                  <Spinner data-icon="inline-start" />
+                {saving === 'publish' || reviewLoading ? (
+                  <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                 ) : (
                   <Send data-icon="inline-start" />
                 )}
@@ -727,14 +718,14 @@ export function TranslateReviewDialog({
                 variant="outline"
                 type="button"
                 onClick={onClose}
-                disabled={applying || generating}
+                disabled={applying || generating || reviewLoading}
               >
                 Discard
               </Button>
               {sourceConflicts.length > 0 ? (
                 <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
                   {generating ? (
-                    <Spinner data-icon="inline-start" />
+                    <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                   ) : (
                     <Wand2 data-icon="inline-start" />
                   )}
@@ -747,8 +738,8 @@ export function TranslateReviewDialog({
                 disabled={!canTranslate}
                 onClick={() => onTranslate(draftList)}
               >
-                {generating ? (
-                  <Spinner data-icon="inline-start" />
+                {generating && sourceConflicts.length === 0 ? (
+                  <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                 ) : (
                   <Wand2 data-icon="inline-start" />
                 )}
@@ -775,7 +766,7 @@ export function TranslateReviewDialog({
                     onClick={() => onReviewPublish(draftList)}
                   >
                     {reviewLoading ? (
-                      <Spinner data-icon="inline-start" />
+                      <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                     ) : (
                       <Check data-icon="inline-start" />
                     )}

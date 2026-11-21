@@ -683,10 +683,8 @@
 }
 
 /* Unlayered selectors override Sonner's bundled defaults with Atmosphere tokens. */
-@media (width < 40rem) {
-  body:has([data-strings-pagination]) .toaster[data-y-position="bottom"] {
-    bottom: calc(4.5rem + env(safe-area-inset-bottom));
-  }
+body:has([data-strings-pagination]) .toaster[data-y-position="bottom"] {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
 }
 
 .toaster [data-sonner-toast][data-styled="true"] {

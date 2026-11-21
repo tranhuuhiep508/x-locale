@@ -65,8 +65,9 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await dialog.getByRole('button', { name: 'Previous page' }).click()
   await expect(firstKey).toBeVisible()
 
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
-  await expect(dialog.getByRole('progressbar')).toBeVisible()
+  const translate = dialog.getByRole('button', { name: 'Translate', exact: true })
+  await translate.click()
+  await expect(translate.locator('[data-slot="spinner"]')).toBeVisible()
   await expect(paging).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 

@@ -80,11 +80,12 @@ test('mobile draft saves restore focus and allow editing and paging during a slo
   await edit.press('Enter')
   await expect(source).toHaveValue('Original source')
 
-  const refresh = Promise.withResolvers<void>()
+  let releaseRefresh!: () => void
+  const refresh = new Promise<void>((resolve) => { releaseRefresh = resolve })
   const catalogPage = (url: URL) =>
     url.pathname.endsWith('/strings') && url.searchParams.get('q') === prefix && url.searchParams.get('page') === '2'
   await page.route(catalogPage, async (route) => {
-    await refresh.promise
+    await refresh
     await route.continue()
   })
   const refreshStarted = page.waitForRequest((request) => catalogPage(new URL(request.url())))
@@ -105,7 +106,7 @@ test('mobile draft saves restore focus and allow editing and paging during a slo
     await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
     expect((await fetchStringByKey(page, project, key)).source_text).toBe('Second edit')
   } finally {
-    refresh.resolve()
+    releaseRefresh()
   }
 })
 
@@ -166,11 +167,12 @@ test('draft creation preserves the catalog and its toast opens the exact saved r
   await page.goForward()
   await expect(row).toBeVisible()
   const query = key.slice(0, -1)
-  const searchResponse = Promise.withResolvers<void>()
+  let releaseSearch!: () => void
+  const searchResponse = new Promise<void>((resolve) => { releaseSearch = resolve })
   await page.route(
     (url) => url.pathname.endsWith('/strings') && url.searchParams.get('q') === query,
     async (route) => {
-      await searchResponse.promise
+      await searchResponse
       await route.continue()
     },
   )
@@ -179,7 +181,7 @@ test('draft creation preserves the catalog and its toast opens the exact saved r
     await expect(page.getByRole('status', { name: 'Loading strings' })).toBeVisible()
     await expect(row).toHaveCount(0)
   } finally {
-    searchResponse.resolve()
+    releaseSearch()
   }
   await expect(page.getByText(`${key}_other`, { exact: true })).toBeVisible()
   await expect(search).toBeFocused()

@@ -271,7 +271,7 @@ export function StringsPage() {
   // Frozen publication review: exactly these rows publish, against this fingerprint.
   const [publishReview, setPublishReview] = useState<{
     payload: ReviewPayload
-    review: TranslateReview | null
+    review: TranslateReview
   } | null>(null)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
@@ -536,12 +536,10 @@ export function StringsPage() {
     return true
   }
 
-  // Only the latest review request may open the publication review. Back to edit or a
-  // newer review abandons earlier requests; reset() alone still runs these callbacks.
+  // Only the latest review request may open the publication review.
   const reviewRequestId = useRef(0)
   function requestPublicationReview(payload: ReviewPayload) {
     reviewRequestId.current += 1
-    setPublishReview({ payload, review: null })
     reviewMut.mutate({ payload, requestId: reviewRequestId.current })
   }
   const reviewMut = useMutation({
@@ -600,6 +598,7 @@ export function StringsPage() {
     setProposalsReady(false)
     setPublishReview(null)
     proposeMut.reset()
+    reviewMut.reset()
   }
 
   function showChangedBatch(batchId: string, batchKind?: string) {
@@ -738,7 +737,7 @@ export function StringsPage() {
   const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
-    (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
+    (Boolean(proposalJobId) && proposalJobQuery.data?.status !== 'failed')
   const reviewError =
     missingMut.error instanceof Error
       ? missingMut.error.message
@@ -1347,7 +1346,7 @@ export function StringsPage() {
         }}
         reviewing={publishReview !== null}
         reviewLoading={reviewMut.isPending}
-        publishReview={publishReview?.review?.items ?? null}
+        publishReview={publishReview?.review.items ?? null}
         onBackToEdit={() => {
           if (saveMut.isPending) return
           reviewRequestId.current += 1
@@ -1356,7 +1355,7 @@ export function StringsPage() {
         }}
         onPublish={() => {
           const frozen = publishReview
-          if (!frozen?.review) return
+          if (!frozen || reviewMut.isPending) return
           saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
       />

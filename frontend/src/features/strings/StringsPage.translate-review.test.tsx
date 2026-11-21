@@ -109,6 +109,21 @@ describe('translation review retranslation', suiteTimeout, () => {
     expect(stringsApi.translateMemory).not.toHaveBeenCalled()
   })
 
+  it('keeps the missing translations step visible while the Translate button loads', async () => {
+    let finish!: (result: TranslateProposalsResult) => void
+    const response = new Promise<TranslateProposalsResult>((resolve) => { finish = resolve })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockReturnValue(response)
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    const translate = await waitUntilEnabled('Translate')
+    fireEvent.click(translate)
+    await waitFor(() => expect(translate.querySelector('[data-slot="spinner"]')).toBeTruthy())
+    expect(screen.getByRole('heading', { name: 'Missing Translations' })).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    await act(async () => { finish({ ...page, items: [{ ...item, translations: { en: 'Hello' } }] }) })
+    expect(await screen.findByRole('heading', { name: 'Review Translations' })).toBeTruthy()
+  })
+
   it('applies a memory selection before any generation', async () => {
     vi.mocked(stringsApi.translateMissing).mockResolvedValue({ ...page, items: [{ ...item, memory: { en: [publishedMatch] } }] })
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ action: 'draft', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'batch' })
@@ -396,10 +411,18 @@ describe('save as draft or publish in place', suiteTimeout, () => {
   }
 
   it('freezes the reviewed rows, shows the full public diff, and publishes without a second confirmation', async () => {
-    vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'fp-1' })
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    const response = new Promise<{ items: typeof reviewed[]; fingerprint: string }>((resolve) => { finishReview = resolve })
+    vi.mocked(stringsApi.translateReview).mockReturnValue(response)
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
     await openAndFill()
-    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    const review = screen.getByRole<HTMLButtonElement>('button', { name: 'Review & publish' })
+    fireEvent.click(review)
+    await waitFor(() => expect(review.querySelector('[data-slot="spinner"]')).toBeTruthy())
+    expect(review.disabled).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'en' })).toBeTruthy()
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'fp-1' }) })
     expect(await screen.findByText('Review Publication')).toBeTruthy()
     expect(stringsApi.translateReview).toHaveBeenCalledWith('demo-app', { items: [{
       string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Hello' }, scores: {},
@@ -441,11 +464,11 @@ describe('save as draft or publish in place', suiteTimeout, () => {
       .mockResolvedValue(published)
     await openAndFill()
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
     await waitFor(() => expect(stringsApi.translateReview).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateReview).mock.calls[1]).toEqual(vi.mocked(stringsApi.translateReview).mock.calls[0])
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
-    fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
     await waitFor(() => expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].fingerprint).toBe('new'))
   })
 
@@ -461,14 +484,19 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
   })
 
-  it('ignores a publication review that resolves after Back to edit', async () => {
+  it('ignores a publication review refresh that resolves after Back to edit', async () => {
     let resolveStale!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
     vi.mocked(stringsApi.translateReview)
+      .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'original' })
       .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
       .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fresh' })
-    vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
+    vi.mocked(stringsApi.translateSave).mockReset()
+      .mockRejectedValueOnce(new ApiError(409, 'Conflict', { detail: { code: 'publish_fingerprint_mismatch' } }))
+      .mockResolvedValue(published)
     await openAndFill()
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
+    await waitFor(() => expect(stringsApi.translateReview).toHaveBeenCalledTimes(2))
     fireEvent.click(await screen.findByRole('button', { name: 'Back to edit' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Hello again' } })
     await act(async () => { resolveStale({ items: [reviewed], fingerprint: 'stale' }) })
@@ -477,8 +505,8 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     // A newer review is the only one that can publish.
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
-    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(stringsApi.translateSave).mock.calls[0][1]).toMatchObject({
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1]).toMatchObject({
       fingerprint: 'fresh', items: [{ translations: { en: 'Hello again' } }],
     })
   })

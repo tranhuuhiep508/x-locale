@@ -11,7 +11,6 @@ import {
   reviewStatusDescription,
   sourceConflicts,
   translateProgressLabel,
-  translateProgressPercent,
   updateDraftTranslation,
   emptyPublicLocales,
   reviewedPayloadFromDrafts,
@@ -225,19 +224,6 @@ describe('clampPage', () => {
     expect(clampPage(2, 80, 50)).toBe(2)
     expect(clampPage(0, 80, 50)).toBe(1)
     expect(clampPage(1, 0, 50)).toBe(1)
-  })
-})
-
-describe('translateProgressPercent', () => {
-  it('maps chunks_done over chunks_total to a percent', () => {
-    expect(translateProgressPercent({ phase: 'translating', chunks_done: 2, chunks_total: 3 })).toBe(
-      67,
-    )
-    expect(translateProgressPercent({ phase: 'queued', chunks_done: 0, chunks_total: 3 })).toBe(0)
-    expect(translateProgressPercent(null)).toBeUndefined()
-    expect(translateProgressPercent({ phase: 'translating', chunks_done: 0, chunks_total: 0 })).toBe(
-      undefined,
-    )
   })
 })
 

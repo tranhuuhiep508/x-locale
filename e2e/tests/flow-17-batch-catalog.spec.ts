@@ -136,11 +136,12 @@ test('paging within a batch keeps keyboard focus while loading the next rows', a
   await page.goto(`/projects/${projectRef}/strings?batch_id=${batchId}&page_size=1`)
   await expect(page.getByText('1–1 of 3', { exact: true })).toBeVisible()
   const next = page.getByRole('button', { name: 'Next page', exact: true })
-  const nextPageResponse = Promise.withResolvers<void>()
+  let releaseNextPage!: () => void
+  const nextPageResponse = new Promise<void>((resolve) => { releaseNextPage = resolve })
   await page.route(
     (url) => url.pathname.endsWith('/strings') && url.searchParams.get('batch_id') === batchId && url.searchParams.get('page') === '2',
     async (route) => {
-      await nextPageResponse.promise
+      await nextPageResponse
       await route.continue()
     },
   )
@@ -151,7 +152,7 @@ test('paging within a batch keeps keyboard focus while loading the next rows', a
     await expect(page.getByRole('checkbox', { name: 'Select row' })).toHaveCount(0)
     await expect(next).toBeFocused()
   } finally {
-    nextPageResponse.resolve()
+    releaseNextPage()
   }
   await expect(page.getByRole('checkbox', { name: 'Select row' })).toHaveCount(1)
   await expect(next).toBeFocused()

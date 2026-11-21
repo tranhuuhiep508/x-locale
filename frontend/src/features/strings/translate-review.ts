@@ -270,15 +270,6 @@ export type TranslateJobProgress = {
   chunks_total?: number
 }
 
-export function translateProgressPercent(
-  progress?: TranslateJobProgress | null,
-): number | undefined {
-  const total = progress?.chunks_total ?? 0
-  if (total <= 0) return undefined
-  const done = Math.min(Math.max(progress?.chunks_done ?? 0, 0), total)
-  return Math.round((done / total) * 100)
-}
-
 export function translateProgressLabel(progress?: TranslateJobProgress | null): string {
   const phase = progress?.phase
   const done = progress?.chunks_done ?? 0
