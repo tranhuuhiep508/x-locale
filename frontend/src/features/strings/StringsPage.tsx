@@ -264,6 +264,7 @@ export function StringsPage() {
   const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
   const [reviewTotal, setReviewTotal] = useState(0)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
+  const [loadedReviewItems, setLoadedReviewItems] = useState<TranslateProposalItem[]>([])
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
   const [applySourceConflicts, setApplySourceConflicts] = useState<ReturnType<typeof sourceConflicts>>([])
   const regenerationIds = useRef<string[] | null>(null)
@@ -459,6 +460,7 @@ export function StringsPage() {
       setApplySourceConflicts([])
       regenerationIds.current = null
       setRecoveryMessage(null)
+      setLoadedReviewItems(res.items)
       setProposalItems(res.items)
       setReviewTotal(res.total)
       setReviewPage(res.page)
@@ -737,7 +739,6 @@ export function StringsPage() {
     void navigate({ replace: true, search: (prev) => ({ ...prev, page: lastPage }) })
   }, [pageOutOfRange, lastPage, stringsResult.fetchStatus, navigate])
 
-  const reviewItems = proposalItems
   const reviewGenerating =
     proposeMut.isPending ||
     (Boolean(proposalJobId) && proposalJobQuery.data?.status !== 'failed')
@@ -1302,7 +1303,8 @@ export function StringsPage() {
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}
         generated={proposalsReady}
         error={reviewError}
-        items={reviewItems}
+        loadedItems={loadedReviewItems}
+        items={proposalItems}
         sourceConflicts={applySourceConflicts}
         recoveryMessage={recoveryMessage}
         onRegenerate={(items) => {
@@ -1348,9 +1350,7 @@ export function StringsPage() {
         }}
         onReviewPublish={(items) => {
           // Freeze membership, values, and baseline; later edits need a new review.
-          const payload = reviewedPayloadFromDrafts(items)
-          setProposalItems(items)
-          requestPublicationReview(payload)
+          requestPublicationReview(reviewedPayloadFromDrafts(items))
         }}
         reviewing={publishReview !== null}
         reviewLoading={reviewMut.isPending}

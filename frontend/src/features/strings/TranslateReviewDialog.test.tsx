@@ -51,6 +51,7 @@ function review(items: TranslateProposalItem[]) {
         generating={false}
         generated
         error={null}
+        loadedItems={items}
         items={items}
         page={1}
         pageSize={50}
@@ -188,7 +189,7 @@ function memoryReview(items = memoryItems) {
   const onTranslate = vi.fn()
   const onApply = vi.fn()
   render(<TooltipProvider><TranslateReviewDialog open projectId="p" loadingQueue={false} generating={false} generated error={null}
-    items={items} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onSaveDraft={onApply} onReviewPublish={vi.fn()} /></TooltipProvider>)
+    loadedItems={items} items={items} page={1} pageSize={50} total={70} onPageChange={vi.fn()} onClose={vi.fn()} onTranslate={onTranslate} onSaveDraft={onApply} onReviewPublish={vi.fn()} /></TooltipProvider>)
   return { onTranslate, onApply }
 }
 
@@ -236,6 +237,7 @@ it.each(['source change', 'page change'])('discards restore history after a %s',
   const props = {
     open: true, projectId: 'p', loadingQueue: false, generating: false, generated: true,
     error: null, page: 1, pageSize: 50, total: 1,
+    loadedItems: memoryItems,
     onPageChange: vi.fn(), onClose: vi.fn(), onTranslate: vi.fn(), onSaveDraft: vi.fn(), onReviewPublish: vi.fn(),
   }
   const view = (items: TranslateProposalItem[]) => <TooltipProvider><TranslateReviewDialog {...props} items={items} /></TooltipProvider>
@@ -268,6 +270,7 @@ function pagedReview(initial: {
     generated: false,
     reviewing: false,
     error: null,
+    loadedItems: initial.items ?? memoryItems,
     items: memoryItems,
     page: 1,
     pageSize: 50,

@@ -4,7 +4,7 @@ import {
   ReviewDialogFooter,
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, CheckCheck, Save, Send, Wand2 } from 'lucide-react'
 import type {
   Job,
@@ -72,11 +72,13 @@ function draftDiffers(
 ): boolean {
   if (!original) return true
   if (!sameSelection(draft, original)) return true
-  const locales = Object.keys(draft.translations)
-  if (locales.length !== Object.keys(original.translations).length) return true
-  return locales.some(
-    (locale) => (draft.translations[locale] ?? '') !== (original.translations[locale] ?? ''),
-  )
+  const locales = new Set([...Object.keys(draft.translations), ...Object.keys(original.translations)])
+  for (const locale of locales) {
+    const value = draft.translations[locale] ?? ''
+    const loaded = original.translations[locale] ?? ''
+    if (value !== loaded && (value.trim() || loaded.trim())) return true
+  }
+  return false
 }
 
 function qaId(stringId: string, locale: string): string {
@@ -299,6 +301,7 @@ export function TranslateReviewDialog({
   saving = null,
   generated,
   error,
+  loadedItems,
   items,
   page,
   pageSize,
@@ -332,6 +335,7 @@ export function TranslateReviewDialog({
   saving?: 'draft' | 'publish' | null
   generated: boolean
   error: string | null
+  loadedItems: TranslateProposalItem[]
   items: TranslateProposalItem[]
   page: number
   pageSize: number
@@ -362,11 +366,17 @@ export function TranslateReviewDialog({
   const [memoryUndo, setMemoryUndo] = useState<Record<string, TranslateProposalItem> | null>(null)
   const [confirmLeaving, setConfirmLeaving] = useState(false)
   const [cellOriginals, setCellOriginals] = useState<Record<string, TranslateProposalItem>>({})
-  // Loaded page. Frozen while generated proposals replace items; a draft echo is not a new load.
-  const loadedPage = useRef(items)
-  const sawGenerated = useRef(false)
   const titleRef = useRef<HTMLHeadingElement>(null)
   const viewChangesRef = useRef<HTMLButtonElement>(null)
+  const reviewButtonRef = useRef<HTMLButtonElement>(null)
+  const regenerateButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreReviewFocus = useRef(false)
+  const backButtonRef = useCallback((button: HTMLButtonElement | null) => {
+    if (!button) return
+    return () => {
+      if (button.ownerDocument.activeElement === button) restoreReviewFocus.current = true
+    }
+  }, [])
 
   useEffect(() => {
     if (open && (savedBatch || noChanges)) titleRef.current?.focus({ preventScroll: true })
@@ -393,18 +403,6 @@ export function TranslateReviewDialog({
     const draft = drafts[item.string_id]
     return draft ? [draft] : []
   })
-  const echoed =
-    items.length === draftList.length &&
-    items.every((item) => {
-      const draft = drafts[item.string_id]
-      return draft !== undefined && !draftDiffers(draft, item)
-    })
-  if (generated) sawGenerated.current = true
-  else if (sawGenerated.current) {
-    loadedPage.current = items
-    sawGenerated.current = false
-  } else if (!echoed) loadedPage.current = items
-
   const exactCells = draftList.flatMap((item) =>
     Object.keys(item.translations).flatMap((locale) => {
       if (sourceConflicts.some((conflict) => conflict.string_id === item.string_id)) return []
@@ -508,7 +506,7 @@ export function TranslateReviewDialog({
   }
 
   const applyCount = filledCount(draftList)
-  const loadedById = new Map(loadedPage.current.map((item) => [item.string_id, item]))
+  const loadedById = new Map(loadedItems.map((item) => [item.string_id, item]))
   const pageLocked = draftList.some((draft) => draftDiffers(draft, loadedById.get(draft.string_id)))
   const missingCount = localeCount(draftList) - applyCount
   const busy = loadingQueue || generating || applying || reviewLoading
@@ -519,6 +517,13 @@ export function TranslateReviewDialog({
     ) &&
     sourceConflicts.length === 0
   const canApply = !busy && applyCount > 0 && sourceConflicts.length === 0
+  useLayoutEffect(() => {
+    if (!open || reviewing || busy || !restoreReviewFocus.current) return
+    restoreReviewFocus.current = false
+    const target = regenerateButtonRef.current ?? reviewButtonRef.current
+    target?.focus()
+  }, [open, reviewing, busy])
+
   const canPage = total > pageSize
   const pagingInPlace = loadingQueue && draftList.length > 0
   const showInitialSpinner = loadingQueue && draftList.length === 0
@@ -552,6 +557,12 @@ export function TranslateReviewDialog({
     if (!savedBatch) return
     setConfirmLeaving(false)
     onViewSavedBatch?.(savedBatch.id)
+  }
+
+  function backToEdit() {
+    if (!onBackToEdit) return
+    restoreReviewFocus.current = true
+    onBackToEdit()
   }
 
   return (
@@ -629,7 +640,9 @@ export function TranslateReviewDialog({
             <p className="text-sm text-destructive">{error}</p>
           ) : null}
           {onRetryQueue && !queueUnavailable ? (
-            <p className="text-sm text-destructive" role="status">Failed to load missing translations.</p>
+            <p className="text-sm text-destructive" role="status">
+              Failed to load missing translations.{pageLocked ? ` ${PAGE_BLOCKED}.` : ''}
+            </p>
           ) : null}
           {recoveryMessage ? (
             <p className="text-sm text-destructive" role="status">
@@ -737,33 +750,28 @@ export function TranslateReviewDialog({
         ) : null}
 
         <ReviewDialogFooter>
+          {reviewing || (reviewLoading && onBackToEdit) ? (
+            <Button ref={backButtonRef} variant="outline" type="button" onClick={backToEdit} disabled={applying}>
+              <ArrowLeft data-icon="inline-start" />
+              Back to edit
+            </Button>
+          ) : null}
           {reviewing ? (
-            <div
-              key="publish-footer"
-              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
+            <Button
+              type="button"
+              className="animate-step-fade"
+              disabled={applying || reviewLoading || publishCount === 0}
+              onClick={onPublish}
             >
-              <Button variant="outline" type="button" onClick={onBackToEdit} disabled={applying}>
-                <ArrowLeft data-icon="inline-start" />
-                Back to edit
-              </Button>
-              <Button
-                type="button"
-                disabled={applying || reviewLoading || publishCount === 0}
-                onClick={onPublish}
-              >
-                {saving === 'publish' || reviewLoading ? (
-                  <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
-                ) : (
-                  <Send data-icon="inline-start" />
-                )}
-                {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
-              </Button>
-            </div>
+              {saving === 'publish' || reviewLoading ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
+              ) : (
+                <Send data-icon="inline-start" />
+              )}
+              {`Publish ${publishCount === 1 ? '1 string' : `${publishCount} strings`}`}
+            </Button>
           ) : (
-            <div
-              key="review-footer"
-              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
-            >
+            <>
               <Button
                 variant="outline"
                 type="button"
@@ -775,7 +783,7 @@ export function TranslateReviewDialog({
               {onRetryQueue ? (
                 <Button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || pageLocked}
                   onClick={() => {
                     titleRef.current?.focus({ preventScroll: true })
                     onRetryQueue()
@@ -785,7 +793,7 @@ export function TranslateReviewDialog({
                 </Button>
               ) : null}
               {sourceConflicts.length > 0 ? (
-                <Button type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
+                <Button ref={regenerateButtonRef} type="button" disabled={busy} onClick={() => onRegenerate?.(draftList)}>
                   {generating ? (
                     <Spinner data-icon="inline-start" aria-hidden="true" className="motion-reduce:animate-none" />
                   ) : (
@@ -825,6 +833,7 @@ export function TranslateReviewDialog({
                     Save as draft
                   </Button>
                   <Button
+                    ref={reviewButtonRef}
                     type="button"
                     disabled={!canApply}
                     onClick={() => onReviewPublish(draftList)}
@@ -838,7 +847,7 @@ export function TranslateReviewDialog({
                   </Button>
                 </>
               ) : null}
-            </div>
+            </>
           )}
         </ReviewDialogFooter>
         <ConfirmDialog

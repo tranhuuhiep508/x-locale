@@ -509,8 +509,83 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
     await waitFor(() => expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello'))
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to edit' }))
+    await waitUntilEnabled('Publish 1 string')
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
+  })
+
+  it('returns to editing during the initial publication comparison and ignores its late result', async () => {
+    const user = userEvent.setup()
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((resolve) => { finishReview = resolve }))
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    const back = await waitUntilEnabled('Back to edit')
+    back.focus()
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(await waitUntilEnabled('Review & publish'))
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    expect(input.value).toBe('Hello')
+    expect(input.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'Hello again' } })
+
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'stale' }) })
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello again')
+  })
+
+  it('preserves bulk Undo when cancelling the publication comparison', async () => {
+    const matchable = { ...item, memory: { en: [publishedMatch] } }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({
+      ...page, total: 2, items: [matchable, { ...matchable, string_id: 'b', key: 'other' }],
+    })
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise(() => {}))
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Use 2 exact matches'))
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+
+    const inputs = screen.getAllByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    expect(inputs.map((input) => input.value)).toEqual(['Published hello', 'Published hello'])
+    fireEvent.click(await waitUntilEnabled('Undo'))
+    expect(inputs.map((input) => input.value)).toEqual(['', ''])
+  })
+
+  it('keeps Back to edit focused when the publication comparison finishes', async () => {
+    const user = userEvent.setup()
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((resolve) => { finishReview = resolve }))
+    await openAndFill()
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    const back = await waitUntilEnabled('Back to edit')
+    back.focus()
+
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'fp' }) })
+    await waitUntilEnabled('Publish 1 string')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Back to edit' }))
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(await waitUntilEnabled('Review & publish'))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello')
+  })
+
+  it.each([
+    { error: new Error('Network unavailable'), from: 'Back to edit', to: 'Review & publish' },
+    { error: sourceConflict, from: 'Back to edit', to: 'Regenerate changed strings' },
+    { error: new Error('Network unavailable'), from: 'Close', to: 'Close' },
+  ])('moves focus from $from to $to when the publication comparison fails', async ({ error, from, to }) => {
+    let failReview!: (reason: Error) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((_, reject) => { failReview = reject }))
+    await openAndFill()
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    await waitUntilEnabled('Back to edit')
+    const focused = screen.getByRole('button', { name: from })
+    focused.focus()
+    expect(document.activeElement).toBe(focused)
+
+    await act(async () => { failReview(error) })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Back to edit' })).toBeNull())
+    expect(document.activeElement).toBe(await waitUntilEnabled(to))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello')
   })
 
   it('ignores a publication review refresh that resolves after Back to edit', async () => {
@@ -591,6 +666,64 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(await waitUntilEnabled('View changes')).toBeTruthy()
     expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3)
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows retrying a failed page change only at the loaded values after cancelling comparison', async () => {
+    const other = { ...item, string_id: 'b', key: 'other' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [other] })
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise(() => {}))
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    const retry = await waitUntilEnabled('Retry')
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    fireEvent.change(input, { target: { value: 'Keep this draft' } })
+    expect(retry.disabled).toBe(true)
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+    await waitUntilEnabled('Review & publish')
+    expect(input.value).toBe('Keep this draft')
+
+    fireEvent.change(input, { target: { value: '' } })
+    expect(retry.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'Keep this draft' } })
+    expect(retry.disabled).toBe(true)
+    fireEvent.click(retry)
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
+    expect(input.value).toBe('Keep this draft')
+
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.click(await waitUntilEnabled('Retry'))
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
+    expect((await waitUntilEnabled('Previous page')).getAttribute('aria-disabled')).toBeNull()
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', expect.objectContaining({ page: 2 }))
+  })
+
+  it('allows retrying a failed page change after clearing a generated locale absent from the loaded page', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [{ ...item, string_id: 'b', key: 'other' }] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValueOnce({
+      ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: 'こんにちは' } }],
+    })
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    const retry = await waitUntilEnabled('Retry')
+    fireEvent.click(await waitUntilEnabled('Translate'))
+    await waitUntilEnabled('Translate again')
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' })
+    expect(input.value).toBe('こんにちは')
+    expect(retry.disabled).toBe(true)
+
+    fireEvent.change(input, { target: { value: '' } })
+    expect(retry.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: ' ' } })
+    fireEvent.click(await waitUntilEnabled('Retry'))
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
   })
 
   it('shows cells filled elsewhere and saves nothing', async () => {

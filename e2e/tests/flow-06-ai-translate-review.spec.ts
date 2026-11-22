@@ -162,7 +162,21 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Review & publish' }).click()
+  let failComparison!: () => void
+  const pendingComparison = new Promise<void>((resolve) => { failComparison = resolve })
+  await page.route('**/translate/review', async (route) => {
+    await pendingComparison
+    await route.fulfill({ status: 503, json: { detail: 'Comparison unavailable' } })
+  }, { times: 1 })
+
+  const reviewButton = dialog.getByRole('button', { name: 'Review & publish' })
+  await reviewButton.click()
+  const backToEdit = dialog.getByRole('button', { name: 'Back to edit' })
+  await backToEdit.focus()
+  await expect(backToEdit).toBeFocused()
+  failComparison()
+  await expect(reviewButton).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(dialog.getByRole('heading', { name: 'Review Publication' })).toBeVisible()
   await expect(dialog.getByRole('region', { name: 'New to public' })).toContainText(`${prefix}_a`)
   const published = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
