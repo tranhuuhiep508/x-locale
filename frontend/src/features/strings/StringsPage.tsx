@@ -622,7 +622,7 @@ export function StringsPage() {
   }
 
   function loadMissingPage(page: number) {
-    if (!reviewRequestRef.current || saveMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
+    if (!reviewRequestRef.current || saveMut.isPending || reviewGenerating) return
     setProposalJobId(null)
     missingMut.mutate(missingRequest(page))
   }

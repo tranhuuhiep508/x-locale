@@ -701,6 +701,31 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', expect.objectContaining({ page: 2 }))
   })
 
+  it('retries the requested queue page after background generation fails', async () => {
+    const other = { ...item, string_id: 'b', key: 'other' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [other] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValueOnce({
+      ...page, items: [], job_id: 'failed-job',
+    })
+    vi.mocked(jobsApi.get).mockResolvedValueOnce({
+      id: 'failed-job', kind: 'translate_proposals', status: 'failed', result: null,
+      error: 'AI unavailable', created_at: null, completed_at: null, progress: null,
+    })
+
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    await waitUntilEnabled('Retry')
+    fireEvent.click(await waitUntilEnabled('Translate'))
+    await screen.findByText('AI unavailable')
+    fireEvent.click(await waitUntilEnabled('Retry'))
+
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', expect.objectContaining({ page: 2 }))
+  })
+
   it('allows retrying a failed page change after clearing a generated locale absent from the loaded page', async () => {
     vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
     vi.mocked(stringsApi.translateMissing)
