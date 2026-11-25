@@ -279,20 +279,23 @@ Legacy date-only bookmarks still represent full UTC days.
 
 **Translate missing** honors all active grid filters across queue pages. It
 captures the filters and relative time cutoff when review opens, reusing that
-window for paging and refreshes after a save. Reopening review captures a fresh
-window. It includes only matching live strings with empty cells in the requested
-locales; filled cells and deleted strings are excluded. A Complete filter can therefore
-produce an empty queue when no other target locale is missing.
+window for paging and post-save refreshes. Reopening review captures a fresh
+window. The queue includes matching live strings with empty cells in the
+requested locales. A Complete filter can produce an empty queue when no other
+target locale is missing.
 
 Finish in the same dialog: **Save as draft** writes the working copy only (public
 strings keep their published snapshot). **Review & publish** freezes the changed
 rows on the current page and shows the full proposed public state of each string,
 including pending edits in other locales and locales that would export empty;
 **Publish** there saves and publishes exactly those strings in one transaction, with
-no second confirmation. Generation never saves. After a publish the dialog closes and
-Strings shows the published batch (`?batch_id=`). After a draft save the dialog stays
-open on the refreshed queue; if only that refresh fails, **Retry loading** repeats the
-read, not the write.
+no second confirmation. Generation never saves. Saving or publishing keeps the
+dialog open and reloads page one of the same queue. If that reload fails, **Retry**
+loads the queue again. **View changes** in the dialog opens the latest saved batch
+in Strings (`?batch_id=`) and asks before discarding any edits on the current page.
+When the queue is empty, **Done** returns to the catalog with its search, filters,
+and sort. The catalog moves to the last valid page if the current page is out of
+range after refresh.
 
 ## Development
 

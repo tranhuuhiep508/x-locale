@@ -338,7 +338,7 @@ type StringsFiltersProps = {
   onSearchInputChange: (value: string) => void
   onFilter: (updates: Partial<StringsSearch>) => void
   onClear: () => void
-  onReviewPublish?: () => void
+  onReviewPublish?: (opener?: HTMLButtonElement | null) => void
 }
 
 export function StringsFilters({
@@ -639,7 +639,7 @@ export function StringsFilters({
             <Button
               variant="outline"
               size="sm"
-              onClick={onReviewPublish}
+              onClick={(event) => onReviewPublish(event.currentTarget)}
               className="h-8 text-xs gap-1.5 shrink-0 border-input text-primary hover:bg-accent hover:text-accent-foreground"
             >
               <GitCompareArrows data-icon="inline-start" className="size-3.5" />

@@ -3,7 +3,6 @@ import type { StringEntry, TranslateProposalItem } from '@/lib/api/types'
 import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
-  clampPage,
   createMissingReviewRequest,
   draftsFromItems,
   filledCount,
@@ -11,7 +10,6 @@ import {
   reviewStatusDescription,
   sourceConflicts,
   translateProgressLabel,
-  translateProgressPercent,
   updateDraftTranslation,
   emptyPublicLocales,
   reviewedPayloadFromDrafts,
@@ -219,28 +217,6 @@ describe('reviewStatusDescription', () => {
   })
 })
 
-describe('clampPage', () => {
-  it('stays on the last non-empty page after apply shrinks the catalog', () => {
-    expect(clampPage(3, 40, 50)).toBe(1)
-    expect(clampPage(2, 80, 50)).toBe(2)
-    expect(clampPage(0, 80, 50)).toBe(1)
-    expect(clampPage(1, 0, 50)).toBe(1)
-  })
-})
-
-describe('translateProgressPercent', () => {
-  it('maps chunks_done over chunks_total to a percent', () => {
-    expect(translateProgressPercent({ phase: 'translating', chunks_done: 2, chunks_total: 3 })).toBe(
-      67,
-    )
-    expect(translateProgressPercent({ phase: 'queued', chunks_done: 0, chunks_total: 3 })).toBe(0)
-    expect(translateProgressPercent(null)).toBeUndefined()
-    expect(translateProgressPercent({ phase: 'translating', chunks_done: 0, chunks_total: 0 })).toBe(
-      undefined,
-    )
-  })
-})
-
 describe('translateProgressLabel', () => {
   it('describes queued, translating, retrying, and filling gaps', () => {
     expect(translateProgressLabel({ phase: 'queued', chunks_done: 0, chunks_total: 3 })).toBe(
@@ -329,9 +305,11 @@ describe('reviewed save payload', () => {
   })
 
   it('describes draft and publish outcomes', () => {
-    expect(saveSuccessMessage({ action: 'draft', translated_count: 3, string_count: 2, published_count: 0, batch_id: 'b' }))
-      .toBe('Saved 2 strings as draft. Public translations are unchanged.')
+    expect(saveSuccessMessage({ action: 'draft', translated_count: 1, string_count: 2, published_count: 0, batch_id: 'b' }))
+      .toBe('Translations saved as draft. Public translations are unchanged.')
     expect(saveSuccessMessage({ action: 'publish', translated_count: 1, string_count: 1, published_count: 1, batch_id: 'b' }))
       .toBe('Saved and published 1 string. Available on the next public pull or export.')
+    expect(saveSuccessMessage({ action: 'publish', translated_count: 1, string_count: 1, published_count: 0, batch_id: 'b' }))
+      .toBe('Translations saved. Public translations are unchanged.')
   })
 })

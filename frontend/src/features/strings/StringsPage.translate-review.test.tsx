@@ -11,26 +11,24 @@ import { stringsApi } from '@/lib/api/strings'
 import type { Project, TranslateProposalItem, TranslateProposalsResult, TranslationMemoryMatch } from '@/lib/api/types'
 import { StringsPage } from './StringsPage'
 
-// These tests drive StringsPage through multi-step translate and job-polling chains.
-// Under a loaded CI runner a step can exceed Testing Library's default wait
-// (the source-conflict case missed "Translate again" at 5s). Vitest isolates
-// modules per file, so this only applies here. The suite timeout stays above
-// that wait so a slow step finishes instead of the test being killed with it.
+// Allow for multi-step translation and job polling under CI load.
 configure({ asyncUtilTimeout: 8_000 })
 const suiteTimeout = { timeout: 20_000 }
 
 const navigate = vi.hoisted(() => vi.fn())
-const toastSuccess = vi.hoisted(() => vi.fn())
+const useSearch = vi.hoisted(() => vi.fn<() => { q?: string }>())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
     useParams: () => ({ projectRef: 'demo-app' }),
-    useSearch: () => ({}),
+    useSearch,
   }),
   useNavigate: () => navigate,
+  useLocation: () => undefined,
+  useRouter: () => ({}),
 }))
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }))
 vi.mock('@/lib/api/catalog', () => ({
   languagesApi: { list: vi.fn() },
@@ -66,10 +64,14 @@ const publishedMatch: TranslationMemoryMatch = {
 }
 let client: QueryClient
 
-// Text set in a mutation's onSuccess/onError can render before React Query clears
-// isPending on its timer; until then the button is disabled and a click is dropped.
+// A button can render while React Query still reports a pending mutation.
+// Wait for it to become actionable so fireEvent does not drop the click.
 async function waitUntilEnabled(name: string) {
-  await waitFor(() => expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false))
+  return waitFor(() => {
+    const button = screen.getByRole<HTMLButtonElement>('button', { name })
+    expect(button.disabled).toBe(false)
+    return button
+  })
 }
 
 afterEach(() => {
@@ -80,6 +82,7 @@ afterEach(() => {
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  useSearch.mockReturnValue({})
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   vi.mocked(projectsApi.get).mockResolvedValue(project)
@@ -104,6 +107,21 @@ describe('translation review retranslation', suiteTimeout, () => {
     expect((screen.getByRole('button', { name: 'Translate' }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     expect(stringsApi.translateMemory).not.toHaveBeenCalled()
+  })
+
+  it('keeps the missing translations step visible while the Translate button loads', async () => {
+    let finish!: (result: TranslateProposalsResult) => void
+    const response = new Promise<TranslateProposalsResult>((resolve) => { finish = resolve })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockReturnValue(response)
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    const translate = await waitUntilEnabled('Translate')
+    fireEvent.click(translate)
+    await waitFor(() => expect(translate.querySelector('[data-slot="spinner"]')).toBeTruthy())
+    expect(screen.getByRole('heading', { name: 'Missing Translations' })).toBeTruthy()
+    expect(screen.getByText('Generating translations…').classList.contains('sr-only')).toBe(false)
+    await act(async () => { finish({ ...page, items: [{ ...item, translations: { en: 'Hello' } }] }) })
+    expect(await screen.findByRole('heading', { name: 'Review Translations' })).toBeTruthy()
   })
 
   it('applies a memory selection before any generation', async () => {
@@ -182,7 +200,7 @@ describe('translation review retranslation', suiteTimeout, () => {
       .mockResolvedValueOnce({ ...page, items: [{ ...row, translations: { ja: 'New Japanese' }, scores: { ja: 80 } }] })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+    fireEvent.click(await waitUntilEnabled('Translate'))
     await waitFor(() => expect((screen.getByLabelText('en') as HTMLTextAreaElement).value).toBe('AI English'))
     fireEvent.click(screen.getByRole('button', { name: 'Use match for en in greeting' }))
     fireEvent.click(screen.getByRole('button', { name: 'Translate again' }))
@@ -242,7 +260,7 @@ describe('translation review retranslation', suiteTimeout, () => {
     })
     render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+    fireEvent.click(await waitUntilEnabled('Translate'))
     // The en field is already mounted for the missing queue, so findByLabelText
     // resolves before this click's proposals rename the button.
     await waitUntilEnabled('Translate again')
@@ -286,7 +304,7 @@ async function openSourceConflict() {
     .mockResolvedValue({ action: 'draft', translated_count: 2, string_count: 2, published_count: 0, batch_id: 'batch' })
   render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Translate' }))
+  fireEvent.click(await waitUntilEnabled('Translate'))
   await waitUntilEnabled('Translate again')
   fireEvent.change(screen.getAllByLabelText('en')[0], { target: { value: 'My stale draft' } })
   fireEvent.change(screen.getAllByLabelText('en')[1], { target: { value: 'Unrelated draft' } })
@@ -318,7 +336,7 @@ describe('source conflict recovery', suiteTimeout, () => {
     })
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
-    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    fireEvent.click(await waitUntilEnabled('Save as draft'))
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].items).toMatchObject([
       { string_id: 'a', expected_source_text: 'Hủy', translations: { en: 'Cancel' } },
@@ -362,7 +380,7 @@ describe('source conflict recovery', suiteTimeout, () => {
     vi.mocked(stringsApi.translateProposals).mockResolvedValueOnce({
       ...page, items: [{ ...item, source_text: 'Hủy', translations: { en: 'Cancel' } }],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Regenerate changed strings' }))
+    fireEvent.click(await waitUntilEnabled('Regenerate changed strings'))
     await waitFor(() => expect(screen.queryByText('Source text changed since generation')).toBeNull())
     await waitFor(() => expect((screen.getAllByLabelText('en')[0] as HTMLTextAreaElement).value).toBe('Cancel'))
     expect((screen.getAllByLabelText('en')[1] as HTMLTextAreaElement).value).toBe('Unrelated draft')
@@ -385,18 +403,33 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     ],
   }
   const published = { action: 'publish' as const, translated_count: 1, string_count: 1, published_count: 1, batch_id: 'pub' }
+  const emptyPage = { ...page, items: [], total: 0 }
+
+  async function openReview() {
+    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
+    const opener = await screen.findByRole('button', { name: 'Translate missing' })
+    fireEvent.click(opener)
+  }
 
   async function openAndFill() {
-    render(<QueryClientProvider client={client}><TooltipProvider><StringsPage /></TooltipProvider></QueryClientProvider>)
-    fireEvent.click(await screen.findByRole('button', { name: 'Translate missing' }))
+    await openReview()
     fireEvent.change(await screen.findByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
   }
 
   it('freezes the reviewed rows, shows the full public diff, and publishes without a second confirmation', async () => {
-    vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'fp-1' })
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    const response = new Promise<{ items: typeof reviewed[]; fingerprint: string }>((resolve) => { finishReview = resolve })
+    vi.mocked(stringsApi.translateReview).mockReturnValue(response)
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
+    vi.mocked(stringsApi.translateMissing).mockResolvedValueOnce(page).mockResolvedValueOnce(emptyPage)
     await openAndFill()
-    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    const review = screen.getByRole<HTMLButtonElement>('button', { name: 'Review & publish' })
+    fireEvent.click(review)
+    await waitFor(() => expect(review.querySelector('[data-slot="spinner"]')).toBeTruthy())
+    expect(review.disabled).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'en' })).toBeTruthy()
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'fp-1' }) })
     expect(await screen.findByText('Review Publication')).toBeTruthy()
     expect(stringsApi.translateReview).toHaveBeenCalledWith('demo-app', { items: [{
       string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Hello' }, scores: {},
@@ -412,16 +445,43 @@ describe('save as draft or publish in place', suiteTimeout, () => {
       action: 'publish', fingerprint: 'fp-1',
       items: [{ string_id: 'a', expected_source_text: 'Xin chào', translations: { en: 'Hello' }, scores: {} }],
     }))
-    // Toast, close the dialog, and show the published batch in Strings.
-    await waitFor(() => expect(screen.queryByText('Review Publication')).toBeNull())
+    expect(await screen.findByText('No missing translations remain')).toBeTruthy()
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true)
+    expect(screen.getByText('Saved and published 1 string. Available on the next public pull or export.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy()
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.click(await waitUntilEnabled('View changes'))
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'View in Strings' })).toBeNull()
-    expect(toastSuccess).toHaveBeenCalledWith('Saved and published 1 string. Available on the next public pull or export.')
     expect(navigate).toHaveBeenCalledTimes(1)
     const { search } = navigate.mock.calls[0][0] as { search: (prev: { page_size?: number }) => unknown }
-    expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub' })
-    // No queue reload after publish: the dialog is gone.
-    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(1)
+    expect(search({ page_size: 50 })).toEqual({ page: 1, page_size: 50, batch_id: 'pub', batch_kind: 'translate' })
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
+  })
+
+  it('publishes from page two and starts again at page one of the same queue', async () => {
+    const first = { ...item, string_id: 'b', key: 'greeting.first' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, items: [first], total: 52 })
+      .mockResolvedValueOnce({ ...page, total: 52, page: 2 })
+      .mockResolvedValueOnce({ ...page, items: [first], total: 51 })
+    vi.mocked(stringsApi.translateReview).mockResolvedValue({ items: [reviewed], fingerprint: 'fp' })
+    vi.mocked(stringsApi.translateSave).mockResolvedValue(published)
+    useSearch.mockReturnValue({ q: 'greeting' })
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    await screen.findByRole('group', { name: 'Translations for greeting' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Hello' } })
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
+
+    expect(await screen.findByRole('group', { name: 'Translations for greeting.first' })).toBeTruthy()
+    await waitUntilEnabled('Translate')
+    expect(screen.getByText(/of 51 strings/)).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Translations for greeting' })).toBeNull()
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(2, 'demo-app', expect.objectContaining({ page: 2, q: 'greeting' }))
+    const firstRequest = vi.mocked(stringsApi.translateMissing).mock.calls[0][1]
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', firstRequest)
+    expect(stringsApi.translateProposals).not.toHaveBeenCalled()
   })
 
   it('reloads the review instead of publishing when content changed after review', async () => {
@@ -433,11 +493,11 @@ describe('save as draft or publish in place', suiteTimeout, () => {
       .mockResolvedValue(published)
     await openAndFill()
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
     await waitFor(() => expect(stringsApi.translateReview).toHaveBeenCalledTimes(2))
     expect(vi.mocked(stringsApi.translateReview).mock.calls[1]).toEqual(vi.mocked(stringsApi.translateReview).mock.calls[0])
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
-    fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
     await waitFor(() => expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1].fingerprint).toBe('new'))
   })
 
@@ -449,18 +509,98 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
     await waitFor(() => expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello'))
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to edit' }))
+    await waitUntilEnabled('Publish 1 string')
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
   })
 
-  it('ignores a publication review that resolves after Back to edit', async () => {
-    let resolveStale!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
-    vi.mocked(stringsApi.translateReview)
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
-      .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fresh' })
-    vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue(published)
+  it('returns to editing during the initial publication comparison and ignores its late result', async () => {
+    const user = userEvent.setup()
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((resolve) => { finishReview = resolve }))
     await openAndFill()
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    const back = await waitUntilEnabled('Back to edit')
+    back.focus()
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(await waitUntilEnabled('Review & publish'))
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    expect(input.value).toBe('Hello')
+    expect(input.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'Hello again' } })
+
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'stale' }) })
+    expect(screen.queryByText('Review Publication')).toBeNull()
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello again')
+  })
+
+  it('preserves bulk Undo when cancelling the publication comparison', async () => {
+    const matchable = { ...item, memory: { en: [publishedMatch] } }
+    vi.mocked(stringsApi.translateMissing).mockResolvedValue({
+      ...page, total: 2, items: [matchable, { ...matchable, string_id: 'b', key: 'other' }],
+    })
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise(() => {}))
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Use 2 exact matches'))
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+
+    const inputs = screen.getAllByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    expect(inputs.map((input) => input.value)).toEqual(['Published hello', 'Published hello'])
+    fireEvent.click(await waitUntilEnabled('Undo'))
+    expect(inputs.map((input) => input.value)).toEqual(['', ''])
+  })
+
+  it('keeps Back to edit focused when the publication comparison finishes', async () => {
+    const user = userEvent.setup()
+    let finishReview!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((resolve) => { finishReview = resolve }))
+    await openAndFill()
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    const back = await waitUntilEnabled('Back to edit')
+    back.focus()
+
+    await act(async () => { finishReview({ items: [reviewed], fingerprint: 'fp' }) })
+    await waitUntilEnabled('Publish 1 string')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Back to edit' }))
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(await waitUntilEnabled('Review & publish'))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello')
+  })
+
+  it.each([
+    { error: new Error('Network unavailable'), from: 'Back to edit', to: 'Review & publish' },
+    { error: sourceConflict, from: 'Back to edit', to: 'Regenerate changed strings' },
+    { error: new Error('Network unavailable'), from: 'Close', to: 'Close' },
+  ])('moves focus from $from to $to when the publication comparison fails', async ({ error, from, to }) => {
+    let failReview!: (reason: Error) => void
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise((_, reject) => { failReview = reject }))
+    await openAndFill()
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    await waitUntilEnabled('Back to edit')
+    const focused = screen.getByRole('button', { name: from })
+    focused.focus()
+    expect(document.activeElement).toBe(focused)
+
+    await act(async () => { failReview(error) })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Back to edit' })).toBeNull())
+    expect(document.activeElement).toBe(await waitUntilEnabled(to))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' }).value).toBe('Hello')
+  })
+
+  it('ignores a publication review refresh that resolves after Back to edit', async () => {
+    let resolveStale!: (value: { items: typeof reviewed[]; fingerprint: string }) => void
+    vi.mocked(stringsApi.translateReview)
+      .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'original' })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
+      .mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fresh' })
+    vi.mocked(stringsApi.translateSave).mockReset()
+      .mockRejectedValueOnce(new ApiError(409, 'Conflict', { detail: { code: 'publish_fingerprint_mismatch' } }))
+      .mockResolvedValue(published)
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
+    fireEvent.click(await waitUntilEnabled('Publish 1 string'))
+    await waitFor(() => expect(stringsApi.translateReview).toHaveBeenCalledTimes(2))
     fireEvent.click(await screen.findByRole('button', { name: 'Back to edit' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'en' }), { target: { value: 'Hello again' } })
     await act(async () => { resolveStale({ items: [reviewed], fingerprint: 'stale' }) })
@@ -469,22 +609,146 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     // A newer review is the only one that can publish.
     fireEvent.click(screen.getByRole('button', { name: 'Review & publish' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Publish 1 string' }))
-    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(stringsApi.translateSave).mock.calls[0][1]).toMatchObject({
+    await waitFor(() => expect(stringsApi.translateSave).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(stringsApi.translateSave).mock.calls[1][1]).toMatchObject({
       fingerprint: 'fresh', items: [{ translations: { en: 'Hello again' } }],
     })
   })
 
-  it('retries only the read when the list refresh fails after a successful save', async () => {
+  it('keeps a partially translated row in the queue and guards later edits before opening the saved batch', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { en: '', ja: '' } }] })
+      .mockResolvedValueOnce({ ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: '' } }] })
     vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValue({ ...published, action: 'draft', published_count: 0 })
     await openAndFill()
-    vi.mocked(stringsApi.translateMissing).mockRejectedValueOnce(new Error('Gateway timeout'))
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
-    expect(await screen.findByText('Saved, but the list could not refresh')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry loading' }))
-    await waitFor(() => expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(screen.queryByText('Saved, but the list could not refresh')).toBeNull())
+    await waitUntilEnabled('Translate')
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' }).value).toBe('')
+    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
     expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'ja' }), { target: { value: 'こんにちは' } })
+    const viewChanges = await waitUntilEnabled('View changes')
+    viewChanges.focus()
+    await user.keyboard('{Enter}')
+    const keepReviewing = await screen.findByRole('button', { name: 'Keep reviewing' })
+    await waitFor(() => expect(document.activeElement).toBe(keepReviewing))
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(document.activeElement).toBe(viewChanges))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' }).value).toBe('こんにちは')
+    expect(navigate).not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and view changes' }))
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    expect(navigation.search({ page: 4, q: 'old', status: 'draft', page_size: 20 }))
+      .toEqual({ page: 1, page_size: 20, batch_id: 'pub', batch_kind: 'translate' })
+  })
+
+  it('retries a failed queue refresh without repeating the successful save', async () => {
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce(emptyPage)
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+
+    expect(await screen.findByText('Failed to load missing translations')).toBeTruthy()
+    expect(screen.getByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
+    expect((await waitUntilEnabled('View changes')).closest('[role="dialog"]')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'en' })).toBeNull()
+    fireEvent.click(await waitUntilEnabled('Retry'))
+    expect(await screen.findByText('No missing translations remain')).toBeTruthy()
+    expect(await waitUntilEnabled('View changes')).toBeTruthy()
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(3)
+    expect(stringsApi.translateSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows retrying a failed page change only at the loaded values after cancelling comparison', async () => {
+    const other = { ...item, string_id: 'b', key: 'other' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [other] })
+    vi.mocked(stringsApi.translateReview).mockImplementationOnce(() => new Promise(() => {}))
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    const retry = await waitUntilEnabled('Retry')
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'en' })
+    fireEvent.change(input, { target: { value: 'Keep this draft' } })
+    expect(retry.disabled).toBe(true)
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+    await waitUntilEnabled('Review & publish')
+    expect(input.value).toBe('Keep this draft')
+
+    fireEvent.change(input, { target: { value: '' } })
+    expect(retry.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'Keep this draft' } })
+    expect(retry.disabled).toBe(true)
+    fireEvent.click(retry)
+    expect(stringsApi.translateMissing).toHaveBeenCalledTimes(2)
+    expect(input.value).toBe('Keep this draft')
+
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.click(await waitUntilEnabled('Retry'))
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
+    expect((await waitUntilEnabled('Previous page')).getAttribute('aria-disabled')).toBeNull()
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', expect.objectContaining({ page: 2 }))
+  })
+
+  it('retries the requested queue page after background generation fails', async () => {
+    const other = { ...item, string_id: 'b', key: 'other' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [other] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValueOnce({
+      ...page, items: [], job_id: 'failed-job',
+    })
+    vi.mocked(jobsApi.get).mockResolvedValueOnce({
+      id: 'failed-job', kind: 'translate_proposals', status: 'failed', result: null,
+      error: 'AI unavailable', created_at: null, completed_at: null, progress: null,
+    })
+
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    await waitUntilEnabled('Retry')
+    fireEvent.click(await waitUntilEnabled('Translate'))
+    await screen.findByText('AI unavailable')
+    fireEvent.click(await waitUntilEnabled('Retry'))
+
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
+    expect(stringsApi.translateMissing).toHaveBeenNthCalledWith(3, 'demo-app', expect.objectContaining({ page: 2 }))
+  })
+
+  it('allows retrying a failed page change after clearing a generated locale absent from the loaded page', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 51 })
+      .mockRejectedValueOnce(new Error('Network down'))
+      .mockResolvedValueOnce({ ...page, total: 51, page: 2, items: [{ ...item, string_id: 'b', key: 'other' }] })
+    vi.mocked(stringsApi.translateProposals).mockReset().mockResolvedValueOnce({
+      ...page, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: 'こんにちは' } }],
+    })
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    const retry = await waitUntilEnabled('Retry')
+    fireEvent.click(await waitUntilEnabled('Translate'))
+    await waitUntilEnabled('Translate again')
+    const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'ja' })
+    expect(input.value).toBe('こんにちは')
+    expect(retry.disabled).toBe(true)
+
+    fireEvent.change(input, { target: { value: '' } })
+    expect(retry.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: ' ' } })
+    fireEvent.click(await waitUntilEnabled('Retry'))
+    expect(await screen.findByRole('group', { name: 'Translations for other' })).toBeTruthy()
   })
 
   it('shows cells filled elsewhere and saves nothing', async () => {
@@ -495,5 +759,82 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     expect(await screen.findByText(/Filled elsewhere since review: greeting \(EN\)/)).toBeTruthy()
     expect((screen.getByRole('textbox', { name: 'en' }) as HTMLTextAreaElement).value).toBe('Hello')
+  })
+
+  it('omits View changes when the proposed translations already match the saved values', async () => {
+    vi.mocked(stringsApi.translateMissing).mockResolvedValueOnce(page).mockResolvedValueOnce(emptyPage)
+    vi.mocked(stringsApi.translateSave).mockResolvedValue({
+      ...published, action: 'draft', translated_count: 0, published_count: 0,
+    })
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await screen.findByRole('button', { name: 'Done' })
+    expect(screen.getByText('No translation changes to save')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('clears previous save conflicts when Translate missing is closed and reopened', async () => {
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(stringsApi.translateSave).mockReset().mockRejectedValueOnce(sourceConflict)
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitUntilEnabled('Regenerate changed strings')
+
+    fireEvent.click(await waitUntilEnabled('Discard'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translate missing' }))
+    expect(await screen.findByText('Failed to load missing translations')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Regenerate changed strings' })).toBeNull()
+  })
+
+  it('hides prior draft-save and page-load notices while reviewing publication', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 52, locales: ['en', 'ja'], items: [{ ...item, translations: { en: '', ja: '' } }] })
+      .mockResolvedValueOnce({ ...page, total: 51, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: '' } }] })
+      .mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValueOnce({ ...published, action: 'draft', published_count: 0 })
+    vi.mocked(stringsApi.translateReview).mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fp-1' })
+
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitUntilEnabled('Translate')
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    await waitUntilEnabled('Retry')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'ja' }), { target: { value: 'こんにちは' } })
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    expect(await screen.findByRole('heading', { name: 'Review Publication' })).toBeTruthy()
+    expect(screen.queryByText('Translations saved as draft. Public translations are unchanged.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull()
+    expect(screen.queryByText(/Failed to load missing translations/)).toBeNull()
+
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+    expect(await screen.findByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View changes' })).toBeTruthy()
+    expect(screen.getByText(/Failed to load missing translations/)).toBeTruthy()
+  })
+
+  it('ignores a cancelled Translate missing load that resolves after reopening', async () => {
+    let resolveStale!: (result: TranslateProposalsResult) => void
+    const newer = { ...item, string_id: 'fresh', key: 'fresh.key', source_text: 'Mới' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
+      .mockResolvedValueOnce({ ...page, items: [newer] })
+
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translate missing' }))
+    expect(await screen.findByRole('group', { name: 'Translations for fresh.key' })).toBeTruthy()
+
+    await act(async () => { resolveStale(page) })
+    expect(screen.getByRole('group', { name: 'Translations for fresh.key' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Translations for greeting' })).toBeNull()
   })
 })

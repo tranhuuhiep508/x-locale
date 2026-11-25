@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useBlocker } from '@tanstack/react-router'
+import { useBlocker, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { stringsApi } from '@/lib/api/strings'
 import { jobsApi, jobError } from '@/lib/api/jobs'
@@ -22,6 +22,7 @@ const message = (error: unknown) =>
 export function useBatchWorkspace(projectRef: string, batchId: string) {
   const qc = useQueryClient()
   const toast = useToast()
+  const navigate = useNavigate()
   const key = ['cli-push-batch', projectRef, batchId] as const
   const { data: project } = useQuery(projectQuery(projectRef))
   const query = useQuery({
@@ -243,21 +244,34 @@ export function useBatchWorkspace(projectRef: string, batchId: string) {
     setError('')
     try {
       const submit = publish ? stringsApi.publishCliPushBatch : stringsApi.saveCliPushBatch
-      await submit(projectRef, batchId, {
+      const result = await submit(projectRef, batchId, {
         fingerprint: snapshot.fingerprint,
         items: buildBatchPublishItems(snapshot.items, drafts),
       })
       refreshProjectContent(qc, projectRef)
-      if (!mounted.current) {
-        toast.success(
-          publish
-            ? 'Batch saved and published. Available on the next public pull or export.'
-            : 'Batch saved as draft. Public translations are unchanged.'
-        )
-        return
-      }
+      const published = publish && result.affected > 0
+      toast.success(
+        published
+          ? 'Batch saved and published. Available on the next public pull or export.'
+          : 'Batch saved as draft. Public translations are unchanged.',
+        {
+          duration: 8000,
+          position: 'top-right',
+          action: {
+            label: 'View changes',
+            onClick: () => {
+              void navigate({
+                to: '/projects/$projectRef/strings',
+                params: { projectRef },
+                search: { page: 1, batch_id: result.batch_id },
+              })
+            },
+          },
+        }
+      )
+      if (!mounted.current) return
       setStarted(false)
-      setCompletion(publish ? 'public' : 'draft')
+      setCompletion(published ? 'public' : 'draft')
       setGenerationStarted(false)
       setNotice('')
       setStale(true)

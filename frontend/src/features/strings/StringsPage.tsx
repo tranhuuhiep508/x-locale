@@ -9,7 +9,7 @@ import {
   lazy,
   Suspense,
 } from 'react'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { getRouteApi, useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getCoreRowModel,
@@ -92,6 +92,7 @@ import type {
   BatchAction,
   PublishPreviewRequest,
   StringEntry,
+  StringListResponse,
   TranslateProposalItem,
   TranslateRequest,
   TranslateReview,
@@ -188,13 +189,15 @@ function AddStringMenu({
   size?: 'sm' | 'default'
   align?: 'center' | 'end'
   className?: string
-  onAddSingle: () => void
-  onAddMany: () => void
+  onAddSingle: (opener: HTMLButtonElement | null) => void
+  onAddMany: (opener: HTMLButtonElement | null) => void
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size={size} className={className}>
+        <Button ref={triggerRef} size={size} className={className}>
           <Plus data-icon="inline-start" className={size === 'sm' ? 'size-3.5' : undefined} />
           Add string
           <ChevronDown data-icon="inline-end" className="size-3.5 text-foreground" />
@@ -204,7 +207,7 @@ function AddStringMenu({
         <DropdownMenuGroup>
           <DropdownMenuItem
             aria-label="Add single string"
-            onSelect={onAddSingle}
+            onSelect={() => onAddSingle(triggerRef.current)}
             className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <Plus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -215,7 +218,7 @@ function AddStringMenu({
           </DropdownMenuItem>
           <DropdownMenuItem
             aria-label="Add many"
-            onSelect={onAddMany}
+            onSelect={() => onAddMany(triggerRef.current)}
             className="items-start gap-2.5 px-2.5 py-2 text-left"
           >
             <ListPlus className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -235,6 +238,8 @@ export function StringsPage() {
   const rawSearch = stringsRoute.useSearch()
   const search = resolveStringsSearch(rawSearch)
   const navigate = useNavigate({ from: '/projects/$projectRef/strings' })
+  const router = useRouter()
+  const savedStringFocus = useLocation({ select: ({ state }) => state.savedStringFocus })
   const [, startTransition] = useTransition()
   const qc = useQueryClient()
   const toast = useToast()
@@ -248,15 +253,18 @@ export function StringsPage() {
   const [addManyOpen, setAddManyOpen] = useState(false)
   const [dialogEntry, setDialogEntry] = useState<StringEntry | null>(null)
   const [dialogTab, setDialogTab] = useState<'details' | 'history'>('details')
+  const dialogOpener = useRef<HTMLElement | null>(null)
   const savedRow = useRef<HTMLTableRowElement>(null)
-  const pendingSavedFocus = useRef<string | null>(null)
+  const focusedSavedString = useRef<number | undefined>(undefined)
   const [restoreLastConfirm, setRestoreLastConfirm] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [savedReviewBatch, setSavedReviewBatch] = useState<{ id: string; message: string } | null>(null)
   const reviewRequestRef = useRef<MissingReviewRequest | null>(null)
   const [reviewPage, setReviewPage] = useState(1)
   const [reviewPageSize, setReviewPageSize] = useState(TRANSLATE_MISSING_PAGE_SIZE)
   const [reviewTotal, setReviewTotal] = useState(0)
   const [proposalJobId, setProposalJobId] = useState<string | null>(null)
+  const [loadedReviewItems, setLoadedReviewItems] = useState<TranslateProposalItem[]>([])
   const [proposalItems, setProposalItems] = useState<TranslateProposalItem[]>([])
   const [applySourceConflicts, setApplySourceConflicts] = useState<ReturnType<typeof sourceConflicts>>([])
   const regenerationIds = useRef<string[] | null>(null)
@@ -265,11 +273,8 @@ export function StringsPage() {
   // Frozen publication review: exactly these rows publish, against this fingerprint.
   const [publishReview, setPublishReview] = useState<{
     payload: ReviewPayload
-    review: TranslateReview | null
+    review: TranslateReview
   } | null>(null)
-  const [savedNotice, setSavedNotice] = useState<string | null>(null)
-  const [refreshError, setRefreshError] = useState<string | null>(null)
-  const refreshingAfterSave = useRef(false)
   const [showMoveModule, setShowMoveModule] = useState(false)
   const [showAddTags, setShowAddTags] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -293,7 +298,7 @@ export function StringsPage() {
 
   useEffect(() => {
     setSearchInput(search.q ?? '')
-  }, [search.q])
+  }, [search.q, search.batch_id, search.saved_string, savedStringFocus])
 
   const applySearchQ = useEffectEvent((value: string) => {
     startTransition(() => {
@@ -317,9 +322,11 @@ export function StringsPage() {
       }
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [searchInput, search.q])
+  }, [searchInput, search.q, search.batch_id, search.saved_string, savedStringFocus])
 
-  const stringsResult = useQuery(stringsQueryOptions(projectId, search))
+  const stringsResult = useQuery(stringsQueryOptions(projectId, search, savedStringFocus))
+  const catalogLoading = stringsResult.isLoading ||
+    Boolean((search.saved_string || search.batch_id) && stringsResult.isPending)
   const pendingStringsResult = useQuery(
     stringsQueryOptions(projectId, { has_unpublished_changes: true, page: 1, page_size: 1 }),
   )
@@ -328,11 +335,11 @@ export function StringsPage() {
   const hasOtherTranslationFilter = Boolean(search.missing_locale || search.complete_locale)
   useEffect(() => {
     const row = savedRow.current
-    if (dialogOpen || !row || pendingSavedFocus.current !== search.saved_string) return
-    pendingSavedFocus.current = null
+    if (dialogOpen || !row || savedStringFocus === undefined || focusedSavedString.current === savedStringFocus) return
+    focusedSavedString.current = savedStringFocus
     row.focus({ preventScroll: true })
     row.scrollIntoView?.({ block: 'nearest' })
-  }, [dialogOpen, search.saved_string, stringsResult.isPlaceholderData])
+  }, [dialogOpen, savedStringFocus, stringsResult.data])
 
   const catalogSortSearch = useMemo(
     () => ({ sort: rawSearch.sort, order: rawSearch.order }),
@@ -425,7 +432,12 @@ export function StringsPage() {
         publishRequestRef.current = null
       }
       const message = batchSuccessMessage(req.action, data.affected, selectedCount)
-      if (message) toast.success(message)
+      if (message) {
+        toast.success(message, req.action === 'publish' && data.affected > 0 ? {
+          duration: 8000,
+          action: { label: 'View changes', onClick: () => showChangedBatch(data.batch_id) },
+        } : undefined)
+      }
     },
     onError: (e, { request: req }) => {
       if (req.action === 'publish' && isPublishFingerprintMismatch(e)) {
@@ -442,27 +454,25 @@ export function StringsPage() {
     },
   })
 
+  const missingRequestId = useRef(0)
+  function requestMissingPage(page: number) {
+    missingRequestId.current += 1
+    missingMut.mutate({ request: missingRequest(page), requestId: missingRequestId.current })
+  }
   const missingMut = useMutation({
-    mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
-    onSuccess: (res) => {
+    mutationFn: ({ request }: { request: TranslateRequest; requestId: number }) =>
+      stringsApi.translateMissing(projectId, request),
+    onSuccess: (res, { requestId }) => {
+      if (requestId !== missingRequestId.current) return
       setApplySourceConflicts([])
       regenerationIds.current = null
       setRecoveryMessage(null)
+      setLoadedReviewItems(res.items)
       setProposalItems(res.items)
       setReviewTotal(res.total)
       setReviewPage(res.page)
       setReviewPageSize(res.page_size)
       setProposalsReady(false)
-      refreshingAfterSave.current = false
-      setRefreshError(null)
-    },
-    onError: (error) => {
-      if (refreshingAfterSave.current) {
-        // The write already committed; offer a read retry, never a second write.
-        setRefreshError(error instanceof Error ? error.message : 'Failed to load missing translations')
-        return
-      }
-      toast.error('Failed to load missing translations')
     },
   })
 
@@ -533,12 +543,10 @@ export function StringsPage() {
     return true
   }
 
-  // Only the latest review request may open the publication review. Back to edit or a
-  // newer review abandons earlier requests; reset() alone still runs these callbacks.
+  // Only the latest review request may open the publication review.
   const reviewRequestId = useRef(0)
   function requestPublicationReview(payload: ReviewPayload) {
     reviewRequestId.current += 1
-    setPublishReview({ payload, review: null })
     reviewMut.mutate({ payload, requestId: reviewRequestId.current })
   }
   const reviewMut = useMutation({
@@ -564,24 +572,19 @@ export function StringsPage() {
     mutationFn: ({ action, payload, fingerprint }: SaveVariables) =>
       stringsApi.translateSave(projectId, { action, items: payload, fingerprint }),
     onSuccess: (res) => {
-      const message = saveSuccessMessage(res)
-      toast.success(message)
       invalidateStrings()
-      if (res.action === 'publish') {
-        showPublishedStrings(res.batch_id)
-        return
-      }
-      setSavedNotice(message)
-      setPublishReview(null)
+      clearReviewBatch()
       setApplySourceConflicts([])
       setRecoveryMessage(null)
-      setProposalJobId(null)
-      setProposalsReady(false)
+      setLoadedReviewItems([])
       setProposalItems([])
-      proposeMut.reset()
-      refreshingAfterSave.current = true
-      setRefreshError(null)
-      missingMut.mutate(missingRequest(reviewPage))
+      setReviewPage(1)
+      setReviewTotal(0)
+      // Saving changes the queue's membership, so offsets from the old page are stale.
+      requestMissingPage(1)
+      if (res.translated_count > 0 || res.published_count > 0) {
+        setSavedReviewBatch({ id: res.batch_id, message: saveSuccessMessage(res) })
+      }
     },
     onError: (error, { action, payload }) => {
       if (action === 'publish' && isPublishFingerprintMismatch(error)) {
@@ -594,27 +597,37 @@ export function StringsPage() {
     },
   })
 
-  function resetReview() {
+  function clearReviewBatch() {
     reviewRequestId.current += 1
-    setReviewOpen(false)
-    reviewRequestRef.current = null
     setProposalJobId(null)
     setProposalsReady(false)
     setPublishReview(null)
-    setSavedNotice(null)
-    setRefreshError(null)
-    refreshingAfterSave.current = false
     proposeMut.reset()
+    reviewMut.reset()
   }
 
-  /** Close the review and show exactly the strings this publish changed. */
-  function showPublishedStrings(batchId: string) {
+  function resetReview() {
+    clearReviewBatch()
+    setReviewOpen(false)
+    setSavedReviewBatch(null)
     setApplySourceConflicts([])
     setRecoveryMessage(null)
+    setLoadedReviewItems([])
     setProposalItems([])
-    resetReview()
+    regenerationIds.current = null
+    reviewRequestRef.current = null
+    missingRequestId.current += 1
+    missingMut.reset()
+    saveMut.reset()
+  }
+
+  function showChangedBatch(batchId: string, batchKind?: string) {
     startTransition(() => {
-      navigate({ search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId }) })
+      navigate({
+        to: '/projects/$projectRef/strings',
+        params: { projectRef: projectId },
+        search: (prev) => ({ page: 1, page_size: prev.page_size, batch_id: batchId, batch_kind: batchKind }),
+      })
     })
   }
 
@@ -624,14 +637,15 @@ export function StringsPage() {
   }
 
   function loadMissingPage(page: number) {
-    if (!reviewRequestRef.current || saveMut.isPending || proposeMut.isPending || Boolean(proposalJobId)) return
+    if (!reviewRequestRef.current || saveMut.isPending || reviewGenerating) return
     setProposalJobId(null)
-    missingMut.mutate(missingRequest(page))
+    requestMissingPage(page)
   }
 
   const loadPublishPreview = previewMut.mutate
   const requestPublishPreview = useCallback(
-    (body: PublishPreviewRequest) => {
+    (body: PublishPreviewRequest, opener: HTMLElement | null = null) => {
+      dialogOpener.current = opener
       publishRequestRef.current = body
       setPublishFingerprint(null)
       setPublishEntries(null)
@@ -641,17 +655,58 @@ export function StringsPage() {
     [loadPublishPreview],
   )
 
-  const openEditor = useCallback((entry: StringEntry | null, tab: 'details' | 'history' = 'details') => {
-    pendingSavedFocus.current = null
+  const openEditor = useCallback((entry: StringEntry | null, opener: HTMLElement | null, tab: 'details' | 'history' = 'details') => {
+    dialogOpener.current = opener
     setDialogEntry(entry)
     setDialogTab(tab)
     setDialogOpen(true)
   }, [])
 
+  function openAddMany(opener: HTMLButtonElement | null) {
+    dialogOpener.current = opener
+    setAddManyOpen(true)
+  }
+
   function closeEditor() {
     setDialogOpen(false)
     setDialogEntry(null)
     setDialogTab('details')
+  }
+
+  function restoreDialogFocus(event: Event) {
+    event.preventDefault()
+    const opener = dialogOpener.current
+    if (opener?.isConnected) {
+      opener.focus({ preventScroll: true })
+      if (document.activeElement === opener) return
+    }
+    searchInputRef.current?.focus({ preventScroll: true })
+  }
+
+  function savedString(entry: StringEntry, action: 'save_draft' | 'publish') {
+    const stringsKey = queryKeys.projects.strings.all(projectId)
+    // Replace existing rows immediately. The refetch resolves filter membership and ordering.
+    qc.setQueriesData<StringListResponse>({
+      queryKey: stringsKey,
+      predicate: ({ queryKey }) => {
+        const scope = queryKey[stringsKey.length]
+        return typeof scope === 'object' || scope === 'saved'
+      },
+    }, (current) => {
+      if (!current?.items.some((item) => item.id === entry.id)) return undefined
+      return { ...current, items: current.items.map((item) => item.id === entry.id ? entry : item) }
+    })
+    toast.success(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
+      duration: 8000,
+      action: {
+        label: 'View changes',
+        onClick: (event) => {
+          // Let the toast restore its previous focus before the saved row takes focus.
+          event.currentTarget.blur()
+          showSavedString(entry)
+        },
+      },
+    })
   }
 
   function showSavedString(entry: StringEntry) {
@@ -663,13 +718,16 @@ export function StringsPage() {
       sort: search.sort,
       order: search.order,
     }
-    qc.setQueryData(stringsQueryOptions(projectId, nextSearch).queryKey, {
-      items: [entry], total: 1, page: 1, page_size: 1,
+    const destination = {
+      to: '/projects/$projectRef/strings' as const,
+      params: { projectRef: projectId },
+      search: nextSearch,
+    }
+    void router.navigate({
+      ...destination,
+      replace: router.buildLocation(destination).href === router.state.location.href,
+      state: (prev) => ({ savedStringFocus: Math.max(Date.now(), (prev.savedStringFocus ?? 0) + 1) }),
     })
-    pendingSavedFocus.current = entry.id
-    closeEditor()
-    setSearchInput(entry.key)
-    void navigate({ search: nextSearch })
   }
 
   function setFilter(updates: Partial<StringsSearch>) {
@@ -680,19 +738,32 @@ export function StringsPage() {
 
   const strings = stringsResult.data?.items
   const data = useMemo(() => strings ?? [], [strings])
+  useEffect(() => {
+    const opener = dialogOpener.current
+    if (dialogOpen || addManyOpen || reviewOpen || publishOpen || !opener || opener.isConnected) return
+    dialogOpener.current = null
+    // A catalog refresh can remove the opener after the dialog has restored focus.
+    if (document.activeElement === document.body) searchInputRef.current?.focus({ preventScroll: true })
+  }, [data, dialogOpen, addManyOpen, reviewOpen, publishOpen])
   const total = stringsResult.data?.total ?? 0
-  const reviewItems = proposalItems
+  const lastPage = Math.max(1, Math.ceil(total / search.page_size))
+  const pageOutOfRange =
+    !search.saved_string && stringsResult.isSuccess && !stringsResult.isPlaceholderData && search.page > lastPage
+
+  useEffect(() => {
+    if (!pageOutOfRange || stringsResult.fetchStatus !== 'idle') return
+    void navigate({ replace: true, search: (prev) => ({ ...prev, page: lastPage }) })
+  }, [pageOutOfRange, lastPage, stringsResult.fetchStatus, navigate])
+
   const reviewGenerating =
     proposeMut.isPending ||
-    (Boolean(proposalJobId) && jobStillRunning(proposalJobQuery.data))
+    (Boolean(proposalJobId) && proposalJobQuery.data?.status !== 'failed')
   const reviewError =
-    missingMut.error instanceof Error
-      ? missingMut.error.message
-      : proposeMut.error instanceof Error
-        ? proposeMut.error.message
-        : proposalJobQuery.data?.status === 'failed'
-          ? proposalJobQuery.data.error ?? 'Translation job failed'
-          : null
+    proposeMut.error instanceof Error
+      ? proposeMut.error.message
+      : proposalJobQuery.data?.status === 'failed'
+        ? proposalJobQuery.data.error ?? 'Translation job failed'
+        : null
   const hasActiveFilters = hasActiveStringFilters(search)
   const emptyCopy = catalogEmptyCopy(Boolean(search.batch_id), hasActiveFilters)
 
@@ -704,10 +775,11 @@ export function StringsPage() {
   const tableMeta = useMemo(
     () => ({
       projectId,
-      onEdit: (entry: StringEntry) => openEditor(entry),
-      onHistory: (entry: StringEntry) => openEditor(entry, 'history'),
+      onEdit: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener),
+      onHistory: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener, 'history'),
       onRefresh: invalidateStrings,
-      onPublishPreview: (entry: StringEntry) => requestPublishPreview({ string_ids: [entry.id] }),
+      onPublishPreview: (entry: StringEntry, opener?: HTMLElement | null) =>
+        requestPublishPreview({ string_ids: [entry.id] }, opener ?? null),
       catalogSort: catalogSortSearch,
       onCatalogSortToggle: handleCatalogSortToggle,
     }),
@@ -729,15 +801,13 @@ export function StringsPage() {
 
   const catalogRefetchingEmpty =
     stringsResult.isFetching &&
-    !stringsResult.isLoading &&
+    !catalogLoading &&
     data.length === 0 &&
     !search.batch_id
 
-  const tourReady =
-    modulesResult.isFetched &&
-    !stringsResult.isLoading &&
-    !catalogSortListError &&
-    !catalogRefetchingEmpty
+  const batchPageLoading = Boolean(search.batch_id && stringsResult.isPlaceholderData)
+  const catalogDisplayLoading = catalogLoading || catalogSortListError || catalogRefetchingEmpty || pageOutOfRange || batchPageLoading
+  const tourReady = modulesResult.isFetched && !catalogDisplayLoading
 
   const table = useReactTable({
     data,
@@ -767,7 +837,7 @@ export function StringsPage() {
     enableRowSelection: true,
     manualPagination: true,
     autoResetPageIndex: false,
-    pageCount: Math.max(1, Math.ceil(total / search.page_size) || 1),
+    pageCount: lastPage,
     rowCount: total,
     meta: tableMeta,
   })
@@ -840,21 +910,21 @@ export function StringsPage() {
     [publishEntries],
   )
 
-  function openReviewPublishPreview() {
+  function openReviewPublishPreview(opener?: HTMLElement | null) {
     if (selectedCount > 0) {
-      requestPublishPreview({ string_ids: selectedList })
+      requestPublishPreview({ string_ids: selectedList }, opener ?? null)
       return
     }
     const source = reviewPublishSource([], searchToBatchFilter(search))
     if ('entries' in source) {
-      requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) })
+      requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) }, opener ?? null)
       return
     }
-    requestPublishPreview({ filter: source.filter })
+    requestPublishPreview({ filter: source.filter }, opener ?? null)
   }
 
-  function openSelectedPublishPreview() {
-    requestPublishPreview({ string_ids: selectedList })
+  function openSelectedPublishPreview(opener?: HTMLElement | null) {
+    requestPublishPreview({ string_ids: selectedList }, opener ?? null)
   }
 
   function closePublishPreview() {
@@ -963,7 +1033,8 @@ export function StringsPage() {
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs font-medium gap-1.5 px-2.5 rounded-lg border-border/80 bg-background/85 text-foreground hover:bg-muted/60 transition-colors shadow-2xs"
-                  onClick={() => {
+                  onClick={(event) => {
+                    dialogOpener.current = event.currentTarget
                     reviewRequestRef.current = search.saved_string
                       ? { ...createMissingReviewRequest({}, locales), scope: 'strings', string_ids: [search.saved_string] }
                       : createMissingReviewRequest(search, locales)
@@ -973,7 +1044,7 @@ export function StringsPage() {
                     setReviewPage(1)
                     setReviewTotal(0)
                     setReviewOpen(true)
-                    missingMut.mutate(missingRequest(1))
+                    requestMissingPage(1)
                   }}
                   disabled={missingMut.isPending || reviewOpen}
                 >
@@ -989,8 +1060,8 @@ export function StringsPage() {
 
                 <AddStringMenu
                   className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-xs hover:shadow-sm transition-all"
-                  onAddSingle={() => openEditor(null)}
-                  onAddMany={() => setAddManyOpen(true)}
+                  onAddSingle={(opener) => openEditor(null, opener)}
+                  onAddMany={openAddMany}
                 />
               </div>
             }
@@ -1116,7 +1187,7 @@ export function StringsPage() {
         className="relative min-h-0 flex-1 bg-card"
         data-tour={data.length > 0 ? 'grid' : undefined}
       >
-        {stringsResult.isLoading || catalogSortListError || catalogRefetchingEmpty ? (
+        {catalogDisplayLoading ? (
           <StringsTableSkeleton localeCount={locales.length} />
         ) : stringsResult.isError ? (
           <div className="flex h-full min-h-48 items-center justify-center galley-grid p-6">
@@ -1141,8 +1212,8 @@ export function StringsPage() {
                   <AddStringMenu
                     size="default"
                     align="center"
-                    onAddSingle={() => openEditor(null)}
-                    onAddMany={() => setAddManyOpen(true)}
+                    onAddSingle={(opener) => openEditor(null, opener)}
+                    onAddMany={openAddMany}
                   />
                 ) : (
                   <Button variant="outline" size="sm" onClick={clearAllFilters}>
@@ -1164,7 +1235,7 @@ export function StringsPage() {
             onRowClick={(row, event) => {
               const target = event.target as HTMLElement
               if (target.closest('button, input, [role="checkbox"], [role="switch"], [role="radio"], [role="menuitem"], a')) return
-              openEditor(row.original)
+              openEditor(row.original, event.currentTarget)
             }}
           />
         )}
@@ -1182,7 +1253,7 @@ export function StringsPage() {
                 onRetry={() => { void selection.retry() }}
                 modules={modules}
                 tags={tags}
-                onPublish={() => openSelectedPublishPreview()}
+                onPublish={openSelectedPublishPreview}
                 onUnpublish={() => setUnpublishConfirm(true)}
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}
@@ -1198,8 +1269,8 @@ export function StringsPage() {
         ) : null}
       </div>
 
-      {total > 0 ? (
-        <div className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
+      {total > 0 && search.page <= lastPage && (!catalogDisplayLoading || batchPageLoading) ? (
+        <div data-strings-pagination className="shrink-0 border-t border-border/80 bg-card/95 px-4 backdrop-blur-xs sm:px-6">
           <DataTablePagination table={table} />
         </div>
       ) : null}
@@ -1214,9 +1285,10 @@ export function StringsPage() {
             tags={tags}
             targetLocales={locales}
             onClose={closeEditor}
+            onCloseAutoFocus={restoreDialogFocus}
             initialTab={dialogTab}
             onSuccess={invalidateStrings}
-            onSaved={showSavedString}
+            onSaved={savedString}
           />
         </Suspense>
       )}
@@ -1228,18 +1300,29 @@ export function StringsPage() {
         modules={modules}
         tags={tags}
         onClose={() => setAddManyOpen(false)}
+        onCloseAutoFocus={restoreDialogFocus}
         onSuccess={invalidateStrings}
+        onViewBatch={(batchId) => showChangedBatch(batchId)}
       />
 
       <TranslateReviewDialog
         open={reviewOpen}
         projectId={projectId}
+        onCloseAutoFocus={restoreDialogFocus}
         loadingQueue={missingMut.isPending}
+        savedBatch={savedReviewBatch}
+        noChanges={saveMut.data?.translated_count === 0 && saveMut.data.published_count === 0}
+        onViewSavedBatch={(batchId) => {
+          resetReview()
+          showChangedBatch(batchId, 'translate')
+        }}
+        onRetryQueue={missingMut.isError ? () => loadMissingPage(missingMut.variables.request.page ?? 1) : undefined}
         generating={reviewGenerating}
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}
         generated={proposalsReady}
         error={reviewError}
-        items={reviewItems}
+        loadedItems={loadedReviewItems}
+        items={proposalItems}
         sourceConflicts={applySourceConflicts}
         recoveryMessage={recoveryMessage}
         onRegenerate={(items) => {
@@ -1281,19 +1364,15 @@ export function StringsPage() {
           })
         }}
         onSaveDraft={(items) => {
-          setSavedNotice(null)
           saveMut.mutate({ action: 'draft', items, payload: reviewedPayloadFromDrafts(items) })
         }}
         onReviewPublish={(items) => {
           // Freeze membership, values, and baseline; later edits need a new review.
-          const payload = reviewedPayloadFromDrafts(items)
-          setProposalItems(items)
-          setSavedNotice(null)
-          requestPublicationReview(payload)
+          requestPublicationReview(reviewedPayloadFromDrafts(items))
         }}
         reviewing={publishReview !== null}
         reviewLoading={reviewMut.isPending}
-        publishReview={publishReview?.review?.items ?? null}
+        publishReview={publishReview?.review.items ?? null}
         onBackToEdit={() => {
           if (saveMut.isPending) return
           reviewRequestId.current += 1
@@ -1302,12 +1381,9 @@ export function StringsPage() {
         }}
         onPublish={() => {
           const frozen = publishReview
-          if (!frozen?.review) return
+          if (!frozen || reviewMut.isPending) return
           saveMut.mutate({ action: 'publish', payload: frozen.payload, fingerprint: frozen.review.fingerprint })
         }}
-        savedNotice={savedNotice}
-        refreshError={refreshError}
-        onRetryRefresh={() => missingMut.mutate(missingRequest(reviewPage))}
       />
 
       <PublishPreviewDialog
@@ -1316,6 +1392,7 @@ export function StringsPage() {
         loading={previewMut.isPending && publishEntries == null}
         confirming={batchMut.isPending && publishOpen}
         onClose={closePublishPreview}
+        onCloseAutoFocus={restoreDialogFocus}
         onConfirm={confirmPublishPreview}
       />
 

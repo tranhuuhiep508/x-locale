@@ -41,6 +41,10 @@ const router = createRouter({
 
 // Register router for type safety
 declare module '@tanstack/react-router' {
+  interface HistoryState {
+    savedStringFocus?: number
+  }
+
   interface Register {
     router: typeof router
   }

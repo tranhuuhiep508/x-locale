@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -8,10 +8,13 @@ import { projectsApi } from '@/lib/api/projects'
 import { stringsApi } from '@/lib/api/strings'
 import type { Project, StringEntry } from '@/lib/api/types'
 import type { StringsSearch } from '@/lib/schemas'
+import { stringsQuery } from '@/lib/queries'
 import { StringsPage } from './StringsPage'
 
 const navigate = vi.hoisted(() => vi.fn())
+const toastSuccess = vi.hoisted(() => vi.fn())
 const useSearch = vi.hoisted(() => vi.fn<() => StringsSearch>(() => ({})))
+const useLocation = vi.hoisted(() => vi.fn<() => number | undefined>())
 
 vi.mock('@tanstack/react-router', () => ({
   getRouteApi: () => ({
@@ -19,10 +22,16 @@ vi.mock('@tanstack/react-router', () => ({
     useSearch,
   }),
   useNavigate: () => navigate,
+  useLocation,
+  useRouter: () => ({
+    navigate,
+    buildLocation: () => ({ href: '/projects/demo-app/strings?saved_string=s1' }),
+    state: { location: { href: '/projects/demo-app/strings' } },
+  }),
 }))
 
 vi.mock('@/lib/toast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+  useToast: () => ({ success: toastSuccess, error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }))
 
 vi.mock('@/lib/api/catalog', () => ({
@@ -38,7 +47,8 @@ vi.mock('@/lib/api/projects', () => ({
 vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/strings')>()),
   stringsApi: {
-    list: vi.fn(),
+    list: vi.fn(), get: vi.fn(), editorSave: vi.fn(), editorPreview: vi.fn(), translateMemory: vi.fn(), translateQa: vi.fn(),
+    publishPreview: vi.fn(), batch: vi.fn(), pasteReview: vi.fn(), pasteSave: vi.fn(),
   },
 }))
 
@@ -122,13 +132,13 @@ const rows: StringEntry[] = [
 let client: QueryClient
 
 function renderPage() {
-  return render(
-    <QueryClientProvider client={client}>
-      <TooltipProvider>
-        <StringsPage />
-      </TooltipProvider>
-    </QueryClientProvider>,
-  )
+  return render(<StringsPage />, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </QueryClientProvider>
+    ),
+  })
 }
 
 beforeEach(() => {
@@ -302,5 +312,236 @@ describe('StringsPage revamp', () => {
         order: undefined,
       },
     })
+  })
+})
+
+describe('save and publish feedback', () => {
+  it.each([false, true])('waits for the latest string before focusing it (page remounted: %s)', async (remount) => {
+    client.setDefaultOptions({ queries: { retry: false, staleTime: 120_000 } })
+    const earlier = { ...rows[0], source_text: 'Earlier saved draft' }
+    const latest = { ...rows[0], source_text: 'Latest concurrent edit' }
+    let resolveLatest!: (entry: StringEntry) => void
+    vi.mocked(stringsApi.get).mockImplementation(() => new Promise((resolve) => { resolveLatest = resolve }))
+    vi.mocked(stringsApi.editorSave).mockResolvedValue(earlier)
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: rows[0].source_text, matches: {} })
+    const view = renderPage()
+    fireEvent.click(await screen.findByText('Đăng nhập'))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit string' })
+    fireEvent.change(within(dialog).getByLabelText('Source text'), { target: { value: earlier.source_text } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    client.setQueryData(stringsQuery('demo-app', { saved_string: earlier.id }).queryKey, {
+      items: [earlier], total: 1, page: 1, page_size: 1,
+    })
+    if (remount) view.unmount()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick({ currentTarget: document.createElement('button') }))
+    const navigation = navigate.mock.lastCall![0]
+    useSearch.mockReturnValue(navigation.search)
+    useLocation.mockReturnValue(navigation.state({}).savedStringFocus)
+    if (remount) renderPage()
+    else view.rerender(<StringsPage />)
+    await waitFor(() => expect(stringsApi.get).toHaveBeenCalledWith('demo-app', earlier.id))
+    expect(screen.queryByText(earlier.source_text)).toBeNull()
+    await act(async () => resolveLatest(latest))
+    const latestCell = await screen.findByText(latest.source_text)
+    expect(screen.queryByText(earlier.source_text)).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(latestCell.closest('tr')))
+  })
+
+  it.each(['save_draft', 'publish'] as const)('closes the editor and preserves filters until the toast action (%s)', async (action) => {
+    const search: StringsSearch = { q: 'auth', status: 'draft', module: 'm1', page: 3, page_size: 20, sort: 'key', order: 'desc' }
+    useSearch.mockReturnValue(search)
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 42, page: 3, page_size: 20 })
+    vi.mocked(stringsApi.editorSave).mockResolvedValue(rows[0])
+    vi.mocked(stringsApi.editorPreview).mockResolvedValue({ entry: rows[0], fingerprint: 'review' })
+    vi.mocked(stringsApi.translateMemory).mockResolvedValue({ source_text: rows[0].source_text, matches: {} })
+    renderPage()
+    fireEvent.click(await screen.findByText('Đăng nhập'))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit string' })
+    fireEvent.change(within(dialog).getByLabelText('Source text'), { target: { value: 'Updated source' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: action === 'publish' ? 'Publish changes' : 'Save as draft' }))
+    if (action === 'publish') fireEvent.click(await within(dialog).findByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(toastSuccess).toHaveBeenCalledWith(action === 'publish' ? 'String saved and published' : 'String saved as draft', {
+      duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
+    })
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'Search strings' })).toHaveProperty('value', 'auth')
+    const catalogRequests = vi.mocked(stringsApi.list).mock.calls.filter(([, params]) => params?.q === 'auth')
+    expect(catalogRequests.length).toBeGreaterThanOrEqual(2)
+    for (const [, params] of catalogRequests) expect(params).toMatchObject(search)
+    act(() => toastSuccess.mock.calls[0][1].action.onClick({ currentTarget: document.createElement('button') }))
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/projects/$projectRef/strings', params: { projectRef: 'demo-app' },
+      search: { q: rows[0].key, saved_string: rows[0].id, page: 1, page_size: 20, sort: 'key', order: 'desc' },
+      replace: false,
+      state: expect.any(Function),
+    })
+  })
+
+  it('adds a toast action for the published batch without changing filters', async () => {
+    useSearch.mockReturnValue({ status: 'draft', page: 2, page_size: 20 })
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 22, page: 2, page_size: 20 })
+    vi.mocked(stringsApi.publishPreview).mockResolvedValue({ items: [rows[0]], fingerprint: 'review' })
+    vi.mocked(stringsApi.batch).mockResolvedValue({ affected: 1, batch_id: 'published-batch' })
+    renderPage()
+    fireEvent.click((await screen.findAllByRole('checkbox', { name: 'Select row' }))[0])
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Batch actions' })).getByRole('button', { name: 'Publish' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledTimes(1)
+    expect(navigate).not.toHaveBeenCalled()
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    expect(navigation.search({ status: 'draft', page: 2, page_size: 20 }))
+      .toEqual({ page: 1, page_size: 20, batch_id: 'published-batch' })
+  })
+
+  it('restores keyboard focus when closing or confirming PublishPreviewDialog', async () => {
+    useSearch.mockReturnValue({ status: 'draft', page: 1, page_size: 20 })
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 2, page: 1, page_size: 20 })
+    vi.mocked(stringsApi.publishPreview).mockResolvedValue({ items: [rows[1]], fingerprint: 'review' })
+    vi.mocked(stringsApi.batch).mockResolvedValue({ affected: 1, batch_id: 'published-batch' })
+    renderPage()
+
+    fireEvent.click((await screen.findAllByRole('checkbox', { name: 'Select row' }))[1])
+    const publishTrigger = within(screen.getByRole('toolbar', { name: 'Batch actions' })).getByRole('button', { name: 'Publish' })
+    fireEvent.click(publishTrigger)
+    const dialog = await screen.findByRole('dialog', { name: 'Publish preview' })
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(publishTrigger)
+
+    fireEvent.click(publishTrigger)
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Publish preview' })
+    await waitFor(() => expect((within(confirmDialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search strings' }))
+  })
+
+  it('preserves page_size when opening View changes from Add many', async () => {
+    const user = userEvent.setup()
+    useSearch.mockReturnValue({ page: 1, page_size: 50 })
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 2, page: 1, page_size: 50 })
+    vi.mocked(stringsApi.pasteReview).mockResolvedValue({
+      fingerprint: 'fp-1',
+      items: [{ key: 'new_key', mode: 'create', entry: { ...rows[1], id: 'new-1', key: 'new_key', source_text: 'New text' }, issues: {} }],
+    })
+    vi.mocked(stringsApi.pasteSave).mockResolvedValue({
+      action: 'draft', created: 1, updated: 0, changed: 1, published: 0, batch_id: 'paste-batch',
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Add string' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Add many' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add many' })
+    fireEvent.change(within(dialog).getByLabelText('JSON'), { target: { value: '{"new_key": "New text"}' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    const searchResult = typeof navigation.search === 'function'
+      ? navigation.search({ page: 1, page_size: 50 })
+      : navigation.search
+    expect(searchResult).toEqual({ page: 1, page_size: 50, batch_id: 'paste-batch' })
+  })
+})
+
+describe('catalog pagination recovery', () => {
+  it.each([false, true])('only moves after publishing if the page runs out of drafts (another draft: %s)', async (hasAnotherDraft) => {
+    const search: StringsSearch = { q: 'auth', status: 'draft', page: 2, page_size: 20, sort: 'key', order: 'asc' }
+    useSearch.mockReturnValue(search)
+    const draft = rows[1]
+    const anotherDraft: StringEntry = { ...rows[0], status: 'draft' }
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      ...draft, id: `draft-${index}`, key: `auth.draft.${index}`, source_text: `Draft ${index + 1}`,
+    }))
+    let published = false
+    vi.mocked(stringsApi.list).mockImplementation(async (_projectId, params) => {
+      const page = params.page ?? 1
+      if (params.status !== 'draft') return { items: [], total: 0, page, page_size: 20 }
+      const secondPage = hasAnotherDraft ? [anotherDraft] : []
+      if (!published) secondPage.push(draft)
+      return { items: page === 1 ? firstPage : secondPage, total: firstPage.length + secondPage.length, page, page_size: 20 }
+    })
+    vi.mocked(stringsApi.editorPreview).mockResolvedValue({ entry: draft, fingerprint: 'review' })
+    vi.mocked(stringsApi.editorSave).mockImplementation(async () => {
+      published = true
+      return { ...draft, status: 'public' }
+    })
+
+    const view = renderPage()
+    fireEvent.click(await screen.findByText(draft.source_text))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit string' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish changes' }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByText(draft.source_text)).toBeNull())
+
+    if (hasAnotherDraft) {
+      expect(screen.getByText('21–21 of 21')).toBeTruthy()
+      expect(navigate).not.toHaveBeenCalled()
+    } else {
+      expect(screen.queryByText('21–20 of 20')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Previous page' })).toBeNull()
+      expect(navigate).toHaveBeenCalledWith({ replace: true, search: expect.any(Function) })
+      const nextSearch = navigate.mock.lastCall![0].search(search)
+      expect(nextSearch).toEqual({ ...search, page: 1 })
+      useSearch.mockReturnValue(nextSearch)
+      view.rerender(<StringsPage />)
+      expect(await screen.findAllByRole('checkbox', { name: 'Select row' })).toHaveLength(20)
+      expect(screen.getByText('1–20 of 20')).toBeTruthy()
+    }
+  })
+
+  it.each([
+    { total: 0, lastPage: 1, expectedText: 'No strings left for this batch' },
+    { total: 61, lastPage: 4, expectedText: '61–61 of 61' },
+  ])('replaces an out-of-range batch URL with page $lastPage for $total results', async ({ total, lastPage, expectedText }) => {
+    const search: StringsSearch = { batch_id: 'batch-1', batch_kind: 'translate', page: 5, page_size: 20 }
+    useSearch.mockReturnValue(search)
+    vi.mocked(stringsApi.list).mockImplementation(async (_projectId, params) => ({
+      items: total > 0 && params.page === lastPage ? [rows[0]] : [], total, page: params.page ?? 1, page_size: 20,
+    }))
+
+    const view = renderPage()
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ replace: true, search: expect.any(Function) }))
+    expect(screen.queryByText('No strings left for this batch')).toBeNull()
+    const nextSearch = navigate.mock.lastCall![0].search(search)
+    expect(nextSearch).toEqual({ ...search, page: lastPage })
+    useSearch.mockReturnValue(nextSearch)
+    view.rerender(<StringsPage />)
+    expect(await screen.findByText(expectedText)).toBeTruthy()
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the requested list when placeholder data makes the page look out of range', async () => {
+    let resolvePage!: (result: Awaited<ReturnType<typeof stringsApi.list>>) => void
+    vi.mocked(stringsApi.list).mockImplementation(async (_projectId, params) => (
+      params.page === 2
+        ? new Promise((resolve) => { resolvePage = resolve })
+        : { items: rows, total: 2, page: 1, page_size: 20 }
+    ))
+
+    const view = renderPage()
+    expect(await screen.findByText('1–2 of 2')).toBeTruthy()
+    useSearch.mockReturnValue({ page: 2 })
+    view.rerender(<StringsPage />)
+    await waitFor(() => expect(resolvePage).toBeDefined())
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Previous page' })).toBeNull()
+
+    await act(async () => resolvePage({ items: [rows[1]], total: 21, page: 2, page_size: 20 }))
+    expect(await screen.findByText('21–21 of 21')).toBeTruthy()
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

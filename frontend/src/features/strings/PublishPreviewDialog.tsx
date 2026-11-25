@@ -167,6 +167,7 @@ export function PublishPreviewDialog({
   loading,
   confirming,
   onClose,
+  onCloseAutoFocus,
   onConfirm,
 }: {
   open: boolean
@@ -174,6 +175,7 @@ export function PublishPreviewDialog({
   loading?: boolean
   confirming?: boolean
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onConfirm: () => void
 }) {
   const busy = Boolean(loading || confirming)
@@ -195,7 +197,7 @@ export function PublishPreviewDialog({
         if (!next && !busy) onClose()
       }}
     >
-      <ReviewDialogContent>
+      <ReviewDialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <ReviewDialogHeader>
           <DialogTitle>Publish preview</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

@@ -50,8 +50,9 @@ interface Props {
   targetLocales: string[]
   initialTab?: 'details' | 'history'
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   onSuccess: () => void
-  onSaved: (entry: StringEntry) => void
+  onSaved: (entry: StringEntry, action: EditorSaveRequest['action']) => void
 }
 
 const NONE_MODULE = '__none__'
@@ -175,6 +176,7 @@ export default function StringFormDialog({
   targetLocales,
   initialTab = 'details',
   onClose,
+  onCloseAutoFocus,
   onSuccess,
   onSaved,
 }: Props) {
@@ -490,9 +492,9 @@ export default function StringFormDialog({
 
   const saveMut = useMutation({
     mutationFn: (request: EditorSaveRequest) => stringsApi.editorSave(projectId, request),
-    onSuccess: (_fresh, request) => {
+    onSuccess: (entry, request) => {
+      onSaved(entry, request.action)
       refreshQueries()
-      toast.success(request.action === 'publish' ? 'String saved and published' : 'String saved as draft')
     },
     onError: (error, request) => {
       if (isPublishFingerprintMismatch(error)) {
@@ -591,7 +593,7 @@ export default function StringFormDialog({
   })
 
   function save(request: EditorSaveRequest) {
-    saveMut.mutate(request, { onSuccess: (entry) => onSaved(entry) })
+    saveMut.mutate(request, { onSuccess: () => onClose() })
   }
 
   function submitAction(action: 'save_draft' | 'publish') {
@@ -601,8 +603,17 @@ export default function StringFormDialog({
     if (!sourceText.trim()) nextErrors.source_text = 'Source text is required'
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
-    if (action === 'publish') previewMut.mutate(proposal())
-    else save({ proposal: proposal(), action })
+    const proposed = proposal()
+    if (action === 'publish') {
+      previewMut.mutate(proposed)
+      return
+    }
+    if (proposed.mode === 'update' && Object.keys(proposed.values.expected).length === 0) {
+      onClose()
+      toast.info('No string changes to save')
+      return
+    }
+    save({ proposal: proposed, action })
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -639,6 +650,7 @@ export default function StringFormDialog({
         className={cn(
           'flex h-[min(90dvh,760px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl',
         )}
+        onCloseAutoFocus={onCloseAutoFocus}
         onFocusOutside={(event) => {
           // Nested popovers unmount after Create; focus then lands on body, not the
           // popover node. Blocking focus-outside keeps pointer-outside dismiss intact.

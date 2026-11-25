@@ -368,6 +368,10 @@ def save_paste(db: Session, project: Project, payload: PasteSaveRequest) -> Past
             action=payload.action,
             created=created,
             updated=len(rows) - created,
+            changed=sum(
+                proposal.mode == "create" or bool(proposal.values.model_fields_set - {"expected"})
+                for _row, proposal, *_rest in rows
+            ),
             published=published,
             batch_id=batch_id,
         )

@@ -5,15 +5,13 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { CheckCircle2, Wand2 } from 'lucide-react'
+import { Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
 import type {
   Module,
   PasteReviewRequest,
   PasteRow,
-  PasteSaveResult,
   Project,
   StringEntry,
   Tag,
@@ -70,7 +68,7 @@ const UNCHECKED: QaView = { status: 'unchecked', issues: [], stale: false }
 
 const qaId = cellId
 
-type Stage = 'paste' | 'edit' | 'review' | 'done'
+type Stage = 'paste' | 'edit' | 'review'
 
 function isNestedOverlayTarget(target: EventTarget | null) {
   return (
@@ -95,7 +93,9 @@ export function AddManyStringsDialog({
   modules,
   tags,
   onClose,
+  onCloseAutoFocus,
   onSuccess,
+  onViewBatch,
 }: {
   open: boolean
   projectId: string
@@ -103,8 +103,10 @@ export function AddManyStringsDialog({
   modules: Module[]
   tags: Tag[]
   onClose: () => void
-  /** Refresh after a save. A draft save stays open on its confirmation; a publish closes. */
+  onCloseAutoFocus?: (event: Event) => void
+  /** Refresh after a successful draft save or publication. */
   onSuccess: () => void
+  onViewBatch: (batchId: string) => void
 }) {
   const toast = useToast()
   const isModular = project?.layout === 'modular'
@@ -130,7 +132,6 @@ export function AddManyStringsDialog({
     fingerprint: string
     rows: PasteRow[]
   } | null>(null)
-  const [saved, setSaved] = useState<PasteSaveResult | null>(null)
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   // QA already returned with an AI translation, so that cell is not re-checked.
@@ -167,7 +168,6 @@ export function AddManyStringsDialog({
     setRows([])
     setFingerprint('')
     setReview(null)
-    setSaved(null)
     setAiProgress(null)
     setQaSeeds({})
     setAiCells(new Set())
@@ -216,18 +216,26 @@ export function AddManyStringsDialog({
       stringsApi.pasteSave(projectId, request),
     onSuccess: (result) => {
       onSuccess()
-      if (result.action === 'publish') {
-        toast.success(
-          `Saved and published ${result.published} ${result.published === 1 ? 'string' : 'strings'}`
-        )
-        resetAll()
-        onClose()
+      resetAll()
+      onClose()
+      const count = result.action === 'publish' ? result.published : result.changed
+      if (count === 0) {
+        toast.info('No string changes to save')
         return
       }
-      session.current += 1
-      setSaved(result)
-      setStage('done')
-      toast.success(`Saved ${result.created + result.updated} strings as draft`)
+      const countLabel = count === undefined ? 'strings' : `${count} ${count === 1 ? 'string' : 'strings'}`
+      toast.success(
+        result.action === 'publish'
+          ? `Saved and published ${countLabel}`
+          : `Saved ${countLabel} as draft`,
+        {
+          duration: 8000,
+          action: {
+            label: 'View changes',
+            onClick: () => onViewBatch(result.batch_id),
+          },
+        }
+      )
     },
     onError: (e) => {
       if (isPublishFingerprintMismatch(e)) refreshAfterConflict()
@@ -345,7 +353,7 @@ export function AddManyStringsDialog({
     targetLocales.some((cell) => (row.translations[cell] ?? '').trim())
   )
   const currentStep = stage === 'review' ? 2 : anyTranslation ? 1 : 0
-  const stageOrder: Record<string, number> = { paste: 0, edit: 1, review: 2, done: 3 }
+  const stageOrder: Record<string, number> = { paste: 0, edit: 1, review: 2 }
   const [prevStage, setPrevStage] = useState(stage)
   const [stageDirection, setStageDirection] = useState<'forward' | 'backward' | 'initial'>('initial')
 
@@ -396,7 +404,8 @@ export function AddManyStringsDialog({
       }}
     >
       <ReviewDialogContent
-        className={stage === 'paste' || stage === 'done' ? undefined : 'sm:max-w-4xl'}
+        className={stage === 'paste' ? undefined : 'sm:max-w-4xl'}
+        onCloseAutoFocus={onCloseAutoFocus}
         onFocusOutside={(event) => {
           event.preventDefault()
         }}
@@ -416,14 +425,12 @@ export function AddManyStringsDialog({
               ? `Paste a flat JSON object of key → ${isBaseLocale ? 'source text' : `${locale.toUpperCase()} translation`}. Nothing is saved until you choose Save as draft or Publish.`
               : stage === 'edit'
                 ? `${rows.length} pasted ${rows.length === 1 ? 'string' : 'strings'}. Add or generate translations, then save as draft or review and publish.`
-                : stage === 'review'
-                  ? 'Review the complete public content of every pasted string. Publish is the only confirmation.'
-                  : 'Saved. Close, add more, or view these strings in the catalog.'}
+                : 'Review the complete public content of every pasted string. Publish is the only confirmation.'}
           </DialogDescription>
         </ReviewDialogHeader>
 
         <ReviewDialogBody>
-          {parseWarning && stage !== 'done' ? (
+          {parseWarning ? (
             <p role="status" className="mb-3 text-sm font-medium text-destructive">
               {parseWarning}
             </p>
@@ -698,40 +705,6 @@ export function AddManyStringsDialog({
             </div>
           ) : stage === 'review' ? (
             <TranslatePublishReview entries={review?.entries ?? null} loading={saveMut.isPending} />
-          ) : saved ? (
-            <div role="status" className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-4">
-              <div className="flex items-start gap-2.5">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
-                <div className="min-w-0 text-sm">
-                  <p className="font-medium">
-                    {saved.action === 'publish'
-                      ? `Saved and published ${saved.published} ${saved.published === 1 ? 'string' : 'strings'}`
-                      : `Saved ${saved.created + saved.updated} strings as draft`}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {saved.created} new · {saved.updated} updated.{' '}
-                    {saved.action === 'publish'
-                      ? 'Available on the next public pull or export.'
-                      : 'Public content is unchanged until you publish.'}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <Button size="sm" variant="outline" asChild>
-                  <Link
-                    to="/projects/$projectRef/strings"
-                    params={{ projectRef: projectId }}
-                    search={{ batch_id: saved.batch_id, batch_kind: 'import' }}
-                    onClick={() => {
-                      resetAll()
-                      onClose()
-                    }}
-                  >
-                    View in Strings
-                  </Link>
-                </Button>
-              </div>
-            </div>
           ) : null}
           </div>
         </ReviewDialogBody>
@@ -780,7 +753,7 @@ export function AddManyStringsDialog({
                 <PendingLabel pending={reviewMut.isPending}>Review &amp; publish</PendingLabel>
               </Button>
             </div>
-          ) : stage === 'review' ? (
+          ) : (
             <div
               key="review-footer"
               className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
@@ -811,16 +784,7 @@ export function AddManyStringsDialog({
                 <PendingLabel pending={saveMut.isPending}>Publish</PendingLabel>
               </Button>
             </div>
-          ) : (
-            <div
-              key="done-footer"
-              className="flex w-full flex-wrap items-center justify-end gap-2 animate-step-fade"
-            >
-              <Button variant="outline" onClick={resetAll}>
-                Add more
-              </Button>
-              <Button onClick={requestClose}>Done</Button>
-            </div>
+
           )}
         </ReviewDialogFooter>
         <ConfirmDialog

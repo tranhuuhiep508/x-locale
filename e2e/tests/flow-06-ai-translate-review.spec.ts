@@ -65,21 +65,30 @@ test('translate missing: paging stays mounted, progress while generating, apply 
   await dialog.getByRole('button', { name: 'Previous page' }).click()
   await expect(firstKey).toBeVisible()
 
-  await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
-  await expect(dialog.getByRole('progressbar')).toBeVisible()
+  const translate = dialog.getByRole('button', { name: 'Translate', exact: true })
+  await translate.click()
+  await expect(translate.locator('[data-slot="spinner"]')).toBeVisible()
   await expect(paging).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
 
   const applyButton = dialog.getByRole('button', { name: 'Save as draft', exact: true })
   await expect(applyButton).toBeEnabled()
-  await applyButton.click()
+  const originalUrl = page.url()
+  await page.clock.install()
+  await applyButton.press('Enter')
 
-  await expect(
-    dialog.getByRole('status').filter({ hasText: /Saved \d+ strings as draft/ }),
-  ).toBeVisible()
-
-  await dialog.getByRole('button', { name: 'Discard' }).click()
+  await expect(dialog.getByText('Translations saved as draft. Public translations are unchanged.', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Missing Translations' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Translate', exact: true })).toBeEnabled()
+  await expect(page).toHaveURL(originalUrl)
+  await page.clock.runFor(8500)
+  const viewChanges = dialog.getByRole('button', { name: 'View changes', exact: true })
+  await viewChanges.focus()
+  await expect(viewChanges).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(dialog).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Translate missing', exact: true })).toBeFocused()
+  await expect(page.getByText('Filtered to this translation', { exact: true })).toBeVisible()
 
   await page.getByRole('textbox', { name: 'Search strings' }).fill(`${pagingPrefix}_0`)
   const row = page.getByRole('row').filter({ hasText: `${pagingPrefix}_0` }).first()
@@ -153,7 +162,21 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Translate', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Review Translations' })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Review & publish' }).click()
+  let failComparison!: () => void
+  const pendingComparison = new Promise<void>((resolve) => { failComparison = resolve })
+  await page.route('**/translate/review', async (route) => {
+    await pendingComparison
+    await route.fulfill({ status: 503, json: { detail: 'Comparison unavailable' } })
+  }, { times: 1 })
+
+  const reviewButton = dialog.getByRole('button', { name: 'Review & publish' })
+  await reviewButton.click()
+  const backToEdit = dialog.getByRole('button', { name: 'Back to edit' })
+  await backToEdit.focus()
+  await expect(backToEdit).toBeFocused()
+  failComparison()
+  await expect(reviewButton).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(dialog.getByRole('heading', { name: 'Review Publication' })).toBeVisible()
   await expect(dialog.getByRole('region', { name: 'New to public' })).toContainText(`${prefix}_a`)
   const published = page.waitForResponse((response) => response.url().endsWith('/translate/save'))
@@ -161,10 +184,15 @@ test('publishes reviewed strings in place after one full review', async ({ page 
   const response = await published
   expect(response.ok(), await response.text()).toBeTruthy()
   expect(response.request().postDataJSON().action).toBe('publish')
-  // No second confirmation: toast, close the dialog, and show the published batch.
-  await expect(page.getByText('Saved and published 1 string')).toBeVisible()
+  // Keep the search until the user explicitly opens the saved batch.
+  await expect(dialog.getByText('Saved and published 1 string')).toBeVisible()
+  await expect(dialog.getByText('No missing translations remain', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Done', exact: true })).toBeVisible()
+  await expect(page).not.toHaveURL(/batch_id=/)
+  await dialog.getByRole('button', { name: 'View changes', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(/batch_id=/)
+  await expect(page.getByText('Filtered to this translation', { exact: true })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_a` })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: `${prefix}_b` })).toHaveCount(0)
   const saved = await (await page.request.get(`${root}/strings/${entry.id}`)).json()
