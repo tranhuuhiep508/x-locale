@@ -48,7 +48,7 @@ vi.mock('@/lib/api/strings', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/strings')>()),
   stringsApi: {
     list: vi.fn(), get: vi.fn(), editorSave: vi.fn(), editorPreview: vi.fn(), translateMemory: vi.fn(), translateQa: vi.fn(),
-    publishPreview: vi.fn(), batch: vi.fn(),
+    publishPreview: vi.fn(), batch: vi.fn(), pasteReview: vi.fn(), pasteSave: vi.fn(),
   },
 }))
 
@@ -400,6 +400,60 @@ describe('save and publish feedback', () => {
     expect(navigation.params).toEqual({ projectRef: 'demo-app' })
     expect(navigation.search({ status: 'draft', page: 2, page_size: 20 }))
       .toEqual({ page: 1, page_size: 20, batch_id: 'published-batch' })
+  })
+
+  it('restores keyboard focus when closing or confirming PublishPreviewDialog', async () => {
+    useSearch.mockReturnValue({ status: 'draft', page: 1, page_size: 20 })
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 2, page: 1, page_size: 20 })
+    vi.mocked(stringsApi.publishPreview).mockResolvedValue({ items: [rows[1]], fingerprint: 'review' })
+    vi.mocked(stringsApi.batch).mockResolvedValue({ affected: 1, batch_id: 'published-batch' })
+    renderPage()
+
+    fireEvent.click((await screen.findAllByRole('checkbox', { name: 'Select row' }))[1])
+    const publishTrigger = within(screen.getByRole('toolbar', { name: 'Batch actions' })).getByRole('button', { name: 'Publish' })
+    fireEvent.click(publishTrigger)
+    const dialog = await screen.findByRole('dialog', { name: 'Publish preview' })
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(publishTrigger)
+
+    fireEvent.click(publishTrigger)
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Publish preview' })
+    await waitFor(() => expect((within(confirmDialog).getByRole('button', { name: 'Publish' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Publish' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search strings' }))
+  })
+
+  it('preserves page_size when opening View changes from Add many', async () => {
+    const user = userEvent.setup()
+    useSearch.mockReturnValue({ page: 1, page_size: 50 })
+    vi.mocked(stringsApi.list).mockResolvedValue({ items: rows, total: 2, page: 1, page_size: 50 })
+    vi.mocked(stringsApi.pasteReview).mockResolvedValue({
+      fingerprint: 'fp-1',
+      items: [{ key: 'new_key', mode: 'create', entry: { ...rows[1], id: 'new-1', key: 'new_key', source_text: 'New text' }, issues: {} }],
+    })
+    vi.mocked(stringsApi.pasteSave).mockResolvedValue({
+      action: 'draft', created: 1, updated: 0, changed: 1, published: 0, batch_id: 'paste-batch',
+    })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Add string' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Add many' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add many' })
+    fireEvent.change(within(dialog).getByLabelText('JSON'), { target: { value: '{"new_key": "New text"}' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Save as draft' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    act(() => toastSuccess.mock.calls[0][1].action.onClick())
+    const navigation = navigate.mock.calls[0][0]
+    expect(navigation.params).toEqual({ projectRef: 'demo-app' })
+    const searchResult = typeof navigation.search === 'function'
+      ? navigation.search({ page: 1, page_size: 50 })
+      : navigation.search
+    expect(searchResult).toEqual({ page: 1, page_size: 50, batch_id: 'paste-batch' })
   })
 })
 

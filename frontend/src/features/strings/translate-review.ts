@@ -283,9 +283,3 @@ export function translateProgressLabel(progress?: TranslateJobProgress | null): 
   if (phase === 'queued') return 'Queued…'
   return 'Generating translations…'
 }
-
-export function clampPage(page: number, total: number, pageSize: number): number {
-  const size = Math.max(1, pageSize)
-  const maxPage = Math.max(1, Math.ceil(total / size) || 1)
-  return Math.min(Math.max(1, page), maxPage)
-}

@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import {
   CheckCircle,
   History,
@@ -50,7 +51,7 @@ function SelectionActionButton({
   disabled: boolean
   checking?: boolean
   variant?: 'default' | 'outline' | 'destructive'
-  onClick: () => void
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void
 }) {
   const approximate = action === 'restore_last_history'
   const countLabel = approximate ? `Up to ${count}` : String(count)
@@ -114,7 +115,7 @@ export function BatchActionBar({
   onRetry?: () => void
   modules: Module[]
   tags: Tag[]
-  onPublish: () => void
+  onPublish: (opener?: HTMLButtonElement | null) => void
   onUnpublish: () => void
   onMove: () => void
   onAddTags: () => void
@@ -159,7 +160,7 @@ export function BatchActionBar({
           </div>
           <Separator orientation="vertical" className="mx-0.5 h-5" />
           <SelectionActionButton {...common} action="publish" label="Publish" icon={CheckCircle}
-            count={actions.publish.length} variant="default" onClick={onPublish} />
+            count={actions.publish.length} variant="default" onClick={(event) => onPublish(event.currentTarget)} />
           <SelectionActionButton {...common} action="unpublish" label="Unpublish" icon={XCircle}
             count={actions.unpublish.length} onClick={onUnpublish} />
 

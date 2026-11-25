@@ -7,9 +7,6 @@ import { stringsApi } from '@/lib/api/strings'
 import type { Module, PasteReview, Project, StringEntry, Tag } from '@/lib/api/types'
 import { AddManyStringsDialog } from './AddManyStringsDialog'
 
-const navigate = vi.hoisted(() => vi.fn())
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
-
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
@@ -118,6 +115,7 @@ function polyfillPointer() {
 function renderDialog() {
   const onSuccess = vi.fn()
   const onClose = vi.fn()
+  const onViewBatch = vi.fn()
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -125,11 +123,11 @@ function renderDialog() {
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <AddManyStringsDialog open projectId="proj-1" project={project} modules={modules}
-          tags={tags} onClose={onClose} onSuccess={onSuccess} />
+          tags={tags} onClose={onClose} onSuccess={onSuccess} onViewBatch={onViewBatch} />
       </TooltipProvider>
     </QueryClientProvider>
   )
-  return { onSuccess, onClose }
+  return { onSuccess, onClose, onViewBatch }
 }
 
 function paste(json: string) {
@@ -387,7 +385,7 @@ describe('AddManyStringsDialog', () => {
   })
 
   it('saves as draft, closes, and navigates only from the toast action', async () => {
-    const { onSuccess, onClose } = renderDialog()
+    const { onSuccess, onClose, onViewBatch } = renderDialog()
     await previewed()
     fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
     vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce(savedDraft)
@@ -408,23 +406,20 @@ describe('AddManyStringsDialog', () => {
     expect(toast.success).toHaveBeenCalledWith('Saved 2 strings as draft', {
       duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
     })
-    expect(navigate).not.toHaveBeenCalled()
+    expect(onViewBatch).not.toHaveBeenCalled()
     toast.success.mock.calls[0][1].action.onClick()
-    expect(navigate).toHaveBeenCalledWith({
-      to: '/projects/$projectRef/strings', params: { projectRef: 'proj-1' },
-      search: { page: 1, batch_id: 'batch-1' },
-    })
+    expect(onViewBatch).toHaveBeenCalledWith('batch-1')
   })
 
   it('omits View changes when the pasted values already match the working copy', async () => {
-    const { onClose } = renderDialog()
+    const { onClose, onViewBatch } = renderDialog()
     await previewed()
     vi.mocked(stringsApi.pasteSave).mockResolvedValueOnce({ ...savedDraft, created: 0, updated: 2, changed: 0 })
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(toast.info).toHaveBeenCalledWith('No string changes to save')
     expect(toast.success).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
+    expect(onViewBatch).not.toHaveBeenCalled()
   })
 
   it('confirms a draft save when the server omits the changed count', async () => {
@@ -441,7 +436,7 @@ describe('AddManyStringsDialog', () => {
   })
 
   it('reviews the full public state, publishes exactly the reviewed rows, then closes', async () => {
-    const { onSuccess, onClose } = renderDialog()
+    const { onSuccess, onClose, onViewBatch } = renderDialog()
     await previewed()
     fireEvent.change(textbox('EN translation for e2e_new'), { target: { value: 'New' } })
     vi.mocked(stringsApi.pasteReview).mockResolvedValueOnce(reviewed)
@@ -455,7 +450,7 @@ describe('AddManyStringsDialog', () => {
     expect(toast.success).toHaveBeenCalledWith('Saved and published 2 strings', {
       duration: 8000, action: { label: 'View changes', onClick: expect.any(Function) },
     })
-    expect(navigate).not.toHaveBeenCalled()
+    expect(onViewBatch).not.toHaveBeenCalled()
     const request = vi.mocked(stringsApi.pasteSave).mock.calls[0][1]
     expect(request).toMatchObject({ action: 'publish', fingerprint: 'fp-1' })
     expect(request.rows[1]).toEqual({ key: 'e2e_new', source_text: 'Mới', translations: { en: 'New' } })

@@ -5,7 +5,6 @@ import {
   ReviewDialogHeader,
 } from '@/components/layout/ReviewDialog'
 import { useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { Wand2 } from 'lucide-react'
 import { stringsApi } from '@/lib/api/strings'
@@ -96,6 +95,7 @@ export function AddManyStringsDialog({
   onClose,
   onCloseAutoFocus,
   onSuccess,
+  onViewBatch,
 }: {
   open: boolean
   projectId: string
@@ -106,9 +106,9 @@ export function AddManyStringsDialog({
   onCloseAutoFocus?: (event: Event) => void
   /** Refresh after a successful draft save or publication. */
   onSuccess: () => void
+  onViewBatch: (batchId: string) => void
 }) {
   const toast = useToast()
-  const navigate = useNavigate()
   const isModular = project?.layout === 'modular'
   const baseLocale = project?.base_language ?? 'en'
   const targetLocales = (project?.target_languages ?? []).filter((item) => item !== baseLocale)
@@ -232,13 +232,7 @@ export function AddManyStringsDialog({
           duration: 8000,
           action: {
             label: 'View changes',
-            onClick: () => {
-              void navigate({
-                to: '/projects/$projectRef/strings',
-                params: { projectRef: projectId },
-                search: { page: 1, batch_id: result.batch_id },
-              })
-            },
+            onClick: () => onViewBatch(result.batch_id),
           },
         }
       )

@@ -615,18 +615,23 @@ export function TranslateReviewDialog({
               </div>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+          <div
+            className={cn(
+              'flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground',
+              (reviewing || (!noChanges && !savedBatch)) && 'sr-only',
+            )}
+          >
             <span role="status">
-              {noChanges ? 'No translation changes to save' : savedBatch?.message}
+              {reviewing ? null : noChanges ? 'No translation changes to save' : savedBatch?.message}
             </span>
-            {savedBatch && onViewSavedBatch && (
+            {!reviewing && savedBatch && onViewSavedBatch && (
               <Button
                 ref={viewChangesRef}
                 type="button"
                 variant="link"
                 size="xs"
                 className="px-0"
-                disabled={applying || generating || reviewing || reviewLoading}
+                disabled={applying || generating || reviewLoading}
                 onClick={() => {
                   if (pageLocked) setConfirmLeaving(true)
                   else viewSavedBatch()
@@ -639,12 +644,12 @@ export function TranslateReviewDialog({
           {!reviewing && error && !loadingQueue ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : null}
-          {onRetryQueue && !queueUnavailable ? (
+          {!reviewing && onRetryQueue && !queueUnavailable ? (
             <p className="text-sm text-destructive" role="status">
               Failed to load missing translations.{pageLocked ? ` ${PAGE_BLOCKED}.` : ''}
             </p>
           ) : null}
-          {recoveryMessage ? (
+          {!reviewing && recoveryMessage ? (
             <p className="text-sm text-destructive" role="status">
               {recoveryMessage}
             </p>

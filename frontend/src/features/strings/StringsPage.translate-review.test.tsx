@@ -773,4 +773,68 @@ describe('save as draft or publish in place', suiteTimeout, () => {
     expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
+
+  it('clears previous save conflicts when Translate missing is closed and reopened', async () => {
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(stringsApi.translateSave).mockReset().mockRejectedValueOnce(sourceConflict)
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitUntilEnabled('Regenerate changed strings')
+
+    fireEvent.click(await waitUntilEnabled('Discard'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translate missing' }))
+    expect(await screen.findByText('Failed to load missing translations')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Regenerate changed strings' })).toBeNull()
+  })
+
+  it('hides prior draft-save and page-load notices while reviewing publication', async () => {
+    vi.mocked(projectsApi.get).mockResolvedValue({ ...project, target_languages: ['en', 'ja'] })
+    vi.mocked(stringsApi.translateMissing)
+      .mockResolvedValueOnce({ ...page, total: 52, locales: ['en', 'ja'], items: [{ ...item, translations: { en: '', ja: '' } }] })
+      .mockResolvedValueOnce({ ...page, total: 51, locales: ['en', 'ja'], items: [{ ...item, translations: { ja: '' } }] })
+      .mockRejectedValueOnce(new Error('Network down'))
+    vi.mocked(stringsApi.translateSave).mockReset().mockResolvedValueOnce({ ...published, action: 'draft', published_count: 0 })
+    vi.mocked(stringsApi.translateReview).mockResolvedValueOnce({ items: [reviewed], fingerprint: 'fp-1' })
+
+    await openAndFill()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+    await waitUntilEnabled('Translate')
+    fireEvent.click(await waitUntilEnabled('Next page'))
+    await waitUntilEnabled('Retry')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'ja' }), { target: { value: 'こんにちは' } })
+    fireEvent.click(await waitUntilEnabled('Review & publish'))
+    expect(await screen.findByRole('heading', { name: 'Review Publication' })).toBeTruthy()
+    expect(screen.queryByText('Translations saved as draft. Public translations are unchanged.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull()
+    expect(screen.queryByText(/Failed to load missing translations/)).toBeNull()
+
+    fireEvent.click(await waitUntilEnabled('Back to edit'))
+    expect(await screen.findByText('Translations saved as draft. Public translations are unchanged.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View changes' })).toBeTruthy()
+    expect(screen.getByText(/Failed to load missing translations/)).toBeTruthy()
+  })
+
+  it('ignores a cancelled Translate missing load that resolves after reopening', async () => {
+    let resolveStale!: (result: TranslateProposalsResult) => void
+    const newer = { ...item, string_id: 'fresh', key: 'fresh.key', source_text: 'Mới' }
+    vi.mocked(stringsApi.translateMissing)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
+      .mockResolvedValueOnce({ ...page, items: [newer] })
+
+    await openReview()
+    fireEvent.click(await waitUntilEnabled('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Translate missing' }))
+    expect(await screen.findByRole('group', { name: 'Translations for fresh.key' })).toBeTruthy()
+
+    await act(async () => { resolveStale(page) })
+    expect(screen.getByRole('group', { name: 'Translations for fresh.key' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Translations for greeting' })).toBeNull()
+  })
 })

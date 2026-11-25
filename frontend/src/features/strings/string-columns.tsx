@@ -56,7 +56,7 @@ export type StringTableMeta = {
   onEdit: (entry: StringEntry, opener: HTMLButtonElement | null) => void
   onHistory: (entry: StringEntry, opener: HTMLButtonElement | null) => void
   onRefresh: () => void
-  onPublishPreview: (entry: StringEntry) => void
+  onPublishPreview: (entry: StringEntry, opener?: HTMLElement | null) => void
   catalogSort: CatalogSortSearch
   onCatalogSortToggle: (columnId: CatalogSortField) => void
 }
@@ -161,9 +161,10 @@ export function PublishSwitch({
   entry: StringEntry
   projectId: string
   onRefresh: () => void
-  onPublishPreview: (entry: StringEntry) => void
+  onPublishPreview: (entry: StringEntry, opener?: HTMLElement | null) => void
 }) {
   const toast = useToast()
+  const switchRef = useRef<HTMLButtonElement>(null)
   const [confirmUnpublish, setConfirmUnpublish] = useState(false)
   const locked = entry.pending_delete || Boolean(entry.deleted_at)
   const isPublic = entry.status === 'public' && !entry.deleted_at
@@ -196,12 +197,13 @@ export function PublishSwitch({
       className="inline-flex items-center gap-2"
     >
       <Switch
+        ref={switchRef}
         size="sm"
         checked={isPublic}
         disabled={unpublishMut.isPending || locked}
         onCheckedChange={(checked) => {
           if (locked) return
-          if (checked) onPublishPreview(entry)
+          if (checked) onPublishPreview(entry, switchRef.current)
           else setConfirmUnpublish(true)
         }}
         aria-label={isPublic ? 'Public' : 'Draft'}
@@ -246,7 +248,7 @@ function StringActionsCell({
   onEdit: StringTableMeta['onEdit']
   onHistory: StringTableMeta['onHistory']
   onRefresh: () => void
-  onPublishPreview: (entry: StringEntry) => void
+  onPublishPreview: StringTableMeta['onPublishPreview']
 }) {
   const toast = useToast()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -328,7 +330,7 @@ function StringActionsCell({
               <DropdownMenuGroup>
                 {dirty || (!released && !deleted) ? (
                   <DropdownMenuItem
-                    onSelect={() => onPublishPreview(entry)}
+                    onSelect={() => onPublishPreview(entry, triggerRef.current)}
                   >
                     <CheckCircle />
                     {dirty ? 'Publish working copy' : 'Publish'}
@@ -346,7 +348,7 @@ function StringActionsCell({
                 {entry.pending_delete ? (
                   <DropdownMenuItem
                     variant="destructive"
-                    onSelect={() => onPublishPreview(entry)}
+                    onSelect={() => onPublishPreview(entry, triggerRef.current)}
                   >
                     <CheckCircle />
                     Publish delete

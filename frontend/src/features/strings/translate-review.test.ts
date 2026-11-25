@@ -3,7 +3,6 @@ import type { StringEntry, TranslateProposalItem } from '@/lib/api/types'
 import { ApiError } from '@/lib/api/client'
 import {
   applyPayloadFromDrafts,
-  clampPage,
   createMissingReviewRequest,
   draftsFromItems,
   filledCount,
@@ -215,15 +214,6 @@ describe('reviewStatusDescription', () => {
         applyCount: 12,
       }),
     ).toBe('5 of 40 strings · 12 translations ready')
-  })
-})
-
-describe('clampPage', () => {
-  it('stays on the last non-empty page after apply shrinks the catalog', () => {
-    expect(clampPage(3, 40, 50)).toBe(1)
-    expect(clampPage(2, 80, 50)).toBe(2)
-    expect(clampPage(0, 80, 50)).toBe(1)
-    expect(clampPage(1, 0, 50)).toBe(1)
   })
 })
 

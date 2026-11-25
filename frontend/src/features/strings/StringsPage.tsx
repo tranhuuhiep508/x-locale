@@ -454,9 +454,16 @@ export function StringsPage() {
     },
   })
 
+  const missingRequestId = useRef(0)
+  function requestMissingPage(page: number) {
+    missingRequestId.current += 1
+    missingMut.mutate({ request: missingRequest(page), requestId: missingRequestId.current })
+  }
   const missingMut = useMutation({
-    mutationFn: (req: TranslateRequest) => stringsApi.translateMissing(projectId, req),
-    onSuccess: (res) => {
+    mutationFn: ({ request }: { request: TranslateRequest; requestId: number }) =>
+      stringsApi.translateMissing(projectId, request),
+    onSuccess: (res, { requestId }) => {
+      if (requestId !== missingRequestId.current) return
       setApplySourceConflicts([])
       regenerationIds.current = null
       setRecoveryMessage(null)
@@ -569,11 +576,12 @@ export function StringsPage() {
       clearReviewBatch()
       setApplySourceConflicts([])
       setRecoveryMessage(null)
+      setLoadedReviewItems([])
       setProposalItems([])
       setReviewPage(1)
       setReviewTotal(0)
       // Saving changes the queue's membership, so offsets from the old page are stale.
-      missingMut.mutate(missingRequest(1))
+      requestMissingPage(1)
       if (res.translated_count > 0 || res.published_count > 0) {
         setSavedReviewBatch({ id: res.batch_id, message: saveSuccessMessage(res) })
       }
@@ -602,7 +610,14 @@ export function StringsPage() {
     clearReviewBatch()
     setReviewOpen(false)
     setSavedReviewBatch(null)
+    setApplySourceConflicts([])
+    setRecoveryMessage(null)
+    setLoadedReviewItems([])
+    setProposalItems([])
+    regenerationIds.current = null
     reviewRequestRef.current = null
+    missingRequestId.current += 1
+    missingMut.reset()
     saveMut.reset()
   }
 
@@ -624,12 +639,13 @@ export function StringsPage() {
   function loadMissingPage(page: number) {
     if (!reviewRequestRef.current || saveMut.isPending || reviewGenerating) return
     setProposalJobId(null)
-    missingMut.mutate(missingRequest(page))
+    requestMissingPage(page)
   }
 
   const loadPublishPreview = previewMut.mutate
   const requestPublishPreview = useCallback(
-    (body: PublishPreviewRequest) => {
+    (body: PublishPreviewRequest, opener: HTMLElement | null = null) => {
+      dialogOpener.current = opener
       publishRequestRef.current = body
       setPublishFingerprint(null)
       setPublishEntries(null)
@@ -724,11 +740,11 @@ export function StringsPage() {
   const data = useMemo(() => strings ?? [], [strings])
   useEffect(() => {
     const opener = dialogOpener.current
-    if (dialogOpen || addManyOpen || reviewOpen || !opener || opener.isConnected) return
+    if (dialogOpen || addManyOpen || reviewOpen || publishOpen || !opener || opener.isConnected) return
     dialogOpener.current = null
     // A catalog refresh can remove the opener after the dialog has restored focus.
     if (document.activeElement === document.body) searchInputRef.current?.focus({ preventScroll: true })
-  }, [data, dialogOpen, addManyOpen, reviewOpen])
+  }, [data, dialogOpen, addManyOpen, reviewOpen, publishOpen])
   const total = stringsResult.data?.total ?? 0
   const lastPage = Math.max(1, Math.ceil(total / search.page_size))
   const pageOutOfRange =
@@ -762,7 +778,8 @@ export function StringsPage() {
       onEdit: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener),
       onHistory: (entry: StringEntry, opener: HTMLElement | null) => openEditor(entry, opener, 'history'),
       onRefresh: invalidateStrings,
-      onPublishPreview: (entry: StringEntry) => requestPublishPreview({ string_ids: [entry.id] }),
+      onPublishPreview: (entry: StringEntry, opener?: HTMLElement | null) =>
+        requestPublishPreview({ string_ids: [entry.id] }, opener ?? null),
       catalogSort: catalogSortSearch,
       onCatalogSortToggle: handleCatalogSortToggle,
     }),
@@ -893,21 +910,21 @@ export function StringsPage() {
     [publishEntries],
   )
 
-  function openReviewPublishPreview() {
+  function openReviewPublishPreview(opener?: HTMLElement | null) {
     if (selectedCount > 0) {
-      requestPublishPreview({ string_ids: selectedList })
+      requestPublishPreview({ string_ids: selectedList }, opener ?? null)
       return
     }
     const source = reviewPublishSource([], searchToBatchFilter(search))
     if ('entries' in source) {
-      requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) })
+      requestPublishPreview({ string_ids: source.entries.map((entry) => entry.id) }, opener ?? null)
       return
     }
-    requestPublishPreview({ filter: source.filter })
+    requestPublishPreview({ filter: source.filter }, opener ?? null)
   }
 
-  function openSelectedPublishPreview() {
-    requestPublishPreview({ string_ids: selectedList })
+  function openSelectedPublishPreview(opener?: HTMLElement | null) {
+    requestPublishPreview({ string_ids: selectedList }, opener ?? null)
   }
 
   function closePublishPreview() {
@@ -1027,7 +1044,7 @@ export function StringsPage() {
                     setReviewPage(1)
                     setReviewTotal(0)
                     setReviewOpen(true)
-                    missingMut.mutate(missingRequest(1))
+                    requestMissingPage(1)
                   }}
                   disabled={missingMut.isPending || reviewOpen}
                 >
@@ -1236,7 +1253,7 @@ export function StringsPage() {
                 onRetry={() => { void selection.retry() }}
                 modules={modules}
                 tags={tags}
-                onPublish={() => openSelectedPublishPreview()}
+                onPublish={openSelectedPublishPreview}
                 onUnpublish={() => setUnpublishConfirm(true)}
                 onMove={() => setShowMoveModule(true)}
                 onAddTags={() => setShowAddTags(true)}
@@ -1285,6 +1302,7 @@ export function StringsPage() {
         onClose={() => setAddManyOpen(false)}
         onCloseAutoFocus={restoreDialogFocus}
         onSuccess={invalidateStrings}
+        onViewBatch={(batchId) => showChangedBatch(batchId)}
       />
 
       <TranslateReviewDialog
@@ -1298,7 +1316,7 @@ export function StringsPage() {
           resetReview()
           showChangedBatch(batchId, 'translate')
         }}
-        onRetryQueue={missingMut.isError ? () => loadMissingPage(missingMut.variables.page ?? 1) : undefined}
+        onRetryQueue={missingMut.isError ? () => loadMissingPage(missingMut.variables.request.page ?? 1) : undefined}
         generating={reviewGenerating}
         saving={saveMut.isPending ? saveMut.variables?.action ?? null : null}
         generated={proposalsReady}
@@ -1374,6 +1392,7 @@ export function StringsPage() {
         loading={previewMut.isPending && publishEntries == null}
         confirming={batchMut.isPending && publishOpen}
         onClose={closePublishPreview}
+        onCloseAutoFocus={restoreDialogFocus}
         onConfirm={confirmPublishPreview}
       />
 
