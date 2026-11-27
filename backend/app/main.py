@@ -17,6 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.ai import close_ai_client
 from app.config import require_postgres_database_url, settings
+from app.csrf import SameOriginCsrfMiddleware
 from app.database import DbSession, register_activity_listener
 from app.routers import (
     activities,
@@ -74,6 +75,8 @@ app.add_middleware(
     secret_key=settings.x_locale_secret,
     https_only=settings.cookies_secure,
 )
+
+app.add_middleware(SameOriginCsrfMiddleware)
 
 if settings.cors_origin_list:
     app.add_middleware(

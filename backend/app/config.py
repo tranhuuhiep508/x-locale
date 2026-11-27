@@ -172,6 +172,10 @@ class Settings(BaseSettings):
 
     def validate_for_runtime(self) -> None:
         """Refuse production-like boot with known-insecure defaults."""
+        if "*" in self.cors_origin_list:
+            raise RuntimeError(
+                "CORS_ORIGINS must not contain '*' when credentialed requests are enabled"
+            )
         if self.dev_bypass_active:
             return
         if not _secure_signing_secret(self.x_locale_secret):
