@@ -20,16 +20,16 @@ def _normalize_origin(value: str) -> str | None:
     raw = value.strip()
     if not raw or raw == "*" or raw.lower() == "null":
         return None
-    parsed = urlsplit(raw)
-    scheme = parsed.scheme.lower()
-    if scheme not in {"http", "https"}:
-        return None
-    if parsed.username is not None or parsed.password is not None:
-        return None
-    hostname = parsed.hostname
-    if not hostname:
-        return None
     try:
+        parsed = urlsplit(raw)
+        scheme = parsed.scheme.lower()
+        if scheme not in {"http", "https"}:
+            return None
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        hostname = parsed.hostname
+        if not hostname:
+            return None
         port = parsed.port
     except ValueError:
         return None

@@ -401,7 +401,9 @@ def test_csrf_rejects_cross_and_same_site_cookie_writes(client, monkeypatch, hea
     [
         {"Origin": "https://evil.example"},
         {"Origin": "null"},
+        {"Origin": "http://[::1"},
         {"Referer": "https://evil.example/form"},
+        {"Referer": "http://[bad]"},
     ],
 )
 def test_csrf_rejects_mismatched_origin_or_referer_without_fetch_metadata(
@@ -493,3 +495,43 @@ def test_csrf_allows_api_key_writes_without_session_cookie(client, monkeypatch):
         headers=cross_headers,
     )
     assert r2.status_code == 200, r2.text
+
+
+def test_csrf_dev_bypass_blocks_cross_origin_but_allows_api_key(client):
+    from app.config import settings
+    from app.csrf import CSRF_FORBIDDEN_DETAIL
+
+    assert settings.dev_bypass_active is True
+    pid = client.post(
+        "/api/projects",
+        json={"name": "DevBypassCsrf", "target_languages": ["en"]},
+    ).json()["id"]
+    raw_key = client.post(f"/api/projects/{pid}/api-keys", json={"name": "cli"}).json()["key"]
+    client.cookies.clear()
+
+    blocked = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"blocked_key": "nope"}', "application/json")},
+        headers={"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == CSRF_FORBIDDEN_DETAIL
+    keys_after_blocked = {
+        row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
+    assert "blocked_key" not in keys_after_blocked
+
+    allowed = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"api_key_ok": "yes"}', "application/json")},
+        headers={
+            "X-API-Key": raw_key,
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
+    keys_after_allowed = {
+        row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
+    assert "api_key_ok" in keys_after_allowed
