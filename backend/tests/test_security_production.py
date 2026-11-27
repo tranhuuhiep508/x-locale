@@ -290,3 +290,406 @@ def test_openapi_hidden_when_oidc_configured():
         check=True,
     )
     assert result.stdout.strip() == "None"
+
+
+@pytest.mark.parametrize(
+    "cors_origins",
+    ["*", " * ", "https://app.example.com, *", "null", "NULL", "https://app.example.com, null"],
+)
+@pytest.mark.parametrize("auth_dev_bypass", [False, True])
+def test_runtime_rejects_wildcard_cors_origins(cors_origins, auth_dev_bypass):
+    loaded = Settings(
+        x_locale_secret="prod-test-secret-value-at-least-32-bytes",
+        auth_dev_bypass=auth_dev_bypass,
+        cors_origins=cors_origins,
+        _env_file=None,
+    )
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        loaded.validate_for_runtime()
+
+
+@pytest.mark.parametrize("cors_origins", ["", "https://app.example.com"])
+def test_runtime_accepts_non_wildcard_cors_origins(cors_origins):
+    Settings(
+        x_locale_secret="prod-test-secret-value-at-least-32-bytes",
+        auth_dev_bypass=False,
+        cors_origins=cors_origins,
+        _env_file=None,
+    ).validate_for_runtime()
+
+
+def _setup_csrf_fixture(client, monkeypatch):
+    from app.config import settings
+
+    login = client.get("/api/auth/login", follow_redirects=False)
+    cookie = login.cookies.get(SESSION_COOKIE)
+    assert cookie
+
+    project = client.post(
+        "/api/projects",
+        json={"name": "CsrfApp", "target_languages": ["en"]},
+    ).json()
+    pid = project["id"]
+    created = client.post(
+        f"/api/projects/{pid}/strings",
+        json={"key": "hello", "source_text": "Xin chao"},
+    ).json()
+    sid = created["id"]
+    client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"source_text": "Xin chao 2"},
+    )
+    imported = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"batch_key": "Batch value"}},
+    ).json()
+    batch_id = imported["batch_id"]
+    activities = client.get(f"/api/projects/{pid}/strings/{sid}/activities").json()["items"]
+    activity_id = activities[0]["id"]
+    raw_key = client.post(f"/api/projects/{pid}/api-keys", json={"name": "cli"}).json()["key"]
+
+    monkeypatch.setattr(settings, "auth_dev_bypass", False)
+    return {
+        "cookie": cookie,
+        "pid": pid,
+        "sid": sid,
+        "activity_id": activity_id,
+        "batch_id": batch_id,
+        "api_key": raw_key,
+    }
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "same-site", "Origin": "http://other.testserver"},
+        {"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"},
+        {"Sec-Fetch-Site": "cross-site"},
+    ],
+)
+def test_csrf_rejects_cross_and_same_site_cookie_writes(client, monkeypatch, headers):
+    from app.csrf import CSRF_FORBIDDEN_DETAIL
+
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    pid, sid, activity_id, batch_id = fx["pid"], fx["sid"], fx["activity_id"], fx["batch_id"]
+
+    import_resp = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"injected": "evil"}', "application/json")},
+        headers=headers,
+    )
+    assert import_resp.status_code == 403
+    assert import_resp.json()["detail"] == CSRF_FORBIDDEN_DETAIL
+    keys = {row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert "injected" not in keys
+
+    logout_resp = client.post("/api/auth/logout", headers=headers)
+    assert logout_resp.status_code == 403
+    assert client.get("/api/auth/me").status_code == 200
+
+    for path in (
+        f"/api/projects/{pid}/activities/{activity_id}/revert",
+        f"/api/projects/{pid}/activities/batch/{batch_id}/revert",
+        f"/api/projects/{pid}/strings/{sid}/activities/{activity_id}/restore",
+    ):
+        resp = client.post(path, headers=headers)
+        assert resp.status_code == 403, path
+
+    delete_resp = client.delete(f"/api/projects/{pid}/strings/{sid}", headers=headers)
+    assert delete_resp.status_code == 403
+    assert client.get(f"/api/projects/{pid}/strings/{sid}").status_code == 200
+
+    patch_resp = client.patch(
+        f"/api/projects/{pid}/strings/{sid}",
+        json={"source_text": "Hijacked"},
+        headers=headers,
+    )
+    assert patch_resp.status_code == 403
+    assert client.get(f"/api/projects/{pid}/strings/{sid}").json()["source_text"] == "Xin chao 2"
+
+    put_resp = client.put(
+        f"/api/projects/{pid}/strings/{sid}/translations/en",
+        json={"value": "Hijacked"},
+        headers=headers,
+    )
+    assert put_resp.status_code == 403
+    translations = client.get(f"/api/projects/{pid}/strings/{sid}").json()["translations"]
+    assert all(item["value"] != "Hijacked" for item in translations)
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Origin": "https://evil.example"},
+        {"Origin": "null"},
+        {"Origin": "http://[::1"},
+        {"Origin": "https://evil.example", "Referer": "http://testserver/projects"},
+        {"Origin": "null", "Referer": "http://testserver/projects"},
+        {"Referer": "https://evil.example/form"},
+        {"Referer": "http://[bad]"},
+    ],
+)
+def test_csrf_rejects_mismatched_origin_or_referer_without_fetch_metadata(
+    client, monkeypatch, headers
+):
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    resp = client.post("/api/auth/logout", headers=headers)
+    assert resp.status_code == 403
+    assert client.get("/api/auth/me").status_code == 200
+    assert fx["cookie"] == client.cookies.get(SESSION_COOKIE)
+
+
+def test_csrf_allows_same_origin_and_explicit_cors_and_oidc_origin(client, monkeypatch):
+    from app.config import settings
+
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    pid = fx["pid"]
+
+    # Same-origin Sec-Fetch-Site is allowed even behind a TLS/Vite proxy Origin difference.
+    r1 = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k1": "v1"}', "application/json")},
+        headers={"Sec-Fetch-Site": "same-origin", "Origin": "https://x-locale.company.com"},
+    )
+    assert r1.status_code == 200, r1.text
+
+    # Direct user-initiated navigation (Sec-Fetch-Site: none) is allowed.
+    r_none = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k_none": "v_none"}', "application/json")},
+        headers={"Sec-Fetch-Site": "none"},
+    )
+    assert r_none.status_code == 200, r_none.text
+
+    # Without Sec-Fetch-Site, matching request Origin is allowed.
+    r2 = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k2": "v2"}', "application/json")},
+        headers={"Origin": "http://testserver"},
+    )
+    assert r2.status_code == 200, r2.text
+
+    # Without Sec-Fetch-Site or Origin, a matching same-origin Referer is allowed.
+    r_ref = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k_ref": "v_ref"}', "application/json")},
+        headers={"Referer": "http://testserver/projects"},
+    )
+    assert r_ref.status_code == 200, r_ref.text
+
+    # Explicit CORS_ORIGINS allows cross-site/same-site writes from that configured origin.
+    monkeypatch.setattr(settings, "cors_origins", "https://ui.example.com")
+    r3 = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k3": "v3"}', "application/json")},
+        headers={"Sec-Fetch-Site": "same-site", "Origin": "https://ui.example.com"},
+    )
+    assert r3.status_code == 200, r3.text
+    monkeypatch.setattr(settings, "cors_origins", "")
+
+    # Without Sec-Fetch-Site, configured OIDC redirect origin is allowed behind TLS proxies,
+    # while downgraded plaintext http:// origins are rejected because cookies_secure is True.
+    monkeypatch.setattr(settings, "oidc_issuer", "https://login.example.test/tenant/v2.0")
+    monkeypatch.setattr(settings, "oidc_client_id", "client")
+    monkeypatch.setattr(settings, "oidc_client_secret", "secret")
+    monkeypatch.setattr(
+        settings, "oidc_redirect_url", "https://x-locale.company.com/api/auth/callback"
+    )
+    r4 = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k4": "v4"}', "application/json")},
+        headers={"Origin": "https://x-locale.company.com"},
+    )
+    assert r4.status_code == 200, r4.text
+    r4_http = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"k4_http": "nope"}', "application/json")},
+        headers={"Origin": "http://testserver"},
+    )
+    assert r4_http.status_code == 403
+
+    # Safe GET requests are never blocked even with cross-site Sec-Fetch-Site.
+    assert (
+        client.get(
+            f"/api/projects/{pid}/strings",
+            headers={"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"},
+        ).status_code
+        == 200
+    )
+
+
+def test_csrf_uses_https_request_origin_when_cookies_secure(client, monkeypatch):
+    from app.config import settings
+
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    pid = fx["pid"]
+    monkeypatch.setattr(settings, "session_cookie_secure", True)
+
+    https_ok = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"tls_ok": "yes"}', "application/json")},
+        headers={"Origin": "https://testserver"},
+    )
+    assert https_ok.status_code == 200, https_ok.text
+
+    http_downgrade = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"http_bad": "no"}', "application/json")},
+        headers={"Origin": "http://testserver"},
+    )
+    assert http_downgrade.status_code == 403
+    keys = {row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert "tls_ok" in keys
+    assert "http_bad" not in keys
+
+
+def test_csrf_still_blocks_cross_site_when_cookie_and_api_key_both_present(client, monkeypatch):
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    resp = client.post(
+        "/api/auth/logout",
+        headers={
+            "X-API-Key": fx["api_key"],
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert resp.status_code == 403
+    assert client.get("/api/auth/me").status_code == 200
+
+
+def test_csrf_allows_api_key_writes_without_session_cookie(client, monkeypatch):
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    pid, api_key = fx["pid"], fx["api_key"]
+    client.cookies.clear()
+
+    cross_headers = {
+        "X-API-Key": api_key,
+        "Sec-Fetch-Site": "cross-site",
+        "Origin": "https://other.example",
+    }
+    r1 = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"cli_file": "ok"}', "application/json")},
+        headers=cross_headers,
+    )
+    assert r1.status_code == 200, r1.text
+
+    r2 = client.post(
+        f"/api/projects/{pid}/strings/import",
+        json={"strings": {"cli_json": "ok"}},
+        headers=cross_headers,
+    )
+    assert r2.status_code == 200, r2.text
+
+
+def test_csrf_dev_bypass_blocks_cross_origin_but_allows_api_key(client):
+    from app.config import settings
+    from app.csrf import CSRF_FORBIDDEN_DETAIL
+
+    assert settings.dev_bypass_active is True
+    pid = client.post(
+        "/api/projects",
+        json={"name": "DevBypassCsrf", "target_languages": ["en"]},
+    ).json()["id"]
+    raw_key = client.post(f"/api/projects/{pid}/api-keys", json={"name": "cli"}).json()["key"]
+    client.cookies.clear()
+
+    blocked = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"blocked_key": "nope"}', "application/json")},
+        headers={"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == CSRF_FORBIDDEN_DETAIL
+    keys_after_blocked = {
+        row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
+    assert "blocked_key" not in keys_after_blocked
+
+    allowed = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"api_key_ok": "yes"}', "application/json")},
+        headers={
+            "X-API-Key": raw_key,
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
+    keys_after_allowed = {
+        row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]
+    }
+    assert "api_key_ok" in keys_after_allowed
+
+
+def test_cors_and_csrf_middleware_integration_and_boot_refusal(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+    from app.main import app
+
+    # Lifespan must refuse to boot on wildcard or null CORS_ORIGINS.
+    for bad_cors in ("*", "null"):
+        monkeypatch.setattr(settings, "cors_origins", bad_cors)
+        with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+            with TestClient(app):
+                pass
+    monkeypatch.setattr(settings, "cors_origins", "")
+
+    # Boot app.main in an isolated subprocess with CORS_ORIGINS set at import time
+    # so CORSMiddleware and SameOriginCsrfMiddleware are both mounted in production order.
+    env = os.environ.copy()
+    env["CORS_ORIGINS"] = "https://ui.example.com"
+    env["AUTH_DEV_BYPASS"] = "false"
+    env["X_LOCALE_SECRET"] = "prod-test-secret-value-at-least-32-bytes"
+    script = """
+from fastapi.testclient import TestClient
+from app.auth import SESSION_COOKIE
+from app.csrf import CSRF_FORBIDDEN_DETAIL
+from app.main import app
+
+with TestClient(app) as client:
+    client.cookies.set(SESSION_COOKIE, "dummy-session")
+
+    preflight = client.options(
+        "/api/auth/logout",
+        headers={
+            "Origin": "https://ui.example.com",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert preflight.status_code == 200, preflight.text
+    assert preflight.headers.get("access-control-allow-origin") == "https://ui.example.com"
+    assert preflight.headers.get("access-control-allow-credentials") == "true"
+
+    allowed = client.post(
+        "/api/auth/logout",
+        headers={
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://ui.example.com",
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.headers.get("access-control-allow-origin") == "https://ui.example.com"
+    assert allowed.headers.get("access-control-allow-credentials") == "true"
+
+    client.cookies.set(SESSION_COOKIE, "dummy-session")
+    blocked = client.post(
+        "/api/auth/logout",
+        headers={
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert blocked.status_code == 403, blocked.text
+    assert blocked.json()["detail"] == CSRF_FORBIDDEN_DETAIL
+    assert "access-control-allow-origin" not in blocked.headers
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=_BACKEND_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"

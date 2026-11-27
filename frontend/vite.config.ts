@@ -10,6 +10,10 @@ const repoRoot = path.resolve(__dirname, '..')
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, repoRoot, '')
+  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const isLocalProxyTarget =
+    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/i.test(apiProxyTarget) ||
+    /^http:\/\/[^.:/@]+(?::\d+)?(?:\/|$)/i.test(apiProxyTarget)
 
   return {
     envDir: repoRoot,
@@ -33,12 +37,12 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/healthcheck': {
-          target: env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000',
-          changeOrigin: true,
+          target: apiProxyTarget,
+          changeOrigin: !isLocalProxyTarget,
         },
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000',
-          changeOrigin: true,
+          target: apiProxyTarget,
+          changeOrigin: !isLocalProxyTarget,
         },
       },
     },
