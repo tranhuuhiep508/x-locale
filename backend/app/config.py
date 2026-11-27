@@ -172,9 +172,9 @@ class Settings(BaseSettings):
 
     def validate_for_runtime(self) -> None:
         """Refuse production-like boot with known-insecure defaults."""
-        if "*" in self.cors_origin_list:
+        if any(origin == "*" or origin.lower() == "null" for origin in self.cors_origin_list):
             raise RuntimeError(
-                "CORS_ORIGINS must not contain '*' when credentialed requests are enabled"
+                "CORS_ORIGINS must not contain '*' or 'null' when credentialed requests are enabled"
             )
         if self.dev_bypass_active:
             return

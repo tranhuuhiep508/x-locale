@@ -292,7 +292,10 @@ def test_openapi_hidden_when_oidc_configured():
     assert result.stdout.strip() == "None"
 
 
-@pytest.mark.parametrize("cors_origins", ["*", " * ", "https://app.example.com, *"])
+@pytest.mark.parametrize(
+    "cors_origins",
+    ["*", " * ", "https://app.example.com, *", "null", "NULL", "https://app.example.com, null"],
+)
 @pytest.mark.parametrize("auth_dev_bypass", [False, True])
 def test_runtime_rejects_wildcard_cors_origins(cors_origins, auth_dev_bypass):
     loaded = Settings(
@@ -361,6 +364,7 @@ def _setup_csrf_fixture(client, monkeypatch):
     [
         {"Sec-Fetch-Site": "same-site", "Origin": "http://other.testserver"},
         {"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"},
+        {"Sec-Fetch-Site": "cross-site"},
     ],
 )
 def test_csrf_rejects_cross_and_same_site_cookie_writes(client, monkeypatch, headers):
@@ -470,6 +474,45 @@ def test_csrf_allows_same_origin_and_explicit_cors_and_oidc_origin(client, monke
         ).status_code
         == 200
     )
+
+
+def test_csrf_uses_https_request_origin_when_cookies_secure(client, monkeypatch):
+    from app.config import settings
+
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    pid = fx["pid"]
+    monkeypatch.setattr(settings, "session_cookie_secure", True)
+
+    https_ok = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"tls_ok": "yes"}', "application/json")},
+        headers={"Origin": "https://testserver"},
+    )
+    assert https_ok.status_code == 200, https_ok.text
+
+    http_downgrade = client.post(
+        f"/api/projects/{pid}/import",
+        files={"file": ("vi.json", b'{"http_bad": "no"}', "application/json")},
+        headers={"Origin": "http://testserver"},
+    )
+    assert http_downgrade.status_code == 403
+    keys = {row["key"] for row in client.get(f"/api/projects/{pid}/strings").json()["items"]}
+    assert "tls_ok" in keys
+    assert "http_bad" not in keys
+
+
+def test_csrf_still_blocks_cross_site_when_cookie_and_api_key_both_present(client, monkeypatch):
+    fx = _setup_csrf_fixture(client, monkeypatch)
+    resp = client.post(
+        "/api/auth/logout",
+        headers={
+            "X-API-Key": fx["api_key"],
+            "Sec-Fetch-Site": "cross-site",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert resp.status_code == 403
+    assert client.get("/api/auth/me").status_code == 200
 
 
 def test_csrf_allows_api_key_writes_without_session_cookie(client, monkeypatch):

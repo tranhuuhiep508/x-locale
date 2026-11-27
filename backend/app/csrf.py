@@ -40,7 +40,7 @@ def _normalize_origin(value: str) -> str | None:
 
 
 def _request_origin(scope: Scope, headers: Headers) -> str | None:
-    scheme = (scope.get("scheme") or "http").lower()
+    scheme = "https" if settings.cookies_secure else (scope.get("scheme") or "http").lower()
     host = (headers.get("host") or "").strip()
     if not host:
         server = scope.get("server")
